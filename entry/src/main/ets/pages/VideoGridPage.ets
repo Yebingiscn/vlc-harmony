@@ -162,9 +162,7 @@ export struct VideoGridPage {
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.background_default'))
-    .bindSheet(this.showContext, () => {
-      this.contextSheetBuilder()
-    }, {
+    .bindSheet(this.showContext, this.contextSheetBuilder(), {
       height: SheetSize.FIT_CONTENT,
       dragBar: true,
       onDisappear: () => {

@@ -5,6 +5,11 @@ import { AppColors } from '../common/constants/AppConstants';
 import { PlaybackSpeedDialog } from './PlaybackSpeedDialog';
 import { EqualizerDialog } from './EqualizerDialog';
 import { promptAction } from '@kit.ArkUI';
+import {
+  buildPlayerAdvancedOptions,
+  PlayerAdvancedOptionId,
+  PlayerAdvancedOptions,
+} from '../common/components/PlayerAdvancedOptions';
 
 /**
  * AudioPlayerPage —— AudioPlayer(底部播放面板,封面态为主)。
@@ -46,6 +51,7 @@ export struct AudioPlayerPage {
   @Local vm: AudioPlayerViewModel = new AudioPlayerViewModel();
   @Local showSpeed: boolean = false;
   @Local showEq: boolean = false;
+  @Local advancedOptionsOpen: boolean = false;
 
   aboutToAppear(): void {
     PlaybackService.getInstance().addListener(this.vm);
@@ -65,8 +71,13 @@ export struct AudioPlayerPage {
             .onClick(() => NavController.pop())
           Text(this.vm.title).fontSize(16).fontColor('#FFFFFF').layoutWeight(1).margin({ left: 8 })
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-          Image($r('app.media.ic_player_playqueue')).width(24).height(24).fillColor('#FFFFFF')
-            .onClick(() => promptAction.showToast({ message: $r('app.string.developing') }))
+          Image($r('app.media.ic_player_more')).width(24).height(24).fillColor('#FFFFFF')
+            .onClick(() => this.advancedOptionsOpen = true)
+            .bindMenu(this.advancedOptionsOpen!!, this.advancedOptionsMenu(), {
+              placement: Placement.BottomRight,
+              showInSubWindow: true,
+              backgroundColor: '#FFFFFF',
+            })
         }
         .width('100%').padding(12).alignItems(VerticalAlign.Center)
 
@@ -192,5 +203,16 @@ export struct AudioPlayerPage {
     EqualizerDialog({ onClose: () => {
       this.showEq = false;
     } }).width('100%')
+  }
+
+  @Builder
+  advancedOptionsMenu() {
+    PlayerAdvancedOptions({
+      items: buildPlayerAdvancedOptions('audio'),
+      onSelect: (id: PlayerAdvancedOptionId): void => {
+        this.advancedOptionsOpen = false;
+        promptAction.showToast({ message: '该功能暂未实现' });
+      },
+    })
   }
 }

@@ -22,7 +22,7 @@ export struct VideoResumeDialog {
         .fontSize(18).fontWeight(FontWeight.Medium).fontColor('#FFFFFF')
         .width('100%')
         .margin({ left: 24, top: 24, right: 16 })
-        .maxLines(2).textOverflow(TextOverflow.Ellipsis)
+        .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
 
       // 提示横幅
       Text($r('app.string.confirm_resume'))

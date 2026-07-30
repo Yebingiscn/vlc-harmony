@@ -50,7 +50,7 @@ export struct TimePickerDialog {
   }
 
   @Builder
-  key(label: string, pass: string) {
+  keyItem(label: string, pass: string) {
     Text(label)
       .fontSize(18).fontWeight(FontWeight.Bold).fontColor('#FFFFFF')
       .layoutWeight(1).height('100%').textAlign(TextAlign.Center)
@@ -71,13 +71,13 @@ export struct TimePickerDialog {
       }
       .width('100%').alignItems(VerticalAlign.Center).margin({ top: 8 })
 
-      Row() { this.key('1', '1'); this.key('2', '2'); this.key('3', '3'); }
+      Row() { this.keyItem('1', '1'); this.keyItem('2', '2'); this.keyItem('3', '3'); }
       .width('100%').height(44).margin({ top: 8 })
-      Row() { this.key('4', '4'); this.key('5', '5'); this.key('6', '6'); }
+      Row() { this.keyItem('4', '4'); this.keyItem('5', '5'); this.keyItem('6', '6'); }
       .width('100%').height(44).margin({ top: 8 })
-      Row() { this.key('7', '7'); this.key('8', '8'); this.key('9', '9'); }
+      Row() { this.keyItem('7', '7'); this.keyItem('8', '8'); this.keyItem('9', '9'); }
       .width('100%').height(44).margin({ top: 8 })
-      Row() { this.key(':00', '00'); this.key('0', '0'); this.key(':30', '30'); }
+      Row() { this.keyItem(':00', '00'); this.keyItem('0', '0'); this.keyItem(':30', '30'); }
       .width('100%').height(44)
 
       Button($r('app.string.ok'))

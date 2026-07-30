@@ -10,6 +10,17 @@ import { SleepTimerDialog } from './SleepTimerDialog';
 import { SelectChapterDialog } from './SelectChapterDialog';
 import { VideoTracksDialog } from './VideoTracksDialog';
 import { RenderersDialog } from './RenderersDialog';
+import { promptAction } from '@kit.ArkUI';
+import {
+  buildPlayerAdvancedOptions,
+  PlayerAdvancedOptionId,
+  PlayerAdvancedOptions,
+} from '../common/components/PlayerAdvancedOptions';
+import {
+  buildVideoPlayerBottomActions,
+  VideoPlayerBottomAction,
+  VideoPlayerBottomActionId,
+} from '../common/components/VideoPlayerControls';
 
 /** 播放队列中的一项(仅携带播放器需要的字段,避免把整个 MediaWrapper 塞进路由参数)。 */
 export interface VideoPlayItem {
@@ -347,11 +358,11 @@ export struct VideoPlayerPage {
   /** 更多选项/二级弹窗的 sheet 状态。sheetKind 空串=主选项列表;否则=对应二级弹窗。 */
   @Local sheetOpen: boolean = false;
   @Local sheetKind: string = ''; // '' | 'jump' | 'sleep' | 'chapter' | 'tracks' | 'renderer'
+  @Local advancedOptionsOpen: boolean = false;
 
   /** 打开主选项列表。 */
   openOptions(): void {
-    this.sheetKind = '';
-    this.sheetOpen = true;
+    this.advancedOptionsOpen = true;
   }
 
   /** 进入指定二级弹窗(切换 sheetKind,保持 sheet 展开)。 */
@@ -452,6 +463,28 @@ export struct VideoPlayerPage {
     return this.vm.position;
   }
 
+  bottomActionIcon(action: VideoPlayerBottomAction): Resource {
+    if (action.id === 'play') {
+      return this.vm.state === PlayState.PLAYING
+        ? $r('app.media.ic_pause_player')
+        : $r('app.media.ic_play_player');
+    }
+    return action.icon;
+  }
+
+  onBottomAction(id: VideoPlayerBottomActionId): void {
+    if (id === 'tracks') {
+      this.openSub('tracks');
+    } else if (id === 'play') {
+      this.vm.toggle();
+    } else if (id === 'orientation') {
+      promptAction.showToast({ message: 'Screen orientation is not available yet' });
+    } else if (id === 'aspectRatio') {
+      promptAction.showToast({ message: 'Aspect ratio is not available yet' });
+    }
+    this.resetHudTimer();
+  }
+
   build() {
     NavDestination() {
       Stack() {
@@ -463,6 +496,8 @@ export struct VideoPlayerPage {
           })
           .width('100%')
           .height('100%')
+          // Keep the declarative HUD above the native video surface interactive.
+          .hitTestBehavior(HitTestMode.None)
           .onClick(() => this.toggleHud())
 
         // 加载中 / 出错提示(居中,不随 HUD 隐藏)
@@ -527,12 +562,6 @@ export struct VideoPlayerPage {
       Text(this.vm.title)
         .fontSize(18).fontColor('#FFFFFF').layoutWeight(1).margin({ left: 12, right: 12 })
         .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-      Image($r('app.media.ic_player_more'))
-        .width(24).height(24).fillColor('#FFFFFF')
-        .onClick(() => {
-          this.resetHudTimer();
-          this.openOptions();
-        })
     }
     .width('100%')
     .padding({ left: 16, right: 16, top: 44, bottom: 16 })
@@ -583,50 +612,33 @@ export struct VideoPlayerPage {
       .padding({ left: 12, right: 12 })
       .alignItems(VerticalAlign.Center)
 
-      // 控制按钮行
-      Row() {
-        Image($r('app.media.ic_player_rewind_10'))
-          .width(32).height(32).fillColor('#FFFFFF')
-          .onClick(() => {
-            this.vm.seekTo(this.vm.position - 10000);
-            this.resetHudTimer();
-          })
-        Blank()
-        Image($r('app.media.ic_player_previous'))
-          .width(36).height(36).fillColor('#FFFFFF')
-          .opacity(this.vm.hasPrev() || this.vm.position > 3000 ? 1 : 0.35)
-          .onClick(() => {
-            this.vm.prev();
-            this.resetHudTimer();
-          })
-        Blank()
-        Image(this.vm.state === PlayState.PLAYING
-          ? $r('app.media.ic_pause_player')
-          : $r('app.media.ic_play_player'))
-          .width(56).height(56).fillColor('#FFFFFF')
-          .onClick(() => {
-            this.vm.toggle();
-            this.resetHudTimer();
-          })
-        Blank()
-        Image($r('app.media.ic_player_next'))
-          .width(36).height(36).fillColor('#FFFFFF')
-          .opacity(this.vm.hasNext() ? 1 : 0.35)
-          .onClick(() => {
-            this.vm.next();
-            this.resetHudTimer();
-          })
-        Blank()
-        Image($r('app.media.ic_player_forward_10'))
-          .width(32).height(32).fillColor('#FFFFFF')
-          .onClick(() => {
-            this.vm.seekTo(this.vm.position + 10000);
-            this.resetHudTimer();
-          })
-      }
-      .width('100%')
-      .padding({ left: 20, right: 20, top: 8, bottom: 36 })
-      .alignItems(VerticalAlign.Center)
+            // 音轨和字幕、屏幕方向、播放、宽高比、高级选项。
+            Row() {
+              ForEach(buildVideoPlayerBottomActions(), (action: VideoPlayerBottomAction) => {
+                if (action.id === 'advanced') {
+                  Image(action.icon)
+                    .width(32)
+                    .height(32)
+                    .fillColor('#FFFFFF')
+                    .onClick(() => this.openOptions())
+                    .bindMenu(this.advancedOptionsOpen!!, this.advancedOptionsMenu(), {
+                      placement: Placement.TopRight,
+                      showInSubWindow: true,
+                      backgroundColor: '#FFFFFF',
+                    })
+                } else {
+                  Image(this.bottomActionIcon(action))
+                    .width(action.id === 'play' ? 56 : 32)
+                    .height(action.id === 'play' ? 56 : 32)
+                    .fillColor('#FFFFFF')
+                    .onClick(() => this.onBottomAction(action.id))
+                }
+              }, (action: VideoPlayerBottomAction): string => action.id)
+            }
+            .width('100%')
+            .padding({ left: 18, right: 18, top: 12, bottom: 12 })
+            .justifyContent(FlexAlign.SpaceBetween)
+            .alignItems(VerticalAlign.Center)
     }
     .width('100%')
     .linearGradient({ angle: 180, colors: [['#00000000', 0.0], ['#cb000000', 1.0]] })
@@ -716,4 +728,16 @@ export struct VideoPlayerPage {
     .alignItems(VerticalAlign.Center)
     .onClick(() => onTap())
   }
+
+  @Builder
+  advancedOptionsMenu() {
+    PlayerAdvancedOptions({
+      items: buildPlayerAdvancedOptions('video'),
+      onSelect: (id: PlayerAdvancedOptionId): void => {
+        this.advancedOptionsOpen = false;
+        promptAction.showToast({ message: '该功能暂未实现' });
+      },
+    })
+  }
+
 }
