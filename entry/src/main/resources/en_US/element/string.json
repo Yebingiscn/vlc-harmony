@@ -1,0 +1,1304 @@
+{
+  "string": [
+    {
+      "name": "X",
+      "value": "X"
+    },
+    {
+      "name": "about",
+      "value": "About"
+    },
+    {
+      "name": "about_copyright",
+      "value": "Copyleft &#169; 1996&#8211;2026 by VideoLAN"
+    },
+    {
+      "name": "about_license",
+      "value": "GNU General Public License v2.0"
+    },
+    {
+      "name": "about_vlc_text",
+      "value": "VLC for Android™ is a port of VLC media player, the popular open source media player. The Android™ version can read all files and network streams."
+    },
+    {
+      "name": "add",
+      "value": "Add"
+    },
+    {
+      "name": "add_bookmark",
+      "value": "Add bookmark"
+    },
+    {
+      "name": "add_to_group",
+      "value": "Add to video group"
+    },
+    {
+      "name": "advanced_prefs_category",
+      "value": "Advanced"
+    },
+    {
+      "name": "albums_show_track_numbers",
+      "value": "Show track numbers"
+    },
+    {
+      "name": "android_auto",
+      "value": "Android Auto"
+    },
+    {
+      "name": "aout",
+      "value": "Audio output"
+    },
+    {
+      "name": "aout_summary",
+      "value": "Change the method that VLC uses to output audio"
+    },
+    {
+      "name": "app_name",
+      "value": "VLC"
+    },
+    {
+      "name": "app_name_full",
+      "value": "VLC for Android"
+    },
+    {
+      "name": "apply_playqueue",
+      "value": "Apply for all the play queue"
+    },
+    {
+      "name": "apply_to_all",
+      "value": "Apply to all videos"
+    },
+    {
+      "name": "apply_to_bt",
+      "value": "Apply to bluetooth device"
+    },
+    {
+      "name": "audio",
+      "value": "Audio"
+    },
+    {
+      "name": "audio_resume_card_summary",
+      "value": "Shows a tip helping you to resume audio playback on app start"
+    },
+    {
+      "name": "audio_resume_card_title",
+      "value": "Show last playlist tip"
+    },
+    {
+      "name": "audio_resume_playback_title",
+      "value": "Audio play queue history"
+    },
+    {
+      "name": "audio_resume_playback_warning",
+      "value": "Disabling the audio play queue history may lead to some behavior issues.\\nAfter disabling it you may not be able to resume the playback from:\\n\\n\\t- a  bluetooth device\\n\\t- the widget\\n\\t- the media notification"
+    },
+    {
+      "name": "blurred_cover_background_summary",
+      "value": "Blurred cover in audio player background"
+    },
+    {
+      "name": "blurred_cover_background_title",
+      "value": "Blurred cover background"
+    },
+    {
+      "name": "body",
+      "value": "Message"
+    },
+    {
+      "name": "browse",
+      "value": "Browse"
+    },
+    {
+      "name": "browse_folder",
+      "value": "Browse folder"
+    },
+    {
+      "name": "browser_quick_play",
+      "value": "Browser quick play menu"
+    },
+    {
+      "name": "browser_quick_play_default",
+      "value": "Quick play as default action"
+    },
+    {
+      "name": "browser_quick_play_default_summary",
+      "value": "If activated, taping a browser item will play it using quick play"
+    },
+    {
+      "name": "browser_quick_play_summary",
+      "value": "Add a quick play action in the browser items\\' menu. It will load your media faster but some metadata may be missing"
+    },
+    {
+      "name": "browser_show_missing_media",
+      "value": "Show missing media"
+    },
+    {
+      "name": "browser_show_missing_media_summary",
+      "value": "Show distant media even if they are not present"
+    },
+    {
+      "name": "browser_storages",
+      "value": "Storages"
+    },
+    {
+      "name": "build_host",
+      "value": "build_host"
+    },
+    {
+      "name": "build_libvlc_revision",
+      "value": "build_libvlc_revision"
+    },
+    {
+      "name": "build_remote_access_revision",
+      "value": "build_remote_access_revision"
+    },
+    {
+      "name": "build_revision",
+      "value": "build_revision"
+    },
+    {
+      "name": "build_time",
+      "value": "build_time"
+    },
+    {
+      "name": "build_vlc_revision",
+      "value": "build_vlc_revision"
+    },
+    {
+      "name": "cancel",
+      "value": "Cancel"
+    },
+    {
+      "name": "casting_connected_renderer",
+      "value": "Connected to renderer \\'%1$s\\'"
+    },
+    {
+      "name": "changelog",
+      "value": "changelog"
+    },
+    {
+      "name": "clear",
+      "value": "Clear"
+    },
+    {
+      "name": "clear_app_data",
+      "value": "Clear app data"
+    },
+    {
+      "name": "clear_app_data_summary",
+      "value": "Clears VLC for Android data"
+    },
+    {
+      "name": "clear_history",
+      "value": "Clear history"
+    },
+    {
+      "name": "clear_history_message",
+      "value": "You will lose your history, your current playlists and your progresses"
+    },
+    {
+      "name": "clear_media_database_summary",
+      "value": "Clears the database to start over"
+    },
+    {
+      "name": "clear_media_db",
+      "value": "Clear media database"
+    },
+    {
+      "name": "clear_playback_history",
+      "value": "Clear playback history"
+    },
+    {
+      "name": "close",
+      "value": "Close"
+    },
+    {
+      "name": "confirm_delete",
+      "value": "Delete the file \\'%1$s\\'?"
+    },
+    {
+      "name": "confirm_delete_message",
+      "value": "This is permanent and cannot be undone."
+    },
+    {
+      "name": "confirm_resume",
+      "value": "Resume from last position?"
+    },
+    {
+      "name": "controls_prefs_category",
+      "value": "Controls"
+    },
+    {
+      "name": "controls_setting",
+      "value": "Controls settings"
+    },
+    {
+      "name": "copied_from_clipboard",
+      "value": "Address pasted from your clipboard"
+    },
+    {
+      "name": "create",
+      "value": "Create"
+    },
+    {
+      "name": "create_new_playlist",
+      "value": "Create new playlist"
+    },
+    {
+      "name": "custom_libvlc_options",
+      "value": "Custom libVLC options"
+    },
+    {
+      "name": "customize",
+      "value": "Customize"
+    },
+    {
+      "name": "dav1d_thread_number",
+      "value": "Dav1d thread number"
+    },
+    {
+      "name": "daynight_title",
+      "value": "DayNight mode"
+    },
+    {
+      "name": "deblocking",
+      "value": "Deblocking filter settings"
+    },
+    {
+      "name": "deblocking_summary",
+      "value": "Changing the deblocking filter settings could improve video quality (advanced users only)"
+    },
+    {
+      "name": "debug_logs",
+      "value": "Debug logs"
+    },
+    {
+      "name": "delete",
+      "value": "Delete"
+    },
+    {
+      "name": "delete_forever",
+      "value": "Delete forever"
+    },
+    {
+      "name": "developer_prefs_category",
+      "value": "Developer"
+    },
+    {
+      "name": "device_dialog_message",
+      "value": "You just plugged a new storage device to your TV box, do you want to open it with VLC?"
+    },
+    {
+      "name": "directory_not_scanned",
+      "value": "This directory is not scanned"
+    },
+    {
+      "name": "disable_track",
+      "value": "Disable track"
+    },
+    {
+      "name": "donate",
+      "value": "Help VLC"
+    },
+    {
+      "name": "donate_desc",
+      "value": "Support the volunteers building VLC"
+    },
+    {
+      "name": "done",
+      "value": "Done"
+    },
+    {
+      "name": "dump_app_db",
+      "value": "Dump app database"
+    },
+    {
+      "name": "dump_media_db",
+      "value": "Dump media database"
+    },
+    {
+      "name": "dump_media_db_summary",
+      "value": "Copy database to internal storage root"
+    },
+    {
+      "name": "edit_eq_name_not_allowed",
+      "value": "This name is not allowed"
+    },
+    {
+      "name": "edit_eq_preset",
+      "value": "Edit equalizer preset"
+    },
+    {
+      "name": "email_support",
+      "value": "Contact the support team by email"
+    },
+    {
+      "name": "enable_black_theme",
+      "value": "Black theme"
+    },
+    {
+      "name": "enable_equalizer",
+      "value": "Enable"
+    },
+    {
+      "name": "enable_frame_skip",
+      "value": "Frame skip"
+    },
+    {
+      "name": "enable_frame_skip_summary",
+      "value": "Speed up decoding but could lower video quality"
+    },
+    {
+      "name": "enable_time_stretching_audio",
+      "value": "Time-stretching audio"
+    },
+    {
+      "name": "enable_time_stretching_audio_summary",
+      "value": "Speed up and slow down audio without changing the pitch (requires a fast device)"
+    },
+    {
+      "name": "enable_verbose_mode",
+      "value": "Verbose"
+    },
+    {
+      "name": "enable_verbose_mode_summary",
+      "value": "Increase the verbosity (logcat)"
+    },
+    {
+      "name": "eq_snap_bands",
+      "value": "Snap bands"
+    },
+    {
+      "name": "equalizer",
+      "value": "Equalizer"
+    },
+    {
+      "name": "equalizer_name",
+      "value": "Equalizer name"
+    },
+    {
+      "name": "equalizer_overwrite_warning",
+      "value": "This equalizer already exists"
+    },
+    {
+      "name": "export_settings",
+      "value": "Export settings"
+    },
+    {
+      "name": "export_settings_summary",
+      "value": "Export your settings to a file to import them later"
+    },
+    {
+      "name": "fastplay_title",
+      "value": "Playing at %sx"
+    },
+    {
+      "name": "favorites",
+      "value": "Favorites"
+    },
+    {
+      "name": "feedback_email_warning",
+      "value": "No email client installed"
+    },
+    {
+      "name": "feedback_email_warning_explanation",
+      "value": "The easiest way to share your feedback is to use the %1$s feature.\\nTo do so, enable the remote access in the settings, follow the instructions and choose the %2$s entry in the menu."
+    },
+    {
+      "name": "feedback_email_warning_remote_action",
+      "value": "Open the settings"
+    },
+    {
+      "name": "feedback_email_warning_try_anyway",
+      "value": "Try anyway"
+    },
+    {
+      "name": "feedback_forum",
+      "value": "Feedback forum"
+    },
+    {
+      "name": "feedback_type",
+      "value": "Feedback type"
+    },
+    {
+      "name": "force_play_all_audio_summary",
+      "value": "Play all audio, starting with the one you clicked on"
+    },
+    {
+      "name": "force_play_all_audio_title",
+      "value": "Audio playlist mode"
+    },
+    {
+      "name": "force_play_all_summary",
+      "value": "Play all videos, starting with the one you clicked on"
+    },
+    {
+      "name": "force_play_all_title",
+      "value": "Video playlist mode"
+    },
+    {
+      "name": "force_shuffle_summary",
+      "value": "Force shuffling when launching a playback"
+    },
+    {
+      "name": "force_shuffle_title",
+      "value": "Force shuffle"
+    },
+    {
+      "name": "get_help",
+      "value": "Get some help"
+    },
+    {
+      "name": "go_to_chapter",
+      "value": "Go to chapter…"
+    },
+    {
+      "name": "history",
+      "value": "History"
+    },
+    {
+      "name": "http_user_agent",
+      "value": "HTTP user agent"
+    },
+    {
+      "name": "include_logs",
+      "value": "Include your logs"
+    },
+    {
+      "name": "include_medialib",
+      "value": "Include your database"
+    },
+    {
+      "name": "incognito_mode",
+      "value": "Incognito mode"
+    },
+    {
+      "name": "install",
+      "value": "Install"
+    },
+    {
+      "name": "install_nightly",
+      "value": "Install the nightly version"
+    },
+    {
+      "name": "interface_prefs_screen",
+      "value": "Interface"
+    },
+    {
+      "name": "is_compiled_by",
+      "value": "Compiled by"
+    },
+    {
+      "name": "is_signed_by",
+      "value": "Signed by"
+    },
+    {
+      "name": "jump_delay",
+      "value": "Forward/backward time delay"
+    },
+    {
+      "name": "length",
+      "value": "Length"
+    },
+    {
+      "name": "light_theme",
+      "value": "Light theme"
+    },
+    {
+      "name": "list_title_ellipsize",
+      "value": "Single line list title ellipsize"
+    },
+    {
+      "name": "loading",
+      "value": "Loading"
+    },
+    {
+      "name": "lockscreen_cover_summary",
+      "value": "When available, set the current media cover art as lockscreen wallpaper"
+    },
+    {
+      "name": "lockscreen_cover_title",
+      "value": "Media cover on Lockscreen"
+    },
+    {
+      "name": "logs_warning",
+      "value": "May contain info about your played media. It will be shared with VLC\\'s developers"
+    },
+    {
+      "name": "long_jump_delay",
+      "value": "Long tap forward/backward time delay"
+    },
+    {
+      "name": "manage_storage_permission",
+      "value": "File permissions"
+    },
+    {
+      "name": "media_seen",
+      "value": "Show seen video marker"
+    },
+    {
+      "name": "media_seen_summary",
+      "value": "Mark a video as seen when you play it until the end"
+    },
+    {
+      "name": "medialibrary_scan",
+      "value": "Media library scan"
+    },
+    {
+      "name": "medialibrary_scan_explanation",
+      "value": "VLC can automatically scan your device to organize your media collection."
+    },
+    {
+      "name": "ml_database_warning",
+      "value": "Your database contains the list of all of your media. It will be shared with VLC\\'s developers"
+    },
+    {
+      "name": "more",
+      "value": "More"
+    },
+    {
+      "name": "more_actions",
+      "value": "More Actions"
+    },
+    {
+      "name": "network_browsing",
+      "value": "Local Network"
+    },
+    {
+      "name": "network_caching",
+      "value": "Network caching value"
+    },
+    {
+      "name": "network_caching_summary",
+      "value": "The amount of time to buffer network media (in ms) for software decoding\\nSet to 0 to disable"
+    },
+    {
+      "name": "network_connection_needed",
+      "value": "No connection to local network."
+    },
+    {
+      "name": "network_disabled",
+      "value": "Network browsing disabled"
+    },
+    {
+      "name": "network_shares_discovery",
+      "value": "Looking for network shares"
+    },
+    {
+      "name": "never_ask_again",
+      "value": "Never ask again"
+    },
+    {
+      "name": "never_show_again",
+      "value": "Never show again, even for future versions"
+    },
+    {
+      "name": "new_group",
+      "value": "New group"
+    },
+    {
+      "name": "new_group_desc",
+      "value": "Create a new group"
+    },
+    {
+      "name": "new_stream",
+      "value": "New stream"
+    },
+    {
+      "name": "new_title",
+      "value": "New title"
+    },
+    {
+      "name": "next",
+      "value": "Next"
+    },
+    {
+      "name": "next_step",
+      "value": "Next"
+    },
+    {
+      "name": "no",
+      "value": "No"
+    },
+    {
+      "name": "no_favorite",
+      "value": "No favorite"
+    },
+    {
+      "name": "no_group_found",
+      "value": "No video group found"
+    },
+    {
+      "name": "no_track",
+      "value": "No track"
+    },
+    {
+      "name": "nohistory",
+      "value": "You have no playback history yet."
+    },
+    {
+      "name": "nomedia",
+      "value": "No media files found, please transfer some files to your device or adjust your preferences."
+    },
+    {
+      "name": "noplaylist",
+      "value": "No playlist found."
+    },
+    {
+      "name": "notification_permission",
+      "value": "Notification permission"
+    },
+    {
+      "name": "notification_permission_explanation",
+      "value": "VLC needs your permission to send notifications.\\nThe app will only notify you when scanning your media or using the custom video Picture in Picture.\\nRefusing it won\\'t prevent VLC to work, however the notifications will be hidden."
+    },
+    {
+      "name": "ok",
+      "value": "OK"
+    },
+    {
+      "name": "onboarding_scan_title",
+      "value": "Auto-discover your media"
+    },
+    {
+      "name": "onboarding_scanning_enable",
+      "value": "Let VLC scan my device for media content"
+    },
+    {
+      "name": "onboarding_theme_title",
+      "value": "Make yourself at home"
+    },
+    {
+      "name": "opacity",
+      "value": "Opacity"
+    },
+    {
+      "name": "open_in_browser",
+      "value": "Open in browser"
+    },
+    {
+      "name": "open_mrl_dialog_msg",
+      "value": "Enter a network address, such as http://, mms://, or rtsp://"
+    },
+    {
+      "name": "opengl_summary",
+      "value": "By default, OpenGL ES2 is used for software decoding and hardware decoding when needed (360° videos)"
+    },
+    {
+      "name": "opengl_title",
+      "value": "OpenGL ES2 usage"
+    },
+    {
+      "name": "optional_features_warning",
+      "value": "This feature is in beta and may cause crashes and instabilities"
+    },
+    {
+      "name": "performance_prefs_category",
+      "value": "Performance"
+    },
+    {
+      "name": "permission",
+      "value": "Permission"
+    },
+    {
+      "name": "permission_all_title",
+      "value": "All file access"
+    },
+    {
+      "name": "permission_all_warning",
+      "value": "To enable this, you have to disable the standard media file access first"
+    },
+    {
+      "name": "permission_ask_again",
+      "value": "Grant permission"
+    },
+    {
+      "name": "permission_expanation_allow",
+      "value": "You will be able to only play streams or network media"
+    },
+    {
+      "name": "permission_expanation_no_allow",
+      "value": "You won\\'t be able to auto-discover your media nor use external subtitles"
+    },
+    {
+      "name": "permission_media",
+      "value": "VLC needs your permission to access media on your device"
+    },
+    {
+      "name": "permission_media_title",
+      "value": "Access to standard media"
+    },
+    {
+      "name": "permission_no_access",
+      "value": "No file access"
+    },
+    {
+      "name": "permission_not_granted",
+      "value": "Permission not granted"
+    },
+    {
+      "name": "permission_onboarding_perm_all",
+      "value": "You will be able to auto-discover all your files to play all types of media even weird ones, or compressed files"
+    },
+    {
+      "name": "permissions",
+      "value": "Permissions"
+    },
+    {
+      "name": "persistent_incognito_mode",
+      "value": "Persistent incognito mode"
+    },
+    {
+      "name": "persistent_incognito_mode_summary",
+      "value": "Keep the incognito mode enabled even if the app is restarted"
+    },
+    {
+      "name": "pin_code_reason_check",
+      "value": "Access restricted. Please enter your PIN code"
+    },
+    {
+      "name": "pin_code_reason_create",
+      "value": "First, let\\'s create your PIN code"
+    },
+    {
+      "name": "pin_code_reason_modify",
+      "value": "Change your PIN code"
+    },
+    {
+      "name": "pin_unlock_success",
+      "value": "Successfully unlocked. To re-activate the safe mode, please tap this icon in the app:"
+    },
+    {
+      "name": "play",
+      "value": "Play"
+    },
+    {
+      "name": "play_button",
+      "value": "Play Button"
+    },
+    {
+      "name": "playing",
+      "value": "Playing"
+    },
+    {
+      "name": "playlist_name_hint",
+      "value": "Playlist name"
+    },
+    {
+      "name": "playlists",
+      "value": "Playlists"
+    },
+    {
+      "name": "podcast_mode",
+      "value": "Podcast mode"
+    },
+    {
+      "name": "podcast_mode_genres",
+      "value": "audiobook(s), podcast, speech, or vocal"
+    },
+    {
+      "name": "podcast_mode_help",
+      "value": "Podcast controls appear when playing a single track which meets one of the following criteria:\\n\\t• Length greater than 60 min\\n\\t• Length greater than 15 min with no album name\\n\\t• Genre is %s"
+    },
+    {
+      "name": "preamp",
+      "value": "Preamp"
+    },
+    {
+      "name": "preferences",
+      "value": "Settings"
+    },
+    {
+      "name": "prefersmbv1",
+      "value": "Prefer SMB 1"
+    },
+    {
+      "name": "prefersmbv1_summary",
+      "value": "Uncheck this setting if you have some difficulties browsing your SMB server"
+    },
+    {
+      "name": "prefs_app_data",
+      "value": "Application data"
+    },
+    {
+      "name": "quit",
+      "value": "Quit and restart application"
+    },
+    {
+      "name": "ra_otp_not_me",
+      "value": "It\\'s not me"
+    },
+    {
+      "name": "ra_otp_subtitle",
+      "value": "If it\\'s you, enter this code on the other device"
+    },
+    {
+      "name": "ra_otp_title",
+      "value": "Remote access login attempt"
+    },
+    {
+      "name": "rate_us",
+      "value": "Rate the app"
+    },
+    {
+      "name": "read_doc",
+      "value": "Read the documentation"
+    },
+    {
+      "name": "remote_access_hash_title",
+      "value": "Remote access hash"
+    },
+    {
+      "name": "remote_access_version",
+      "value": "remote_access_version"
+    },
+    {
+      "name": "remote_access_version_title",
+      "value": "Remote access version"
+    },
+    {
+      "name": "remove_current",
+      "value": "Remove current"
+    },
+    {
+      "name": "rename",
+      "value": "Rename"
+    },
+    {
+      "name": "renderer_list_title",
+      "value": "Displays"
+    },
+    {
+      "name": "renderers_disconnect",
+      "value": "Disconnect"
+    },
+    {
+      "name": "replace_playlist",
+      "value": "Replace playlist"
+    },
+    {
+      "name": "report_a_bug",
+      "value": "Report a bug"
+    },
+    {
+      "name": "reset",
+      "value": "Reset"
+    },
+    {
+      "name": "reset_on_interaction",
+      "value": "Reset on any interaction"
+    },
+    {
+      "name": "restore_settings",
+      "value": "Restore settings"
+    },
+    {
+      "name": "restore_settings_summary",
+      "value": "Restore your settings from a previous export"
+    },
+    {
+      "name": "resume",
+      "value": "Resume"
+    },
+    {
+      "name": "revision",
+      "value": "Revision"
+    },
+    {
+      "name": "safe_mode_invalid_pin",
+      "value": "Wrong PIN"
+    },
+    {
+      "name": "safe_mode_new_pin",
+      "value": "Enter your new PIN"
+    },
+    {
+      "name": "safe_mode_no_match",
+      "value": "PINs don\\'t match"
+    },
+    {
+      "name": "safe_mode_pin",
+      "value": "Enter your PIN"
+    },
+    {
+      "name": "safe_mode_re_pin",
+      "value": "Re-enter your PIN"
+    },
+    {
+      "name": "search_global",
+      "value": "Search in all media library"
+    },
+    {
+      "name": "search_hint",
+      "value": "Search media"
+    },
+    {
+      "name": "search_prefs",
+      "value": "Search settings"
+    },
+    {
+      "name": "selected",
+      "value": "Selected"
+    },
+    {
+      "name": "send",
+      "value": "Send"
+    },
+    {
+      "name": "send_feedback",
+      "value": "Send feedback"
+    },
+    {
+      "name": "server_domain_hint",
+      "value": "Server address (host name or IP address)"
+    },
+    {
+      "name": "server_folder_hint",
+      "value": "Folder path (optional)"
+    },
+    {
+      "name": "server_port",
+      "value": "Port: "
+    },
+    {
+      "name": "server_servername_hint",
+      "value": "Display name (optional)"
+    },
+    {
+      "name": "server_share_hint",
+      "value": "Server address (host name or IP address)"
+    },
+    {
+      "name": "server_username_hint",
+      "value": "Username"
+    },
+    {
+      "name": "set_locale",
+      "value": "Set locale"
+    },
+    {
+      "name": "show_bookmark_buttons",
+      "value": "Show bookmark buttons"
+    },
+    {
+      "name": "show_bookmark_buttons_summary",
+      "value": "Show buttons to navigate between bookmarks"
+    },
+    {
+      "name": "show_bookmark_markers",
+      "value": "Show bookmark markers"
+    },
+    {
+      "name": "show_bookmark_markers_summary",
+      "value": "Show bookmark markers over the timeline"
+    },
+    {
+      "name": "show_chapter_buttons",
+      "value": "Show chapter buttons"
+    },
+    {
+      "name": "show_chapter_buttons_summary",
+      "value": "Show buttons to navigate between chapters"
+    },
+    {
+      "name": "show_headers",
+      "value": "Show headers"
+    },
+    {
+      "name": "show_headers_summary",
+      "value": "Split lists by headers depending on the sort type"
+    },
+    {
+      "name": "show_in_settings",
+      "value": "Show in settings"
+    },
+    {
+      "name": "show_seek_in_compact_notif_summary",
+      "value": "Show rewind and fast forward buttons in compact media controls"
+    },
+    {
+      "name": "show_seek_in_compact_notif_title",
+      "value": "Seek buttons in notification panel"
+    },
+    {
+      "name": "show_video_thumbnails",
+      "value": "Video thumbnails"
+    },
+    {
+      "name": "show_video_thumbnails_summary",
+      "value": "Show video thumbnails in lists"
+    },
+    {
+      "name": "sleep_in",
+      "value": "Sleep in"
+    },
+    {
+      "name": "sleep_title",
+      "value": "Sleep timer"
+    },
+    {
+      "name": "stream_deleted",
+      "value": "Stream deleted"
+    },
+    {
+      "name": "streams",
+      "value": "Streams"
+    },
+    {
+      "name": "subject",
+      "value": "Subject"
+    },
+    {
+      "name": "subtitles",
+      "value": "Subtitles"
+    },
+    {
+      "name": "swipe_unlock",
+      "value": "Swipe to unlock"
+    },
+    {
+      "name": "swipe_unlock_no_touch",
+      "value": "Long press to unlock"
+    },
+    {
+      "name": "talkback_audio_tracks",
+      "value": "Audio tracks"
+    },
+    {
+      "name": "talkback_subtitle_tracks",
+      "value": "Subtitle tracks"
+    },
+    {
+      "name": "talkback_video_tracks",
+      "value": "Video tracks"
+    },
+    {
+      "name": "theme_auto",
+      "value": "Auto theme"
+    },
+    {
+      "name": "tips_title",
+      "value": "Video player tips"
+    },
+    {
+      "name": "tv_ui_summary",
+      "value": "Change UI to TV adapted theme"
+    },
+    {
+      "name": "tv_ui_title",
+      "value": "Android TV interface"
+    },
+    {
+      "name": "unknown",
+      "value": "Unknown"
+    },
+    {
+      "name": "update_nightly",
+      "value": "Auto update"
+    },
+    {
+      "name": "update_nightly_summary",
+      "value": "Search for nightly update periodically"
+    },
+    {
+      "name": "url_copied_to_clipboard",
+      "value": "Url copied to clipboard"
+    },
+    {
+      "name": "video",
+      "value": "Video"
+    },
+    {
+      "name": "video_information",
+      "value": "Video information"
+    },
+    {
+      "name": "videos",
+      "value": "videos"
+    },
+    {
+      "name": "voice_control",
+      "value": "Voice control"
+    },
+    {
+      "name": "voice_control_help",
+      "value": "VLC can be controlled through Google Assistant by speaking the following commands:\\n\\t• Play, Pause, Stop, Previous, Next\\n\\t• Rewind, Fast Forward, Repeat <all|one|off>\\n\\t• Jump to <time>, Skip <duration>\\n\\t• What\\'s this <artist|album|song>\\n\\t• Play [artist|album|song|genre|playlist] <name>"
+    },
+    {
+      "name": "wait_before_sleep",
+      "value": "Wait for current media item to finish first"
+    },
+    {
+      "name": "welcome_beta_description",
+      "value": "Welcome in VLC beta program.\\nPlease note this version may have some bugs."
+    },
+    {
+      "name": "welcome_beta_description_bugs",
+      "value": "If you notice a bug, please report it in our forum or bug tracker."
+    },
+    {
+      "name": "welcome_beta_description_crashes",
+      "value": "If you experience a bug or a crash, please open the About screen and Use the Feedback > Contact the support team button."
+    },
+    {
+      "name": "welcome_beta_title",
+      "value": "VLC Beta"
+    },
+    {
+      "name": "welcome_subtitle",
+      "value": "The free and open source multimedia player"
+    },
+    {
+      "name": "welcome_title",
+      "value": "Welcome to VLC!"
+    },
+    {
+      "name": "whats_new_37_android_auto",
+      "value": "Due to some new store constraints, the Android Auto settings have all been moved to the mobile application. It becomes the new place to change your automotive experience."
+    },
+    {
+      "name": "whats_new_37_equalizer_text",
+      "value": "The equalizer has been reworked from scratch. It\\'s easier to use, lets you disable the default presets and allows you to backup, restore and share your presets."
+    },
+    {
+      "name": "whats_new_37_import_export",
+      "value": "We improved the backup and restore settings feature. It now lets you backup more settings, including the equalizer presets."
+    },
+    {
+      "name": "whats_next",
+      "value": "What\\'s next?"
+    },
+    {
+      "name": "widget_background",
+      "value": "Background"
+    },
+    {
+      "name": "widget_explanation_end",
+      "value": "Widgets are heavily customizable. Unleash your creativity and make them look like you!"
+    },
+    {
+      "name": "widget_explanation_resize",
+      "value": "To change the widget type, long press it and use the handles to resize it to the size you like"
+    },
+    {
+      "name": "widget_explanation_size",
+      "value": "The widgets come in different sizes and flavors"
+    },
+    {
+      "name": "widget_explanation_title",
+      "value": "VLC widgets"
+    },
+    {
+      "name": "widget_foreground",
+      "value": "Foreground"
+    },
+    {
+      "name": "widget_forward_delay",
+      "value": "Forward time delay"
+    },
+    {
+      "name": "widget_old_description_end",
+      "value": "We detected that you already have widgets on your launcher. Unfortunately, they are not compatible with our new improved ones.\\nDepending on your launcher, you may have to remove the old ones to replace them."
+    },
+    {
+      "name": "widget_old_description_start",
+      "value": "Good news! We released improved widgets.\\nThey offer more responsiveness and customization"
+    },
+    {
+      "name": "widget_old_text",
+      "value": "We updated our widgets!"
+    },
+    {
+      "name": "widget_preferences",
+      "value": "Configure widget"
+    },
+    {
+      "name": "widget_preview",
+      "value": "Widget preview"
+    },
+    {
+      "name": "widget_rewind_delay",
+      "value": "Backward time delay"
+    },
+    {
+      "name": "widget_show_configure",
+      "value": "Show configuration icon"
+    },
+    {
+      "name": "widget_show_configure_summary",
+      "value": "Even if it\\'s not shown, you can tap the upper right corner to open the configuration"
+    },
+    {
+      "name": "widget_show_cover",
+      "value": "Show cover"
+    },
+    {
+      "name": "widget_show_seek",
+      "value": "Show seek buttons"
+    },
+    {
+      "name": "widget_theme",
+      "value": "Widget theme"
+    },
+    {
+      "name": "widget_type",
+      "value": "Widget type"
+    },
+    {
+      "name": "xxx",
+      "value": "xxx"
+    },
+    {
+      "name": "module_desc",
+      "value": "VLC multimedia player"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "VLC multimedia player"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "VLC"
+    },
+    {
+      "name": "reason_internet",
+      "value": "Play network streams and access network resources"
+    },
+    {
+      "name": "reason_read_media",
+      "value": "Scan and play the video and audio on your device"
+    },
+    {
+      "name": "developing",
+      "value": "Feature under development"
+    },
+    {
+      "name": "empty_search",
+      "value": "No item found for search %s"
+    },
+    {
+      "name": "nofav",
+      "value": "No favorite found."
+    },
+    {
+      "name": "artists",
+      "value": "Artists"
+    },
+    {
+      "name": "albums",
+      "value": "Albums"
+    },
+    {
+      "name": "tracks",
+      "value": "Tracks"
+    },
+    {
+      "name": "genres",
+      "value": "Genres"
+    },
+    {
+      "name": "songs",
+      "value": "Songs"
+    }
+  ]
+}

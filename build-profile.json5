@@ -1,0 +1,56 @@
+{
+  "app": {
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "storeFile": "D:/huawei/CODE/certs/test.p12",
+          "storePassword": "0000001A5638DD6016C990A36842355BEF2CCD959A7FC5F717932E5514CC67F613EAB33FE52ABE2975F5",
+          "keyAlias": "test",
+          "keyPassword": "0000001A60CEA92D4FA3B2F7AF4E64CAE229932F67D1F2F8829C59202F226906F99027A028478ACB656A",
+          "signAlg": "SHA256withECDSA",
+          "profile": "D:/huawei/CODE/certs/VLC_临时Debug.p7b",
+          "certpath": "D:/huawei/CODE/certs/仿今日头条调试证书.cer"
+        }
+      }
+    ],
+    "products": [
+      {
+        "name": "default",
+        "signingConfig": "default",
+        "targetSdkVersion": "6.0.1(21)",
+        "compatibleSdkVersion": "6.0.1(21)",
+        "runtimeOS": "HarmonyOS",
+        "buildOption": {
+          "strictMode": {
+            "caseSensitiveCheck": false,
+            "useNormalizedOHMUrl": false
+          }
+        }
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug",
+      },
+      {
+        "name": "release"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    }
+  ]
+}

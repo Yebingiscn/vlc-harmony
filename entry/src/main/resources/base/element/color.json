@@ -1,0 +1,23 @@
+{
+  "color": [
+    { "name": "start_window_background", "value": "#011422" },
+    { "name": "background_default", "value": "#131313" },
+    { "name": "background_actionbar", "value": "#212121" },
+    { "name": "background_default_darker", "value": "#0A0A0A" },
+    { "name": "colorPrimary", "value": "#FF8800" },
+    { "name": "colorOnPrimary", "value": "#FFFFFF" },
+    { "name": "list_title", "value": "#FFFFFF" },
+    { "name": "list_subtitle", "value": "#9E9E9E" },
+    { "name": "video_card_background", "value": "#2A2A2A" },
+    { "name": "video_list_background", "value": "#131313" },
+    { "name": "disabled_overlay", "value": "#80000000" },
+    { "name": "colorControlNormal", "value": "#9E9E9E" },
+    { "name": "gridview_progressbar", "value": "#FF610A" },
+    { "name": "orange", "value": "#FF8800" },
+    { "name": "orange800", "value": "#FF610A" },
+    { "name": "bottom_navigation_background", "value": "#212121" },
+    { "name": "bottom_navigation_color", "value": "#9E9E9E" },
+    { "name": "divider", "value": "#33EEEEEE" },
+    { "name": "rounded_corners_black_more_transparent", "value": "#88000000" }
+  ]
+}

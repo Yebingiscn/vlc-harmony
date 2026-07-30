@@ -1,0 +1,854 @@
+import { VlcToolbar } from '../common/components/VlcToolbar';
+import { PreferenceRow } from '../common/components/PreferenceRow';
+import { PreferenceNumberPickerDialog } from './PreferenceNumberPickerDialog';
+import { PreferenceMultiSelectDialog } from './PreferenceMultiSelectDialog';
+import { PreferenceConfirmDialog } from './PreferenceConfirmDialog';
+import { NavController } from '../common/data/NavController';
+import { Settings } from '../common/data/Settings';
+import { PreferenceScreen, PreferenceGroup, PreferenceItem } from '../common/models/PreferenceModels';
+import { PreferencesScreenParam } from '../common/models/MediaModels';
+import { promptAction } from '@kit.ArkUI';
+
+/** 字幕/控件颜色调色板(对应 VLC ColorPreferenceCompat 预设)。 */
+const COLOR_PALETTE: number[] = [
+  0xFFFFFFFF, 0xFF000000, 0xFFFFFF00, 0xFFFF8800, 0xFFFF0000,
+  0xFF00FF00, 0xFF00FFFF, 0xFF0000FF, 0xFFFF00FF, 0xFF808080,
+];
+
+/**
+ * PreferencesPage —— VLC 偏好设置通用引擎(@ComponentV2 NavDestination)。
+ * 接收 @Param screenKey;从 buildScreens() 注册表(Map<key,PreferenceScreen>)取 screen;
+ * VlcToolbar(标题=screen.title,showBack)+ Scroll{Column{ 分组标题 + ForEach items{ PreferenceRow } }}。
+ *
+ * 各子 Preferences* 的 screen 数据定义在 buildScreens()(文案/分组/项 key 用 Settings 真实 key,
+ * 文案优先 $r('app.string.*');string.json 未覆盖的 key 用字面量字符串,逐字照搬 spec)。
+ *
+ * 外部运行时契约(startRemoteAccess / VLCInstance.restart / PinCodeActivity / FilePickerActivity 等)
+ * 仅标 TODO 注释,不编造实现。
+ */
+@ComponentV2
+export struct PreferencesPage {
+  @Param screenKey: string = '';
+  @Local title: Resource = $r('app.string.preferences');
+  @Local groups: PreferenceGroup[] = [];
+  /** key→当前 toggle 值镜像(供 dependency 置灰)。 */
+  @Local toggleStates: Record<string, boolean> = {};
+  /** 弹窗状态:number/multi/text/color 选择器(由 onListSelect/onNumberPicker/...触发)。 */
+  @Local sheetOpen: boolean = false;
+  @Local sheetKind: string = ''; // '' | 'number' | 'multi' | 'text' | 'color'
+  @Local sheetItem: PreferenceItem = new PreferenceItem({});
+  @Local textDraft: string = '';
+  @Local colorDraft: number = 0;
+  /** 禁用确认弹窗:置 false 历史/续播类开关前先确认。独立于 sheetOpen(选择器 sheet)。 */
+  @Local confirmSheetOpen: boolean = false;
+  @Local confirmItem: PreferenceItem = new PreferenceItem({});
+
+  aboutToAppear(): void {
+    const registry: Map<string, PreferenceScreen> = PreferencesPage.buildScreens();
+    const screen: PreferenceScreen | undefined = registry.get(this.screenKey);
+    if (screen) {
+      this.title = screen.title as Resource;
+      this.groups = screen.groups;
+    } else {
+      // 默认根设置页
+      const root: PreferenceScreen | undefined = registry.get('root');
+      if (root) {
+        this.title = root.title as Resource;
+        this.groups = root.groups;
+      }
+    }
+    this.loadToggleStates();
+  }
+
+  async loadToggleStates(): Promise<void> {
+    // 预读所有 toggle 项,供 dependency 行 enabled 判定。
+    const map: Record<string, boolean> = {};
+    for (const g of this.groups) {
+      for (const it of g.items) {
+        if (it.type === 'toggle' || it.type === 'checkbox') {
+          map[it.key] = await Settings.getBoolean(it.key, typeof it.defaultValue === 'boolean' ? it.defaultValue : false);
+        }
+      }
+    }
+    this.toggleStates = map;
+  }
+
+  dependencyEnabledFor(item: PreferenceItem): boolean {
+    if (!item.dependency) {
+      return true;
+    }
+    return this.toggleStates[item.dependency] === true;
+  }
+
+  build() {
+    NavDestination() {
+      Column() {
+        VlcToolbar({
+          title: this.title,
+          showBack: true,
+          showSearch: false,
+          onBack: () => NavController.pop(),
+        })
+        Scroll() {
+          Column() {
+            ForEach(this.groups, (group: PreferenceGroup) => {
+              // 分组标题(靠左)
+              Text(group.title)
+                .fontSize(14)
+                .fontWeight(FontWeight.Medium)
+                .fontColor('#FF8800')
+                .width('100%')
+                .textAlign(TextAlign.Start)
+                .padding({ left: 16, right: 16, top: 16, bottom: 8 })
+              ForEach(group.items, (item: PreferenceItem) => {
+                PreferenceRow({
+                  item: item,
+                  dependencyEnabled: this.dependencyEnabledFor(item),
+                  onNav: (it: PreferenceItem) => this.onNav(it),
+                  onListSelect: (it: PreferenceItem) => this.onListSelect(it),
+                  onNumberPicker: (it: PreferenceItem) => this.onNumberPicker(it),
+                  onMultiselect: (it: PreferenceItem) => this.onMultiselect(it),
+                  onTextEdit: (it: PreferenceItem) => this.onTextEdit(it),
+                  onColorPick: (it: PreferenceItem) => this.onColorPick(it),
+                  onToggleChange: (it: PreferenceItem, newVal: boolean) => this.onToggleChange(it, newVal),
+                })
+              }, (item: PreferenceItem) => item.key)
+            }, (group: PreferenceGroup, idx: number) => `${idx}`)
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+          .padding({ bottom: 24 })
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .scrollBar(BarState.Auto)
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor('#121212')
+      .bindSheet(this.sheetOpen, this.preferenceSheet(), {
+        height: SheetSize.FIT_CONTENT,
+        dragBar: true,
+        onDisappear: () => {
+          this.sheetOpen = false;
+          this.sheetKind = '';
+        },
+      })
+      .bindSheet(this.confirmSheetOpen, this.confirmSheet(), {
+        height: SheetSize.FIT_CONTENT,
+        dragBar: true,
+        onDisappear: () => {
+          this.confirmSheetOpen = false;
+        },
+      })
+    }
+    .hideTitleBar(true)
+    .onBackPressed(() => {
+      NavController.pop();
+      return true;
+    })
+  }
+
+  /** nav/click 跳转:有 targetScreen → push PreferencesPage(targetScreen);否则 toast。 */
+  onNav(item: PreferenceItem): void {
+    if (item.targetScreen && item.targetScreen.length > 0) {
+      const p: PreferencesScreenParam = { screenKey: item.targetScreen };
+      NavController.push('Preferences', p);
+    } else {
+      // 外部契约跳转(equalizer / directories / parental_control PIN 门 等)。TODO(契约)
+      promptAction.showToast({ message: item.key });
+    }
+  }
+
+  /**
+   * toggle/checkbox 切换拦截:当 key 属于「禁用需确认」集合(历史/续播)且即将置 false 时,
+   * 先弹 PreferenceConfirmDialog 确认;确认后再 Settings.put(key,false);取消则不改。
+   * 其它情况返回 false 交由 PreferenceRow 直接 put。
+   */
+  onToggleChange(item: PreferenceItem, newValue: boolean): boolean {
+    const confirmKeys: string[] = [Settings.PLAYBACK_HISTORY, 'audio_resume_playback', 'video_resume_playback'];
+    if (!newValue && confirmKeys.indexOf(item.key) >= 0) {
+      this.confirmItem = item;
+      this.confirmSheetOpen = true;
+      return true; // 已接管,本行不自动 put。
+    }
+    return false; // 未接管,PreferenceRow 直接 put。
+  }
+
+  /** 确认禁用 → Settings.put(key, false) + 关闭确认弹窗。 */
+  confirmDisable(): void {
+    Settings.put(this.confirmItem.key, false);
+    // 同步镜像(dependency 置灰即时生效)。
+    const map: Record<string, boolean> = this.toggleStates;
+    map[this.confirmItem.key] = false;
+    this.toggleStates = map;
+    this.confirmSheetOpen = false;
+  }
+
+  /** 取消禁用 → 不改 Settings,仅关闭弹窗。 */
+  cancelDisable(): void {
+    this.confirmSheetOpen = false;
+  }
+
+  /** list 弹单选:用 BottomSheet 单选列表(回写 Settings)。 */
+  onListSelect(item: PreferenceItem): void {
+    if (!item.options || !item.optionValues || item.options.length === 0) {
+      return;
+    }
+    this.sheetItem = item;
+    this.sheetKind = 'list';
+    this.sheetOpen = true;
+  }
+
+  /** list 单选确认 → Settings.put(key, 选中 optionValue)。 */
+  onListConfirm(value: string): void {
+    Settings.put(this.sheetItem.key, value);
+    this.sheetOpen = false;
+    this.sheetKind = '';
+  }
+
+  onNumberPicker(item: PreferenceItem): void {
+    this.sheetItem = item;
+    this.sheetKind = 'number';
+    this.sheetOpen = true;
+  }
+
+  onMultiselect(item: PreferenceItem): void {
+    this.sheetItem = item;
+    this.sheetKind = 'multi';
+    this.sheetOpen = true;
+  }
+
+  onTextEdit(item: PreferenceItem): void {
+    this.sheetItem = item;
+    this.sheetKind = 'text';
+    Settings.getString(item.key, typeof item.defaultValue === 'string' ? item.defaultValue : '').then((v: string) => {
+      this.textDraft = v;
+    });
+    this.sheetOpen = true;
+  }
+
+  onColorPick(item: PreferenceItem): void {
+    this.sheetItem = item;
+    this.sheetKind = 'color';
+    Settings.getInt(item.key, typeof item.defaultValue === 'number' ? item.defaultValue : 0).then((v: number) => {
+      this.colorDraft = v;
+    });
+    this.sheetOpen = true;
+  }
+
+  /** 数字选择器确认 → Settings.put(key, int) + 关闭。 */
+  onNumberConfirm(value: number): void {
+    Settings.put(this.sheetItem.key, value);
+    this.sheetOpen = false;
+    this.sheetKind = '';
+  }
+
+  /** 多选确认 → 把 stringSet 存成「逗号拼接」串(无原生 stringSet,落 Settings string)。 */
+  onMultiConfirm(values: string[]): void {
+    Settings.put(this.sheetItem.key, values.join(','));
+    this.sheetOpen = false;
+    this.sheetKind = '';
+  }
+
+  /** 文本输入确认 → Settings.put(key, string)。 */
+  onTextConfirm(): void {
+    Settings.put(this.sheetItem.key, this.textDraft);
+    this.sheetOpen = false;
+    this.sheetKind = '';
+  }
+
+  /** 颜色选择确认 → Settings.put(key, int 颜色值)。 */
+  onColorConfirm(color: number): void {
+    Settings.put(this.sheetItem.key, color);
+    this.sheetOpen = false;
+    this.sheetKind = '';
+  }
+
+  /** 当前 list/multiselect 的默认选中索引(供弹窗初始态)。 */
+  currentNumberValue(item: PreferenceItem): number {
+    return typeof item.defaultValue === 'number' ? item.defaultValue : 0;
+  }
+
+  /** 禁用历史/续播开关的确认 BottomSheet(PreferenceConfirmDialog 宽度 100%)。 */
+  @Builder
+  confirmSheet() {
+    Column() {
+      PreferenceConfirmDialog({
+        preferenceKey: this.confirmItem.key,
+        titleText: this.confirmItem.title,
+        warningText: $r('app.string.clear_playback_history'),
+        onAccept: () => this.confirmDisable(),
+        onCancel: () => this.cancelDisable(),
+      }).width('100%')
+    }
+    .width('100%')
+    .backgroundColor('#FFFFFF')
+  }
+
+  /** 偏好选择器 BottomSheet:按 sheetKind 渲染 number/multi/text/color 选择器。 */
+  @Builder
+  preferenceSheet() {
+    Column() {
+      if (this.sheetKind === 'list') {
+        this.listSheet()
+      } else if (this.sheetKind === 'number') {
+        PreferenceNumberPickerDialog({
+          title: this.sheetItem.title,
+          item: this.sheetItem,
+          currentValue: this.currentNumberValue(this.sheetItem),
+          min: this.sheetItem.numberMin ?? 1,
+          max: this.sheetItem.numberMax ?? 100,
+          onConfirm: (v: number) => this.onNumberConfirm(v),
+          onDismiss: () => {
+            this.sheetOpen = false;
+            this.sheetKind = '';
+          },
+        }).width('100%')
+      } else if (this.sheetKind === 'multi') {
+        PreferenceMultiSelectDialog({
+          title: this.sheetItem.title,
+          item: this.sheetItem,
+          onConfirm: (vs: string[]) => this.onMultiConfirm(vs),
+          onDismiss: () => {
+            this.sheetOpen = false;
+            this.sheetKind = '';
+          },
+        }).width('100%')
+      } else if (this.sheetKind === 'text') {
+        this.textEditSheet()
+      } else if (this.sheetKind === 'color') {
+        this.colorSheet()
+      }
+    }
+    .width('100%')
+    .backgroundColor('#121212')
+  }
+
+  @Builder
+  listSheet() {
+    Column() {
+      Text(this.sheetItem.title).fontSize(18).fontColor('#FFFFFF').fontWeight(FontWeight.Medium)
+        .margin({ top: 16, bottom: 8 })
+      List() {
+        ForEach(this.sheetItem.options ?? [], (label: ResourceStr, idx: number) => {
+          ListItem() {
+            Row() {
+              Text(label).fontSize(15).fontColor('#FFFFFF').layoutWeight(1)
+              Image($r('app.media.ic_check'))
+                .width(20).height(20).fillColor('#FF8800')
+                .visibility(this.optionValueAt(idx) === this.currentDefaultStr() ?
+                  Visibility.Visible : Visibility.Hidden)
+            }
+            .width('100%').padding({ left: 16, right: 16, top: 14, bottom: 14 })
+            .onClick(() => this.onListConfirm(this.optionValueAt(idx)))
+          }
+        }, (label: ResourceStr, idx: number) => `${idx}`)
+      }
+      .divider({ strokeWidth: 0.5, color: '#2A2A2A' })
+      .width('100%')
+    }
+    .width('100%')
+    .backgroundColor('#121212')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  /** sheetItem.optionValues[idx] 安全取值(避免 optional element access)。 */
+  optionValueAt(idx: number): string {
+    const vals: string[] = this.sheetItem.optionValues ?? [];
+    return idx >= 0 && idx < vals.length ? vals[idx] : '';
+  }
+
+  /** sheetItem 当前默认值(字符串形态,用于 list 单选初始高亮)。 */
+  currentDefaultStr(): string {
+    return typeof this.sheetItem.defaultValue === 'string' ? this.sheetItem.defaultValue : '';
+  }
+
+  @Builder
+  textEditSheet() {
+    Column() {
+      Text(this.sheetItem.title).fontSize(18).fontColor('#FFFFFF').fontWeight(FontWeight.Medium)
+        .margin({ top: 16, bottom: 12 })
+      TextInput({ text: this.textDraft })
+        .fontSize(15)
+        .fontColor('#FFFFFF')
+        .backgroundColor('#2A2A2A')
+        .borderRadius(4)
+        .margin({ left: 16, right: 16 })
+        .onChange((v: string) => {
+          this.textDraft = v;
+        })
+      Button($r('app.string.ok'))
+        .type(ButtonType.Normal)
+        .borderRadius(4)
+        .backgroundColor('#FF8800')
+        .fontColor('#FFFFFF')
+        .margin({ top: 16, bottom: 24 })
+        .onClick(() => this.onTextConfirm())
+    }
+    .width('100%')
+    .backgroundColor('#121212')
+    .alignItems(HorizontalAlign.Center)
+  }
+
+  @Builder
+  colorSheet() {
+    Column() {
+      Text(this.sheetItem.title).fontSize(18).fontColor('#FFFFFF').fontWeight(FontWeight.Medium)
+        .margin({ top: 16, bottom: 16 })
+      Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center }) {
+        ForEach(COLOR_PALETTE, (c: number) => {
+          Column()
+            .width(40)
+            .height(40)
+            .borderRadius(20)
+            .backgroundColor(c)
+            .margin(8)
+            .border({ width: this.colorDraft === c ? 3 : 0, color: '#FF8800' })
+            .onClick(() => this.onColorConfirm(c))
+        }, (c: number) => `${c}`)
+      }
+      .width('90%')
+      .margin({ bottom: 24 })
+    }
+    .width('100%')
+    .backgroundColor('#121212')
+    .alignItems(HorizontalAlign.Center)
+  }
+
+  // ============== 偏好 screen 注册表(逐页照 spec 构建)==============
+  static buildScreens(): Map<string, PreferenceScreen> {
+    const m: Map<string, PreferenceScreen> = new Map<string, PreferenceScreen>();
+    m.set('root', PreferencesPage.rootScreen());
+    m.set('ui_category', PreferencesPage.uiScreen());
+    m.set('video_category', PreferencesPage.videoScreen());
+    m.set('subtitles_category', PreferencesPage.subtitlesScreen());
+    m.set('audio_category', PreferencesPage.audioScreen());
+    m.set('casting_category', PreferencesPage.castingScreen());
+    m.set('parental_control', PreferencesPage.parentalScreen());
+    m.set('remote_access_category', PreferencesPage.remoteAccessScreen());
+    m.set('android_auto_category', PreferencesPage.androidAutoScreen());
+    m.set('adv_category', PreferencesPage.advancedScreen());
+    m.set('audio_controls', PreferencesPage.audioControlsScreen());
+    m.set('video_controls', PreferencesPage.videoControlsScreen());
+    m.set('optional_features', PreferencesPage.optionalScreen());
+    m.set('widgets', PreferencesPage.widgetsScreen());
+    return m;
+  }
+
+  // ---- root: PreferencesFragment(R.xml.preferences) ----
+  static rootScreen(): PreferenceScreen {
+    const groups: PreferenceGroup[] = [
+      // Media library
+      new PreferenceGroup('Media library', [
+        new PreferenceItem({
+          key: 'directories', title: 'Media library folders', type: 'nav',
+          summary: 'Select directories to include in the media library',
+        }),
+        new PreferenceItem({
+          key: Settings.KEY_MEDIALIBRARY_AUTO_RESCAN, title: 'Auto rescan', type: 'toggle',
+          summary: 'Automatically scan device for new or deleted media at application startup',
+          defaultValue: true,
+        }),
+      ]),
+      // Video
+      new PreferenceGroup('Video', [
+        new PreferenceItem({
+          key: Settings.KEY_VIDEO_APP_SWITCH, title: 'Background/PiP mode', type: 'list',
+          summary: 'Select VLC behavior when you switch to other application from video playback',
+          defaultValue: '0',
+          optionValues: ['0', '1', '2'],
+          options: ['Stop', 'Play videos in background', 'Play videos in Picture-in-picture mode'],
+        }),
+        new PreferenceItem({
+          key: 'hardware_acceleration', title: 'Hardware Acceleration', type: 'list',
+          summary: 'Disabled: better stability\nDecoding: may improve performance\nFull: may improve performance further',
+          defaultValue: '-1',
+          optionValues: ['-1', '0', '1', '2'],
+          options: ['Automatic', 'Disabled', 'Decoding acceleration', 'Full acceleration'],
+        }),
+        new PreferenceItem({
+          key: Settings.SCREEN_ORIENTATION, title: 'Video screen orientation', type: 'list',
+          defaultValue: '99',
+          optionValues: ['99', '102', '101', '103', '98'],
+          options: ['Automatic (sensor)', 'Portrait', 'Landscape', 'Landscape reverse', 'Last locked orientation'],
+        }),
+      ]),
+      // Network
+      new PreferenceGroup('Network', [
+        new PreferenceItem({
+          key: 'metered_connection', title: 'Action for streams when the connection is metered', type: 'list',
+          defaultValue: '0',
+          optionValues: ['0', '1', '2'],
+          options: ['Do nothing', 'Stop playback', 'Warn me (the warning may be missed for audio playback)'],
+        }),
+      ]),
+      // Permissions
+      new PreferenceGroup('Permissions', [
+        new PreferenceItem({
+          key: 'permissions', title: 'Permissions', type: 'nav',
+          summary: 'List of all the permissions',
+        }),
+      ]),
+      // History
+      new PreferenceGroup('History', [
+        new PreferenceItem({
+          key: Settings.PLAYBACK_HISTORY, title: 'Playback history', type: 'toggle',
+          summary: 'Save all media played in History section', defaultValue: true,
+        }),
+        new PreferenceItem({
+          key: 'video_resume_playback', title: 'Video play queue history', type: 'toggle',
+          summary: 'Allow saving the video play queue to resume later', defaultValue: true,
+          dependency: Settings.PLAYBACK_HISTORY,
+        }),
+        new PreferenceItem({
+          key: 'audio_resume_playback', title: 'Audio play queue history', type: 'toggle',
+          summary: 'Allow saving the audio play queue to resume later', defaultValue: true,
+          dependency: Settings.PLAYBACK_HISTORY,
+        }),
+      ]),
+      // Extra settings(带图标跳转)
+      new PreferenceGroup('Extra settings', [
+        new PreferenceItem({ key: 'ui_category', title: 'Interface', type: 'nav', icon: $r('app.media.ic_settings'), targetScreen: 'ui_category' }),
+        new PreferenceItem({ key: 'video_category', title: 'Video', type: 'nav', icon: $r('app.media.ic_settings'), targetScreen: 'video_category' }),
+        new PreferenceItem({ key: 'subtitles_category', title: 'Subtitles', type: 'nav', icon: $r('app.media.ic_settings'), targetScreen: 'subtitles_category' }),
+        new PreferenceItem({ key: 'audio_category', title: 'Audio', type: 'nav', icon: $r('app.media.ic_settings'), targetScreen: 'audio_category' }),
+        new PreferenceItem({ key: 'equalizer', title: $r('app.string.equalizer'), type: 'nav', icon: $r('app.media.ic_settings') }),
+        new PreferenceItem({ key: 'casting_category', title: 'Casting', type: 'nav', icon: $r('app.media.ic_settings'), targetScreen: 'casting_category' }),
+        new PreferenceItem({ key: 'parental_control', title: 'Parental control', type: 'nav', icon: $r('app.media.ic_settings'), targetScreen: 'parental_control' }),
+        new PreferenceItem({ key: 'remote_access_category', title: 'Remote access', type: 'nav', icon: $r('app.media.ic_settings'), targetScreen: 'remote_access_category' }),
+        new PreferenceItem({ key: 'android_auto_category', title: $r('app.string.android_auto'), type: 'nav', icon: $r('app.media.ic_settings'), targetScreen: 'android_auto_category' }),
+        new PreferenceItem({ key: 'adv_category', title: $r('app.string.advanced_prefs_category'), type: 'nav', icon: $r('app.media.ic_settings'), targetScreen: 'adv_category' }),
+      ]),
+    ];
+    return new PreferenceScreen('root', $r('app.string.preferences'), groups);
+  }
+
+  // ---- PreferencesUi ----
+  static uiScreen(): PreferenceScreen {
+    const root: PreferenceItem[] = [
+      new PreferenceItem({
+        key: Settings.KEY_APP_THEME, title: 'DayNight mode', type: 'list',
+        defaultValue: '-1',
+        optionValues: ['-1', '1', '2'],
+        options: ['Follow system mode', 'Light theme', 'Black theme'],
+      }),
+      new PreferenceItem({ key: 'tv_ui', title: 'Android TV interface', type: 'toggle', summary: 'Change UI to TV adapted theme', defaultValue: false }),
+      new PreferenceItem({ key: 'set_locale', title: 'Set locale', type: 'list', defaultValue: '' }),
+      new PreferenceItem({
+        key: Settings.LIST_TITLE_ELLIPSIZE, title: $r('app.string.list_title_ellipsize'), type: 'list',
+        defaultValue: '0',
+        optionValues: ['0', '1', '2', '3', '4'],
+        options: ['Default', 'Left', 'Right', 'Middle', 'Marquee'],
+      }),
+      new PreferenceItem({ key: Settings.KEY_SHOW_HEADERS, title: 'Show headers', type: 'toggle', summary: 'Split lists by headers depending on the sort type', defaultValue: true }),
+      new PreferenceItem({ key: Settings.KEY_INCLUDE_MISSING, title: 'Show missing media', type: 'toggle', summary: 'Show distant media even if they are not present', defaultValue: true }),
+      new PreferenceItem({ key: 'default_sleep_timer', title: $r('app.string.sleep_title'), type: 'click', summary: 'Disabled' }),
+      new PreferenceItem({ key: Settings.KEY_INCOGNITO, title: $r('app.string.incognito_mode'), type: 'toggle', defaultValue: false }),
+      new PreferenceItem({ key: 'persistent_incognito', title: $r('app.string.persistent_incognito_mode'), type: 'toggle', summary: $r('app.string.persistent_incognito_mode_summary'), defaultValue: true, dependency: Settings.KEY_INCOGNITO }),
+    ];
+    const video: PreferenceItem[] = [
+      new PreferenceItem({ key: Settings.KEY_MEDIA_SEEN, title: 'Show seen video marker', type: 'toggle', summary: 'Mark a video as seen when you play it until the end', defaultValue: true }),
+      new PreferenceItem({ key: 'playlist_mode_video', title: $r('app.string.force_play_all_title'), type: 'toggle', summary: $r('app.string.force_play_all_summary'), defaultValue: false }),
+      new PreferenceItem({ key: Settings.SHOW_VIDEO_THUMBNAILS, title: $r('app.string.show_video_thumbnails'), type: 'toggle', summary: $r('app.string.show_video_thumbnails_summary'), defaultValue: true }),
+    ];
+    const audio: PreferenceItem[] = [
+      new PreferenceItem({ key: 'audio_resume_card', title: $r('app.string.audio_resume_card_title'), type: 'toggle', summary: $r('app.string.audio_resume_card_summary'), defaultValue: true }),
+      new PreferenceItem({ key: 'playlist_mode_audio', title: $r('app.string.force_play_all_audio_title'), type: 'toggle', summary: $r('app.string.force_play_all_audio_summary'), defaultValue: false }),
+      new PreferenceItem({ key: 'lockscreen_cover', title: $r('app.string.lockscreen_cover_title'), type: 'toggle', summary: $r('app.string.lockscreen_cover_summary'), defaultValue: true }),
+      new PreferenceItem({ key: 'show_seek_in_compact_notification', title: $r('app.string.show_seek_in_compact_notif_title'), type: 'toggle', summary: $r('app.string.show_seek_in_compact_notif_summary'), defaultValue: false }),
+    ];
+    return new PreferenceScreen('ui_category', $r('app.string.interface_prefs_screen'), [
+      new PreferenceGroup('', root),
+      new PreferenceGroup($r('app.string.video'), video),
+      new PreferenceGroup($r('app.string.audio'), audio),
+    ]);
+  }
+
+  // ---- PreferencesVideo ----
+  static videoScreen(): PreferenceScreen {
+    const top: PreferenceItem[] = [
+      new PreferenceItem({ key: 'always_fast_seek', title: 'Always use fast seek', type: 'toggle', summary: 'Seek is faster but may be less precise', defaultValue: false }),
+      new PreferenceItem({ key: 'popup_force_legacy', title: 'Use custom Picture-in-Picture popup', type: 'toggle', summary: 'Use custom Picture-in-Picture resizable popup', defaultValue: false }),
+      new PreferenceItem({ key: 'restore_background_video', title: 'Restore video from background', type: 'toggle', summary: 'Restore video from background when reopening VLC for Android', defaultValue: false }),
+      new PreferenceItem({ key: 'video_match_frame_rate', title: 'Match Display Frame Rate', type: 'toggle', summary: 'Match display refresh rate to media frame rate. For example, a 24p film should play at 24p', defaultValue: false }),
+      new PreferenceItem({
+        key: 'preferred_resolution', title: 'Maximum video quality for streams', type: 'list',
+        summary: 'Maximum video quality for streams, when applicable, will be: %s',
+        defaultValue: '-1',
+        optionValues: ['-1', '1080', '720', '480', '360', '240'],
+        options: ['Best available', 'Full HD (1080p)', 'HD (720p)', 'SD (480p)', 'LD (360p)', 'Very low definition (240p)'],
+      }),
+    ];
+    const secondary: PreferenceItem[] = [
+      new PreferenceItem({ key: 'secondary_display_category_summary', title: '', type: 'info', summary: 'Settings when secondary displays are connected (HDMI/Chromecast)' }),
+      new PreferenceItem({ key: 'enable_clone_mode', title: 'Prefer clone', type: 'toggle', summary: 'Clone the device screen without remote control', defaultValue: false }),
+    ];
+    return new PreferenceScreen('video_category', 'Video', [
+      new PreferenceGroup('', top),
+      new PreferenceGroup('Secondary display', secondary),
+    ]);
+  }
+
+  // ---- PreferencesSubtitles ----
+  static subtitlesScreen(): PreferenceScreen {
+    const rootItems: PreferenceItem[] = [
+      new PreferenceItem({ key: 'subtitles_presets', title: 'Subtitles presets', type: 'list', defaultValue: '-1', optionValues: ['0', '1', '2', '3', '4', '5'], options: ['Default', 'Large text', 'Largest text and contrast', 'With background', 'Yellow', 'Yellow with background'] }),
+      new PreferenceItem({ key: 'subtitles_autoload', title: 'Auto load subtitles', type: 'toggle', defaultValue: true }),
+      new PreferenceItem({ key: 'subtitle_text_encoding', title: 'Subtitle text encoding', type: 'list', defaultValue: '', optionValues: ['', 'UTF-8', 'UTF-16', 'GB18030', 'Windows-1252', 'KOI8-R', 'Big5'], options: ['Default (Windows-1252)', 'Universal (UTF-8)', 'Universal (UTF-16)', 'Universal, Chinese (GB18030)', 'Western European (Windows-1252)', 'Russian (KOI8-R)', 'Traditional Chinese (Big5)'] }),
+      new PreferenceItem({ key: 'subtitle_preferred_language', title: 'Preferred subtitle language', type: 'list', summary: 'No language preference', defaultValue: '' }),
+    ];
+    const fontStyle: PreferenceItem[] = [
+      new PreferenceItem({ key: 'subtitles_size', title: 'Subtitles Size', type: 'list', defaultValue: '16', optionValues: ['40', '32', '25', '19', '16', '13', '10'], options: ['Nano', 'Micro', 'Smallest', 'Small', 'Normal', 'Big', 'Huge'] }),
+      new PreferenceItem({ key: 'subtitles_bold', title: 'Bold subtitles', type: 'toggle', defaultValue: false }),
+      new PreferenceItem({ key: 'subtitles_color', title: 'Color', type: 'color', defaultValue: 0xFFFFFFFF }),
+      new PreferenceItem({ key: 'subtitles_color_opacity', title: $r('app.string.opacity'), type: 'seekbar', min: 50, max: 255, defaultValue: 255, step: 1 }),
+    ];
+    const bg: PreferenceItem[] = [
+      new PreferenceItem({ key: 'subtitles_background', title: 'Subtitles Background', type: 'toggle', defaultValue: false }),
+      new PreferenceItem({ key: 'subtitles_background_color', title: 'Color', type: 'color', defaultValue: 0xFF000000, dependency: 'subtitles_background' }),
+      new PreferenceItem({ key: 'subtitles_background_color_opacity', title: $r('app.string.opacity'), type: 'seekbar', min: 0, max: 255, defaultValue: 255, step: 1, dependency: 'subtitles_background' }),
+    ];
+    const shadow: PreferenceItem[] = [
+      new PreferenceItem({ key: 'subtitles_shadow', title: 'Subtitles shadow', type: 'toggle', defaultValue: true }),
+      new PreferenceItem({ key: 'subtitles_shadow_color', title: 'Color', type: 'color', defaultValue: 0xFF000000, dependency: 'subtitles_shadow' }),
+      new PreferenceItem({ key: 'subtitles_shadow_color_opacity', title: $r('app.string.opacity'), type: 'seekbar', min: 0, max: 255, defaultValue: 128, step: 1, dependency: 'subtitles_shadow' }),
+    ];
+    const outline: PreferenceItem[] = [
+      new PreferenceItem({ key: 'subtitles_outline', title: 'Subtitles outline', type: 'toggle', defaultValue: true }),
+      new PreferenceItem({ key: 'subtitles_outline_color', title: 'Color', type: 'color', defaultValue: 0xFF000000, dependency: 'subtitles_outline' }),
+      new PreferenceItem({ key: 'subtitles_outline_color_opacity', title: $r('app.string.opacity'), type: 'seekbar', min: 0, max: 255, defaultValue: 255, step: 1, dependency: 'subtitles_outline' }),
+    ];
+    return new PreferenceScreen('subtitles_category', 'Subtitles', [
+      new PreferenceGroup('', rootItems),
+      new PreferenceGroup('Subtitles font style', fontStyle),
+      new PreferenceGroup('Subtitles Background', bg),
+      new PreferenceGroup('Subtitles shadow', shadow),
+      new PreferenceGroup('Subtitles outline', outline),
+    ]);
+  }
+
+  // ---- PreferencesAudio ----
+  static audioScreen(): PreferenceScreen {
+    const top: PreferenceItem[] = [
+      new PreferenceItem({ key: Settings.RESUME_PLAYBACK, title: 'Resume playback after a call', type: 'toggle', summary: 'Stay in pause otherwise', defaultValue: true }),
+      new PreferenceItem({ key: 'audio_task_removed', title: 'Stop on application swipe', type: 'toggle', summary: 'Stop playback when application is dismissed', defaultValue: false }),
+      new PreferenceItem({ key: 'audio_digital_output', title: 'Digital audio output (passthrough)', type: 'toggle', summary: 'Audio Digital Output disabled', defaultValue: false }),
+      new PreferenceItem({ key: 'audio_preferred_language', title: 'Preferred audio language', type: 'list', summary: 'No language preference', defaultValue: '' }),
+      new PreferenceItem({ key: Settings.KEY_AUDIO_CONFIRM_RESUME, title: 'Resume played audio', type: 'list', defaultValue: '0', optionValues: ['0', '1', '2'], options: ['Always', 'Never', 'Ask confirmation'] }),
+    ];
+    const headset: PreferenceItem[] = [
+      new PreferenceItem({ key: 'enable_headset_detection', title: 'Detect headset', type: 'toggle', summary: 'Detect headset insertion and removal', defaultValue: true }),
+      new PreferenceItem({ key: 'enable_play_on_headset_insertion', title: 'Resume on headset insertion', type: 'toggle', summary: 'Pause otherwise', defaultValue: false, dependency: 'enable_headset_detection' }),
+      new PreferenceItem({ key: 'ignore_headset_media_button_presses', title: 'Ignore headset media button presses', type: 'toggle', summary: 'Useful, for instance, if you are using a headset with broken physical buttons', defaultValue: false }),
+    ];
+    const replay: PreferenceItem[] = [
+      new PreferenceItem({ key: 'audio-replay-gain-enable', title: 'Enable replay gain', type: 'toggle', summary: 'Streams without replay gain information may be quieter due to the default gain', defaultValue: false }),
+      new PreferenceItem({ key: 'audio-replay-gain-mode', title: 'Replay gain mode', type: 'list', summary: 'Track mode plays streams with replay gain information at the same loudness. Album mode preserves relative stream loudness on the same album.', defaultValue: 'track', optionValues: ['track', 'album'], options: ['Track', 'Album'], dependency: 'audio-replay-gain-enable' }),
+      new PreferenceItem({ key: 'audio-replay-gain-preamp', title: 'Replay preamp', type: 'text', summary: 'Changes the default target level (89 dB) for streams with replay gain information', defaultValue: '0.0', dependency: 'audio-replay-gain-enable' }),
+      new PreferenceItem({ key: 'audio-replay-gain-default', title: 'Default replay gain', type: 'text', summary: 'Applies to streams without replay gain information\nSet to 0 to disable', defaultValue: '-7.0', dependency: 'audio-replay-gain-enable' }),
+      new PreferenceItem({ key: 'audio-replay-gain-peak-protection', title: 'Peak protection', type: 'toggle', summary: 'Protect against sound clipping', defaultValue: true, dependency: 'audio-replay-gain-enable' }),
+    ];
+    const advanced: PreferenceItem[] = [
+      new PreferenceItem({ key: Settings.AUDIO_DUCKING, title: 'Lower VLC volume on notifications', type: 'toggle', summary: 'Helps to hear audio notifications, navigation instructions or assistant talking', defaultValue: true }),
+      new PreferenceItem({ key: 'soundfont', title: 'MIDI SoundFont', type: 'nav', summary: 'Pick a SoundFont file to play midi audio tracks' }),
+    ];
+    return new PreferenceScreen('audio_category', 'Audio', [
+      new PreferenceGroup('', top),
+      new PreferenceGroup('Headset', headset),
+      new PreferenceGroup('Replay Gain', replay),
+      new PreferenceGroup($r('app.string.advanced_prefs_category'), advanced),
+    ]);
+  }
+
+  // ---- PreferencesCasting ----
+  static castingScreen(): PreferenceScreen {
+    const items: PreferenceItem[] = [
+      new PreferenceItem({ key: 'enable_casting', title: 'Wireless casting', type: 'toggle', defaultValue: true }),
+      new PreferenceItem({ key: 'casting_audio_only', title: 'Audio only', type: 'toggle', summary: 'Cast only audio, no video', defaultValue: false, dependency: 'enable_casting' }),
+      new PreferenceItem({ key: 'casting_passthrough', title: 'Audio Passthrough', type: 'toggle', summary: 'Let your TV manage audio rendering', defaultValue: false, dependency: 'enable_casting' }),
+      new PreferenceItem({ key: 'casting_quality', title: 'Conversion quality', type: 'list', summary: 'Select the conversion quality when casting on remote screen', defaultValue: '2', optionValues: ['0', '1', '2', '3'], options: ['High', 'Medium', 'Low', 'Lowest'], dependency: 'enable_casting' }),
+    ];
+    return new PreferenceScreen('casting_category', 'Casting', [new PreferenceGroup('Casting', items)]);
+  }
+
+  // ---- PreferencesParentalControl ----
+  static parentalScreen(): PreferenceScreen {
+    const items: PreferenceItem[] = [
+      new PreferenceItem({ key: 'modify_pin_code', title: 'Change your PIN code', type: 'nav' }),
+      new PreferenceItem({ key: 'restrict_settings', title: 'Restrict settings access', type: 'toggle', defaultValue: false }),
+      new PreferenceItem({ key: 'safe_mode', title: 'Safe mode', type: 'toggle', summary: 'When activated, files cannot be deleted or playlist modified without entering the pin', defaultValue: false }),
+    ];
+    return new PreferenceScreen('parental_control', 'Parental control', [new PreferenceGroup('', items)]);
+  }
+
+  // ---- PreferencesRemoteAccess ----
+  static remoteAccessScreen(): PreferenceScreen {
+    const top: PreferenceItem[] = [
+      new PreferenceItem({ key: 'enable_remote_access', title: 'Enable remote access', type: 'toggle', defaultValue: false }),
+      new PreferenceItem({ key: 'remote_access_status', title: 'Server status', type: 'nav', summary: 'Tap to see the server status', dependency: 'enable_remote_access' }),
+    ];
+    const content: PreferenceItem[] = [
+      new PreferenceItem({
+        key: 'remote_access_medialibrary_content', title: 'Media library content', type: 'multiselect',
+        defaultValue: '', defaultSelected: ['0', '1', '2', '3'],
+        optionValues: ['0', '1', '2', '3'], options: ['Video', 'Audio', 'Playlists', 'Search'],
+        dependency: 'enable_remote_access',
+      }),
+      new PreferenceItem({ key: 'remote_access_file_browser_content', title: 'File browser', type: 'toggle', defaultValue: false, dependency: 'enable_remote_access' }),
+      new PreferenceItem({ key: 'remote_access_network_browser_content', title: 'Network browser', type: 'toggle', defaultValue: false, dependency: 'enable_remote_access' }),
+      new PreferenceItem({ key: 'remote_access_history_content', title: $r('app.string.history'), type: 'toggle', defaultValue: false, dependency: 'enable_remote_access' }),
+      new PreferenceItem({ key: 'remote_access_playback_control', title: 'Control playback', type: 'toggle', defaultValue: true, dependency: 'enable_remote_access' }),
+      new PreferenceItem({ key: 'remote_access_logs', title: 'Share log files', type: 'toggle', defaultValue: false, dependency: 'enable_remote_access' }),
+    ];
+    return new PreferenceScreen('remote_access_category', 'Remote access', [
+      new PreferenceGroup('', top),
+      new PreferenceGroup('Content', content),
+    ]);
+  }
+
+  // ---- PreferencesAndroidAuto ----
+  static androidAutoScreen(): PreferenceScreen {
+    const iface: PreferenceItem[] = [
+      new PreferenceItem({ key: 'android_auto_title_scale_val', title: 'Title text size', type: 'seekbar', min: 50, max: 100, defaultValue: 100, step: 1 }),
+      new PreferenceItem({ key: 'android_auto_subtitle_scale_val', title: 'Subtitle text size', type: 'seekbar', min: 50, max: 100, defaultValue: 100, step: 1 }),
+      new PreferenceItem({ key: 'android_auto_queue_info_pos', title: 'Queue information', type: 'list', defaultValue: '3', optionValues: ['0', '1', '2', '3'], options: ['Do not show queue position', 'Before title', 'After title', 'Before subtitle'] }),
+      new PreferenceItem({ key: 'android_auto_queue_format', title: 'Queue format', type: 'list', defaultValue: '1', optionValues: ['0', '1'], options: ['Queue position', 'Queue position / Queue size'] }),
+    ];
+    const controls: PreferenceItem[] = [
+      new PreferenceItem({ key: Settings.KEY_PLAYBACK_SPEED_AUDIO_GLOBAL, title: 'Use the global playback speed', type: 'toggle', summary: 'Use the playback speed set globally for all the tracks.\nIndividual tracks\' playback speed will be ignored.', defaultValue: false }),
+      new PreferenceItem({ key: 'enable_android_auto_speed_buttons', title: 'Android Auto playback speed', type: 'toggle', summary: 'Show speed control in the overflow menu', defaultValue: false }),
+      new PreferenceItem({ key: 'enable_android_auto_seek_buttons', title: 'Android Auto seek buttons', type: 'toggle', summary: 'Show rewind and fast forward in the overflow menu. Try holding steering wheel previous and next buttons before enabling.', defaultValue: false }),
+    ];
+    return new PreferenceScreen('android_auto_category', $r('app.string.android_auto'), [
+      new PreferenceGroup($r('app.string.interface_prefs_screen'), iface),
+      new PreferenceGroup($r('app.string.controls_prefs_category'), controls),
+    ]);
+  }
+
+  // ---- PreferencesAdvanced ----
+  static advancedScreen(): PreferenceScreen {
+    const rootItems: PreferenceItem[] = [
+      new PreferenceItem({ key: 'network_caching', title: $r('app.string.network_caching'), type: 'text', summary: $r('app.string.network_caching_summary'), defaultValue: '0', maxLength: 5 }),
+      new PreferenceItem({ key: 'prefer_smbv1', title: 'Prefer SMB 1', type: 'toggle', summary: 'Uncheck this setting if you have some difficulties browsing your SMB server', defaultValue: true }),
+      new PreferenceItem({ key: Settings.HTTP_USER_AGENT, title: 'HTTP user agent', type: 'text', defaultValue: '' }),
+      new PreferenceItem({ key: 'quit_app', title: $r('app.string.quit'), type: 'click' }),
+    ];
+    const appData: PreferenceItem[] = [
+      new PreferenceItem({ key: 'dump_media_db', title: 'Dump media database', type: 'click', summary: $r('app.string.dump_media_db_summary') }),
+      new PreferenceItem({ key: 'dump_app_db', title: 'Dump app database', type: 'click', summary: $r('app.string.dump_media_db_summary') }),
+      new PreferenceItem({ key: 'clear_media_db', title: $r('app.string.clear_media_db'), type: 'click', summary: $r('app.string.clear_media_database_summary') }),
+      new PreferenceItem({ key: 'clear_app_data', title: $r('app.string.clear_app_data'), type: 'click', summary: $r('app.string.clear_app_data_summary') }),
+      new PreferenceItem({ key: 'clear_history', title: $r('app.string.clear_playback_history'), type: 'click' }),
+      new PreferenceItem({ key: 'export_settings', title: $r('app.string.export_settings'), type: 'click', summary: $r('app.string.export_settings_summary') }),
+      new PreferenceItem({ key: 'restore_settings', title: $r('app.string.restore_settings'), type: 'click', summary: $r('app.string.restore_settings_summary') }),
+    ];
+    const performance: PreferenceItem[] = [
+      new PreferenceItem({ key: 'enable_time_stretching_audio', title: $r('app.string.enable_time_stretching_audio'), type: 'toggle', summary: $r('app.string.enable_time_stretching_audio_summary'), defaultValue: false }),
+      new PreferenceItem({ key: 'opengl', title: $r('app.string.opengl_title'), type: 'list', summary: $r('app.string.opengl_summary'), defaultValue: '-1', optionValues: ['-1', '1', '0'], options: ['Automatic', 'Force On', 'Force Off'] }),
+      new PreferenceItem({ key: 'aout', title: 'Audio output', type: 'list', summary: '', defaultValue: '0', optionValues: ['0', '2'], options: ['AudioTrack', 'OpenSL ES'] }),
+      new PreferenceItem({ key: 'deblocking', title: $r('app.string.deblocking'), type: 'list', summary: $r('app.string.deblocking_summary'), defaultValue: '-1', optionValues: ['-1', '0', '1', '3', '4'], options: ['Automatic', 'Full deblocking (slowest)', 'Medium deblocking', 'Low deblocking', 'No deblocking (fastest)'] }),
+      new PreferenceItem({ key: 'enable_frame_skip', title: $r('app.string.enable_frame_skip'), type: 'toggle', summary: $r('app.string.enable_frame_skip_summary'), defaultValue: false }),
+      new PreferenceItem({ key: 'dav1d_thread_number', title: 'Dav1d thread number', type: 'text', defaultValue: '' }),
+      new PreferenceItem({ key: 'quick_play', title: 'Browser quick play menu', type: 'toggle', summary: '', defaultValue: false }),
+      new PreferenceItem({ key: 'quick_play_default', title: 'Quick play as default action', type: 'toggle', summary: '', defaultValue: false, dependency: 'quick_play' }),
+    ];
+    const developer: PreferenceItem[] = [
+      new PreferenceItem({ key: 'enable_verbose_mode', title: $r('app.string.enable_verbose_mode'), type: 'toggle', summary: $r('app.string.enable_verbose_mode_summary'), defaultValue: true }),
+      new PreferenceItem({ key: 'debug_logs', title: $r('app.string.debug_logs'), type: 'click' }),
+      new PreferenceItem({ key: 'nightly_install', title: $r('app.string.install_nightly'), type: 'click' }),
+      new PreferenceItem({ key: Settings.KEY_SHOW_UPDATE, title: $r('app.string.update_nightly'), type: 'toggle', summary: $r('app.string.update_nightly_summary'), defaultValue: false }),
+      new PreferenceItem({ key: 'custom_libvlc_options', title: $r('app.string.custom_libvlc_options'), type: 'text', defaultValue: '' }),
+    ];
+    return new PreferenceScreen('adv_category', $r('app.string.advanced_prefs_category'), [
+      new PreferenceGroup('', rootItems),
+      new PreferenceGroup($r('app.string.prefs_app_data'), appData),
+      new PreferenceGroup($r('app.string.performance_prefs_category'), performance),
+      new PreferenceGroup($r('app.string.developer_prefs_category'), developer),
+    ]);
+  }
+
+  // ---- PreferencesAudioControls ----
+  static audioControlsScreen(): PreferenceScreen {
+    const controls: PreferenceItem[] = [
+      new PreferenceItem({ key: Settings.KEY_AUDIO_JUMP_DELAY, title: 'Forward/backward time delay', type: 'numberpicker', summary: '10 seconds', defaultValue: 10, numberMin: 1, numberMax: 100 }),
+      new PreferenceItem({ key: Settings.KEY_AUDIO_LONG_JUMP_DELAY, title: 'Long tap forward/backward time delay', type: 'numberpicker', summary: '20 seconds', defaultValue: 20, numberMin: 1, numberMax: 100 }),
+      new PreferenceItem({ key: Settings.KEY_AUDIO_FORCE_SHUFFLE, title: 'Force shuffle', type: 'toggle', summary: 'Force shuffling when launching a playback', defaultValue: false }),
+    ];
+    const iface: PreferenceItem[] = [
+      new PreferenceItem({ key: 'blurred_cover_background', title: 'Blurred cover background', type: 'toggle', summary: 'Blurred cover in audio player background', defaultValue: true }),
+      new PreferenceItem({ key: Settings.ALBUMS_SHOW_TRACK_NUMBER, title: 'Show track numbers', type: 'toggle', defaultValue: false }),
+      new PreferenceItem({ key: 'audio_show_chapter_buttons', title: 'Show chapter buttons', type: 'toggle', summary: 'Show buttons to navigate between chapters', defaultValue: true }),
+      new PreferenceItem({ key: 'audio_show_bookmark_buttons', title: $r('app.string.show_bookmark_buttons'), type: 'toggle', summary: $r('app.string.show_bookmark_buttons_summary'), defaultValue: true }),
+      new PreferenceItem({ key: 'audio_show_bookmark_markers', title: $r('app.string.show_bookmark_markers'), type: 'toggle', summary: $r('app.string.show_bookmark_markers_summary'), defaultValue: true, dependency: 'audio_show_bookmark_buttons' }),
+    ];
+    return new PreferenceScreen('audio_controls', $r('app.string.controls_prefs_category'), [
+      new PreferenceGroup($r('app.string.controls_prefs_category'), controls),
+      new PreferenceGroup($r('app.string.interface_prefs_screen'), iface),
+    ]);
+  }
+
+  // ---- PreferencesVideoControls ----
+  static videoControlsScreen(): PreferenceScreen {
+    const top: PreferenceItem[] = [
+      new PreferenceItem({ key: Settings.KEY_AUDIO_BOOST, title: 'Audio-boost', type: 'toggle', summary: 'Allow volume up to 200%', defaultValue: true }),
+      new PreferenceItem({ key: 'save_individual_audio_delay', title: 'Save audio delay', type: 'toggle', summary: 'Save individual audio delay for each video', defaultValue: true }),
+      new PreferenceItem({ key: Settings.KEY_VIDEO_CONFIRM_RESUME, title: 'Resume played videos', type: 'list', defaultValue: '0', optionValues: ['0', '1', '2'], options: ['Always', 'Never', 'Ask confirmation'] }),
+    ];
+    const gestures: PreferenceItem[] = [
+      new PreferenceItem({ key: Settings.ENABLE_VOLUME_GESTURE, title: 'Volume gesture', type: 'toggle', summary: 'Control volume by gesture during video playback', defaultValue: true }),
+      new PreferenceItem({ key: Settings.ENABLE_BRIGHTNESS_GESTURE, title: 'Brightness gesture', type: 'toggle', summary: 'Control brightness by gesture during video playback', defaultValue: true }),
+      new PreferenceItem({ key: Settings.SAVE_BRIGHTNESS, title: 'Save brightness level', type: 'toggle', summary: 'Keep brightness level between media', defaultValue: false }),
+      new PreferenceItem({ key: Settings.ENABLE_SWIPE_SEEK, title: 'Swipe to seek', type: 'toggle', summary: 'Swipe your finger across the screen to seek', defaultValue: true }),
+      new PreferenceItem({ key: Settings.ENABLE_SCALE_GESTURE, title: 'Two finger zoom', type: 'toggle', summary: 'Zoom in and out with two fingers', defaultValue: true }),
+      new PreferenceItem({ key: Settings.ENABLE_DOUBLE_TAP_SEEK, title: 'Double tap to seek', type: 'toggle', summary: 'Double tap on screen edges to seek by 10 seconds', defaultValue: true }),
+      new PreferenceItem({ key: Settings.KEY_VIDEO_DOUBLE_TAP_JUMP_DELAY, title: 'Double tap time delay', type: 'numberpicker', summary: '10 seconds', defaultValue: 10, numberMin: 1, numberMax: 100, dependency: Settings.ENABLE_DOUBLE_TAP_SEEK }),
+      new PreferenceItem({ key: Settings.ENABLE_DOUBLE_TAP_PLAY, title: 'Double tap to play/pause', type: 'toggle', summary: 'Double tap on screen center to play or pause', defaultValue: true }),
+      new PreferenceItem({ key: 'screenshot_mode', title: 'Take a screenshot', type: 'list', defaultValue: '0', optionValues: ['0', '1', '2', '3'], options: ['Disabled', 'Show the screenshot button', 'Tap with 3 fingers', 'Button and gesture'] }),
+      new PreferenceItem({ key: Settings.ENABLE_FASTPLAY, title: 'Enable Fastplay', type: 'toggle', summary: 'Tap and hold to increase the playback speed', defaultValue: false }),
+      new PreferenceItem({ key: Settings.FASTPLAY_SPEED, title: 'Fastplay speed', type: 'seekbar', min: 11, max: 80, defaultValue: 20, step: 1, dependency: Settings.ENABLE_FASTPLAY }),
+    ];
+    const player: PreferenceItem[] = [
+      new PreferenceItem({ key: Settings.ENABLE_SEEK_BUTTONS, title: 'Seek buttons', type: 'toggle', summary: 'Show rewind and fast forward buttons on the video interface', defaultValue: false }),
+      new PreferenceItem({ key: Settings.KEY_VIDEO_JUMP_DELAY, title: 'Forward/backward time delay', type: 'numberpicker', summary: '10 seconds', defaultValue: 10, numberMin: 1, numberMax: 100, dependency: Settings.ENABLE_SEEK_BUTTONS }),
+      new PreferenceItem({ key: Settings.KEY_VIDEO_LONG_JUMP_DELAY, title: 'Long tap forward/backward time delay', type: 'numberpicker', summary: '20 seconds', defaultValue: 20, numberMin: 1, numberMax: 100, dependency: Settings.ENABLE_SEEK_BUTTONS }),
+      new PreferenceItem({ key: 'popup_keepscreen', title: 'Keep screen ON in Pop-Up mode', type: 'toggle', summary: 'Always keep screen ON while Pop-Up is displayed, even if video is paused.', defaultValue: false }),
+      new PreferenceItem({ key: Settings.VIDEO_HUD_TIMEOUT, title: 'Video player controls hiding delay', type: 'seekbar', min: 1, max: 16, defaultValue: 4, step: 1 }),
+      new PreferenceItem({ key: Settings.VIDEO_TRANSITION_SHOW, title: 'Videos transition', type: 'toggle', summary: 'Show new video title on transition', defaultValue: true }),
+      new PreferenceItem({ key: Settings.LOCK_USE_SENSOR, title: 'Lock with sensor', type: 'toggle', summary: 'When the orientation is locked, use the sensor to allow the reverse orientation', defaultValue: true }),
+    ];
+    return new PreferenceScreen('video_controls', $r('app.string.controls_prefs_category'), [
+      new PreferenceGroup('', top),
+      new PreferenceGroup('Gestures', gestures),
+      new PreferenceGroup('Player controls', player),
+    ]);
+  }
+
+  // ---- PreferencesOptional ----
+  static optionalScreen(): PreferenceScreen {
+    // FeatureFlag 枚举当前无条目 → 列表为空(数据驱动结构,下游补枚举即自动出现)。TODO(契约)
+    return new PreferenceScreen('optional_features', $r('app.string.optional_features_warning'), [
+      new PreferenceGroup('', []),
+    ]);
+  }
+
+  // ---- PreferencesWidgets ----
+  static widgetsScreen(): PreferenceScreen {
+    const items: PreferenceItem[] = [
+      new PreferenceItem({ key: 'widget_theme', title: $r('app.string.widget_theme'), type: 'list', defaultValue: '0', optionValues: ['0', '1', '2'], options: ['Material You (pulls colors from wallpaper)', 'Palette (pulls colors from the media cover)', 'Custom'] }),
+      new PreferenceItem({ key: 'widget_type', title: 'Widget type', type: 'list', defaultValue: '0', optionValues: ['0', '1', '2', '3', '4'], options: ['Automatic', 'Pill', 'Normal', 'Circle', 'Large'] }),
+      new PreferenceItem({ key: 'widget_light_theme', title: 'Light theme', type: 'toggle', defaultValue: true }),
+      new PreferenceItem({ key: 'opacity', title: $r('app.string.opacity'), type: 'seekbar', min: 0, max: 100, defaultValue: 100, step: 1 }),
+      new PreferenceItem({ key: 'background_color', title: $r('app.string.widget_background'), type: 'color', defaultValue: 0xFF000000 }),
+      new PreferenceItem({ key: 'foreground_color', title: $r('app.string.widget_foreground'), type: 'color', defaultValue: 0xFF000000 }),
+      new PreferenceItem({ key: 'widget_show_cover', title: $r('app.string.widget_show_cover'), type: 'toggle', defaultValue: true }),
+      new PreferenceItem({ key: 'widget_show_seek', title: $r('app.string.widget_show_seek'), type: 'toggle', defaultValue: true }),
+      new PreferenceItem({ key: 'widget_forward_delay', title: $r('app.string.widget_forward_delay'), type: 'numberpicker', defaultValue: 10, numberMin: 1, numberMax: 100 }),
+      new PreferenceItem({ key: 'widget_rewind_delay', title: $r('app.string.widget_rewind_delay'), type: 'numberpicker', defaultValue: 10, numberMin: 1, numberMax: 100 }),
+      new PreferenceItem({ key: 'widget_show_configure', title: $r('app.string.widget_show_configure'), type: 'toggle', summary: $r('app.string.widget_show_configure_summary'), defaultValue: false }),
+    ];
+    return new PreferenceScreen('widgets', $r('app.string.widget_preferences'), [
+      new PreferenceGroup($r('app.string.widget_theme'), items),
+    ]);
+  }
+}

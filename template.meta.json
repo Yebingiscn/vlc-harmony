@@ -1,0 +1,20 @@
+{
+  "name": "harmonyos_project",
+  "display_name": "通用空骨架",
+  "kind": "skeleton",
+  "description": "标准 HarmonyOS Stage Model 工程空骨架：仅含 EntryAbility / Index 页 / 默认资源 / 构建配置，不包含任何业务逻辑。",
+  "tags": [
+    "通用",
+    "空骨架",
+    "Stage Model"
+  ],
+  "tech_stack": [
+    "HarmonyOS Stage Model",
+    "ArkTS",
+    "ArkUI"
+  ],
+  "when_to_use": "当业务需求与所有业务模板的核心功能命中率均不足 50%，或用户明确要求从零开始 / 做最小化空白工程时使用；这是兜底选择。",
+  "pages": [
+    "Index"
+  ]
+}

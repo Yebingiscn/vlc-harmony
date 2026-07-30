@@ -1,0 +1,6 @@
+{
+  "name": "libvlcnapi.so",
+  "types": "./index.d.ts",
+  "version": "1.0.0",
+  "description": "libVLC NAPI bridge for HarmonyOS"
+}
