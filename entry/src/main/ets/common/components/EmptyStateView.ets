@@ -28,14 +28,14 @@ export struct EmptyStateView {
           .fontColor('#9E9E9E')
           .textAlign(TextAlign.Center)
           .margin({ top: 12, left: 24, right: 24 })
-        Button($r('app.string.preferences'))
+        Button($r('app.string.add'))
           .type(ButtonType.Normal)
           .borderRadius(4)
           .backgroundColor('#FF8800')
           .fontColor('#FFFFFF')
           .fontSize(14)
           .margin({ top: 16 })
-          .onClick(() => this.onOpenStorage())
+          .onClick(() => this.onPickFile())
       } else if (this.state === EmptyLoadingState.EMPTY_SEARCH) {
         Image($r('app.media.ic_empty')).width(96).height(96).objectFit(ImageFit.Contain).fillColor('#424242')
         Text(this.filterQuery.length > 0

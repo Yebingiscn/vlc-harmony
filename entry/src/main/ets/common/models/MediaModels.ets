@@ -77,6 +77,9 @@ export class MediaWrapper extends MediaLibraryItem {
   displayName: string = '';
   size: number = 0;
   resolution: string = '';
+  artistName: string = '';
+  albumName: string = '';
+  artworkPath: string = '';
 
   constructor(id: number, title: string, uri: string, type: number) {
     super(id, title, MediaItemType.MEDIA);
@@ -142,9 +145,12 @@ export class Track extends MediaLibraryItem {
   length: number = 0;
   artistName: string = '';
   albumName: string = '';
+  genre: string = '';
   trackNumber: number = 0;
+  year: string = '';
   displayName: string = '';
   filePath: string = '';
+  artworkPath: string = '';
 
   constructor(id: number, title: string, uri: string) {
     super(id, title, MediaItemType.MEDIA);

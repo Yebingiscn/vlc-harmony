@@ -1,20 +1,24 @@
 import { VlcToolbar } from '../common/components/VlcToolbar';
 import { NavController } from '../common/data/NavController';
-import { SecondaryParam, FileBrowserParam } from '../common/models/MediaModels';
+import { SecondaryParam, FileBrowserParam, Track, formatDuration } from '../common/models/MediaModels';
+import { MediaLibrary } from '../common/data/MediaLibrary';
+import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
+import { EmptyStateView } from '../common/components/EmptyStateView';
 import { promptAction } from '@kit.ArkUI';
 
 /**
  * SecondaryPage —— SecondaryActivity(pushed 宿主壳)。
- * 读取 KEY_FRAGMENT 派发 8 种子页(ABOUT/STREAMS/HISTORY/PREFERENCES/STORAGE/NETWORK/
- * ARTIST/ALBUM/PLAYLIST),无匹配 finish。统一 Toolbar(标题随 fragment)。
+ * 读取 KEY_FRAGMENT 派发子页:ABOUT/STREAMS/HISTORY/PREFERENCES/STORAGE/NETWORK/
+ * ARTIST/ALBUM/GENRE/PLAYLIST,无匹配 finish。统一 Toolbar(标题随 fragment)。
  */
 @ComponentV2
 export struct SecondaryPage {
   @Param param: SecondaryParam = { fragment: '' };
-  @Local title: Resource = $r('app.string.app_name');
+  @Local title: string = '';
+  @Local tracks: Track[] = [];
 
   aboutToAppear(): void {
-    this.title = this.resolveTitle();
+    this.title = this.param.title ?? '';
     if (this.param.fragment.length === 0) {
       NavController.pop();
       return;
@@ -32,6 +36,38 @@ export struct SecondaryPage {
       NavController.push('FileBrowser', pn);
       return;
     }
+    // ARTIST / ALBUM / GENRE → 按分类筛选曲目。
+    if (this.param.fragment === 'ARTIST' || this.param.fragment === 'ALBUM' || this.param.fragment === 'GENRE') {
+      this.filterTracks();
+    }
+  }
+
+  /** 按当前 fragment + title 筛选曲目并排序。 */
+  filterTracks(): void {
+    const all = MediaLibrary.getAudios();
+    const key = this.title;
+    let filtered: Track[];
+    switch (this.param.fragment) {
+      case 'ARTIST':
+        filtered = all.filter((t: Track) => (t.artistName.length > 0 ? t.artistName : 'Unknown Artist') === key);
+        filtered.sort((a: Track, b: Track) => a.albumName.localeCompare(b.albumName) || a.title.localeCompare(b.title));
+        break;
+      case 'ALBUM':
+        filtered = all.filter((t: Track) => (t.albumName.length > 0 ? t.albumName : 'Unknown Album') === key);
+        filtered.sort((a: Track, b: Track) => a.trackNumber - b.trackNumber || a.title.localeCompare(b.title));
+        break;
+      case 'GENRE':
+        filtered = all.filter((t: Track) => {
+          const g = t.genre.length > 0 ? t.genre.split(/[,;/]/)[0].trim() : '';
+          return (g.length > 0 ? g : 'Unknown Genre') === key;
+        });
+        filtered.sort((a: Track, b: Track) => a.artistName.localeCompare(b.artistName) || a.title.localeCompare(b.title));
+        break;
+      default:
+        filtered = all.slice();
+        break;
+    }
+    this.tracks = filtered;
   }
 
   resolveTitle(): Resource {
@@ -53,14 +89,33 @@ export struct SecondaryPage {
     }
   }
 
+  async playTrack(track: Track): Promise<void> {
+    const all = this.tracks.length > 0 ? this.tracks : MediaLibrary.getAudios();
+    const queue: QueueItem[] = all.map((t: Track) =>
+      new QueueItem(t.id, t.title, t.uri, t.artistName, t.albumName, t.artworkPath)
+    );
+    await PlaybackService.playList(queue, all.indexOf(track), true);
+    NavController.push('AudioPlayer');
+  }
+
   build() {
     NavDestination() {
       Column() {
-        VlcToolbar({ title: this.title, showBack: true, onBack: () => NavController.pop() })
-        // 内容区:按 fragment 派发(未实现项显示空态 + toast)
+        VlcToolbar({
+          title: this.title.length > 0 ? this.title : this.resolveTitle(),
+          showBack: true,
+          onBack: () => NavController.pop()
+        })
+        // 内容区:按 fragment 派发。
         Column() {
           if (this.param.fragment === 'ABOUT') {
             this.aboutContent()
+          } else if (this.param.fragment === 'ARTIST' || this.param.fragment === 'ALBUM' || this.param.fragment === 'GENRE') {
+            if (this.tracks.length === 0) {
+              EmptyStateView({ state: 1 /* EMPTY */ })
+            } else {
+              this.trackList()
+            }
           } else {
             Column() {
               Image($r('app.media.ic_empty')).width(96).height(96).fillColor('#424242')
@@ -85,6 +140,30 @@ export struct SecondaryPage {
       NavController.pop();
       return true;
     })
+  }
+
+  @Builder
+  trackList() {
+    List() {
+      ForEach(this.tracks, (t: Track) => {
+        ListItem() {
+          Row() {
+            Image($r('app.media.ic_song')).width(40).height(40).fillColor('#FF8800').margin({ right: 12 })
+            Column() {
+              Text(t.title).fontSize(15).fontColor('#FFFFFF').maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+              Text(t.length > 0 ? formatDuration(t.length) : t.artistName).fontSize(12).fontColor('#9E9E9E')
+                .margin({ top: 2 })
+            }.alignItems(HorizontalAlign.Start).layoutWeight(1)
+          }
+          .width('100%').padding({ left: 16, right: 16, top: 8, bottom: 8 }).alignItems(VerticalAlign.Center)
+          .onClick(() => this.playTrack(t))
+        }
+      }, (t: Track) => `s${t.id}`)
+    }
+    .divider({ strokeWidth: 0.5, color: $r('app.color.divider'), startMargin: 68, endMargin: 8 })
+    .width('100%')
+    .layoutWeight(1)
   }
 
   @Builder

@@ -83,7 +83,7 @@ export struct VideoGridPage {
   playVideo(item: MediaWrapper): void {
     hilog.info(0x0001, 'VLC', '[VLC] playVideo clicked: uri=%{public}s title=%{public}s', item.uri, item.title);
     const items = this.vm.items;
-    PlaybackService.getInstance().playList(items, items.indexOf(item), true);
+    PlaybackService.playList(MediaLibrary.toQueueItems(items), items.indexOf(item), true);
     const param: VideoParam = { uri: item.uri, title: item.title };
     NavController.push('VideoPlayer', param);
     hilog.info(0x0001, 'VLC', '[VLC] pushed VideoPlayer route');
