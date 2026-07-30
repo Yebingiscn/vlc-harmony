@@ -119,12 +119,14 @@ export struct MediaGridCard {
   build() {
     Column() {
       Stack() {
-        // 缩略图(运行时内容图 → 用样例占位,设备真实缩略图由媒体库提供)
-        Image(this.item.artworkUrl && this.item.artworkUrl.length > 0 ? this.item.artworkUrl :
-          $r('app.media.ic_no_thumbnail_1610'))
+        // 缩略图:artworkUrl 为媒体库 uri 时 Image 可直接渲染;为空/加载失败回落占位图。
+        Image(this.item.artworkUrl.length > 0 ? this.item.artworkUrl : $r('app.media.ic_no_thumbnail_1610'))
           .width('100%')
           .height('100%')
           .objectFit(ImageFit.Cover)
+          .alt($r('app.media.ic_no_thumbnail_1610'))
+          .draggable(false)
+          .backgroundColor('#1F1F1F')
         if (!this.selected && !this.isPresent) {
           Column().width('100%').height('100%').backgroundColor($r('app.color.disabled_overlay'))
         }
@@ -144,24 +146,25 @@ export struct MediaGridCard {
         .fontColor($r('app.color.list_title'))
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .margin({ top: 4 })
+        .margin({ top: 6 })
         .width('100%')
         .opacity(this.isPresent ? 1 : 0.4)
 
-      if (this.item.length > 0) {
-        Text(formatDuration(this.item.length))
-          .fontSize(12)
-          .fontColor($r('app.color.list_subtitle'))
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .margin({ bottom: 8 })
-          .width('100%')
-          .opacity(this.isPresent ? 1 : 0.4)
-      }
+      // 时长行恒定渲染(无时长时留空占位)—— 否则同一行两张卡高度不一致,网格参差不齐。
+      Text(this.item.length > 0 ? formatDuration(this.item.length) : ' ')
+        .fontSize(12)
+        .fontColor($r('app.color.list_subtitle'))
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .margin({ top: 2 })
+        .width('100%')
+        .opacity(this.isPresent ? 1 : 0.4)
     }
     .width('100%')
-    .padding({ left: 8, top: 8, right: 8 })
+    .padding(8)
     .backgroundColor($r('app.color.video_card_background'))
+    .borderRadius(8)
+    .clip(true)
     .onClick(() => this.onItemClick())
     .gesture(LongPressGesture().onAction(() => this.onItemLongClick()))
   }

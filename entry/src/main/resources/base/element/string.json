@@ -453,6 +453,10 @@
       "value": "转到章节…"
     },
     {
+      "name": "encountered_error_message",
+      "value": "无法播放此视频"
+    },
+    {
       "name": "history",
       "value": "历史"
     },
