@@ -119,6 +119,11 @@ export class MediaLibrary {
           mw.size = size;
           mw.displayName = title;
           mw.resolution = width > 0 && height > 0 ? `${width}x${height}` : '';
+          // 缩略图:photoAccessHelper 的 uri 可直接交给 Image 组件渲染(有读权限即可),
+          // 否则网格里每张卡都是同一张 ic_no_thumbnail_1610 占位图。
+          mw.artworkUrl = uri;
+          // filePath 供按目录分组(getVideoFolders)使用;media uri 无真实路径时退化为 uri。
+          mw.filePath = uri;
           list.push(mw);
           videoCount++;
         } catch (e) {
