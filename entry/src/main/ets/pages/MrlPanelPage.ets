@@ -1,169 +1,160 @@
 import { promptAction } from '@kit.ArkUI';
 import { NavController } from '../common/data/NavController';
-import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
-import { AppColors, AppDimens } from '../common/constants/AppConstants';
-import { MediaWrapper, VideoNavParam } from '../common/models/MediaModels';
+import { PlaybackHistory } from '../common/data/PlaybackHistory';
+import { Settings } from '../common/data/Settings';
+import { streamSubmissionMessage } from '../common/models/StreamInputModels';
 
-/**
- * MrlPanelPage —— MRLPanelFragment(网络串流面板页)。
- * URL 输入框 + ic_send 按钮 + 串流历史 List(样例 MediaWrapper[])。
- * 文案/数值逐字照搬 .harmonyos/spec/pages/MRLPanelFragment.md。
- * 外部运行时契约(StreamsModel 历史源/上下文菜单/RenameDialog/VideoPlayerActivity.start 等)标 TODO 注释。
- */
-
-function showToast(msg: string): void {
-  promptAction.showToast({ message: msg });
-}
-
-/** 串流历史样例(对应 medialibrary.history(HISTORY_TYPE_NETWORK),未迁移)。 */
-function sampleStreams(): MediaWrapper[] {
-  const list: MediaWrapper[] = [
-    new MediaWrapper(1, 'Big Buck Bunny', 'https://example.com/bbb.mp4', 0),
-    new MediaWrapper(2, 'RTSP Demo Stream', 'rtsp://demo.example.com/stream', 0),
-    new MediaWrapper(3, 'Sintel Movie', 'http://example.com/sintel.mp4', 0),
-  ];
-  return list;
-}
-
+/** 串流入口：保留地址输入 UX，当前不发起播放或保存网络串流。 */
 @ComponentV2
 export struct MrlPanelPage {
-  @Local searchText: string = '';
-  @Local streamList: MediaWrapper[] = sampleStreams();
+  @Local address: string = '';
+  @Local incognitoMode: boolean = false;
+  @Local menuOpen: boolean = false;
 
-  private processUri(): void {
-    const text = this.searchText.trim();
-    if (text.length === 0) {
-      return;
-    }
-    // TODO(契约):MLServiceLocator.getAbstractMediaWrapper(text.toUri()) 构造 MediaWrapper。
-    const mw = new MediaWrapper(Date.now(), text, text, 0);
-    this.playMedia(mw);
-    this.searchText = '';
+  async aboutToAppear(): Promise<void> {
+    this.incognitoMode = await Settings.getBoolean(Settings.KEY_INCOGNITO, false);
   }
 
-  private playMedia(mw: MediaWrapper): void {
-    // TODO(契约):scheme 以 rtsp 开头 → VideoPlayerActivity.start;否则 MediaUtils.openMedia(PlaybackService)。
-    if (mw.uri.startsWith('rtsp')) {
-      const p: VideoNavParam = { uri: mw.uri, title: mw.title };
-      NavController.push('VideoPlayer', p);
-    } else {
-      // PlaybackService 仅有 append(items)/play(),用 append 加入播放队列。
-      const item = new QueueItem(mw.id, mw.title, mw.uri, '', '', mw.artworkPath);
-      PlaybackService.append([item]);
+  private submitAddress(): void {
+    const message = streamSubmissionMessage(this.address);
+    if (message.length > 0) {
+      promptAction.showToast({ message: message });
     }
   }
 
-  private onItemClick(item: MediaWrapper): void {
-    this.playMedia(item);
+  private async setIncognito(enabled: boolean): Promise<void> {
+    await PlaybackHistory.setIncognito(enabled);
+    this.incognitoMode = enabled;
+    promptAction.showToast({ message: enabled ? '无痕模式已开启' : '无痕模式已关闭' });
   }
 
-  private onMoreClick(): void {
-    // TODO(契约):showContext(position) 弹上下文菜单(重命名/追加/加入播放列表/复制/删除/添加快捷方式)。
-    showToast('More actions');
+  private refresh(): void {
+    this.menuOpen = false;
+    promptAction.showToast({ message: '已刷新' });
+  }
+
+  @Builder
+  streamMenu() {
+    Column() {
+      Row() {
+        Text('无痕模式')
+          .fontSize(16)
+          .fontColor('#FFFFFF')
+          .layoutWeight(1)
+        Toggle({ type: ToggleType.Checkbox, isOn: this.incognitoMode })
+          .selectedColor('#FF8800')
+          .onChange((enabled: boolean) => this.setIncognito(enabled))
+      }
+      .width('100%')
+      .height(52)
+      .padding({ left: 16, right: 12 })
+      .alignItems(VerticalAlign.Center)
+      Divider()
+        .color('#3A3A3A')
+        .strokeWidth(1)
+      Text('刷新')
+        .fontSize(16)
+        .fontColor('#FFFFFF')
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 16, bottom: 16 })
+        .onClick(() => this.refresh())
+    }
+    .width(220)
+    .backgroundColor('#242424')
+    .borderRadius(12)
+    .shadow({ radius: 16, color: '#66000000', offsetY: 6 })
+    .position({ right: 12, top: 64 })
   }
 
   build() {
     NavDestination() {
-      Column() {
-        // 返回导航栏(标题 = "Streams")
-        Row() {
-          Image($r('app.media.ic_arrow_back'))
-            .width(24)
-            .height(24)
-            .objectFit(ImageFit.Contain)
-            .fillColor(AppColors.white)
-            .margin({ left: 12 })
-            .onClick(() => NavController.pop())
-          Text($r('app.string.streams'))
-            .fontSize(20)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(AppColors.white)
-            .margin({ left: AppDimens.kl_half })
-          Blank()
-        }
-        .width('100%')
-        .height(56)
-        .alignItems(VerticalAlign.Center)
-        .backgroundColor(AppColors.orange800)
-
-        Scroll() {
-          Column() {
-            // 顶部输入栏 mrlbar(elevation=4dp)
-            Column() {
-              Row() {
-                TextInput({ text: this.searchText, placeholder: $r('app.string.open_mrl_dialog_msg') })
-                  .type(InputType.URL)
-                  .layoutWeight(1)
-                  .margin({ left: AppDimens.default_margin, top: AppDimens.default_margin, bottom: AppDimens.default_margin })
-                  .backgroundColor(AppColors.grey50)
-                  .onChange((v: string) => {
-                    this.searchText = v;
-                  })
-                  .onSubmit(() => this.processUri())
-                Image($r('app.media.ic_send'))
-                  .width(24)
-                  .height(24)
-                  .objectFit(ImageFit.CENTER)
-                  .fillColor(AppColors.orange800)
-                  .margin({ right: AppDimens.kl_normal })
-                  .onClick(() => this.processUri())
-              }
-              .width('100%')
-              .alignItems(VerticalAlign.Center)
+      Stack({ alignContent: Alignment.TopStart }) {
+        Column() {
+          Row() {
+            Image($r('app.media.ic_arrow_back'))
+              .width(24)
+              .height(24)
+              .fillColor('#FFFFFF')
+              .margin({ left: 16 })
+              .onClick(() => NavController.pop())
+            Text('串流')
+              .fontSize(20)
+              .fontWeight(FontWeight.Bold)
+              .fontColor('#FF8800')
+              .margin({ left: 16 })
+            Blank()
+            Button({ type: ButtonType.Normal, stateEffect: true }) {
+              Image($r('app.media.ic_more_w'))
+                .width(28)
+                .height(28)
             }
-            .width('100%')
-            .padding({ top: AppDimens.kl_half, bottom: AppDimens.kl_half })
-            .backgroundColor(AppColors.white)
-            .shadow({ radius: 4, color: AppColors.black_transparent_50, offsetY: 2 })
-
-            // 串流历史列表 mrl_list
-            List({ space: 0 }) {
-              ForEach(this.streamList, (item: MediaWrapper, index: number) => {
-                ListItem() {
-                  Row() {
-                    Column() {
-                      Text(item.title)
-                        .fontSize(16)
-                        .fontWeight(FontWeight.Medium)
-                        .fontColor(AppColors.grey900)
-                        .maxLines(2)
-                        .textOverflow({ overflow: TextOverflow.Ellipsis })
-                        .width('100%')
-                      Text(item.uri)
-                        .fontSize(14)
-                        .fontColor(AppColors.grey600)
-                        .maxLines(1)
-                        .textOverflow({ overflow: TextOverflow.Ellipsis })
-                        .width('100%')
-                        .margin({ top: 2 })
-                    }
-                    .layoutWeight(1)
-                    .alignItems(HorizontalAlign.Start)
-                    .margin({ left: AppDimens.kl_normal, top: AppDimens.default_margin, right: AppDimens.kl_normal, bottom: AppDimens.default_margin })
-
-                    Image($r('app.media.ic_more'))
-                      .width(24)
-                      .height(24)
-                      .objectFit(ImageFit.CENTER)
-                      .fillColor(AppColors.grey700)
-                      .padding(AppDimens.default_margin)
-                      .onClick(() => this.onMoreClick())
-                  }
-                  .width('100%')
-                  .alignItems(VerticalAlign.Center)
-                  .onClick(() => this.onItemClick(item))
-                }
-              }, (item: MediaWrapper, index: number) => `${index}`)
-            }
-            .width('100%')
-            .padding({ left: AppDimens.kl_half, top: 24, right: AppDimens.kl_half })
-            .scrollBar(BarState.Off)
+            .width(56)
+            .height(56)
+            .backgroundColor(Color.Transparent)
+            .margin({ right: 4 })
+            .onClick(() => this.menuOpen = !this.menuOpen)
           }
           .width('100%')
+          .height(56)
+          .alignItems(VerticalAlign.Center)
+          .backgroundColor('#121212')
+
+          Column() {
+            Text('打开网络串流')
+              .fontSize(20)
+              .fontWeight(FontWeight.Medium)
+              .fontColor('#FFFFFF')
+              .width('100%')
+            Text('输入网络地址后点击发送')
+              .fontSize(14)
+              .fontColor('#BDBDBD')
+              .width('100%')
+              .margin({ top: 8 })
+            Row() {
+              TextInput({ text: this.address, placeholder: 'https://example.com/live.m3u8' })
+                .type(InputType.URL)
+                .fontColor('#FFFFFF')
+                .placeholderColor('#8E8E8E')
+                .layoutWeight(1)
+                .height(52)
+                .backgroundColor('#252525')
+                .border({ width: 1, color: '#454545', radius: 8 })
+                .padding({ left: 14, right: 12 })
+                .onChange((value: string) => this.address = value)
+                .onSubmit(() => this.submitAddress())
+              Button({ type: ButtonType.Normal, stateEffect: true }) {
+                Image($r('app.media.ic_send'))
+                  .width(26)
+                  .height(26)
+                  .fillColor('#FFFFFF')
+              }
+              .width(52)
+              .height(52)
+              .backgroundColor('#FF8800')
+              .borderRadius(8)
+              .margin({ left: 12 })
+              .onClick(() => this.submitAddress())
+            }
+            .width('100%')
+            .margin({ top: 24 })
+          }
+          .width('100%')
+          .padding({ left: 20, right: 20, top: 28 })
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
         }
-        .layoutWeight(1)
         .width('100%')
-        .backgroundColor(AppColors.white)
+        .height('100%')
+        .backgroundColor('#121212')
+
+        if (this.menuOpen) {
+          Column()
+            .width('100%')
+            .height('100%')
+            .backgroundColor(Color.Transparent)
+            .onClick(() => this.menuOpen = false)
+          this.streamMenu()
+        }
       }
       .width('100%')
       .height('100%')

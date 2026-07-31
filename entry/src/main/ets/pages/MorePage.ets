@@ -1,4 +1,3 @@
-import { promptAction } from '@kit.ArkUI';
 import { NavController } from '../common/data/NavController';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
 import { formatDuration, VideoNavParam } from '../common/models/MediaModels';
@@ -34,10 +33,6 @@ export struct MorePage {
     }
   }
 
-  private showStreamsUnavailable(): void {
-    promptAction.showToast({ message: '串流功能暂未实现' });
-  }
-
   private openHistory(): void {
     NavController.push('History');
   }
@@ -51,18 +46,18 @@ export struct MorePage {
   ActionButton(icon: Resource, title: string, onClick: () => void) {
     Row() {
       Image(icon)
-        .width(30)
-        .height(30)
+        .width(26)
+        .height(26)
         .objectFit(ImageFit.Contain)
         .fillColor('#FF8800')
       Text(title)
-        .fontSize(18)
+        .fontSize(17)
         .fontWeight(FontWeight.Medium)
         .fontColor('#FF8800')
-        .margin({ left: 16 })
+        .margin({ left: 12 })
     }
     .width('100%')
-    .height(64)
+    .height(56)
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
     .border({ width: 1, color: '#454545', radius: 8 })
@@ -73,18 +68,18 @@ export struct MorePage {
   SectionTitle(title: string, onClick: () => void) {
     Row() {
       Text(title)
-        .fontSize(22)
+        .fontSize(20)
         .fontWeight(FontWeight.Medium)
         .fontColor('#FF8800')
         .layoutWeight(1)
       Image($r('app.media.ic_arrow_right'))
-        .width(28)
-        .height(28)
+        .width(24)
+        .height(24)
         .fillColor('#FFFFFF')
         .onClick(() => onClick())
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 28, bottom: 14 })
+    .padding({ left: 16, right: 16, top: 24, bottom: 12 })
     .alignItems(VerticalAlign.Center)
     .onClick(() => onClick())
   }
@@ -93,22 +88,22 @@ export struct MorePage {
   NewStreamCard() {
     Column() {
       Image($r('app.media.ic_add'))
-        .width(48)
-        .height(48)
+        .width(42)
+        .height(42)
         .fillColor('#FF8800')
       Text('新建串流')
-        .fontSize(18)
+        .fontSize(16)
         .fontWeight(FontWeight.Medium)
         .fontColor('#FFFFFF')
-        .margin({ top: 18 })
+        .margin({ top: 14 })
     }
-    .width(210)
-    .height(170)
+    .width(180)
+    .height(150)
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
     .border({ width: 1, color: '#454545', radius: 12 })
     .margin({ left: 16 })
-    .onClick(() => this.showStreamsUnavailable())
+    .onClick(() => NavController.push('MrlPanel'))
   }
 
   @Builder
@@ -123,14 +118,14 @@ export struct MorePage {
         .backgroundColor('#1E1E1E')
       Column() {
         Text(item.title)
-          .fontSize(15)
+          .fontSize(14)
           .fontColor('#FFFFFF')
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
         if (item.length > 0) {
           Text(formatDuration(item.length))
-            .fontSize(13)
+          .fontSize(12)
             .fontColor('#BDBDBD')
             .margin({ top: 4 })
         }
@@ -139,8 +134,8 @@ export struct MorePage {
       .alignItems(HorizontalAlign.Start)
       .padding(12)
     }
-    .width(190)
-    .height(178)
+    .width(176)
+    .height(166)
     .border({ width: 1, color: '#454545', radius: 8 })
     .clip(true)
     .margin({ right: 12 })
@@ -193,9 +188,9 @@ export struct MorePage {
             .layoutWeight(1)
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: 24 })
+        .padding({ left: 16, right: 16, top: 20 })
 
-        this.SectionTitle('串流', () => this.showStreamsUnavailable())
+        this.SectionTitle('串流', () => NavController.push('MrlPanel'))
         this.NewStreamCard()
 
         if (this.vm.history.length > 0) {
