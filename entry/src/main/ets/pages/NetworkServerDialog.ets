@@ -1,19 +1,44 @@
 import { AppColors } from '../common/constants/AppConstants';
 
 /**
- * NetworkServerDialog —— 添加/编辑网络服务器 BottomSheet。
- * URL 预览行 + 分隔线 + 协议 Select(FTP/FTPS/FTPES/SFTP/SMB/NFS)+ Port 输入(右)
- * + 地址/用户名/文件夹/显示名 4 个 OutlinedBox.Dense 输入框 + [Cancel][OK] 文字按钮(Save 默认禁用,address 空时)。
- * SMB→用户名隐藏+hint 切 share_hint;NFS→用户名+端口隐藏。SFTP 用户名聚焦时 folder=/home/+username。
- * TODO(契约): saveServer() → browserFavRepository.addNetworkFavItem(uri,name,null)(编辑模式先 deleteBrowserFav)后 dismiss;
- *   onDismiss → MainActivity.forceRefresh();updateUrl() 拼接协议小写://[用户名@]地址[:端口][/路径]。
+ * OutlinedInput -- 带焦点态边框变色的 outlined 输入框。
+ */
+@ComponentV2
+struct OutlinedInput {
+  @Param text: string = '';
+  @Param placeholder: ResourceStr = '';
+  @Local focused: boolean = false;
+  @Event onChange: (v: string) => void = () => {
+  };
+
+  build() {
+    TextInput({ text: this.text, placeholder: this.placeholder })
+      .type(InputType.Normal)
+      .backgroundColor(Color.Transparent)
+      .border({ width: 1, color: this.focused ? AppColors.orange500 : AppColors.grey900, radius: 4 })
+      .fontSize(16)
+      .fontColor(AppColors.grey900)
+      .placeholderColor(AppColors.grey400)
+      .width('100%')
+      .height(52)
+      .padding({ left: 12, right: 12 })
+      .onFocus(() => this.focused = true)
+      .onBlur(() => this.focused = false)
+      .onChange((v: string) => this.onChange(v))
+  }
+}
+
+/**
+ * NetworkServerDialog -- 添加/编辑网络服务器 BottomSheet。
+ * 顶部 URL 预览 + 协议橙色圆形下拉 + 端口下划线(焦点态变色) + outlined 输入框(焦点态橙色边框) + 取消/确定按钮。
  */
 @ComponentV2
 export struct NetworkServerDialog {
-  @Event onClose: () => void = () => {};
-
+  @Event onClose: () => void = () => {
+  };
   readonly protocols: string[] = ['FTP', 'FTPS', 'FTPES', 'SFTP', 'SMB', 'NFS'];
   @Local protocolIndex: number = 0;
+  @Local protocolMenuOpen: boolean = false;
   @Local address: string = '';
   @Local port: string = '';
   @Local folder: string = '';
@@ -22,6 +47,7 @@ export struct NetworkServerDialog {
   @Local portEnabled: boolean = true;
   @Local userEnabled: boolean = true;
   @Local url: string = '';
+  @Local portFocused: boolean = false;
 
   get canSave(): boolean {
     return this.address.length > 0;
@@ -33,11 +59,24 @@ export struct NetworkServerDialog {
   }
 
   getDefaultPort(p: string): string {
-    if (p === 'FTP') return '21';
-    if (p === 'FTPS') return '990';
-    if (p === 'FTPES') return '21';
-    if (p === 'SFTP') return '22';
+    if (p === 'FTP') {
+      return '21';
+    }
+    if (p === 'FTPS') {
+      return '990';
+    }
+    if (p === 'FTPES') {
+      return '21';
+    }
+    if (p === 'SFTP') {
+      return '22';
+    }
     return '';
+  }
+
+  aboutToAppear(): void {
+    this.port = this.getDefaultPort(this.protocols[this.protocolIndex]);
+    this.updateUrl();
   }
 
   onProtocolSelected(idx: number): void {
@@ -74,114 +113,162 @@ export struct NetworkServerDialog {
     this.url = sb;
   }
 
+  @Builder
+  protocolMenu() {
+    Menu() {
+      ForEach(this.protocols, (p: string, idx: number) => {
+        MenuItem({ content: p })
+          .onClick(() => {
+            this.protocolMenuOpen = false;
+            this.onProtocolSelected(idx);
+          })
+      }, (p: string) => p)
+    }
+  }
+
   build() {
     Scroll() {
       Column() {
         // URL 预览
-        Text(this.url || 'ftp://foo@127.0.0.1:21/path')
+        Text(this.url)
           .fontSize(16)
-          .fontColor('#FFFFFF')
-          .width('100%')
-          .padding(4)
+          .fontColor(AppColors.grey900)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .margin({ left: 16, right: 16, top: 8 })
+          .width('100%')
+          .margin({ top: 16, bottom: 16 })
 
-        Divider().color(AppColors.grey800).strokeWidth(1).width('100%').margin({ top: 8 })
+        Divider().color(AppColors.grey200).strokeWidth(1).width('100%')
 
         // 协议 + Port 行
         Row() {
-          Select(this.protocols.map((v: string): SelectOption => ({ value: v })))
-            .selected(this.protocolIndex)
-            .value(this.protocols[this.protocolIndex])
-            .margin({ left: 16 })
-            .onSelect((idx: number) => this.onProtocolSelected(idx))
+          // 协议文本 + 橙色按钮(整体可点击拉起菜单)
+          Row() {
+            Text(this.protocols[this.protocolIndex])
+              .fontSize(16)
+              .fontColor(AppColors.grey900)
+              .padding({ left: 16, right: 16 })
+
+            Column() {
+              Image($r('app.media.ic_collapse_arrow'))
+                .width(24).height(24)
+                .fillColor('#FFFFFF')
+            }
+            .width(40)
+            .height(40)
+            .borderRadius(20)
+            .backgroundColor(AppColors.orange500)
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Center)
+          }
+          .onClick(() => this.protocolMenuOpen = true)
+          .bindMenu(this.protocolMenuOpen, this.protocolMenu(), {
+            placement: Placement.BottomLeft,
+            onDisappear: () => this.protocolMenuOpen = false,
+          })
+
+          Blank().layoutWeight(1)
+
           if (this.portEnabled) {
-            Text($r('app.string.server_port')).fontSize(14).fontColor('#FFFFFF').margin({ left: 8 })
+            Text('端口:')
+              .fontSize(14)
+              .fontColor(AppColors.grey600)
           }
           if (this.portEnabled) {
             TextInput({ text: this.port })
               .type(InputType.Number)
-              .width(80)
-              .margin({ right: 16 })
-              .fontSize(14)
-              .fontColor('#FFFFFF')
-              .backgroundColor(AppColors.grey850)
-              .onChange((v: string) => { this.port = v; this.updateUrl(); })
+              .backgroundColor(Color.Transparent)
+              .borderRadius(0)
+              .padding(0)
+              .border({ width: { bottom: 1 }, color: this.portFocused ? AppColors.orange500 : AppColors.grey900 })
+              .fontSize(16)
+              .fontColor(AppColors.grey900)
+              .width(48)
+              .textAlign(TextAlign.End)
+              .onFocus(() => this.portFocused = true)
+              .onBlur(() => this.portFocused = false)
+              .onChange((v: string) => {
+                this.port = v;
+                this.updateUrl();
+              })
           }
-          Blank().layoutWeight(1)
         }
         .width('100%')
+        .height(56)
         .alignItems(VerticalAlign.Center)
         .margin({ top: 8 })
 
-        // 地址
-        TextInput({ text: this.address, placeholder: this.addressHint })
-          .width('100%')
-          .margin({ left: 16, right: 16, top: 8 })
-          .fontSize(14)
-          .fontColor('#FFFFFF')
-          .backgroundColor(AppColors.grey850)
-          .onChange((v: string) => { this.address = v; this.updateUrl(); })
+        // 表单输入框
+        Column({ space: 16 }) {
+          OutlinedInput({
+            text: this.address,
+            placeholder: this.addressHint,
+            onChange: (v: string) => {
+              this.address = v;
+              this.updateUrl();
+            },
+          })
 
-        // 用户名(SMB/NFS 隐藏)
-        if (this.userEnabled) {
-          TextInput({ text: this.username, placeholder: $r('app.string.server_username_hint') })
-            .width('100%')
-            .margin({ left: 16, right: 16, top: 8 })
-            .fontSize(14)
-            .fontColor('#FFFFFF')
-            .backgroundColor(AppColors.grey850)
-            .onChange((v: string) => { this.username = v; this.updateUrl(); })
+          if (this.userEnabled) {
+            OutlinedInput({
+              text: this.username,
+              placeholder: $r('app.string.server_username_hint'),
+              onChange: (v: string) => {
+                this.username = v;
+                this.updateUrl();
+              },
+            })
+          }
+
+          OutlinedInput({
+            text: this.folder,
+            placeholder: $r('app.string.server_folder_hint'),
+            onChange: (v: string) => {
+              this.folder = v;
+              this.updateUrl();
+            },
+          })
+
+          OutlinedInput({
+            text: this.servername,
+            placeholder: $r('app.string.server_servername_hint'),
+            onChange: () => {
+            },
+          })
         }
-
-        // 文件夹
-        TextInput({ text: this.folder, placeholder: $r('app.string.server_folder_hint') })
-          .width('100%')
-          .margin({ left: 16, right: 16, top: 8 })
-          .fontSize(14)
-          .fontColor('#FFFFFF')
-          .backgroundColor(AppColors.grey850)
-          .onChange((v: string) => { this.folder = v; this.updateUrl(); })
-
-        // 显示名
-        TextInput({ text: this.servername, placeholder: $r('app.string.server_servername_hint') })
-          .width('100%')
-          .margin({ left: 16, right: 16, top: 8 })
-          .fontSize(14)
-          .fontColor('#FFFFFF')
-          .backgroundColor(AppColors.grey850)
+        .width('100%')
+        .margin({ top: 24 })
 
         // 按钮行
         Row() {
-          Button($r('app.string.cancel'))
-            .type(ButtonType.Normal)
+          Text($r('app.string.cancel'))
+            .fontSize(16)
             .fontColor(AppColors.orange500)
-            .backgroundColor(AppColors.transparent)
-            .margin({ right: 16 })
             .onClick(() => this.onClose())
-          Button($r('app.string.ok'))
-            .type(ButtonType.Normal)
-            .fontColor(AppColors.orange500)
-            .backgroundColor(AppColors.transparent)
+
+          Text($r('app.string.ok'))
+            .fontSize(16)
+            .fontColor(this.canSave ? AppColors.grey500 : AppColors.grey400)
+            .margin({ left: 40 })
             .enabled(this.canSave)
             .onClick(() => {
-              // TODO(契约): saveServer() → addNetworkFavItem / deleteBrowserFav 后 dismiss + forceRefresh。
               this.onClose();
             })
         }
         .width('100%')
         .justifyContent(FlexAlign.End)
-        .margin({ top: 24, bottom: 4 })
+        .margin({ top: 32, bottom: 8 })
       }
       .width('100%')
+      .padding({ left: 24, right: 24, bottom: 16 })
       .alignItems(HorizontalAlign.Start)
-      .padding({ bottom: 16 })
     }
     .width('100%')
     .layoutWeight(1)
     .scrollBar(BarState.Auto)
-    .backgroundColor($r('app.color.background_default'))
-    .borderRadius({ topLeft: 16, topRight: 16 })
+    .nestedScroll({
+      scrollForward: NestedScrollMode.PARENT_FIRST,
+      scrollBackward: NestedScrollMode.PARENT_FIRST,
+    })
   }
 }
