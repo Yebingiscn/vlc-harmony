@@ -141,6 +141,14 @@
       "value": "Storages"
     },
     {
+      "name": "browser_app_videos",
+      "value": "In-app videos"
+    },
+    {
+      "name": "browser_app_videos_empty",
+      "value": "No in-app videos"
+    },
+    {
       "name": "build_host",
       "value": "build_host"
     },
