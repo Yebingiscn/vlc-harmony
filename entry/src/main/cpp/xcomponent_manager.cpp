@@ -25,6 +25,18 @@ XcomponentManager::SurfaceReadyFn XcomponentManager::GetSurfaceReadyCallback()
     return surfaceReadyCb_;
 }
 
+void XcomponentManager::SetSurfaceDestroyedCallback(SurfaceDestroyedFn cb)
+{
+    std::unique_lock<std::mutex> lock(mtx_);
+    surfaceDestroyedCb_ = cb;
+}
+
+XcomponentManager::SurfaceDestroyedFn XcomponentManager::GetSurfaceDestroyedCallback()
+{
+    std::unique_lock<std::mutex> lock(mtx_);
+    return surfaceDestroyedCb_;
+}
+
 int32_t XcomponentManager::RegisterCallback(OH_NativeXComponent *nativeXComponent)
 {
     callback_.OnSurfaceCreated = Callbacks::OnSurfaceCreatedCB;
@@ -96,6 +108,10 @@ void XcomponentManager::Callbacks::OnSurfaceDestroyedCB(OH_NativeXComponent *com
         return;
     }
     OH_LOG_INFO(LOG_APP, "OnSurfaceDestroyed id=%{public}s", id);
+    XcomponentManager::SurfaceDestroyedFn cb = xMgr.GetSurfaceDestroyedCallback();
+    if (cb != nullptr) {
+        cb(std::string(id));
+    }
     xMgr.Release(id);
 }
 

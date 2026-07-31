@@ -1,4 +1,6 @@
 import { AppColors } from '../common/constants/AppConstants';
+import { PlaybackService } from '../common/data/PlaybackService';
+import { VlcTrackInfo } from 'libvlcnapi.so';
 
 /** 轨道数据载体。 */
 export class VlcTrack {
@@ -91,6 +93,16 @@ export struct VideoTracksDialog {
   @Local selectedAudio: number = -1;
   @Local selectedSubtitle: number = -1;
   @Local selectedVideo: number = -1;
+
+  aboutToAppear(): void {
+    const svc = PlaybackService.getInstance();
+    this.audioTracks = svc.getAudioTracks().map((t: VlcTrackInfo) => new VlcTrack(t.id, t.name));
+    this.subtitleTracks = svc.getSpuTracks().map((t: VlcTrackInfo) => new VlcTrack(t.id, t.name));
+    this.videoTracks = svc.getVideoTracks().map((t: VlcTrackInfo) => new VlcTrack(t.id, t.name));
+    this.selectedAudio = svc.getAudioTrack();
+    this.selectedSubtitle = svc.getSpuTrack();
+    this.selectedVideo = svc.getVideoTrack();
+  }
 
   build() {
     Scroll() {

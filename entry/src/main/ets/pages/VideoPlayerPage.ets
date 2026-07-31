@@ -67,8 +67,11 @@ class VideoPlayerViewModel implements PlaybackListener {
   @Trace surfaceHeight: number = 0;
   uri: string = '';
   private listening: boolean = false;
+  /** 已发起离开停播(对标 Android playbackStarted=false / isFinishing)。 */
+  private leaving: boolean = false;
 
   async setup(uri: string, title: string, xcomponentId: string): Promise<void> {
+    this.leaving = false;
     hilog.info(0x0001, 'VLC',
       '[VLC] VideoPlayer.setup uri=%{public}s title=%{public}s xc=%{public}s',
       uri, title, xcomponentId);
@@ -179,13 +182,38 @@ class VideoPlayerViewModel implements PlaybackListener {
     PlaybackService.getInstance().prev();
   }
 
-  release(): void {
+  /**
+   * 对齐 Android onPause(isFinishing): 尽早 stop,避免返回动画期间 vout 出错/主线程卡死。
+   * 在 onBackPressed / 返回按钮里、pop 之前调用。
+   */
+  leaveEarly(): void {
+    if (this.leaving) {
+      return;
+    }
+    this.leaving = true;
     if (this.listening) {
       PlaybackService.getInstance().removeListener(this);
       this.listening = false;
     }
     PlaybackService.getInstance().stop();
-    hilog.info(0x0001, 'VLC', '[VLC] VideoPlayer.release/stop');
+    hilog.info(0x0001, 'VLC', '[VLC] VideoPlayer.leaveEarly/stop (onPause finishing)');
+  }
+
+  /**
+   * 对齐 Android onStop: cleanUI(detach) + 兜底 stop。
+   * 在 aboutToDisappear / XComponent.onDestroy 调用。
+   */
+  cleanUI(): void {
+    PlaybackService.getInstance().detachViews();
+    hilog.info(0x0001, 'VLC', '[VLC] VideoPlayer.cleanUI/detachViews');
+  }
+
+  release(): void {
+    if (!this.leaving) {
+      this.leaveEarly();
+    }
+    this.cleanUI();
+    hilog.info(0x0001, 'VLC', '[VLC] VideoPlayer.release (onStop)');
   }
 }
 
@@ -221,24 +249,32 @@ export struct VideoPlayerPage {
   }
 
   onChapterSelect(index: number): void {
-    hilog.info(0x0001, 'VLC', '[VLC] chapter select %{public}d (TODO libVLC chapters)', index);
+    PlaybackService.getInstance().setChapter(index);
     this.sheetOpen = false;
     this.sheetKind = '';
   }
 
   onTrackSelect(id: number, type: string): void {
-    hilog.info(0x0001, 'VLC', '[VLC] track select id=%{public}d type=%{public}s (TODO)', id, type);
+    const svc = PlaybackService.getInstance();
+    if (type === 'audio') {
+      svc.setAudioTrack(id);
+    } else if (type === 'spu') {
+      svc.setSpuTrack(id);
+    } else if (type === 'video') {
+      svc.setVideoTrack(id);
+    }
     this.sheetOpen = false;
     this.sheetKind = '';
   }
 
   onRendererConnect(id: number): void {
-    hilog.info(0x0001, 'VLC', '[VLC] renderer connect %{public}d (TODO)', id);
+    PlaybackService.getInstance().setRenderer(id);
     this.sheetOpen = false;
     this.sheetKind = '';
   }
 
   onRendererDisconnect(): void {
+    PlaybackService.getInstance().clearRenderer();
     this.sheetOpen = false;
     this.sheetKind = '';
   }
@@ -287,6 +323,8 @@ export struct VideoPlayerPage {
           .onLoad(() => this.onSurfaceLoad())
           .onDestroy(() => {
             hilog.info(0x0001, 'VLC', '[VLC] XComponent.onDestroy');
+            // 对齐 Android onStop cleanUI: Surface 销毁时 detach
+            this.vm.cleanUI();
             this.surfaceStarted = false;
           })
           .width(this.vm.surfaceWidth > 0 ? this.vm.surfaceWidth : '100%')
@@ -297,7 +335,10 @@ export struct VideoPlayerPage {
           Column() {
             Row() {
               Image($r('app.media.ic_arrow_back')).width(24).height(24).fillColor('#FFFFFF')
-                .onClick(() => NavController.pop())
+                .onClick(() => {
+                  this.vm.leaveEarly();
+                  NavController.pop();
+                })
               Text(this.vm.title).fontSize(18).fontColor('#FFFFFF').layoutWeight(1).margin({ left: 12 })
                 .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
               Image($r('app.media.ic_player_more')).width(24).height(24).fillColor('#FFFFFF')
@@ -366,6 +407,8 @@ export struct VideoPlayerPage {
     .hideTitleBar(true)
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .onBackPressed(() => {
+      // 对齐 Android onPause(isFinishing) 尽早 stop,再 pop
+      this.vm.leaveEarly();
       NavController.pop();
       return true;
     })

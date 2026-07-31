@@ -1,32 +1,16 @@
 /**
- * PlaybackService —— 全局单例播放服务(libVLC NAPI)。
- * 视频出画:setVideoOut(xcomponentId) → OHNativeWindow → libvlc_media_player_set_ohos_nativewindow_ptr。
- * 点播视频时先 prepareList(不 play),等 VideoPlayerPage Surface 就绪后再 bindAndPlay。
+ * PlaybackService —— 全局单例播放业务层。
+ * 通过 ArkTS LibVLC/Media/MediaPlayer 对接 libVLC(不再直接 import libvlcnapi.so)。
  */
-import {
-  init as vlcInit,
-  setEventListener as vlcSetEventListener,
-  setMedia as vlcSetMedia,
-  setMediaFd as vlcSetMediaFd,
-  setVideoOut as vlcSetVideoOut,
-  hasNativeWindow as vlcHasNativeWindow,
-  play as vlcPlay,
-  pause as vlcPause,
-  stop as vlcStop,
-  setTime as vlcSetTime,
-  setRate as vlcSetRate,
-  getVideoSize as vlcGetVideoSize,
-  setScale as vlcSetScale,
-  release as vlcRelease,
-} from 'libvlcnapi.so';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { MediaWrapper, PlayState } from '../models/MediaModels';
+import { LibVLC, Media, MediaPlayer, Equalizer, RendererDiscoverer, MediaSlaveType } from '../../libvlc';
+import { VlcTrackInfo, VlcChapterInfo, VlcRendererInfo } from 'libvlcnapi.so';
 
 const LOG_DOMAIN: number = 0x0001;
 const LOG_TAG: string = 'VLC';
 
-/** 鸿蒙媒体库/datashare URI:不能当本地 file 路径交给 VLC,需 fd 打开。 */
 function needsFdOpen(uri: string): boolean {
   if (uri.startsWith('file://media/')) {
     return true;
@@ -44,8 +28,8 @@ export interface PlaybackListener {
   onStateChange(state: PlayState): void;
   onTimeUpdate(current: number, duration: number): void;
   onQueueChanged(): void;
-  /** 视频原始尺寸就绪(用于 UI contain 适配);音频可空实现。 */
   onVideoSize?(width: number, height: number): void;
+  onTracksChanged?(): void;
 }
 
 export class PlaybackService {
@@ -64,6 +48,13 @@ export class PlaybackService {
   private videoOutId: string = '';
   private videoWidth: number = 0;
   private videoHeight: number = 0;
+  private volume: number = 100;
+
+  private lib: LibVLC | null = null;
+  private player: MediaPlayer | null = null;
+  private equalizer: Equalizer | null = null;
+  private rendererDiscoverer: RendererDiscoverer | null = null;
+  private currentRendererHandle: number = -1;
 
   static getInstance(): PlaybackService {
     if (!PlaybackService.instance) {
@@ -85,13 +76,25 @@ export class PlaybackService {
     this.initializing = true;
     try {
       hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] PlaybackService.init start');
-      if (vlcInit()) {
-        vlcSetEventListener((event: string, value: number) => this.onNativeEvent(event, value));
-        this.inited = true;
-        hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] PlaybackService.init ok');
-      } else {
-        hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] PlaybackService.init FAILED (libvlc_new/media_player)');
+      this.lib = new LibVLC();
+      if (this.lib.getHandle() === 0) {
+        hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] LibVLC create FAILED');
+        this.lib.release();
+        this.lib = null;
+        return;
       }
+      this.player = new MediaPlayer(this.lib);
+      if (this.player.getHandle() === 0) {
+        hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] MediaPlayer create FAILED');
+        this.player.release();
+        this.player = null;
+        this.lib.release();
+        this.lib = null;
+        return;
+      }
+      this.player.setEventListener((event: string, value: number) => this.onNativeEvent(event, value));
+      this.inited = true;
+      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] PlaybackService.init ok');
     } catch (e) {
       hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] PlaybackService.init exception: %{public}s',
         (e as Error).message ?? String(e));
@@ -137,16 +140,23 @@ export class PlaybackService {
           String(value), this.videoOutId);
         this.refreshVideoSize();
         break;
+      case 'esAdded':
+      case 'esDeleted':
+      case 'esSelected':
+        this.emitTracksChanged();
+        break;
       default:
         break;
     }
   }
 
-  /** 拉取 libVLC 视频尺寸并通知监听者;同时 setScale(0) 让 vout 按窗口比例适配。 */
   refreshVideoSize(): void {
+    if (!this.player) {
+      return;
+    }
     try {
-      vlcSetScale(0);
-      const size = vlcGetVideoSize();
+      this.player.setScale(0);
+      const size = this.player.getVideoSize();
       if (size && size.width > 0 && size.height > 0) {
         if (size.width !== this.videoWidth || size.height !== this.videoHeight) {
           this.videoWidth = size.width;
@@ -156,14 +166,11 @@ export class PlaybackService {
           this.emitVideoSize();
         }
       } else {
-        // 回退:MediaLibrary 扫描到的元数据
         const cur = this.getCurrent();
         if (cur && cur.width > 0 && cur.height > 0) {
           if (cur.width !== this.videoWidth || cur.height !== this.videoHeight) {
             this.videoWidth = cur.width;
             this.videoHeight = cur.height;
-            hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] videoSize from meta %{public}dx%{public}d',
-              this.videoWidth, this.videoHeight);
             this.emitVideoSize();
           }
         }
@@ -218,6 +225,153 @@ export class PlaybackService {
     return this.repeatMode;
   }
 
+  getVolume(): number {
+    return this.player ? this.player.getVolume() : this.volume;
+  }
+
+  setVolume(v: number): void {
+    this.volume = v;
+    this.player?.setVolume(v);
+  }
+
+  getAudioTracks(): VlcTrackInfo[] {
+    return this.player ? this.player.getAudioTracks() : [];
+  }
+
+  getSpuTracks(): VlcTrackInfo[] {
+    return this.player ? this.player.getSpuTracks() : [];
+  }
+
+  getVideoTracks(): VlcTrackInfo[] {
+    return this.player ? this.player.getVideoTracks() : [];
+  }
+
+  getAudioTrack(): number {
+    return this.player ? this.player.getAudioTrack() : -1;
+  }
+
+  getSpuTrack(): number {
+    return this.player ? this.player.getSpuTrack() : -1;
+  }
+
+  getVideoTrack(): number {
+    return this.player ? this.player.getVideoTrack() : -1;
+  }
+
+  setAudioTrack(id: number): boolean {
+    return this.player ? this.player.setAudioTrack(id) : false;
+  }
+
+  setSpuTrack(id: number): boolean {
+    return this.player ? this.player.setSpuTrack(id) : false;
+  }
+
+  setVideoTrack(id: number): boolean {
+    return this.player ? this.player.setVideoTrack(id) : false;
+  }
+
+  getChapters(): VlcChapterInfo[] {
+    return this.player ? this.player.getChapters(-1) : [];
+  }
+
+  getChapterIdx(): number {
+    return this.player ? this.player.getChapter() : -1;
+  }
+
+  setChapter(index: number): void {
+    this.player?.setChapter(index);
+  }
+
+  addSubtitleSlave(uri: string): boolean {
+    return this.player ? this.player.addSlave(MediaSlaveType.Subtitle, uri, true) : false;
+  }
+
+  applyEqualizer(enabled: boolean, presetIndex: number, preamp: number, bands: number[]): void {
+    if (!this.player) {
+      return;
+    }
+    if (!enabled) {
+      this.player.setEqualizer(null);
+      if (this.equalizer) {
+        this.equalizer.release();
+        this.equalizer = null;
+      }
+      return;
+    }
+    if (this.equalizer) {
+      this.equalizer.release();
+      this.equalizer = null;
+    }
+    this.equalizer = Equalizer.fromPreset(presetIndex) ?? Equalizer.create();
+    if (!this.equalizer) {
+      return;
+    }
+    this.equalizer.setPreAmp(preamp);
+    for (let i = 0; i < bands.length; i++) {
+      this.equalizer.setAmp(i, bands[i]);
+    }
+    this.player.setEqualizer(this.equalizer);
+  }
+
+  async startRendererDiscovery(): Promise<VlcRendererInfo[]> {
+    await this.ensureInit();
+    if (!this.lib) {
+      return [];
+    }
+    if (this.rendererDiscoverer) {
+      return this.rendererDiscoverer.getItems();
+    }
+    const names = RendererDiscoverer.listNames(this.lib);
+    const name = names.length > 0 ? names[0] : 'microdns';
+    this.rendererDiscoverer = new RendererDiscoverer(this.lib, name);
+    if (this.rendererDiscoverer.getHandle() === 0) {
+      this.rendererDiscoverer.release();
+      this.rendererDiscoverer = null;
+      return [];
+    }
+    this.rendererDiscoverer.start();
+    await new Promise<void>((r: () => void) => setTimeout(r, 800));
+    return this.rendererDiscoverer.getItems();
+  }
+
+  setRenderer(handle: number): boolean {
+    if (!this.player) {
+      return false;
+    }
+    const ok = this.player.setRenderer(handle);
+    if (ok) {
+      this.currentRendererHandle = handle;
+    }
+    return ok;
+  }
+
+  clearRenderer(): boolean {
+    if (!this.player) {
+      return false;
+    }
+    const ok = this.player.clearRenderer();
+    if (ok) {
+      this.currentRendererHandle = -1;
+    }
+    return ok;
+  }
+
+  getCurrentRendererHandle(): number {
+    return this.currentRendererHandle;
+  }
+
+  hasRenderer(): boolean {
+    return this.currentRendererHandle >= 0;
+  }
+
+  getMediaPlayer(): MediaPlayer | null {
+    return this.player;
+  }
+
+  getLibVLC(): LibVLC | null {
+    return this.lib;
+  }
+
   addListener(l: PlaybackListener): void {
     if (!this.listeners.includes(l)) {
       this.listeners.push(l);
@@ -254,10 +408,14 @@ export class PlaybackService {
     }
   }
 
-  /**
-   * 仅设置播放队列,不立刻 play。
-   * 视频页应在 Surface 绑定后再调用 bindAndPlay / play。
-   */
+  private emitTracksChanged(): void {
+    for (const l of this.listeners) {
+      if (l.onTracksChanged) {
+        l.onTracksChanged();
+      }
+    }
+  }
+
   async prepareList(items: MediaWrapper[], startIndex: number = 0, replace: boolean = true): Promise<void> {
     if (items.length === 0) {
       return;
@@ -274,7 +432,6 @@ export class PlaybackService {
     this.emitQueue();
   }
 
-  /** 音频等无需 Surface 的场景:设队列并立刻播放。 */
   async playList(items: MediaWrapper[], startIndex: number = 0, replace: boolean = true): Promise<void> {
     await this.prepareList(items, startIndex, replace);
     if (!this.inited) {
@@ -287,13 +444,9 @@ export class PlaybackService {
     return this.playList(items, 0, false);
   }
 
-  /**
-   * 绑定 XComponent 出窗并播放当前队列项。
-   * 若 Surface 尚未创建,会短暂重试 setVideoOut;Native 侧 OnSurfaceCreated 也会自动补绑。
-   */
   async bindAndPlay(xcomponentId: string, fallbackUri?: string, fallbackTitle?: string): Promise<boolean> {
     await this.ensureInit();
-    if (!this.inited) {
+    if (!this.inited || !this.player) {
       hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] bindAndPlay aborted: not inited');
       return false;
     }
@@ -304,13 +457,12 @@ export class PlaybackService {
       this.queue = [mw];
       this.currentIndex = 0;
       this.emitQueue();
-      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] bindAndPlay fallback queue uri=%{public}s', fallbackUri);
     }
 
     let bound = false;
     for (let i = 0; i < 30; i++) {
-      const hasWin = vlcHasNativeWindow(xcomponentId);
-      bound = vlcSetVideoOut(xcomponentId);
+      const hasWin = this.player.hasNativeWindow(xcomponentId);
+      bound = this.player.attachViews(xcomponentId);
       hilog.info(LOG_DOMAIN, LOG_TAG,
         '[VLC] setVideoOut try=%{public}d hasWin=%{public}s bound=%{public}s id=%{public}s',
         i, String(hasWin), String(bound), xcomponentId);
@@ -319,10 +471,6 @@ export class PlaybackService {
       }
       await new Promise<void>((r: () => void) => setTimeout(r, 50));
     }
-    if (!bound) {
-      hilog.warn(LOG_DOMAIN, LOG_TAG,
-        '[VLC] NativeWindow not ready after retries; play anyway (native may auto-bind on SurfaceCreated)');
-    }
 
     await this.loadCurrent();
     return bound;
@@ -330,62 +478,69 @@ export class PlaybackService {
 
   private async loadCurrent(): Promise<void> {
     const item = this.getCurrent();
-    if (!item) {
-      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] loadCurrent: empty queue');
+    if (!item || !this.lib || !this.player) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] loadCurrent: empty queue or player');
       return;
     }
     hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] loadCurrent uri=%{public}s videoOut=%{public}s',
       item.uri, this.videoOutId);
 
-    let ok = false;
+    let media: Media | null = null;
     if (needsFdOpen(item.uri)) {
-      // 相册 URI → openSync 拿 fd → libvlc_media_new_fd
       try {
         const file = fs.openSync(item.uri, fs.OpenMode.READ_ONLY);
         hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] openSync ok fd=%{public}d uri=%{public}s', file.fd, item.uri);
-        ok = vlcSetMediaFd(file.fd);
+        media = Media.fromFd(this.lib, file.fd);
         try {
-          fs.closeSync(file); // Native 已 dup,可立即关闭
+          fs.closeSync(file);
         } catch (closeErr) {
-          hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] closeSync after setMediaFd: %{public}s',
+          hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] closeSync after fromFd: %{public}s',
             (closeErr as Error).message ?? String(closeErr));
         }
       } catch (e) {
         hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] openSync FAILED uri=%{public}s err=%{public}s',
           item.uri, (e as Error).message ?? String(e));
-        ok = false;
       }
     } else {
-      ok = vlcSetMedia(item.uri);
+      media = Media.fromMrl(this.lib, item.uri);
     }
 
-    if (!ok) {
-      hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] setMedia/setMediaFd FAILED uri=%{public}s', item.uri);
+    if (!media) {
+      hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] Media create FAILED uri=%{public}s', item.uri);
       this.state = PlayState.ERROR;
       this.emitState();
       return;
     }
+
+    if (!this.player.setMedia(media)) {
+      hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] setMedia FAILED uri=%{public}s', item.uri);
+      media.release();
+      this.state = PlayState.ERROR;
+      this.emitState();
+      return;
+    }
+
     this.duration = 0;
     this.position = 0;
     this.videoWidth = 0;
     this.videoHeight = 0;
-    // 元数据预填,vout 前即可先按比例排版
     if (item.width > 0 && item.height > 0) {
       this.videoWidth = item.width;
       this.videoHeight = item.height;
       this.emitVideoSize();
     }
-    vlcSetRate(this.speed);
-    vlcSetScale(0);
-    vlcPlay();
+    this.player.setRate(this.speed);
+    this.player.setScale(0);
+    this.player.setVolume(this.volume);
+    this.player.play();
     this.state = PlayState.PREPARED;
     this.emitState();
   }
 
   private onComplete(): void {
     if (this.repeatMode === 2) {
-      vlcSetTime(0);
-      vlcPlay();
+      this.player?.setTime(0);
+      this.player?.play();
       return;
     }
     this.next(true);
@@ -393,18 +548,18 @@ export class PlaybackService {
 
   async play(): Promise<void> {
     await this.ensureInit();
-    if (!this.inited) {
+    if (!this.inited || !this.player) {
       return;
     }
     if (this.state === PlayState.IDLE || this.state === PlayState.STOPPED || this.state === PlayState.ERROR) {
       await this.loadCurrent();
       return;
     }
-    vlcPlay();
+    this.player.play();
   }
 
   pause(): void {
-    vlcPause();
+    this.player?.pause();
   }
 
   togglePlay(): void {
@@ -415,10 +570,22 @@ export class PlaybackService {
     }
   }
 
+  /**
+   * 停止播放(对标 Android PlaybackService.stop(video=true))。
+   * NAPI 侧已保证 stop 不持全局锁,可在返回路径上同步调用。
+   */
   stop(): void {
-    vlcStop();
+    this.player?.stop();
     this.state = PlayState.STOPPED;
     this.emitState();
+  }
+
+  /** 解绑视频 Surface(对标 Android cleanUI → detachViews)。 */
+  detachViews(): void {
+    if (this.player) {
+      this.player.detachViews();
+    }
+    this.videoOutId = '';
   }
 
   async next(auto: boolean = false): Promise<void> {
@@ -459,12 +626,12 @@ export class PlaybackService {
 
   seek(ms: number): void {
     this.position = ms;
-    vlcSetTime(ms);
+    this.player?.setTime(ms);
   }
 
   setSpeed(rate: number): void {
     this.speed = rate;
-    vlcSetRate(rate);
+    this.player?.setRate(rate);
   }
 
   toggleShuffle(): void {
@@ -478,9 +645,26 @@ export class PlaybackService {
   }
 
   release(): void {
-    vlcRelease();
+    if (this.rendererDiscoverer) {
+      this.rendererDiscoverer.stop();
+      this.rendererDiscoverer.release();
+      this.rendererDiscoverer = null;
+    }
+    if (this.equalizer) {
+      this.equalizer.release();
+      this.equalizer = null;
+    }
+    if (this.player) {
+      this.player.release();
+      this.player = null;
+    }
+    if (this.lib) {
+      this.lib.release();
+      this.lib = null;
+    }
     this.inited = false;
     this.videoOutId = '';
+    this.currentRendererHandle = -1;
     this.state = PlayState.IDLE;
     this.emitState();
   }

@@ -23,6 +23,11 @@ public:
     void SetSurfaceReadyCallback(SurfaceReadyFn cb);
     SurfaceReadyFn GetSurfaceReadyCallback();
 
+    /** Surface 销毁前回调(用于 detachViews,避免 vout 持有失效窗口)。 */
+    using SurfaceDestroyedFn = void (*)(const std::string &id);
+    void SetSurfaceDestroyedCallback(SurfaceDestroyedFn cb);
+    SurfaceDestroyedFn GetSurfaceDestroyedCallback();
+
 private:
     class Callbacks {
     public:
@@ -38,6 +43,7 @@ private:
     std::unordered_map<std::string, OH_NativeXComponent *> nativeXcomponentMap_;
     std::unordered_map<std::string, OHNativeWindow *> OHNativeWindowMap_;
     SurfaceReadyFn surfaceReadyCb_ {nullptr};
+    SurfaceDestroyedFn surfaceDestroyedCb_ {nullptr};
 };
 
 #define xMgr XcomponentManager::GetInstance()
