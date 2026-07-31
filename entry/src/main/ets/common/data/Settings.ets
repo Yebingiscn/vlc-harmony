@@ -64,6 +64,10 @@ export class Settings {
   static readonly VIDEO_RESUME_URI: string = 'VideoResumeUri';
   static readonly VIDEO_PAUSED: string = 'VideoPaused';
   static readonly VIDEO_SPEED: string = 'VideoSpeed';
+  // ── 睡眠倒计时持久化(避免下次开弹框又是空白)──
+  static readonly SLEEP_TIMER_MILLIS: string = 'SleepTimerMillis';
+  static readonly SLEEP_TIMER_WAIT_MEDIA_END: string = 'SleepTimerWaitMediaEnd';
+  static readonly SLEEP_TIMER_RESET_ON_INTERACTION: string = 'SleepTimerResetOnInteraction';
   static readonly VIDEO_RATIO: string = 'video_ratio';
   static readonly SCREEN_ORIENTATION: string = 'screen_orientation';
   static readonly VIDEO_HUD_TIMEOUT: string = 'video_hud_timeout_in_s';

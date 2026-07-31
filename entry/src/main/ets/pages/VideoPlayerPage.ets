@@ -50,6 +50,24 @@ function fmtTime(ms: number): string {
 }
 
 /**
+ * 睡眠倒计时时长 → 中文可读文案。
+ * 不把分钟换算成小时 —— 与弹窗预览保持一致(弹窗显示 "90m 30s",这里就是 "90分30秒"),
+ * 否则用户刚看到 90m、toast 却说 1 小时 30 分,会怀疑自己按错了。
+ */
+function fmtSleepSpan(ms: number): string {
+  const totalMin: number = Math.floor(ms / 60000);
+  const h: number = Math.floor(totalMin / 60);
+  const m: number = totalMin % 60;
+  if (h > 0 && m > 0) {
+    return `${h}小时${m}分`;
+  }
+  if (h > 0) {
+    return `${h}小时`;
+  }
+  return `${m}分钟`;
+}
+
+/**
  * VideoPlayerPage —— VideoPlayerActivity(全屏视频播放器)。
  * 视频画面铺底(AVPlayer + XComponent surface)+ 顶/底 HUD + seek + 倍速。
  * 能力替换约定:libVLC → @kit.MediaKit AVPlayer(surfaceId 绑 XComponent)。
@@ -68,6 +86,8 @@ class VideoPlayerViewModel {
   @Trace errorMsg: string = '';
   @Trace index: number = 0;
   @Trace listLen: number = 1;
+  /** 睡眠倒计时勾了「先等当前媒体播完」时置 true:播完不自动下一集,直接停。 */
+  @Trace stopAfterCurrent: boolean = false;
 
   uri: string = '';
   player: media.AVPlayer | null = null;
@@ -212,6 +232,11 @@ class VideoPlayerViewModel {
         break;
       case 'completed':
         this.state = PlayState.STOPPED;
+        // 睡眠倒计时已到且勾了「先等当前媒体播完」→ 到此为止,不自动连播。
+        if (this.stopAfterCurrent) {
+          this.stopAfterCurrent = false;
+          break;
+        }
         if (this.hasNext()) {
           this.playAt(this.index + 1);
         }
@@ -272,6 +297,19 @@ class VideoPlayerViewModel {
       }
     } catch (e) {
       hilog.error(0x0001, 'VLC', '[VLC] toggle failed: %{public}s', (e as BusinessError).message);
+    }
+  }
+
+  /** 睡眠倒计时到点:暂停播放(不 release,用户可继续)。 */
+  pauseForSleep(): void {
+    if (!this.player || this.state !== PlayState.PLAYING) {
+      return;
+    }
+    try {
+      this.player.pause();
+      hilog.info(0x0001, 'VLC', '[VLC] paused by sleep timer');
+    } catch (e) {
+      hilog.error(0x0001, 'VLC', '[VLC] sleep pause failed: %{public}s', (e as BusinessError).message);
     }
   }
 
@@ -355,14 +393,29 @@ export struct VideoPlayerPage {
   @Local seeking: boolean = false;
   @Local seekPercent: number = 0;
 
+  /** 睡眠倒计时状态。 */
+  @Local sleepArmed: boolean = false;
+  private sleepTimer: number = -1;
+  private sleepMillis: number = 0;
+  private sleepWaitMediaEnd: boolean = false;
+  private sleepResetOnInteraction: boolean = false;
+
   /** 更多选项/二级弹窗的 sheet 状态。sheetKind 空串=主选项列表;否则=对应二级弹窗。 */
   @Local sheetOpen: boolean = false;
   @Local sheetKind: string = ''; // '' | 'jump' | 'sleep' | 'chapter' | 'tracks' | 'renderer'
   @Local advancedOptionsOpen: boolean = false;
+  /**
+   * 高级选项菜单选中项的暂存。
+   * 为什么不在 onSelect 里直接开弹窗:bindMenu(showInSubWindow) 收起有动画,
+   * 菜单还在消失时立刻 bindSheet 会被吞掉(sheet 不显示)。改为等菜单 onDisappear 后再执行。
+   */
+  private pendingAdvancedAction: PlayerAdvancedOptionId | null = null;
 
-  /** 打开主选项列表。 */
+  /** 打开高级选项菜单。 */
   openOptions(): void {
     this.advancedOptionsOpen = true;
+    // 菜单期间 HUD 必须常驻(菜单锚在底栏上),顺带重置计时。
+    this.resetHudTimer();
   }
 
   /** 进入指定二级弹窗(切换 sheetKind,保持 sheet 展开)。 */
@@ -382,10 +435,64 @@ export struct VideoPlayerPage {
     this.closeSheet();
   }
 
-  /** Sleep timer 确认:定时动作体依赖 libVLC 媒体引擎契约,保留 TODO。 */
-  onSleepConfirm(): void {
-    // TODO(libVLC 契约): 写入睡眠定时器(waitBeforeSleep / resetOnInteraction 选项)+ 定时暂停;AVPlayer 无原生定时器接口。
+  /** Sleep timer 确认:起一个倒计时,到点暂停播放。 */
+  onSleepConfirm(millis: number, waitForMediaEnd: boolean, resetOnInteraction: boolean): void {
+    this.clearSleepTimer();
+    this.sleepMillis = millis;
+    this.sleepWaitMediaEnd = waitForMediaEnd;
+    this.sleepResetOnInteraction = resetOnInteraction;
+    this.armSleepTimer();
+    // 持久化:下次打开弹框能反推回原值;退出 app 再回来也还在。
+    Settings.put(Settings.SLEEP_TIMER_MILLIS, millis);
+    Settings.put(Settings.SLEEP_TIMER_WAIT_MEDIA_END, waitForMediaEnd);
+    Settings.put(Settings.SLEEP_TIMER_RESET_ON_INTERACTION, resetOnInteraction);
+    hilog.info(0x0001, 'VLC', '[VLC] sleep timer armed: %{public}d ms wait=%{public}s reset=%{public}s',
+      millis, String(waitForMediaEnd), String(resetOnInteraction));
+    // 设定成功提示。勾了「先等当前媒体播完」时行为不同(不会在到点那一刻暂停),文案要说清楚,
+    // 否则用户设 5 分钟却发现 5 分钟后还在播,会以为没生效。
+    const span: string = fmtSleepSpan(millis);
+    promptAction.showToast({
+      message: waitForMediaEnd
+        ? $r('app.string.sleep_timer_set_wait', span)
+        : $r('app.string.sleep_timer_set', span),
+    });
     this.closeSheet();
+  }
+
+  private armSleepTimer(): void {
+    if (this.sleepMillis <= 0) {
+      return;
+    }
+    if (this.sleepTimer !== -1) {
+      clearTimeout(this.sleepTimer);
+    }
+    this.sleepArmed = true;
+    this.sleepTimer = setTimeout(() => {
+      this.sleepTimer = -1;
+      if (this.sleepWaitMediaEnd) {
+        // 「先等当前媒体播完」→ 不立刻暂停,标记播完即停(见 vm.onState 的 completed 分支)。
+        this.vm.stopAfterCurrent = true;
+      } else {
+        this.vm.pauseForSleep();
+        this.sleepArmed = false;
+        // 到点提示 —— 否则画面无缘无故停住,用户不知道是倒计时干的。
+        promptAction.showToast({ message: $r('app.string.sleep_timer_fired') });
+      }
+    }, this.sleepMillis);
+  }
+
+  /** 取消倒计时。fromUser=true 时给出取消提示(页面销毁时的清理不需要弹)。 */
+  private clearSleepTimer(fromUser: boolean = false): void {
+    const wasArmed: boolean = this.sleepArmed;
+    if (this.sleepTimer !== -1) {
+      clearTimeout(this.sleepTimer);
+      this.sleepTimer = -1;
+    }
+    this.sleepArmed = false;
+    this.vm.stopAfterCurrent = false;
+    if (fromUser && wasArmed) {
+      promptAction.showToast({ message: $r('app.string.sleep_timer_cancelled') });
+    }
   }
 
   /** 章节选择:libVLC getChapters 契约,保留 TODO。 */
@@ -424,19 +531,25 @@ export struct VideoPlayerPage {
       clearTimeout(this.hudTimer);
       this.hudTimer = -1;
     }
+    this.clearSleepTimer();
     this.vm.release();
   }
 
   /** 显示 HUD 并重置 4s 自动隐藏计时。任何一次交互都应调用。 */
   resetHudTimer(): void {
+    // 「有任何交互时重置」勾选后,每次交互顺带把睡眠倒计时重新起算。
+    if (this.sleepResetOnInteraction && this.sleepArmed) {
+      this.armSleepTimer();
+    }
     this.vm.hudVisible = true;
     if (this.hudTimer !== -1) {
       clearTimeout(this.hudTimer);
     }
     this.hudTimer = setTimeout(() => {
       this.hudTimer = -1;
-      // 仅在播放中自动隐藏;暂停/出错时保持可见。
-      if (this.vm.state === PlayState.PLAYING && !this.seeking && !this.sheetOpen) {
+      // 仅在播放中自动隐藏;暂停/出错、拖动中、弹窗或高级选项菜单打开时保持可见
+      // ——高级选项菜单锚在底栏图标上,底栏一藏菜单就悬空/关掉。
+      if (this.vm.state === PlayState.PLAYING && !this.seeking && !this.sheetOpen && !this.advancedOptionsOpen) {
         this.vm.hudVisible = false;
       }
     }, 4000);
@@ -562,6 +675,21 @@ export struct VideoPlayerPage {
       Text(this.vm.title)
         .fontSize(18).fontColor('#FFFFFF').layoutWeight(1).margin({ left: 12, right: 12 })
         .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+      // 睡眠倒计时已设定的指示灯,点一下取消(否则设完毫无反馈,也无处撤销)。
+      if (this.sleepArmed) {
+        Image($r('app.media.ic_sleep'))
+          .width(22).height(22).fillColor('#FF8800').margin({ right: 16 })
+          .onClick(() => {
+            this.clearSleepTimer(true);
+            this.resetHudTimer();
+          })
+      }
+      Image($r('app.media.ic_player_more'))
+        .width(24).height(24).fillColor('#FFFFFF')
+        .onClick(() => {
+          this.resetHudTimer();
+          this.openOptions();
+        })
     }
     .width('100%')
     .padding({ left: 16, right: 16, top: 44, bottom: 16 })
@@ -625,6 +753,7 @@ export struct VideoPlayerPage {
                       placement: Placement.TopRight,
                       showInSubWindow: true,
                       backgroundColor: '#FFFFFF',
+                      onDisappear: () => this.runPendingAdvancedAction(),
                     })
                 } else {
                   Image(this.bottomActionIcon(action))
@@ -657,10 +786,12 @@ export struct VideoPlayerPage {
         }).width('100%')
       } else if (this.sheetKind === 'sleep') {
         SleepTimerDialog({
+          initialMillis: this.sleepMillis,
+          initialWaitMediaEnd: this.sleepWaitMediaEnd,
+          initialResetOnInteraction: this.sleepResetOnInteraction,
           onClose: () => this.closeSheet(),
-          onDeleteCurrent: () => {
-            // TODO(libVLC 契约): 清除已设睡眠定时器。
-          },
+          onConfirm: (millis: number, waitForMediaEnd: boolean, resetOnInteraction: boolean) =>
+            this.onSleepConfirm(millis, waitForMediaEnd, resetOnInteraction),
         }).width('100%')
       } else if (this.sheetKind === 'chapter') {
         SelectChapterDialog({
@@ -734,10 +865,25 @@ export struct VideoPlayerPage {
     PlayerAdvancedOptions({
       items: buildPlayerAdvancedOptions('video'),
       onSelect: (id: PlayerAdvancedOptionId): void => {
+        // 只记录选择并收起菜单,真正的动作在菜单消失后执行(见 pendingAdvancedAction 注释)。
+        this.pendingAdvancedAction = id;
         this.advancedOptionsOpen = false;
-        promptAction.showToast({ message: '该功能暂未实现' });
       },
     })
+  }
+
+  /** 菜单已完全消失,执行暂存的动作。 */
+  runPendingAdvancedAction(): void {
+    const id: PlayerAdvancedOptionId | null = this.pendingAdvancedAction;
+    this.pendingAdvancedAction = null;
+    if (id === null) {
+      return;
+    }
+    if (id === 'sleep') {
+      this.openSub('sleep');
+      return;
+    }
+    promptAction.showToast({ message: '该功能暂未实现' });
   }
 
 }
