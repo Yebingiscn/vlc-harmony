@@ -185,17 +185,6 @@ export struct MainPage {
           showClose: false,
           onDisappear: () => this.showFavoriteServer = false,
         })
-        .bindSheet(this.showAudioDisplaySettings, this.audioDisplaySettingsSheet(), {
-          detents: [SheetSize.MEDIUM, SheetSize.LARGE],
-          dragBar: false,
-          backgroundColor: '#FFFFFF',
-          showClose: false,
-          scrollSizeMode: ScrollSizeMode.CONTINUOUS,
-          onDisappear: () => {
-            this.showAudioDisplaySettings = false;
-            this.audioSettingsVersion++;
-          },
-        })
 
         // 迷你播放条:无媒体时由 MiniPlayer 自身按 getCurrent()!=null 不渲染。
         MiniPlayer()
@@ -221,6 +210,17 @@ export struct MainPage {
       })
     }
     .hideTitleBar(true)
+    .bindSheet(this.showAudioDisplaySettings, this.audioDisplaySettingsSheet(), {
+      detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+      dragBar: false,
+      backgroundColor: '#FFFFFF',
+      showClose: false,
+      scrollSizeMode: ScrollSizeMode.CONTINUOUS,
+      onDisappear: () => {
+        this.showAudioDisplaySettings = false;
+        this.audioSettingsVersion++;
+      },
+    })
   }
 
   /** 收藏服务器 BottomSheet(复用 NetworkServerDialog)。 */

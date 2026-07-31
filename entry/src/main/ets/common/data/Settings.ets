@@ -51,6 +51,7 @@ export class Settings {
   static readonly KEY_VIDEO_SORT_DESC: string = 'video_sort_desc';
   static readonly KEY_AUDIO_SORT_DESC: string = 'audio_sort_desc';
   static readonly KEY_AUDIO_ONLY_FAVS: string = 'audio_only_favs';
+  static readonly KEY_AUDIO_PLAY_ACTION: string = 'audio_play_action';
   static readonly KEY_DISPLAY_AS_LIST: string = 'display_as_list';
   static readonly KEY_GROUP_VIDEOS: string = 'video_min_group_length';
   static readonly KEY_SHOW_HEADERS: string = 'show_headers';
