@@ -477,6 +477,34 @@
       "value": "睡眠倒计时结束,已暂停播放"
     },
     {
+      "name": "add_to_existing_playlist",
+      "value": "添加到现有播放列表"
+    },
+    {
+      "name": "save_playlist_hint_zh",
+      "value": "帮助每一个人找到自己喜欢的视频"
+    },
+    {
+      "name": "save_playlist_hint_en",
+      "value": "To help everyone find the videos they love"
+    },
+    {
+      "name": "save",
+      "value": "保存"
+    },
+    {
+      "name": "media_count_suffix",
+      "value": "%d 个媒体"
+    },
+    {
+      "name": "lock_player",
+      "value": "锁定"
+    },
+    {
+      "name": "swipe_to_unlock",
+      "value": "滑动解锁"
+    },
+    {
       "name": "history",
       "value": "历史"
     },

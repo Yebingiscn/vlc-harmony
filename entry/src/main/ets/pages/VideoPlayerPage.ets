@@ -10,6 +10,11 @@ import { SleepTimerDialog } from './SleepTimerDialog';
 import { SelectChapterDialog } from './SelectChapterDialog';
 import { VideoTracksDialog } from './VideoTracksDialog';
 import { RenderersDialog } from './RenderersDialog';
+import { PlaybackSpeedDialog, PlaybackSpeedAction } from './PlaybackSpeedDialog';
+import { VideoControlsSettingsDialog, ControlsState } from './VideoControlsSettingsDialog';
+import { EqualizerDialog } from './EqualizerDialog';
+import { VideoInfoDialog } from './VideoInfoDialog';
+import { BookmarkDialog } from './BookmarkDialog';
 import { promptAction } from '@kit.ArkUI';
 import {
   buildPlayerAdvancedOptions,
@@ -120,6 +125,8 @@ class VideoPlayerViewModel implements PlaybackListener {
   /** contain 后的 XComponent 显示尺寸 */
   @Trace surfaceWidth: number = 0;
   @Trace surfaceHeight: number = 0;
+  /** 播放器锁定状态:锁定后点击画面不显 HUD,需手动解锁。 */
+  @Trace locked: boolean = false;
 
   uri: string = '';
   private list: VideoPlayItem[] = [];
@@ -287,6 +294,13 @@ class VideoPlayerViewModel implements PlaybackListener {
     this.hudVisible = true;
   }
 
+  toggleLock(): void {
+    this.locked = !this.locked;
+    if (this.locked) {
+      this.hudVisible = false;
+    }
+  }
+
   /** 睡眠倒计时到点:暂停播放(不 release,用户可继续)。 */
   pauseForSleep(): void {
     const svc = PlaybackService.getInstance();
@@ -358,7 +372,7 @@ export struct VideoPlayerPage {
 
   /** 更多选项/二级弹窗的 sheet 状态。sheetKind 空串=主选项列表;否则=对应二级弹窗。 */
   @Local sheetOpen: boolean = false;
-  @Local sheetKind: string = ''; // '' | 'jump' | 'sleep' | 'chapter' | 'tracks' | 'renderer'
+  @Local sheetKind: string = ''; // '' | 'jump' | 'sleep' | 'chapter' | 'tracks' | 'renderer' | 'speed' | 'controls' | 'equalizer' | 'videoInfo' | 'bookmark'
   @Local advancedOptionsOpen: boolean = false;
   /**
    * 高级选项菜单选中项的暂存。
@@ -478,6 +492,22 @@ export struct VideoPlayerPage {
     this.closeSheet();
   }
 
+  onSpeedConfirm(action: PlaybackSpeedAction): void {
+    this.vm.setSpeed(action.speed);
+    promptAction.showToast({ message: `播放速度已设为 ${action.speed.toFixed(2)}x` });
+    this.closeSheet();
+  }
+
+  onControlsConfirm(s: ControlsState): void {
+    // 持久化控制设置偏好
+    Settings.put(Settings.ENABLE_VOLUME_GESTURE, s.volGesture);
+    Settings.put(Settings.ENABLE_BRIGHTNESS_GESTURE, s.brightGesture);
+    Settings.put(Settings.ENABLE_SEEK_BUTTONS, s.swipeSeek);
+    Settings.put(Settings.ENABLE_DOUBLE_TAP_SEEK, s.doubleTapSeek);
+    promptAction.showToast({ message: '控制设置已保存' });
+    this.closeSheet();
+  }
+
   aboutToAppear(): void {
     this.resetHudTimer();
   }
@@ -511,8 +541,12 @@ export struct VideoPlayerPage {
     }, 4000);
   }
 
-  /** 点击画面:HUD 可见则隐藏,不可见则显示。 */
+  /** 点击画面:HUD 可见则隐藏,不可见则显示。锁定态下仅弹出提示。 */
   toggleHud(): void {
+    if (this.vm.locked) {
+      promptAction.showToast({ message: '播放器已锁定' });
+      return;
+    }
     if (this.vm.hudVisible) {
       if (this.hudTimer !== -1) {
         clearTimeout(this.hudTimer);
@@ -789,6 +823,39 @@ export struct VideoPlayerPage {
           onConnect: (id: number) => this.onRendererConnect(id),
           onDisconnect: () => this.onRendererDisconnect(),
         }).width('100%')
+      } else if (this.sheetKind === 'speed') {
+        PlaybackSpeedDialog({
+          currentSpeed: this.vm.speed,
+          onClose: () => this.closeSheet(),
+          onConfirm: (action: PlaybackSpeedAction) => this.onSpeedConfirm(action),
+        }).width('100%')
+      } else if (this.sheetKind === 'controls') {
+        VideoControlsSettingsDialog({
+          onClose: () => this.closeSheet(),
+          onConfirm: (s: ControlsState) => this.onControlsConfirm(s),
+        }).width('100%')
+      } else if (this.sheetKind === 'equalizer') {
+        EqualizerDialog({
+          onClose: () => this.closeSheet(),
+        }).width('100%')
+      } else if (this.sheetKind === 'videoInfo') {
+        VideoInfoDialog({
+          title: this.vm.title,
+          durationMs: this.vm.duration,
+          videoWidth: this.vm.videoWidth,
+          videoHeight: this.vm.videoHeight,
+          onClose: () => this.closeSheet(),
+        }).width('100%')
+      } else if (this.sheetKind === 'bookmark') {
+        BookmarkDialog({
+          bookmarks: [],
+          currentTimeMs: this.vm.position,
+          durationMs: this.vm.duration,
+          onClose: () => this.closeSheet(),
+          onSeek: (timeMs: number) => { this.vm.seekTo(timeMs); this.closeSheet(); },
+          onAddAtCurrent: () => promptAction.showToast({ message: '书签功能暂未实现' }),
+          onDelete: (_id: number) => promptAction.showToast({ message: '书签功能暂未实现' }),
+        }).width('100%')
       }
     }
     .width('100%')
@@ -809,6 +876,7 @@ export struct VideoPlayerPage {
         .textAlign(TextAlign.Start)
 
       this.optionRow('Jump to time', () => this.openSub('jump'))
+      this.optionRow('Playback speed', () => this.openSub('speed'))
       this.optionRow('Sleep timer', () => this.openSub('sleep'))
       this.optionRow($r('app.string.go_to_chapter'), () => this.openSub('chapter'))
       this.optionRow('Audio & Subtitles tracks', () => this.openSub('tracks'))
@@ -844,6 +912,7 @@ export struct VideoPlayerPage {
   advancedOptionsMenu() {
     PlayerAdvancedOptions({
       items: buildPlayerAdvancedOptions('video'),
+      activeIds: this.vm.locked ? ['lock'] : [],
       onSelect: (id: PlayerAdvancedOptionId): void => {
         // 只记录选择并收起菜单,真正的动作在菜单消失后执行(见 pendingAdvancedAction 注释)。
         this.pendingAdvancedAction = id;
@@ -859,8 +928,42 @@ export struct VideoPlayerPage {
     if (id === null) {
       return;
     }
+    if (id === 'lock') {
+      this.vm.toggleLock();
+      this.resetHudTimer();
+      return;
+    }
     if (id === 'sleep') {
       this.openSub('sleep');
+      return;
+    }
+    if (id === 'speed') {
+      this.openSub('speed');
+      return;
+    }
+    if (id === 'jumpToTime') {
+      this.openSub('jump');
+      return;
+    }
+    if (id === 'equalizer') {
+      this.openSub('equalizer');
+      return;
+    }
+    if (id === 'videoInfo') {
+      this.openSub('videoInfo');
+      return;
+    }
+    if (id === 'bookmark') {
+      this.openSub('bookmark');
+      return;
+    }
+    if (id === 'videoControls') {
+      this.openSub('controls');
+      return;
+    }
+    if (id === 'repeat') {
+      PlaybackService.getInstance().cycleRepeat();
+      promptAction.showToast({ message: '循环模式已切换' });
       return;
     }
     promptAction.showToast({ message: '该功能暂未实现' });

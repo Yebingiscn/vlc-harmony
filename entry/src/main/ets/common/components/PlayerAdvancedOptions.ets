@@ -74,6 +74,8 @@ export function buildPlayerAdvancedOptions(mode: PlayerAdvancedMenuMode): Player
 @ComponentV2
 export struct PlayerAdvancedOptions {
   @Param items: PlayerAdvancedOption[] = [];
+  /** 当前激活项的 id 列表(如 repeat=激活时图标/文字变橙色)。 */
+  @Param activeIds: PlayerAdvancedOptionId[] = [];
   @Event onSelect: (id: PlayerAdvancedOptionId) => void = () => {};
 
   build() {
@@ -84,11 +86,11 @@ export struct PlayerAdvancedOptions {
             Image(item.icon)
               .width(26)
               .height(26)
-              .fillColor('#333333')
+              .fillColor(this.activeIds.includes(item.id) ? '#FF8800' : '#333333')
               .margin({ left: 18, right: 18 })
             Text(item.title)
               .fontSize(17)
-              .fontColor('#333333')
+              .fontColor(this.activeIds.includes(item.id) ? '#FF8800' : '#333333')
               .layoutWeight(1)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
