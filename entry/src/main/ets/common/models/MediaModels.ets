@@ -80,6 +80,8 @@ export class MediaWrapper extends MediaLibraryItem {
   artistName: string = '';
   albumName: string = '';
   artworkPath: string = '';
+  dateAdded: number = 0;
+  dateModified: number = 0;
 
   constructor(id: number, title: string, uri: string, type: number) {
     super(id, title, MediaItemType.MEDIA);

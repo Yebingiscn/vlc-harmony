@@ -581,6 +581,26 @@
       "value": "显示设置"
     },
     {
+      "name": "menu_display_as_list",
+      "value": "以列表形式显示"
+    },
+    {
+      "name": "menu_browse_network",
+      "value": "浏览网络"
+    },
+    {
+      "name": "menu_favorite_server",
+      "value": "收藏服务器"
+    },
+    {
+      "name": "menu_display_list_on",
+      "value": "列表模式已开启"
+    },
+    {
+      "name": "menu_display_list_off",
+      "value": "列表模式已关闭"
+    },
+    {
       "name": "menu_incognito_off",
       "value": "无痕模式已关闭"
     },

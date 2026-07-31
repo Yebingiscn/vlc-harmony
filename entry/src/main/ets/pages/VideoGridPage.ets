@@ -28,24 +28,64 @@ class VideoGridViewModel {
   @Trace cardMode: boolean = true; // KEY_VIDEOS_CARDS 默认 true(网格)
   @Trace grouping: VideoGroupingType = VideoGroupingType.NAME;
   @Trace emptyState: EmptyLoadingState = EmptyLoadingState.LOADING;
+  private sortField: number = 1;
+  private sortDesc: boolean = false;
 
   async load(): Promise<void> {
     this.loading = true;
     this.emptyState = EmptyLoadingState.LOADING;
-    const cards = await Settings.getBoolean(Settings.KEY_VIDEOS_CARDS, true);
-    this.cardMode = cards;
-    // 先确保媒体读权限(首次弹授权框),再扫描 —— 否则扫描在授权完成前跑会返回空。
+    this.cardMode = await Settings.getBoolean(Settings.KEY_VIDEOS_CARDS, true);
+    this.sortField = await Settings.getInt(Settings.KEY_VIDEO_SORT, 1);
+    this.sortDesc = await Settings.getBoolean(Settings.KEY_VIDEO_SORT_DESC, false);
+    // 先确保媒体读权限(首次弹授权框),再扫描 -- 否则扫描在授权完成前跑会返回空。
     await PermissionCoordinator.askStoragePermission(false, false, true);
     await MediaLibrary.scan();
-    this.items = MediaLibrary.getVideos().slice();
+    this.items = this.applySort(MediaLibrary.getVideos().slice());
     this.updateEmpty();
     this.loading = false;
   }
 
   async refresh(): Promise<void> {
     await MediaLibrary.scan();
-    this.items = MediaLibrary.getVideos().slice();
+    this.items = this.applySort(MediaLibrary.getVideos().slice());
     this.updateEmpty();
+  }
+
+  /** 仅重读设置(不重新扫描),用于半模态关闭后刷新显示模式和排序。 */
+  async reloadSettings(): Promise<void> {
+    this.cardMode = await Settings.getBoolean(Settings.KEY_VIDEOS_CARDS, true);
+    this.sortField = await Settings.getInt(Settings.KEY_VIDEO_SORT, 1);
+    this.sortDesc = await Settings.getBoolean(Settings.KEY_VIDEO_SORT_DESC, false);
+    this.items = this.applySort(MediaLibrary.getVideos().slice());
+    this.updateEmpty();
+  }
+
+  applySort(items: MediaWrapper[]): MediaWrapper[] {
+    const sorted = items.slice();
+    sorted.sort((a: MediaWrapper, b: MediaWrapper) => {
+      let cmp = 0;
+      switch (this.sortField) {
+        case 1:
+          cmp = a.title.localeCompare(b.title);
+          break;
+        case 2:
+          cmp = a.length - b.length;
+          break;
+        case 3:
+          cmp = a.dateModified - b.dateModified;
+          break;
+        case 4:
+          cmp = a.id - b.id;
+          break;
+        case 5:
+          cmp = a.dateAdded - b.dateAdded;
+          break;
+        default:
+          cmp = a.title.localeCompare(b.title);
+      }
+      return this.sortDesc ? -cmp : cmp;
+    });
+    return sorted;
   }
 
   updateEmpty(): void {
@@ -68,9 +108,15 @@ export struct VideoGridPage {
   @Local refreshing: boolean = false;
   @Local contextItem: MediaWrapper | null = null;
   @Local showContext: boolean = false;
+  @Param settingsVersion: number = 0;
 
   aboutToAppear(): void {
     this.vm.load();
+  }
+
+  @Monitor('settingsVersion')
+  onSettingsVersionChange(): void {
+    this.vm.reloadSettings();
   }
 
   async doRefresh(): Promise<void> {
