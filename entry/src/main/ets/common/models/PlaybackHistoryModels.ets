@@ -58,3 +58,8 @@ export function prependPlaybackHistory(
 export function shouldRecordPlaybackHistory(incognito: boolean): boolean {
   return !incognito;
 }
+
+/** 仅在媒体首次进入播放态时写入；暂停后继续播放不重复刷新历史。 */
+export function shouldRecordPlaybackStart(state: string, lastRecordedUri: string, uri: string): boolean {
+  return state === 'playing' && uri.length > 0 && lastRecordedUri !== uri;
+}

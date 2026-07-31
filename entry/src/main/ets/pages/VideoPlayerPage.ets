@@ -1,8 +1,10 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { NavController } from '../common/data/NavController';
+import { PlaybackHistory } from '../common/data/PlaybackHistory';
 import { PlaybackService, PlaybackListener } from '../common/data/PlaybackService';
 import { Settings } from '../common/data/Settings';
 import { MediaWrapper, PlayState } from '../common/models/MediaModels';
+import { shouldRecordPlaybackStart } from '../common/models/PlaybackHistoryModels';
 import { JumpToTimeDialog } from './JumpToTimeDialog';
 import { SleepTimerDialog } from './SleepTimerDialog';
 import { SelectChapterDialog } from './SelectChapterDialog';
@@ -124,6 +126,7 @@ class VideoPlayerViewModel implements PlaybackListener {
   private listening: boolean = false;
   private leaving: boolean = false;
   private xcomponentId: string = '';
+  private lastHistoryUri: string = '';
 
   hasPrev(): boolean {
     return this.index > 0;
@@ -182,7 +185,12 @@ class VideoPlayerViewModel implements PlaybackListener {
       this.errorMsg = 'playback error';
     } else if (state === PlayState.PLAYING) {
       this.errorMsg = '';
-      PlaybackService.getInstance().refreshVideoSize();
+      const svc = PlaybackService.getInstance();
+      svc.refreshVideoSize();
+      if (shouldRecordPlaybackStart('playing', this.lastHistoryUri, this.uri)) {
+        this.lastHistoryUri = this.uri;
+        void PlaybackHistory.record(this.uri, this.title, svc.getDuration());
+      }
     }
   }
 
