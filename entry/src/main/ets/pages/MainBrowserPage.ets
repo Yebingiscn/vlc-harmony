@@ -1,17 +1,19 @@
 import { MediaLibrary } from '../common/data/MediaLibrary';
+import { BundledMedia } from '../common/data/BundledMedia';
 import { NavController } from '../common/data/NavController';
 import { TitleListView } from '../common/components/TitleListView';
-import { SheetItem, Folder } from '../common/models/MediaModels';
+import { SheetItem, Folder, FileBrowserParam } from '../common/models/MediaModels';
 import { NetworkServerDialog } from './NetworkServerDialog';
 
 /**
  * MainBrowserPage —— Browse Tab 根(MainBrowserFragment)。
- * 三段 TitleListView:收藏 / 本地存储 / 局域网,各含横向卡片列表 + 加载/空态。
+ * 四段 TitleListView:收藏 / 本地存储 / 应用内视频 / 局域网,各含横向卡片列表 + 加载/空态。
  */
 @ObservedV2
 class MainBrowserViewModel {
   @Trace favorites: SheetItem[] = [];
   @Trace storages: SheetItem[] = [];
+  @Trace appVideos: SheetItem[] = [];
   @Trace network: SheetItem[] = [];
   @Trace loading: boolean = true;
 
@@ -21,6 +23,11 @@ class MainBrowserViewModel {
     const folders: Folder[] = MediaLibrary.getVideoFolders();
     this.storages = folders.map((f: Folder, i: number) => new SheetItem(f.title, `${f.mediaCount} videos`,
       $r('app.media.ic_folder')));
+    const bundled = BundledMedia.asRootFolder();
+    this.appVideos = [
+      new SheetItem(bundled.title, `${bundled.mediaCount} video${bundled.mediaCount > 1 ? 's' : ''}`,
+        $r('app.media.ic_video')),
+    ];
     this.favorites = []; // 无收藏
     this.network = []; // 局域网需手动添加
     this.loading = false;
@@ -59,6 +66,16 @@ export struct MainBrowserPage {
           loading: this.vm.loading,
           emptyText: $r('app.string.nomedia'),
           onItemClick: (item: SheetItem) => NavController.pushSecondary('STORAGE'),
+        })
+        TitleListView({
+          title: $r('app.string.browser_app_videos'),
+          items: this.vm.appVideos,
+          loading: this.vm.loading,
+          emptyText: $r('app.string.browser_app_videos_empty'),
+          onItemClick: (_item: SheetItem) => {
+            const p: FileBrowserParam = { mode: 'bundled' };
+            NavController.push('FileBrowser', p);
+          },
         })
         // Local Network:标题旁 ic_add 打开 NetworkServerDialog;空态显示「Add server」按钮。
         Column() {

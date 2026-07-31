@@ -11,6 +11,8 @@ import { MediaLibrary } from '../common/data/MediaLibrary';
 import { NavController } from '../common/data/NavController';
 import { PermissionCoordinator } from '../common/data/PermissionCoordinator';
 import { AppColors } from '../common/constants/AppConstants';
+import { DisplaySettingsDialog } from './DisplaySettingsDialog';
+import { promptAction } from '@kit.ArkUI';
 
 /**
  * MainPage —— MainActivity(透明 5-Tab 宿主)。
@@ -22,6 +24,7 @@ export struct MainPage {
   @Local currentTab: string = 'video';
   @Local scanning: boolean = false;
   @Local showFab: boolean = false;
+  @Local showDisplaySettings: boolean = false;
 
   async aboutToAppear(): Promise<void> {
     this.scanning = MediaLibrary.isScanning() || !MediaLibrary.hasScanned();
@@ -48,6 +51,32 @@ export struct MainPage {
     return map[id] ?? 0;
   }
 
+  openDisplaySettings(): void {
+    this.showDisplaySettings = true;
+  }
+
+  toggleIncognito(): void {
+    const next = !Settings.incognitoMode;
+    Settings.put(Settings.KEY_INCOGNITO, next);
+    promptAction.showToast({
+      message: next ? $r('app.string.menu_incognito_on') : $r('app.string.menu_incognito_off'),
+    });
+  }
+
+  async refreshMediaLibrary(): Promise<void> {
+    this.scanning = true;
+    await PermissionCoordinator.askStoragePermission(false, false, true);
+    await MediaLibrary.scan();
+    this.scanning = false;
+  }
+
+  /** 显示设置 BottomSheet(自定义组件 builder 必须 .width('100%'))。 */
+  @Builder
+  displaySettingsSheet() {
+    DisplaySettingsDialog({ onClose: () => this.showDisplaySettings = false })
+      .width('100%')
+  }
+
   build() {
     NavDestination() {
       Column() {
@@ -57,7 +86,11 @@ export struct MainPage {
           title: $r('app.string.app_name'),
           showBack: false,
           showSearch: true,
+          showMore: true,
           onSearch: () => NavController.push('Search'),
+          onMoreSettings: () => this.openDisplaySettings(),
+          onMoreIncognito: () => this.toggleIncognito(),
+          onMoreRefresh: () => this.refreshMediaLibrary(),
         })
 
         if (this.scanning) {
@@ -92,6 +125,11 @@ export struct MainPage {
       .width('100%')
       .height('100%')
       .backgroundColor($r('app.color.background_default'))
+      .bindSheet(this.showDisplaySettings, this.displaySettingsSheet(), {
+        height: SheetSize.FIT_CONTENT,
+        dragBar: true,
+        onDisappear: () => this.showDisplaySettings = false,
+      })
     }
     .hideTitleBar(true)
   }

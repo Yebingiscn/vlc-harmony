@@ -553,6 +553,22 @@
       "value": "Your database contains the list of all of your media. It will be shared with VLC\\'s developers"
     },
     {
+      "name": "menu_display_settings",
+      "value": "Display settings"
+    },
+    {
+      "name": "menu_incognito_off",
+      "value": "Incognito mode off"
+    },
+    {
+      "name": "menu_incognito_on",
+      "value": "Incognito mode on"
+    },
+    {
+      "name": "menu_refresh",
+      "value": "Refresh"
+    },
+    {
       "name": "more",
       "value": "More"
     },
@@ -1299,6 +1315,14 @@
     {
       "name": "songs",
       "value": "Songs"
+    },
+    {
+      "name": "browser_app_videos",
+      "value": "In-app videos"
+    },
+    {
+      "name": "browser_app_videos_empty",
+      "value": "No in-app videos"
     }
   ]
 }

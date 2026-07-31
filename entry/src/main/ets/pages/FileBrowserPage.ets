@@ -1,15 +1,19 @@
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { NavController } from '../common/data/NavController';
 import { MediaLibrary } from '../common/data/MediaLibrary';
+import { BundledMedia } from '../common/data/BundledMedia';
 import { EmptyStateView } from '../common/components/EmptyStateView';
 import { AppColors, AppDimens } from '../common/constants/AppConstants';
-import { Folder, MediaLibraryItem, EmptyLoadingState } from '../common/models/MediaModels';
+import { Folder, EmptyLoadingState } from '../common/models/MediaModels';
+import { VideoParam } from './VideoPlayerPage';
 
-/** 浏览模式:'file' | 'network' | 'storage' | 'picker'。 */
-export type BrowserMode = 'file' | 'network' | 'storage' | 'picker';
+/** 浏览模式:'file' | 'network' | 'storage' | 'picker' | 'bundled'。 */
+export type BrowserMode = 'file' | 'network' | 'storage' | 'picker' | 'bundled';
 
 /**
  * BrowserViewModel —— BaseBrowserFragment 的行为基类(子页注入 categoryTitle + 数据源)。
- * 改数组整体 reassign。network 模式恒空态(file/storage/picker 用 MediaLibrary.getVideoFolders() 样例)。
+ * 改数组整体 reassign。network 模式恒空态;bundled 列 rawfile 打包媒体;
+ * file/storage/picker 用 MediaLibrary.getVideoFolders()。
  */
 @ObservedV2
 class BrowserViewModel {
@@ -22,6 +26,10 @@ class BrowserViewModel {
     return this.mode === 'network';
   }
 
+  private isBundledMode(): boolean {
+    return this.mode === 'bundled';
+  }
+
   /** 首次拉取(子页 browseRoot)。 */
   browseRoot(): void {
     this.loading = true;
@@ -29,6 +37,13 @@ class BrowserViewModel {
       // network 模式:无连接 → 空态文案。
       this.dataset = [];
       this.emptyState = EmptyLoadingState.EMPTY;
+      this.loading = false;
+      return;
+    }
+    if (this.isBundledMode()) {
+      const folders = BundledMedia.asFolders();
+      this.dataset = folders;
+      this.emptyState = folders.length === 0 ? EmptyLoadingState.EMPTY : EmptyLoadingState.NONE;
       this.loading = false;
       return;
     }
@@ -71,6 +86,9 @@ export struct FileBrowserPage {
     if (this.mode === 'picker') {
       return 'Pick a file';
     }
+    if (this.mode === 'bundled') {
+      return 'In-app videos';
+    }
     return 'Files';
   }
 
@@ -80,25 +98,60 @@ export struct FileBrowserPage {
     this.isRefreshing = false;
   }
 
-  private onFolderClick(folder: Folder): void {
+  private async onFolderClick(folder: Folder): Promise<void> {
     // TODO(契约):browse(media, save=true) push 下一级 FileBrowserFragment。本页为样例,无下级目录数据。
     if (this.mode === 'picker') {
       // picker 模式选中文件返回。
       NavController.pop();
       return;
     }
+    if (this.mode === 'bundled') {
+      await this.playBundled(folder);
+    }
+  }
+
+  /** 解压 rawfile → 沙箱后进入 VideoPlayer。 */
+  private async playBundled(folder: Folder): Promise<void> {
+    const rawName = BundledMedia.rawNameFromUri(folder.path);
+    if (rawName.length === 0) {
+      return;
+    }
+    hilog.info(0x0001, 'VLC', '[VLC] playBundled raw=%{public}s', rawName);
+    const media = await BundledMedia.resolveMedia(rawName, folder.title);
+    if (!media) {
+      hilog.error(0x0001, 'VLC', '[VLC] playBundled resolve failed raw=%{public}s', rawName);
+      return;
+    }
+    const param: VideoParam = { uri: media.uri, title: media.title };
+    NavController.push('VideoPlayer', param);
   }
 
   private breadcrumbSegment(): string {
-    return this.mode === 'network' ? 'Network' : 'Local';
+    if (this.mode === 'network') {
+      return 'Network';
+    }
+    if (this.mode === 'bundled') {
+      return 'In-app';
+    }
+    return 'Local';
+  }
+
+  private subtitleFor(folder: Folder): string {
+    if (this.mode === 'bundled') {
+      return folder.description.length > 0 ? folder.description : folder.title;
+    }
+    if (folder.mediaCount > 0) {
+      return `${folder.mediaCount} item${folder.mediaCount > 1 ? 's' : ''}`;
+    }
+    return folder.path;
   }
 
   @Builder
   BrowserItem(folder: Folder) {
     Row() {
-      // 48×48 图标(folder 占位)
+      // 48×48 图标(folder 占位;bundled 用视频图标)
       Stack() {
-        Image($r('app.media.ic_folder'))
+        Image(this.mode === 'bundled' ? $r('app.media.ic_video') : $r('app.media.ic_folder'))
           .width(AppDimens.audio_cover)
           .height(AppDimens.audio_cover)
           .objectFit(ImageFit.CENTER)
@@ -116,7 +169,7 @@ export struct FileBrowserPage {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
-        Text(folder.mediaCount > 0 ? `${folder.mediaCount} item${folder.mediaCount > 1 ? 's' : ''}` : folder.path)
+        Text(this.subtitleFor(folder))
           .fontSize(12)
           .fontColor(AppColors.grey600)
           .maxLines(1)
@@ -145,11 +198,19 @@ export struct FileBrowserPage {
             .fillColor(AppColors.white)
             .margin({ left: 12 })
             .onClick(() => NavController.pop())
-          Text(this.titleForMode())
-            .fontSize(20)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(AppColors.white)
-            .margin({ left: AppDimens.kl_half })
+          if (this.mode === 'bundled') {
+            Text($r('app.string.browser_app_videos'))
+              .fontSize(20)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(AppColors.white)
+              .margin({ left: AppDimens.kl_half })
+          } else {
+            Text(this.titleForMode())
+              .fontSize(20)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(AppColors.white)
+              .margin({ left: AppDimens.kl_half })
+          }
           Blank()
         }
         .width('100%')

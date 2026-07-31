@@ -2,6 +2,8 @@ import { EqualizerPreset } from '../common/models/MediaModels';
 import { EqualizerBar } from '../common/components/EqualizerBar';
 import { Settings } from '../common/data/Settings';
 import { AppColors } from '../common/constants/AppConstants';
+import { PlaybackService } from '../common/data/PlaybackService';
+import { Equalizer } from '../libvlc';
 
 const FREQ_LABELS: string[] = ['60', '170', '310', '600', '1K', '3K', '6K', '12K'];
 
@@ -20,26 +22,41 @@ export struct EqualizerDialog {
   @Local presets: EqualizerPreset[] = [];
   @Event onClose: () => void = () => {};
 
-  aboutToAppear(): void {
-    this.presets = [
-      new EqualizerPreset(0, 'Flat', [0, 0, 0, 0, 0, 0, 0, 0]),
-      new EqualizerPreset(1, 'Classical', [0, 0, 0, 0, 0, 0, - 20, - 20]),
-      new EqualizerPreset(2, 'Club', [0, 0, 8, 6, 6, 6, 3, 0]),
-      new EqualizerPreset(3, 'Dance', [10, 7, 2, 0, 0, - 5, - 10, - 12]),
-      new EqualizerPreset(4, 'Full Bass', [12, 10, 4, 0, - 4, - 8, - 10, - 11]),
-      new EqualizerPreset(5, 'Full Treble', [- 12, - 12, - 10, - 4, 2, 8, 11, 12]),
-      new EqualizerPreset(6, 'Headphones', [4, 11, 5, - 3, - 2, 2, 6, 9]),
-      new EqualizerPreset(7, 'Large Hall', [10, 10, 5, 5, 0, - 4, - 4, - 4]),
-      new EqualizerPreset(8, 'Live', [- 4, 0, 4, 5, 5, 5, 4, 2]),
-      new EqualizerPreset(9, 'Pop', [- 2, 5, 6, 4, 0, - 2, - 2, - 1]),
-    ];
-    this.applyPreset(this.presets[0]);
+  async aboutToAppear(): Promise<void> {
+    const count = Equalizer.getPresetCount();
+    const bandCount = Equalizer.getBandCount();
+    const next: EqualizerPreset[] = [];
+    if (count > 0) {
+      for (let i = 0; i < count; i++) {
+        const name = Equalizer.getPresetName(i);
+        const bands: number[] = [];
+        for (let b = 0; b < Math.min(bandCount, 8); b++) {
+          bands.push(0);
+        }
+        while (bands.length < 8) {
+          bands.push(0);
+        }
+        next.push(new EqualizerPreset(i, name.length > 0 ? name : `Preset ${i}`, bands));
+      }
+    } else {
+      next.push(new EqualizerPreset(0, 'Flat', [0, 0, 0, 0, 0, 0, 0, 0]));
+    }
+    this.presets = next;
+    const savedId = await Settings.getInt(Settings.KEY_CURRENT_EQUALIZER_ID, 0);
+    const idx = savedId >= 0 && savedId < this.presets.length ? savedId : 0;
+    this.eqEnabled = await Settings.getBoolean(Settings.KEY_EQUALIZER_ENABLED, false);
+    this.applyPreset(this.presets[idx]);
   }
 
   applyPreset(p: EqualizerPreset): void {
     this.presetIndex = p.id;
     this.bands = p.bands.slice();
     Settings.put(Settings.KEY_CURRENT_EQUALIZER_ID, p.id);
+    this.pushToPlayer();
+  }
+
+  private pushToPlayer(): void {
+    PlaybackService.getInstance().applyEqualizer(this.eqEnabled, this.presetIndex, this.preamp, this.bands);
   }
 
   setBand(index: number, v: number): void {
@@ -64,6 +81,7 @@ export struct EqualizerDialog {
           .onChange((on: boolean) => {
             this.eqEnabled = on;
             Settings.put(Settings.KEY_EQUALIZER_ENABLED, on);
+            this.pushToPlayer();
           })
       }
       .width('100%').padding(16).alignItems(VerticalAlign.Center)
@@ -101,6 +119,7 @@ export struct EqualizerDialog {
             .trackColor('#424242')
             .onChange((v: number) => {
               this.preamp = Math.round(v);
+              this.pushToPlayer();
             })
           Text(`${this.preamp}`).fontSize(10).fontColor('#9E9E9E').margin({ top: 6 })
         }
@@ -113,7 +132,10 @@ export struct EqualizerDialog {
             EqualizerBar({
               label: label,
               value: this.bands[idx],
-              onChange: (v: number) => this.setBand(idx, v),
+              onChange: (v: number) => {
+                this.setBand(idx, v);
+                this.pushToPlayer();
+              },
             })
           }, (label: string) => label)
         }
@@ -144,7 +166,10 @@ export struct EqualizerDialog {
 
       Button($r('app.string.ok'))
         .type(ButtonType.Normal).borderRadius(4).backgroundColor(AppColors.orange500).fontColor('#FFFFFF')
-        .width('80%').onClick(() => this.onClose()).margin({ bottom: 24 })
+        .width('80%').onClick(() => {
+          this.pushToPlayer();
+          this.onClose();
+        }).margin({ bottom: 24 })
     }
     .width('100%')
     .backgroundColor($r('app.color.background_default'))
