@@ -65,7 +65,10 @@ export struct MainBrowserPage {
       const opts = new picker.DocumentSelectOptions();
       opts.maxSelectNumber = 200;
       opts.fileSuffixFilters = [
-        '音视频 (.mp4, .mp3, .flac, .ogg, .wav, .aac, .m4a, .mkv, .avi, .mov)|.mp4,.mp3,.flac,.ogg,.wav,.aac,.m4a,.mkv,.avi,.mov'
+        '音频|.mp3,.flac,.ogg,.wav,.aac,.m4a,.wma,.opus',
+        '视频|.mp4,.mkv,.avi,.mov,.webm,.ts',
+        '光盘映像|.iso',
+        'VLC 模块|.so'
       ];
       const docPicker = new picker.DocumentViewPicker(ctx);
       const uris = await docPicker.select(opts);
