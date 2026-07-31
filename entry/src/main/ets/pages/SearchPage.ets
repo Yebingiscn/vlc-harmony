@@ -63,7 +63,7 @@ export struct SearchPage {
             TextInput({ text: this.input, placeholder: $r('app.string.search_hint') })
               .fontSize(15)
               .fontColor('#FFFFFF')
-              .backgroundColor('#2A2A2A')
+              .backgroundColor(Color.Transparent)
               .borderRadius(4)
               .layoutWeight(1)
               .onChange((v: string) => {

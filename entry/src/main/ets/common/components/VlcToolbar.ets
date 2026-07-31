@@ -14,6 +14,7 @@ export struct VlcToolbar {
   @Param showSearch: boolean = false;
   @Param showMore: boolean = false;
   @Param currentTab: string = 'video';
+  @Param incognitoMode: boolean = false;
   @Local moreOpen: boolean = false;
   @Event onMoreSettings: () => void = () => {
   };
@@ -26,6 +27,10 @@ export struct VlcToolbar {
   @Event onMoreFavoriteServer: () => void = () => {
   };
   @Event onMoreRefresh: () => void = () => {
+  };
+  @Event onResumePlayback: () => void = () => {
+  };
+  @Event onAudioDisplaySettings: () => void = () => {
   };
 
   build() {
@@ -40,8 +45,8 @@ export struct VlcToolbar {
           .onClick(() => this.onBack())
       }
       if (!this.showBack) {
-        // 主屏工具栏:VLC 交通锥 logo(标题左侧),保留源图原生橙色,不染色。
-        Image($r('app.media.ic_default_cone'))
+        // 主屏工具栏:无痕模式开启时显示 ic_incognito,否则显示 VLC 交通锥 logo。
+        Image(this.incognitoMode ? $r('app.media.ic_incognito') : $r('app.media.ic_default_cone'))
           .width(28)
           .height(28)
           .objectFit(ImageFit.Contain)
@@ -70,8 +75,28 @@ export struct VlcToolbar {
           .margin({ right: 8 })
           .onClick(() => this.onSearch())
       }
+      // 视频 tab:继续播放按钮
+      if (this.currentTab === 'video') {
+        Image($r('app.media.ic_resume_playback'))
+          .width(24)
+          .height(24)
+          .objectFit(ImageFit.Contain)
+          .fillColor($r('app.color.list_title'))
+          .margin({ right: 8 })
+          .onClick(() => this.onResumePlayback())
+      }
+      // 音频 tab:显示设置按钮
+      if (this.currentTab === 'audio') {
+        Image($r('app.media.ic_display_settings'))
+          .width(24)
+          .height(24)
+          .objectFit(ImageFit.Contain)
+          .fillColor($r('app.color.list_title'))
+          .margin({ right: 8 })
+          .onClick(() => this.onAudioDisplaySettings())
+      }
       if (this.showMore) {
-        Image($r('app.media.ic_more_w'))
+        Image($r('app.media.ic_more'))
           .width(24)
           .height(24)
           .objectFit(ImageFit.Contain)
