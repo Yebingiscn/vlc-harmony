@@ -1,19 +1,48 @@
 import { MediaLibrary } from '../common/data/MediaLibrary';
-import { PlaybackService } from '../common/data/PlaybackService';
+import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
 import { NavController } from '../common/data/NavController';
 import { EmptyStateView } from '../common/components/EmptyStateView';
-import { Artist, Album, Track, EmptyLoadingState, formatDuration, MediaWrapper } from '../common/models/MediaModels';
+import { Track, EmptyLoadingState, formatDuration } from '../common/models/MediaModels';
 import { Settings } from '../common/data/Settings';
+import { picker } from '@kit.CoreFileKit';
+import { common } from '@kit.AbilityKit';
+import { promptAction } from '@kit.ArkUI';
 
-/**
- * AudioBrowserPage —— Audio Tab 根(AudioBrowserFragment,4 子 Tab:艺术家/专辑/曲目/流派)。
- * 顶部 Tabs(对应 ViewPager2 + TabLayout)+ 各 Tab 列表。子 Tab 选中态持久化(KEY_AUDIO_CURRENT_TAB)。
- */
+// ---- 网格卡片数据 ----
+
+class AlbumCard {
+  name: string;
+  artist: string;
+  trackCount: number;
+  artwork: string;
+  tracks: Track[];
+
+  constructor(name: string, artist: string, trackCount: number, artwork: string, tracks: Track[]) {
+    this.name = name;
+    this.artist = artist;
+    this.trackCount = trackCount;
+    this.artwork = artwork;
+    this.tracks = tracks;
+  }
+}
+
+class AlbumMapEntry {
+  artist: string = '';
+  count: number = 0;
+  art: string = '';
+  tracks: Track[] = [];
+}
+
+// ---- ViewModel ----
+
 @ObservedV2
-class AudioBrowserViewModel {
-  @Trace artists: Artist[] = [];
-  @Trace albums: Album[] = [];
+class AudioBrowserVM {
+  @Trace artistNames: string[] = [];
+  @Trace artistAlbums: AlbumCard[][] = [];  // 每个歌手下的专辑列表
+  @Trace albums: AlbumCard[] = [];
   @Trace tracks: Track[] = [];
+  @Trace genres: Track[][] = [];
+  @Trace genreNames: string[] = [];
   @Trace loading: boolean = true;
   @Trace tabIndex: number = 0;
   @Trace emptyState: EmptyLoadingState = EmptyLoadingState.LOADING;
@@ -22,15 +51,77 @@ class AudioBrowserViewModel {
     this.loading = true;
     this.tabIndex = await Settings.getInt(Settings.KEY_AUDIO_CURRENT_TAB, 0);
     await MediaLibrary.scan();
-    this.artists = MediaLibrary.getArtists().slice();
-    this.albums = MediaLibrary.getAlbums().slice();
-    this.tracks = MediaLibrary.getAudios().slice();
-    this.updateEmpty();
+    this.syncData();
     this.loading = false;
   }
 
-  updateEmpty(): void {
-    const total = this.artists.length + this.albums.length + this.tracks.length;
+  async reload(): Promise<void> {
+    if (MediaLibrary.isScanning()) { return; }
+    this.loading = true;
+    await MediaLibrary.rescan();
+    this.syncData();
+    this.loading = false;
+  }
+
+  syncData(): void {
+    const all = MediaLibrary.getAudios();
+    this.tracks = all.slice().sort((a, b) => a.title.localeCompare(b.title));
+
+    // 艺术家分组:每个歌手 → 专辑列表。
+    const artistMap = new Map<string, Map<string, Track[]>>();
+    for (const t of all) {
+      const aKey = t.artistName.length > 0 ? t.artistName : '未知艺术家';
+      const alKey = t.albumName.length > 0 ? t.albumName : '未知专辑';
+      if (!artistMap.has(aKey)) { artistMap.set(aKey, new Map()); }
+      const albumMap2 = artistMap.get(aKey)!;
+      if (!albumMap2.has(alKey)) { albumMap2.set(alKey, []); }
+      albumMap2.get(alKey)!.push(t);
+    }
+    this.artistNames = Array.from(artistMap.keys()).sort((a, b) => a.localeCompare(b));
+    this.artistAlbums = this.artistNames.map(name => {
+      const alMap = artistMap.get(name)!;
+      return Array.from(alMap.entries()).sort((a, b) => a[0].localeCompare(b[0])).map((e, idx) => {
+        const tracks = e[1].sort((a, b) => a.trackNumber - b.trackNumber || a.title.localeCompare(b.title));
+        const art = tracks.find(x => x.artworkPath.length > 0);
+        return new AlbumCard(e[0], name, tracks.length, art ? art.artworkPath : '', tracks);
+      });
+    });
+
+    // 专辑卡片
+    const albumMap = new Map<string, AlbumMapEntry>();
+    for (const t of all) {
+      const key = t.albumName.length > 0 ? t.albumName : '未知专辑';
+      const compositeKey = `${key}|${t.artistName}`;
+      if (!albumMap.has(compositeKey)) {
+        const ae = new AlbumMapEntry();
+        ae.artist = t.artistName.length > 0 ? t.artistName : '未知艺术家';
+        ae.art = t.artworkPath;
+        albumMap.set(compositeKey, ae);
+      }
+      const alEntry = albumMap.get(compositeKey)!;
+      alEntry.count++;
+      alEntry.tracks.push(t);
+      if (alEntry.art.length === 0 && t.artworkPath.length > 0) {
+        alEntry.art = t.artworkPath;
+      }
+    }
+    this.albums = Array.from(albumMap.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(e => new AlbumCard(e[0].split('|')[0], e[1].artist, e[1].count, e[1].art, e[1].tracks));
+
+    // 流派分组
+    const genreMap = new Map<string, Track[]>();
+    for (const t of all) {
+      const raw = t.genre.length > 0 ? t.genre.split(/[,;/]/)[0].trim() : '';
+      const key = raw.length > 0 ? raw : '未知流派';
+      if (!genreMap.has(key)) { genreMap.set(key, []); }
+      genreMap.get(key)!.push(t);
+    }
+    const sortedGenres = Array.from(genreMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+    this.genres = sortedGenres.map(e => e[1].sort((a, b) => a.artistName.localeCompare(b.artistName) || a.title.localeCompare(b.title)));
+    this.genreNames = sortedGenres.map(e => e[0]);
+
+    const total = artistMap.size + albumMap.size + all.length + genreMap.size;
     this.emptyState = total === 0 ? EmptyLoadingState.EMPTY : EmptyLoadingState.NONE;
   }
 
@@ -40,147 +131,332 @@ class AudioBrowserViewModel {
   }
 }
 
+// ---- 页面 ----
+
 @ComponentV2
 export struct AudioBrowserPage {
-  @Local vm: AudioBrowserViewModel = new AudioBrowserViewModel();
+  @Local vm: AudioBrowserVM = new AudioBrowserVM();
+  @Local refreshing: boolean = false;
+  @Local sheetAlbum: AlbumCard | null = null;
+  @Local showSheet: boolean = false;
   private controller: TabsController = new TabsController();
 
-  aboutToAppear(): void {
-    this.vm.load();
+  aboutToAppear(): void { this.vm.load(); }
+
+  async doRefresh(): Promise<void> { this.refreshing = true; await this.vm.reload(); this.refreshing = false; }
+
+  async pickAudioFiles(): Promise<void> {
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext;
+      const opts = new picker.DocumentSelectOptions();
+      opts.maxSelectNumber = 200;
+      opts.fileSuffixFilters = ['音频 (.mp3, .flac, .ogg, .wav, .aac, .m4a)|.mp3,.flac,.ogg,.wav,.aac,.m4a'];
+      const docPicker = new picker.DocumentViewPicker(ctx);
+      const uris: string[] = await docPicker.select(opts);
+      if (uris.length > 0) { await MediaLibrary.importAudioUris(uris); this.vm.syncData(); }
+    } catch (e) { /* cancelled */ }
   }
 
-  playTrack(track: Track): void {
-    const queue: MediaWrapper[] = this.vm.tracks.map((t: Track): MediaWrapper => {
-      const mw = new MediaWrapper(t.id, t.title, t.uri, 1);
-      return mw;
-    });
-    PlaybackService.getInstance().playList(queue, this.vm.tracks.indexOf(track), true);
+  playAll(tracks: Track[]): void {
+    if (tracks.length === 0) { return; }
+    this.playTrack(tracks[0], tracks);
+  }
+
+  async playTrack(t: Track, list: Track[]): Promise<void> {
+    const queue = list.map(tk => new QueueItem(tk.id, tk.title, tk.uri, tk.artistName, tk.albumName, tk.artworkPath));
+    await PlaybackService.playList(queue, list.indexOf(t), true);
     NavController.push('AudioPlayer');
   }
 
   build() {
-    Column() {
-      Tabs({ barPosition: BarPosition.Start, controller: this.controller, index: this.vm.tabIndex }) {
-        TabContent() {
-          if (this.vm.artists.length === 0) {
-            EmptyStateView({ state: this.vm.emptyState })
-          } else {
-            this.artistList()
-          }
-        }.tabBar(this.tabBuilder($r('app.string.artists'), 0))
+    Stack() {
+      Refresh({ refreshing: $$this.refreshing }) {
+        Tabs({ barPosition: BarPosition.Start, controller: this.controller, index: this.vm.tabIndex }) {
+          // 艺术家(纵向分组列表:歌手名 → 曲目)
+          TabContent() {
+            if (this.vm.artistNames.length === 0) {
+              EmptyStateView({ state: this.vm.emptyState, onPickFile: () => this.pickAudioFiles() })
+            } else {
+              this.artistList()
+            }
+          }.tabBar(this.tabBuilder($r('app.string.artists'), 0))
 
-        TabContent() {
-          if (this.vm.albums.length === 0) {
-            EmptyStateView({ state: this.vm.emptyState })
-          } else {
-            this.albumList()
-          }
-        }.tabBar(this.tabBuilder($r('app.string.albums'), 1))
+          // 专辑
+          TabContent() {
+            if (this.vm.albums.length === 0) {
+              EmptyStateView({ state: this.vm.emptyState, onPickFile: () => this.pickAudioFiles() })
+            } else {
+              this.albumGrid()
+            }
+          }.tabBar(this.tabBuilder($r('app.string.albums'), 1))
 
-        TabContent() {
-          if (this.vm.tracks.length === 0) {
-            EmptyStateView({ state: this.vm.emptyState })
-          } else {
-            this.trackList()
-          }
-        }.tabBar(this.tabBuilder($r('app.string.tracks'), 2))
+          // 曲目
+          TabContent() {
+            if (this.vm.tracks.length === 0) {
+              EmptyStateView({ state: this.vm.emptyState, onPickFile: () => this.pickAudioFiles() })
+            } else {
+              this.trackList()
+            }
+          }.tabBar(this.tabBuilder($r('app.string.tracks'), 2))
 
-        TabContent() {
-          EmptyStateView({ state: this.vm.emptyState })
-        }.tabBar(this.tabBuilder($r('app.string.genres'), 3))
+          // 流派
+          TabContent() {
+            if (this.vm.genres.length === 0) {
+              EmptyStateView({ state: this.vm.emptyState, onPickFile: () => this.pickAudioFiles() })
+            } else {
+              this.genreList()
+            }
+          }.tabBar(this.tabBuilder($r('app.string.genres'), 3))
+        }
+        .barMode(BarMode.Scrollable).barHeight(40)
+        .onChange((index: number) => this.vm.saveTab(index))
+        .layoutWeight(1)
       }
-      .barMode(BarMode.Scrollable)
-      .barHeight(40)
-      .onChange((index: number) => this.vm.saveTab(index))
-      .layoutWeight(1)
+      .onRefreshing(() => this.doRefresh()).refreshOffset(64)
+      .backgroundColor($r('app.color.background_default'))
+
+      // FAB
+      Button() {
+        Image($r('app.media.ic_add')).width(22).height(22).fillColor('#FFFFFF')
+      }
+      .width(48).height(48).borderRadius(24).backgroundColor('#FF8800')
+      .shadow({ radius: 8, color: '#44000000', offsetY: 4 })
+      .position({ right: 16, bottom: 16 })
+      .onClick(() => this.pickAudioFiles())
     }
-    .width('100%')
-    .height('100%')
+    .width('100%').height('100%')
     .backgroundColor($r('app.color.background_default'))
+    .bindSheet($$this.showSheet, this.albumSheet(), {
+      height: SheetSize.FIT_CONTENT, dragBar: true,
+      onDisappear: () => { this.showSheet = false; this.sheetAlbum = null; },
+    })
   }
 
   @Builder
   tabBuilder(title: Resource, index: number) {
     Column() {
-      Text(title)
-        .fontSize(14)
+      Text(title).fontSize(13)
         .fontColor(this.vm.tabIndex === index ? '#FF8800' : '#9E9E9E')
         .fontWeight(this.vm.tabIndex === index ? FontWeight.Medium : FontWeight.Normal)
-      Divider().strokeWidth(2).color('#FF8800').width('100%').margin({ top: 6 })
+      Divider().strokeWidth(2).color('#FF8800').width(20).margin({ top: 4 })
         .visibility(this.vm.tabIndex === index ? Visibility.Visible : Visibility.Hidden)
     }
-    .width('100%')
-    .height('100%')
-    .justifyContent(FlexAlign.Center)
+    .padding({ left: 10, right: 10 }).height('100%').justifyContent(FlexAlign.Center)
   }
+
+  // ---- 艺术家列表(歌手 → 专辑网格) ----
 
   @Builder
   artistList() {
     List() {
-      ForEach(this.vm.artists, (a: Artist) => {
-        ListItem() {
-          Row() {
-            Image($r('app.media.ic_artist_big')).width(40).height(40).fillColor('#FF8800').margin({ right: 12 })
-            Column() {
-              Text(a.title).fontSize(15).fontColor('#FFFFFF').maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-              Text(`${a.trackCount} songs`).fontSize(12).fontColor('#9E9E9E').margin({ top: 2 })
-            }.alignItems(HorizontalAlign.Start).layoutWeight(1)
+      ForEach(this.vm.artistAlbums, (albums: AlbumCard[], aIdx: number) => {
+        ListItemGroup({ header: this.artistHeader(aIdx) }) {
+          ListItem() {
+            Grid() {
+              ForEach(albums, (card: AlbumCard) => {
+                GridItem() { this.albumCard(card) }
+              }, (_: AlbumCard, idx: number) => `al${aIdx}_${idx}`)
+            }
+            .columnsTemplate('1fr 1fr')
+            .columnsGap(10).rowsGap(10)
+            .padding({ left: 12, right: 12, bottom: 12 })
+            .width('100%')
           }
-          .width('100%').padding({ left: 16, right: 16, top: 8, bottom: 8 }).alignItems(VerticalAlign.Center)
-          .onClick(() => NavController.pushSecondary('ARTIST', a.title))
         }
-      }, (a: Artist) => `a${a.id}`)
+      }, (_: AlbumCard[], idx: number) => `artist${idx}`)
     }
-    .divider({ strokeWidth: 0.5, color: $r('app.color.divider'), startMargin: 68, endMargin: 8 })
-    .width('100%')
-    .layoutWeight(1)
+    .divider({ strokeWidth: 0.5, color: $r('app.color.divider'), startMargin: 16, endMargin: 8 })
+    .alignListItem(ListItemAlign.Start).width('100%').height('100%')
   }
 
   @Builder
-  albumList() {
-    List() {
-      ForEach(this.vm.albums, (al: Album) => {
-        ListItem() {
-          Row() {
-            Image($r('app.media.ic_album_big')).width(40).height(40).fillColor('#FF8800').margin({ right: 12 })
-            Column() {
-              Text(al.title).fontSize(15).fontColor('#FFFFFF').maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-              Text(al.artistName).fontSize(12).fontColor('#9E9E9E').margin({ top: 2 })
-            }.alignItems(HorizontalAlign.Start).layoutWeight(1)
-          }
-          .width('100%').padding({ left: 16, right: 16, top: 8, bottom: 8 }).alignItems(VerticalAlign.Center)
-          .onClick(() => NavController.pushSecondary('ALBUM', al.title))
-        }
-      }, (al: Album) => `al${al.id}`)
+  artistHeader(aIdx: number) {
+    Row() {
+      Text(this.vm.artistNames[aIdx]).fontSize(15).fontColor('#FF8800').fontWeight(FontWeight.Medium)
+      Text(` · ${this.vm.artistAlbums[aIdx].length} 专辑`).fontSize(12).fontColor('#9E9E9E')
     }
-    .divider({ strokeWidth: 0.5, color: $r('app.color.divider'), startMargin: 68, endMargin: 8 })
-    .width('100%')
-    .layoutWeight(1)
+    .width('100%').padding({ left: 16, right: 16, top: 12, bottom: 6 }).backgroundColor('#212121')
   }
+
+  /** 专辑方块卡片:上图(带三点) + 下文(专辑名/曲目数)。 */
+  @Builder
+  albumCard(card: AlbumCard) {
+    Column() {
+      Stack({ alignContent: Alignment.TopEnd }) {
+        Image(card.artwork.length > 0 ? card.artwork : $r('app.media.ic_album_big'))
+          .width('100%').aspectRatio(1).objectFit(ImageFit.Cover).borderRadius(6)
+        Image($r('app.media.ic_more')).width(20).height(20).fillColor('#FFFFFF').margin(4)
+          .onClick(() => { this.sheetAlbum = card; this.showSheet = true; })
+      }
+      .width('100%')
+      Text(card.name).fontSize(13).fontColor('#FFFFFF').maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ top: 6 })
+      Text(`${card.trackCount} 首`).fontSize(11).fontColor('#9E9E9E')
+    }
+    .width('100%')
+    .onClick(() => { if (card.tracks.length > 0) { this.playTrack(card.tracks[0], card.tracks); } })
+  }
+
+  // ---- 专辑网格 ----
+
+  @Builder
+  albumGrid() {
+    Grid() {
+      ForEach(this.vm.albums, (card: AlbumCard) => {
+        GridItem() {
+          Column() {
+            // 封面区域
+            Stack({ alignContent: Alignment.TopEnd }) {
+              Image(card.artwork.length > 0 ? card.artwork : $r('app.media.ic_album_big'))
+                .width('100%').aspectRatio(1).objectFit(ImageFit.Cover).borderRadius(8)
+              // 三点菜单
+              Image($r('app.media.ic_more')).width(20).height(20)
+                .fillColor('#FFFFFF').margin(4)
+                .onClick(() => {
+                  this.sheetAlbum = card;
+                  this.showSheet = true;
+                })
+            }
+            .width('100%')
+            Text(card.name).fontSize(13).fontColor('#FFFFFF').maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ top: 6 })
+            Text(`${card.trackCount} 首 · ${card.artist}`).fontSize(11).fontColor('#9E9E9E').maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+          .width('100%').padding(6)
+          .onClick(() => this.playAll(card.tracks))
+        }
+      }, (card: AlbumCard) => `${card.name}|${card.artist}`)
+    }
+    .columnsTemplate('1fr 1fr')
+    .columnsGap(8).rowsGap(12)
+    .padding(8).width('100%').height('100%')
+  }
+
+  // ---- 曲目列表 ----
 
   @Builder
   trackList() {
     List() {
       ForEach(this.vm.tracks, (t: Track) => {
-        ListItem() {
-          Row() {
-            Image($r('app.media.ic_song')).width(40).height(40).fillColor('#FF8800').margin({ right: 12 })
-            Column() {
-              Text(t.title).fontSize(15).fontColor('#FFFFFF').maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-              Text(t.length > 0 ? formatDuration(t.length) : t.albumName).fontSize(12).fontColor('#9E9E9E')
-                .margin({ top: 2 })
-            }.alignItems(HorizontalAlign.Start).layoutWeight(1)
-          }
-          .width('100%').padding({ left: 16, right: 16, top: 8, bottom: 8 }).alignItems(VerticalAlign.Center)
-          .onClick(() => this.playTrack(t))
-        }
+        ListItem() { this.trackRow(t, this.vm.tracks) }
       }, (t: Track) => `t${t.id}`)
     }
-    .divider({ strokeWidth: 0.5, color: $r('app.color.divider'), startMargin: 68, endMargin: 8 })
-    .width('100%')
-    .layoutWeight(1)
+    .divider({ strokeWidth: 0.5, color: $r('app.color.divider'), startMargin: 56, endMargin: 8 })
+    .alignListItem(ListItemAlign.Start).width('100%').height('100%')
+  }
+
+  // ---- 流派列表 ----
+
+  @Builder
+  genreList() {
+    List() {
+      ForEach(this.vm.genres, (tracks: Track[], idx: number) => {
+        ListItemGroup({ header: this.genreHeader(this.vm.genreNames[idx], tracks.length) }) {
+          ForEach(tracks, (t: Track) => {
+            ListItem() { this.trackRow(t, tracks) }
+          }, (t: Track) => `g${idx}_${t.id}`)
+        }
+      }, (_: Track[], idx: number) => `genre${idx}`)
+    }
+    .divider({ strokeWidth: 0.5, color: $r('app.color.divider'), startMargin: 16, endMargin: 8 })
+    .alignListItem(ListItemAlign.Start).width('100%').height('100%')
+  }
+
+  @Builder
+  genreHeader(name: string, count: number) {
+    Row() {
+      Text(name).fontSize(14).fontColor('#FF8800').fontWeight(FontWeight.Medium)
+      Text(` · ${count}`).fontSize(12).fontColor('#9E9E9E')
+    }
+    .width('100%').padding({ left: 16, right: 16, top: 10, bottom: 6 }).backgroundColor('#212121')
+  }
+
+  // ---- 曲目行 ----
+
+  @Builder
+  trackRow(t: Track, list: Track[]) {
+    Row() {
+      Image(t.artworkPath.length > 0 ? t.artworkPath : $r('app.media.ic_song'))
+        .width(36).height(36).objectFit(ImageFit.Cover).borderRadius(4).margin({ right: 12 })
+      Column() {
+        Text(t.title).fontSize(14).fontColor('#FFFFFF').maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+        if (t.artistName.length > 0) {
+          Text(t.artistName).fontSize(12).fontColor('#9E9E9E').margin({ top: 2 })
+        } else {
+          Text(this.fileNameFromUri(t.filePath)).fontSize(11).fontColor('#757575').margin({ top: 2 })
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+      }.alignItems(HorizontalAlign.Start).layoutWeight(1)
+      if (t.length > 0) { Text(formatDuration(t.length)).fontSize(11).fontColor('#757575').margin({ left: 8 }) }
+    }
+    .width('100%').padding({ left: 16, right: 16, top: 6, bottom: 6 }).alignItems(VerticalAlign.Center)
+    .onClick(() => {
+      this.playTrack(t, list);
+    })
+  }
+
+  private fileNameFromUri(uri: string): string {
+    const ls = Math.max(uri.lastIndexOf('/'), uri.lastIndexOf('\\'));
+    return ls >= 0 ? uri.slice(ls + 1) : uri;
+  }
+
+  // ---- 专辑操作半模态 ----
+
+  @Builder
+  albumSheet() {
+    Column() {
+      // 头部:封面 + 专辑名 + 歌手
+      Row() {
+        Image(this.sheetAlbum!.artwork.length > 0 ? this.sheetAlbum!.artwork : $r('app.media.ic_album_big'))
+          .width(56).height(56).objectFit(ImageFit.Cover).borderRadius(6).margin({ right: 12 })
+        Column() {
+          Text(this.sheetAlbum!.name).fontSize(16).fontColor('#FFFFFF').fontWeight(FontWeight.Medium).maxLines(1)
+          Text(this.sheetAlbum!.artist).fontSize(13).fontColor('#9E9E9E').maxLines(1).margin({ top: 2 })
+        }.alignItems(HorizontalAlign.Start).layoutWeight(1)
+      }
+      .width('100%').padding(16).alignItems(VerticalAlign.Center)
+
+      Divider().strokeWidth(0.5).color('#333333')
+
+      // 播放全部
+      Row() {
+        Image($r('app.media.ic_play_player')).width(24).height(24).fillColor('#FFFFFF').margin({ right: 12 })
+        Text('播放全部').fontSize(15).fontColor('#FFFFFF')
+      }
+      .width('100%').padding({ left: 16, right: 16, top: 14, bottom: 14 })
+      .onClick(() => {
+        this.playAll(this.sheetAlbum!.tracks);
+        this.showSheet = false;
+        this.sheetAlbum = null;
+      })
+
+      // 收藏
+      Row() {
+        Image($r('app.media.ic_fav_add')).width(24).height(24).fillColor('#FFFFFF').margin({ right: 12 })
+        Text($r('app.string.favorites')).fontSize(15).fontColor('#FFFFFF')
+      }
+      .width('100%').padding({ left: 16, right: 16, top: 14, bottom: 14 })
+      .onClick(() => {
+        promptAction.showToast({ message: '已收藏' });
+        this.sheetAlbum = null;
+      })
+
+      // 专辑信息
+      Row() {
+        Image($r('app.media.ic_information')).width(24).height(24).fillColor('#FFFFFF').margin({ right: 12 })
+        Text('专辑信息').fontSize(15).fontColor('#FFFFFF')
+      }
+      .width('100%').padding({ left: 16, right: 16, top: 14, bottom: 14 })
+      .onClick(() => {
+        promptAction.showToast({ message: `专辑: ${this.sheetAlbum!.name}\n歌手: ${this.sheetAlbum!.artist}\n曲目: ${this.sheetAlbum!.trackCount} 首` });
+        this.sheetAlbum = null;
+      })
+
+      Divider().strokeWidth(0.5).color('#333333')
+      Blank().height(24)
+    }
+    .width('100%').backgroundColor('#1A1A1A')
+    .borderRadius({ topLeft: 16, topRight: 16 })
   }
 }

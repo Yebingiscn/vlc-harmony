@@ -12,9 +12,9 @@ struct VideoControlToggleRow {
     Row() {
       Column() {
         Text(this.title)
-          .fontSize(16).fontColor('#FFFFFF').maxLines(1).textOverflow(TextOverflow.Ellipsis)
+          .fontSize(16).fontColor('#FFFFFF').maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
         if (this.summary.length > 0) {
-          Text(this.summary).fontSize(12).fontColor(AppColors.grey500).maxLines(2).textOverflow(TextOverflow.Ellipsis)
+          Text(this.summary).fontSize(12).fontColor(AppColors.grey500).maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
         }
       }
       .layoutWeight(1).margin({ left: 16, right: 16 })

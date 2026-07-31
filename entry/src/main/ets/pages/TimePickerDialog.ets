@@ -16,21 +16,33 @@ export struct TimePickerDialog {
   @Local pickedRawTime: string = '';
   @Local formatTime: string = '';
 
+  /** 从右往左按 2 位切出 时/分/秒(与 JumpToTimeDialog 同一套修正后的逻辑)。 */
+  private parts(): string[] {
+    const raw: string = this.pickedRawTime;
+    const seconds: string = raw.length > 2 ? raw.substring(raw.length - 2) : raw;
+    const minutes: string = raw.length > 2 ? raw.substring(Math.max(0, raw.length - 4), raw.length - 2) : '';
+    const hours: string = raw.length > 4 ? raw.substring(0, raw.length - 4) : '';
+    return [hours, minutes, seconds];
+  }
+
   updateValue(value: string): void {
-    if (this.pickedRawTime.length >= this.maxTimeSize && value.length > 0) {
+    if (value.length > 0 && this.pickedRawTime.length + value.length > this.maxTimeSize) {
       return;
     }
     if (value.length > 0) {
       this.pickedRawTime = this.pickedRawTime + value;
     }
-    const raw: string = this.pickedRawTime;
-    const seconds: string = raw.length > 4 ? raw.substring(raw.length - 2) : '';
-    const minutes: string = raw.length > 2 ? raw.substring(Math.max(0, raw.length - 4), raw.length - 2) : '';
-    const hours: string = raw.length > 4 ? raw.substring(0, raw.length - 4) : '';
+    const p: string[] = this.parts();
     let out: string = '';
-    if (hours.length > 0) out = out + `${hours}h `;
-    if (minutes.length > 0) out = out + `${minutes}m `;
-    if (seconds.length > 0) out = out + `${seconds}s`;
+    if (p[0].length > 0) {
+      out = out + `${p[0]}h `;
+    }
+    if (p[1].length > 0) {
+      out = out + `${p[1]}m `;
+    }
+    if (p[2].length > 0) {
+      out = out + `${p[2]}s`;
+    }
     this.formatTime = out.trim();
   }
 
@@ -42,15 +54,15 @@ export struct TimePickerDialog {
   }
 
   getTimeInMillis(): number {
-    const raw: string = this.pickedRawTime;
-    const seconds: number = raw.length > 4 ? parseInt(raw.substring(raw.length - 2), 10) : 0;
-    const minutes: number = raw.length > 2 ? parseInt(raw.substring(Math.max(0, raw.length - 4), raw.length - 2), 10) : 0;
-    const hours: number = raw.length > 4 ? parseInt(raw.substring(0, raw.length - 4), 10) : 0;
-    return hours * 3600000 + minutes * 60000 + seconds * 1000;
+    const p: string[] = this.parts();
+    const hours: number = p[0].length > 0 ? parseInt(p[0], 10) : 0;
+    const minutes: number = p[1].length > 0 ? parseInt(p[1], 10) : 0;
+    const seconds: number = p[2].length > 0 ? parseInt(p[2], 10) : 0;
+    return (hours * 3600 + minutes * 60 + seconds) * 1000;
   }
 
   @Builder
-  key(label: string, pass: string) {
+  keyItem(label: string, pass: string) {
     Text(label)
       .fontSize(18).fontWeight(FontWeight.Bold).fontColor('#FFFFFF')
       .layoutWeight(1).height('100%').textAlign(TextAlign.Center)
@@ -71,13 +83,13 @@ export struct TimePickerDialog {
       }
       .width('100%').alignItems(VerticalAlign.Center).margin({ top: 8 })
 
-      Row() { this.key('1', '1'); this.key('2', '2'); this.key('3', '3'); }
+      Row() { this.keyItem('1', '1'); this.keyItem('2', '2'); this.keyItem('3', '3'); }
       .width('100%').height(44).margin({ top: 8 })
-      Row() { this.key('4', '4'); this.key('5', '5'); this.key('6', '6'); }
+      Row() { this.keyItem('4', '4'); this.keyItem('5', '5'); this.keyItem('6', '6'); }
       .width('100%').height(44).margin({ top: 8 })
-      Row() { this.key('7', '7'); this.key('8', '8'); this.key('9', '9'); }
+      Row() { this.keyItem('7', '7'); this.keyItem('8', '8'); this.keyItem('9', '9'); }
       .width('100%').height(44).margin({ top: 8 })
-      Row() { this.key(':00', '00'); this.key('0', '0'); this.key(':30', '30'); }
+      Row() { this.keyItem(':00', '00'); this.keyItem('0', '0'); this.keyItem(':30', '30'); }
       .width('100%').height(44)
 
       Button($r('app.string.ok'))

@@ -1,6 +1,6 @@
 import { promptAction } from '@kit.ArkUI';
 import { NavController } from '../common/data/NavController';
-import { PlaybackService } from '../common/data/PlaybackService';
+import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
 import { AppColors, AppDimens } from '../common/constants/AppConstants';
 import { MediaWrapper, VideoNavParam } from '../common/models/MediaModels';
 
@@ -48,8 +48,8 @@ export struct MrlPanelPage {
       NavController.push('VideoPlayer', p);
     } else {
       // PlaybackService 仅有 append(items)/play(),用 append 加入播放队列。
-      const list: MediaWrapper[] = [mw];
-      PlaybackService.getInstance().append(list);
+      const item = new QueueItem(mw.id, mw.title, mw.uri, '', '', mw.artworkPath);
+      PlaybackService.append([item]);
     }
   }
 

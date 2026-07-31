@@ -16,7 +16,7 @@ export struct PlaybackSpeedDialog {
   @Event onClose: () => void = () => {};
 
   aboutToAppear(): void {
-    this.rate = PlaybackService.getInstance().getSpeed();
+    this.rate = PlaybackService.speedToNumber();
     this.progress = this.rateToProgress(this.rate);
   }
 
@@ -37,7 +37,7 @@ export struct PlaybackSpeedDialog {
   applyRate(r: number): void {
     this.rate = Math.max(0.25, Math.min(4.0, r));
     this.progress = this.rateToProgress(this.rate);
-    PlaybackService.getInstance().setSpeed(this.rate);
+    PlaybackService.setSpeed(this.rate);
     if (this.forVideo) {
       Settings.put(Settings.KEY_PLAYBACK_SPEED_VIDEO_GLOBAL_VALUE, this.rate);
       Settings.put(Settings.KEY_PLAYBACK_SPEED_VIDEO_GLOBAL, true);

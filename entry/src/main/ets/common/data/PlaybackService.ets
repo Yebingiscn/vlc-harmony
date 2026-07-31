@@ -1,6 +1,7 @@
 /**
  * PlaybackService —— 全局单例播放业务层。
  * 通过 ArkTS LibVLC/Media/MediaPlayer 对接 libVLC(不再直接 import libvlcnapi.so)。
+ * 另提供 QueueItem / PlaybackState / 静态方法门面,兼容 origin/dev 音频 UI 调用方式。
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
@@ -24,12 +25,61 @@ function needsFdOpen(uri: string): boolean {
   return false;
 }
 
+/** 播放队列条目(兼容 origin/dev 音频列表 API;内部仍转 MediaWrapper 走 libVLC)。 */
+export class QueueItem {
+  id: number;
+  title: string;
+  uri: string;
+  artistName: string;
+  albumName: string;
+  artworkPath: string;
+
+  constructor(id: number, title: string, uri: string, artistName: string, albumName: string, artworkPath: string) {
+    this.id = id;
+    this.title = title;
+    this.uri = uri;
+    this.artistName = artistName;
+    this.albumName = albumName;
+    this.artworkPath = artworkPath;
+  }
+
+  toMediaWrapper(type: number = 1): MediaWrapper {
+    const mw = new MediaWrapper(this.id, this.title, this.uri, type);
+    mw.artistName = this.artistName;
+    mw.albumName = this.albumName;
+    mw.artworkPath = this.artworkPath;
+    return mw;
+  }
+
+  static fromMediaWrapper(mw: MediaWrapper): QueueItem {
+    return new QueueItem(mw.id, mw.title, mw.uri, mw.artistName, mw.albumName, mw.artworkPath);
+  }
+}
+
+/** 播放器可观察快照(兼容 MiniPlayer / AudioPlayer onChange)。 */
+export interface PlaybackState {
+  state: PlayState;
+  title: string;
+  artist: string;
+  album: string;
+  artworkPath: string;
+  duration: number;
+  position: number;
+  speed: number;
+  shuffle: boolean;
+  repeatMode: number;
+  queueSize: number;
+  currentIndex: number;
+}
+
 export interface PlaybackListener {
-  onStateChange(state: PlayState): void;
-  onTimeUpdate(current: number, duration: number): void;
-  onQueueChanged(): void;
+  onStateChange?(state: PlayState): void;
+  onTimeUpdate?(current: number, duration: number): void;
+  onQueueChanged?(): void;
   onVideoSize?(width: number, height: number): void;
   onTracksChanged?(): void;
+  /** 兼容 origin/dev:一次推送完整快照。 */
+  onChange?(s: PlaybackState): void;
 }
 
 export class PlaybackService {
@@ -382,22 +432,58 @@ export class PlaybackService {
     this.listeners = this.listeners.filter((x) => x !== l);
   }
 
+  snapshot(): PlaybackState {
+    const cur = this.getCurrent();
+    return {
+      state: this.state,
+      title: cur?.title ?? '',
+      artist: cur?.artistName ?? '',
+      album: cur?.albumName ?? '',
+      artworkPath: cur?.artworkPath ?? '',
+      duration: this.duration,
+      position: this.position,
+      speed: this.speed,
+      shuffle: this.shuffle,
+      repeatMode: this.repeatMode,
+      queueSize: this.queue.length,
+      currentIndex: this.currentIndex,
+    };
+  }
+
+  private notifyChange(): void {
+    const s = this.snapshot();
+    for (const l of this.listeners) {
+      if (l.onChange) {
+        l.onChange(s);
+      }
+    }
+  }
+
   private emitState(): void {
     for (const l of this.listeners) {
-      l.onStateChange(this.state);
+      if (l.onStateChange) {
+        l.onStateChange(this.state);
+      }
     }
+    this.notifyChange();
   }
 
   private emitTime(): void {
     for (const l of this.listeners) {
-      l.onTimeUpdate(this.position, this.duration);
+      if (l.onTimeUpdate) {
+        l.onTimeUpdate(this.position, this.duration);
+      }
     }
+    this.notifyChange();
   }
 
   private emitQueue(): void {
     for (const l of this.listeners) {
-      l.onQueueChanged();
+      if (l.onQueueChanged) {
+        l.onQueueChanged();
+      }
     }
+    this.notifyChange();
   }
 
   private emitVideoSize(): void {
@@ -414,6 +500,17 @@ export class PlaybackService {
         l.onTracksChanged();
       }
     }
+  }
+
+  /** QueueItem[] → MediaWrapper[] 后播放(音频列表入口)。 */
+  async playQueueItems(items: QueueItem[], startIndex: number = 0, replace: boolean = true): Promise<void> {
+    const mws = items.map((q: QueueItem) => q.toMediaWrapper(1));
+    await this.playList(mws, startIndex, replace);
+  }
+
+  async appendQueueItems(items: QueueItem[]): Promise<void> {
+    const mws = items.map((q: QueueItem) => q.toMediaWrapper(1));
+    await this.append(mws);
   }
 
   async prepareList(items: MediaWrapper[], startIndex: number = 0, replace: boolean = true): Promise<void> {
@@ -667,5 +764,92 @@ export class PlaybackService {
     this.currentRendererHandle = -1;
     this.state = PlayState.IDLE;
     this.emitState();
+  }
+
+  // ---- 静态门面(兼容 origin/dev 页面调用;底层仍是 libVLC 单例) ----
+
+  static getState(): PlayState {
+    return PlaybackService.getInstance().getState();
+  }
+
+  static getQueue(): QueueItem[] {
+    return PlaybackService.getInstance().getQueue().map((mw: MediaWrapper) => QueueItem.fromMediaWrapper(mw));
+  }
+
+  static getCurrentIndex(): number {
+    return PlaybackService.getInstance().getCurrentIndex();
+  }
+
+  static getCurrent(): QueueItem | null {
+    const cur = PlaybackService.getInstance().getCurrent();
+    return cur ? QueueItem.fromMediaWrapper(cur) : null;
+  }
+
+  static snapshot(): PlaybackState {
+    return PlaybackService.getInstance().snapshot();
+  }
+
+  static addListener(l: PlaybackListener): void {
+    PlaybackService.getInstance().addListener(l);
+  }
+
+  static removeListener(l: PlaybackListener): void {
+    PlaybackService.getInstance().removeListener(l);
+  }
+
+  static async playList(items: QueueItem[], startIndex: number, replace: boolean): Promise<void> {
+    await PlaybackService.getInstance().playQueueItems(items, startIndex, replace);
+  }
+
+  static async append(items: QueueItem[]): Promise<void> {
+    await PlaybackService.getInstance().appendQueueItems(items);
+  }
+
+  static async play(): Promise<void> {
+    await PlaybackService.getInstance().play();
+  }
+
+  static async pause(): Promise<void> {
+    PlaybackService.getInstance().pause();
+  }
+
+  static async togglePlay(): Promise<void> {
+    PlaybackService.getInstance().togglePlay();
+  }
+
+  static async stop(): Promise<void> {
+    PlaybackService.getInstance().stop();
+  }
+
+  static async seek(ms: number): Promise<void> {
+    PlaybackService.getInstance().seek(ms);
+  }
+
+  static async setSpeed(rate: number): Promise<void> {
+    PlaybackService.getInstance().setSpeed(rate);
+  }
+
+  static async next(auto: boolean = false): Promise<void> {
+    await PlaybackService.getInstance().next(auto);
+  }
+
+  static async prev(): Promise<void> {
+    await PlaybackService.getInstance().prev();
+  }
+
+  static toggleShuffle(): void {
+    PlaybackService.getInstance().toggleShuffle();
+  }
+
+  static cycleRepeat(): void {
+    PlaybackService.getInstance().cycleRepeat();
+  }
+
+  static speedToNumber(): number {
+    return PlaybackService.getInstance().getSpeed();
+  }
+
+  static async release(): Promise<void> {
+    PlaybackService.getInstance().release();
   }
 }

@@ -441,7 +441,8 @@ export struct VideoPlayerPage {
             this.sheetOpen = false;
             this.sheetKind = '';
           },
-          onDeleteCurrent: () => {
+          onConfirm: (_millis: number, _waitForMediaEnd: boolean, _resetOnInteraction: boolean) => {
+            this.onSleepConfirm();
           },
         }).width('100%')
       } else if (this.sheetKind === 'chapter') {

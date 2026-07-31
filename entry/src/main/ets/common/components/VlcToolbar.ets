@@ -4,12 +4,17 @@
  */
 @ComponentV2
 export struct VlcToolbar {
-  @Param title: Resource = $r('app.string.app_name');
+  @Param title: Resource | string = $r('app.string.app_name');
   @Param showBack: boolean = false;
   @Param showIncognito: boolean = false;
   @Event onBack: () => void = () => {};
   @Event onSearch: () => void = () => {};
   @Param showSearch: boolean = false;
+  @Param showMore: boolean = false;
+  @Local moreOpen: boolean = false;
+  @Event onMoreSettings: () => void = () => {};
+  @Event onMoreIncognito: () => void = () => {};
+  @Event onMoreRefresh: () => void = () => {};
 
   build() {
     Row() {
@@ -53,11 +58,56 @@ export struct VlcToolbar {
           .margin({ right: 8 })
           .onClick(() => this.onSearch())
       }
+      if (this.showMore) {
+        Image($r('app.media.ic_more_w'))
+          .width(24)
+          .height(24)
+          .objectFit(ImageFit.Contain)
+          .margin({ right: 4 })
+          .onClick(() => this.moreOpen = true)
+          .bindMenu(this.moreOpen, this.moreMenu(), {
+            placement: Placement.BottomRight,
+            showInSubWindow: true,
+            backgroundColor: '#FFFFFF',
+            onDisappear: () => this.moreOpen = false,
+          })
+      }
     }
     .width('100%')
     .height(56)
     .padding({ left: 4, right: 4 })
     .backgroundColor($r('app.color.background_actionbar'))
     .alignItems(VerticalAlign.Center)
+  }
+
+  /** 右上角 … 菜单:显示设置 / 无痕模式 / 刷新。选中后关闭菜单并回调。 */
+  @Builder
+  moreMenu() {
+    Menu() {
+      MenuItem({
+        content: $r('app.string.menu_display_settings'),
+        startIcon: $r('app.media.ic_display_settings'),
+      })
+        .onClick(() => {
+          this.moreOpen = false;
+          this.onMoreSettings();
+        })
+      MenuItem({
+        content: $r('app.string.incognito_mode'),
+        startIcon: $r('app.media.ic_incognito'),
+      })
+        .onClick(() => {
+          this.moreOpen = false;
+          this.onMoreIncognito();
+        })
+      MenuItem({
+        content: $r('app.string.menu_refresh'),
+        startIcon: $r('app.media.ic_refresh'),
+      })
+        .onClick(() => {
+          this.moreOpen = false;
+          this.onMoreRefresh();
+        })
+    }
   }
 }

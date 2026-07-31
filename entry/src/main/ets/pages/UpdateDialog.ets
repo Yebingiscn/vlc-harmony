@@ -27,7 +27,7 @@ export struct UpdateDialog {
       if (this.downloading) {
         // 进度条
         Progress({ value: this.progress, total: 100, type: ProgressType.Linear })
-          .color(AppColors.orange500).trackColor(AppColors.grey800)
+          .color(AppColors.orange500)//.trackColor(AppColors.grey800)
           .width('100%').margin({ left: 16, right: 16, top: 16 })
         Text(`${this.progress}%`).fontSize(12).fontColor(AppColors.grey500).margin({ top: 8 })
       }

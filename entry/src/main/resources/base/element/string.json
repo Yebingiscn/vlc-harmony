@@ -453,6 +453,30 @@
       "value": "转到章节…"
     },
     {
+      "name": "encountered_error_message",
+      "value": "无法播放此视频"
+    },
+    {
+      "name": "sleep_timer_input_hint",
+      "value": "数字键为小时,:00 / :30 为分钟"
+    },
+    {
+      "name": "sleep_timer_set",
+      "value": "睡眠倒计时已设定:%s"
+    },
+    {
+      "name": "sleep_timer_set_wait",
+      "value": "睡眠倒计时已设定:%s,播完当前视频后暂停"
+    },
+    {
+      "name": "sleep_timer_cancelled",
+      "value": "睡眠倒计时已取消"
+    },
+    {
+      "name": "sleep_timer_fired",
+      "value": "睡眠倒计时结束,已暂停播放"
+    },
+    {
       "name": "history",
       "value": "历史"
     },
@@ -551,6 +575,22 @@
     {
       "name": "ml_database_warning",
       "value": "您的数据库包括您所有媒体的目录。它将发送给 VLC 开发者用于排查问题"
+    },
+    {
+      "name": "menu_display_settings",
+      "value": "显示设置"
+    },
+    {
+      "name": "menu_incognito_off",
+      "value": "无痕模式已关闭"
+    },
+    {
+      "name": "menu_incognito_on",
+      "value": "无痕模式已开启"
+    },
+    {
+      "name": "menu_refresh",
+      "value": "刷新"
     },
     {
       "name": "more",

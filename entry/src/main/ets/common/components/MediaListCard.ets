@@ -23,11 +23,14 @@ export struct MediaListCard {
     Row() {
       // 左侧 80x50 缩略图卡
       Stack() {
-        Image(this.item.artworkUrl && this.item.artworkUrl.length > 0 ? this.item.artworkUrl :
-          $r('app.media.ic_no_thumbnail_1610'))
+        Image(this.item.artworkUrl.length > 0 ? this.item.artworkUrl : $r('app.media.ic_no_thumbnail_1610'))
           .width(80)
           .height(50)
           .objectFit(ImageFit.Cover)
+          .alt($r('app.media.ic_no_thumbnail_1610'))
+          .draggable(false)
+          .borderRadius(4)
+          .backgroundColor('#1F1F1F')
         Row() {
           if (this.isNetwork && this.isPresent) {
             Image($r('app.media.ic_emoji_network')).width(16).height(16).fillColor('#FFFFFF')
