@@ -143,19 +143,18 @@ export struct MainBrowserPage {
           .width('100%').margin({ top: -8, bottom: 4 })
 
           if (this.vm.storages.length > 0) {
-            // ForEach+List 内联在 build() 中直接读 this.vm.storages,避免 @Builder 参数快照问题
-            List({ space: 8 }) {
+            // 纵向列表(对齐 Android browser_item.xml 行式布局)
+            List({ space: 0 }) {
               ForEach(this.vm.storages, (item: SheetItem) => {
                 ListItem() {
-                  this.cardItem(item, false)
+                  this.storageRowItem(item)
                 }
               }, (item: SheetItem) => item.title)
             }
-            .listDirection(Axis.Horizontal)
-            .width('100%').height(160)
-            .scrollBar(BarState.Off)
-            .padding({ left: 12, right: 12 })
-            .margin({ top: 12 })
+            .width('100%')
+            .divider({ strokeWidth: 0.5, color: $r('app.color.divider'), startMargin: 60, endMargin: 16 })
+            .padding({ left: 0, right: 0 })
+            .margin({ top: 8 })
           }
 
         }
@@ -177,6 +176,34 @@ export struct MainBrowserPage {
       .fontSize(18).fontColor($r('app.color.colorAccent')).fontWeight(FontWeight.Medium)
       .margin({ left: 16, top: 16 })
       .width('100%')
+  }
+
+  /** 存储列表行式布局(对齐 Android browser_item.xml): 48vp 缩略图 + 标题/副标题。 */
+  @Builder
+  storageRowItem(item: SheetItem) {
+    Row() {
+      Image(item.artworkPath.length > 0 ? item.artworkPath : item.icon)
+        .width(48).height(48).objectFit(ImageFit.Cover).borderRadius(4)
+        .margin({ left: 12, top: 4, bottom: 4 })
+      Column() {
+        Text(item.title).fontSize(16).fontColor($r('app.color.list_title')).maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        if (item.subtitle.length > 0) {
+          Text(item.subtitle).fontSize(12).fontColor($r('app.color.list_subtitle')).maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ top: 2 })
+        }
+      }
+      .layoutWeight(1).alignItems(HorizontalAlign.Start).margin({ left: 12, right: 8 })
+      Image($r('app.media.ic_more')).width(24).height(24).fillColor($r('app.color.list_subtitle'))
+        .padding(4).margin({ right: 4 })
+        .onClick(() => {
+          this.ctxItem = item;
+          this.ctxIsFavorite = false;
+          this.showCtxSheet = true;
+        })
+    }
+    .width('100%').constraintSize({ minHeight: 56 }).alignItems(VerticalAlign.Center)
+    .onClick(() => { this.onStorageCardClick(item); })
   }
 
   /** 卡片内容(对齐 Android card_browser_item.xml)。由 ForEach 迭代调用,item 来自 ForEach 的响应式迭代。 */

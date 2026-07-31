@@ -787,10 +787,12 @@ export class MediaLibrary {
       const lower = pickerUri.toLowerCase();
       const isAudio = AUDIO_EXTS.some(f => lower.endsWith(f));
       const meta = await MediaLibrary.parseFileMeta(permUri);
-      const title = meta.title.length > 0 ? meta.title : MediaLibrary.fileNameTitle(pickerUri);
+      // 音频文件使用元数据标题+艺术家;视频/iso 等直接使用源文件名。
+      const originalName = MediaLibrary.fileNameTitle(pickerUri);
+      const title = isAudio ? (meta.title.length > 0 ? meta.title : originalName) : originalName;
       const subtitle = isAudio ? (meta.artist.length > 0 ? meta.artist : '音频') : '视频';
       const icon: Resource = isAudio ? $r('app.media.ic_song') : $r('app.media.ic_video');
-      const artworkPath = meta.artworkPath.length > 0 ? meta.artworkPath : '';
+      const artworkPath = isAudio ? (meta.artworkPath.length > 0 ? meta.artworkPath : '') : '';
       HILog(`importStorage: title="${title}" isAudio=${isAudio} artworkPath="${artworkPath}"`);
       MediaLibrary.storageItems.push(new SheetItem(title, subtitle, icon, permUri, artworkPath));
     }
