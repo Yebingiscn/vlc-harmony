@@ -64,13 +64,6 @@ export struct MediaGridCard {
           .width(24)
           .height(24)
           .fillColor('#FF8800')
-      } else if (this.isPresent && !this.inSelection) {
-        Image($r('app.media.ic_more_w'))
-          .width(24)
-          .height(24)
-          .objectFit(ImageFit.Contain)
-          .fillColor('#FFFFFF')
-          .onClick(() => this.onItemMoreClick())
       }
     }
     .width('100%')

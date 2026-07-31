@@ -130,6 +130,8 @@ class VideoPlayerViewModel implements PlaybackListener {
   @Trace surfaceHeight: number = 0;
   /** 播放器锁定状态:锁定后点击画面不显 HUD,需手动解锁。 */
   @Trace locked: boolean = false;
+  /** 当前循环模式:0=关闭,1=列表循环,2=单曲循环。 */
+  @Trace repeatMode: number = 0;
 
   uri: string = '';
   private list: VideoPlayItem[] = [];
@@ -166,6 +168,7 @@ class VideoPlayerViewModel implements PlaybackListener {
     this.speed = await Settings.getFloat(Settings.VIDEO_SPEED, 1.0);
 
     const svc = PlaybackService.getInstance();
+    this.repeatMode = svc.getRepeatMode();
     if (!this.listening) {
       svc.addListener(this);
       this.listening = true;
@@ -918,7 +921,7 @@ export struct VideoPlayerPage {
       return true;
     })
     .bindSheet(this.sheetOpen, this.playerSheet(), {
-      height: SheetSize.FIT_CONTENT,
+      height: this.sheetKind === 'speed' ? SheetSize.MEDIUM : SheetSize.FIT_CONTENT,
       dragBar: true,
       backgroundColor: $r('app.color.background_default'),
       onDisappear: () => {
@@ -1224,11 +1227,22 @@ export struct VideoPlayerPage {
     .onClick(() => onTap())
   }
 
+  advancedActiveIds(): PlayerAdvancedOptionId[] {
+    const ids: PlayerAdvancedOptionId[] = [];
+    if (this.vm.locked) {
+      ids.push('lock');
+    }
+    if (this.vm.repeatMode !== 0) {
+      ids.push('repeat');
+    }
+    return ids;
+  }
+
   @Builder
   advancedOptionsMenu() {
     PlayerAdvancedOptions({
       items: buildPlayerAdvancedOptions('video'),
-      activeIds: this.vm.locked ? ['lock'] : [],
+      activeIds: this.advancedActiveIds(),
       onSelect: (id: PlayerAdvancedOptionId): void => {
         // 只记录选择并收起菜单,真正的动作在菜单消失后执行(见 pendingAdvancedAction 注释)。
         this.pendingAdvancedAction = id;
@@ -1278,7 +1292,9 @@ export struct VideoPlayerPage {
       return;
     }
     if (id === 'repeat') {
-      PlaybackService.getInstance().cycleRepeat();
+      const svc = PlaybackService.getInstance();
+      svc.cycleRepeat();
+      this.vm.repeatMode = svc.getRepeatMode();
       promptAction.showToast({ message: '循环模式已切换' });
       return;
     }
