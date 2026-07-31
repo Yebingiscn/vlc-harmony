@@ -498,6 +498,17 @@ export struct VideoPlayerPage {
           .height('100%')
           // Keep the declarative HUD above the native video surface interactive.
           .hitTestBehavior(HitTestMode.None)
+
+        // 空白画面点击层：位于视频 Surface 之上、HUD 之下，不拦截 HUD 按钮。
+        Column()
+        // Transparent tap layer between the video surface and HUD.
+        Column() {
+          Blank()
+            .width('100%')
+            .height('100%')
+        }
+          .width('100%')
+          .height('100%')
           .onClick(() => this.toggleHud())
 
         // 加载中 / 出错提示(居中,不随 HUD 隐藏)
