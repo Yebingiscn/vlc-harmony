@@ -125,7 +125,7 @@ export struct PreferencesPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor('#121212')
+      .backgroundColor($r('app.color.background_default'))
       .bindSheet(this.sheetOpen, this.preferenceSheet(), {
         height: SheetSize.FIT_CONTENT,
         dragBar: true,
@@ -283,7 +283,7 @@ export struct PreferencesPage {
       }).width('100%')
     }
     .width('100%')
-    .backgroundColor('#FFFFFF')
+    .backgroundColor($r('app.color.list_title'))
   }
 
   /** 偏好选择器 BottomSheet:按 sheetKind 渲染 number/multi/text/color 选择器。 */
@@ -322,19 +322,19 @@ export struct PreferencesPage {
       }
     }
     .width('100%')
-    .backgroundColor('#121212')
+    .backgroundColor($r('app.color.background_default'))
   }
 
   @Builder
   listSheet() {
     Column() {
-      Text(this.sheetItem.title).fontSize(18).fontColor('#FFFFFF').fontWeight(FontWeight.Medium)
+      Text(this.sheetItem.title).fontSize(16).fontColor($r('app.color.list_title')).fontWeight(FontWeight.Medium)
         .margin({ top: 16, bottom: 8 })
       List() {
         ForEach(this.sheetItem.options ?? [], (label: ResourceStr, idx: number) => {
           ListItem() {
             Row() {
-              Text(label).fontSize(15).fontColor('#FFFFFF').layoutWeight(1)
+              Text(label).fontSize(14).fontColor($r('app.color.list_title')).layoutWeight(1)
               Image($r('app.media.ic_check'))
                 .width(20).height(20).fillColor('#FF8800')
                 .visibility(this.optionValueAt(idx) === this.currentDefaultStr() ?
@@ -345,11 +345,11 @@ export struct PreferencesPage {
           }
         }, (label: ResourceStr, idx: number) => `${idx}`)
       }
-      .divider({ strokeWidth: 0.5, color: '#2A2A2A' })
+      .divider({ strokeWidth: 0.5, color: $r('app.color.card_background') })
       .width('100%')
     }
     .width('100%')
-    .backgroundColor('#121212')
+    .backgroundColor($r('app.color.background_default'))
     .alignItems(HorizontalAlign.Start)
   }
 
@@ -367,12 +367,12 @@ export struct PreferencesPage {
   @Builder
   textEditSheet() {
     Column() {
-      Text(this.sheetItem.title).fontSize(18).fontColor('#FFFFFF').fontWeight(FontWeight.Medium)
+      Text(this.sheetItem.title).fontSize(16).fontColor($r('app.color.list_title')).fontWeight(FontWeight.Medium)
         .margin({ top: 16, bottom: 12 })
       TextInput({ text: this.textDraft })
         .fontSize(15)
-        .fontColor('#FFFFFF')
-        .backgroundColor('#2A2A2A')
+        .fontColor($r('app.color.list_title'))
+        .backgroundColor($r('app.color.card_background'))
         .borderRadius(4)
         .margin({ left: 16, right: 16 })
         .onChange((v: string) => {
@@ -382,19 +382,19 @@ export struct PreferencesPage {
         .type(ButtonType.Normal)
         .borderRadius(4)
         .backgroundColor('#FF8800')
-        .fontColor('#FFFFFF')
+        .fontColor($r('app.color.list_title'))
         .margin({ top: 16, bottom: 24 })
         .onClick(() => this.onTextConfirm())
     }
     .width('100%')
-    .backgroundColor('#121212')
+    .backgroundColor($r('app.color.background_default'))
     .alignItems(HorizontalAlign.Center)
   }
 
   @Builder
   colorSheet() {
     Column() {
-      Text(this.sheetItem.title).fontSize(18).fontColor('#FFFFFF').fontWeight(FontWeight.Medium)
+      Text(this.sheetItem.title).fontSize(16).fontColor($r('app.color.list_title')).fontWeight(FontWeight.Medium)
         .margin({ top: 16, bottom: 16 })
       Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center }) {
         ForEach(COLOR_PALETTE, (c: number) => {
@@ -412,7 +412,7 @@ export struct PreferencesPage {
       .margin({ bottom: 24 })
     }
     .width('100%')
-    .backgroundColor('#121212')
+    .backgroundColor($r('app.color.background_default'))
     .alignItems(HorizontalAlign.Center)
   }
 

@@ -39,5 +39,6 @@ export struct BottomTabBar {
     .width('100%')
     .backgroundColor($r('app.color.bottom_navigation_background'))
     .shadow({ radius: 16, color: '#33000000', offsetY: -2 })
+    .padding({ bottom: 28 })
   }
 }

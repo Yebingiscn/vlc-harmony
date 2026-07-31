@@ -142,32 +142,32 @@ export struct PreferenceRow {
             .width(24)
             .height(24)
             .objectFit(ImageFit.Contain)
-            .fillColor('#FFFFFF')
+            .fillColor($r('app.color.list_title'))
             .margin({ right: 32 })
         }
         Column() {
           Text(this.item.title)
-            .fontSize(16)
-            .fontColor(this.dependencyEnabled ? '#E0E0E0' : '#616161')
+            .fontSize(15)
+            .fontColor(this.dependencyEnabled ? $r('app.color.list_title') : $r('app.color.grey700'))
             .maxLines(2)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
           if (this.item.summary) {
             Text(this.item.summary)
-              .fontSize(13)
-              .fontColor('#9E9E9E')
+              .fontSize(12)
+              .fontColor($r('app.color.list_subtitle'))
               .margin({ top: 2 })
           }
           // list/numberpicker/text 类型:右侧 summary 用动态当前值
           if ((this.item.type === 'list') && this.currentListLabel() !== '') {
             Text(this.currentListLabel())
-              .fontSize(13)
-              .fontColor('#9E9E9E')
+              .fontSize(12)
+              .fontColor($r('app.color.list_subtitle'))
               .margin({ top: 2 })
           }
           if (this.item.type === 'multiselect') {
             Text(this.multiselectSummary())
-              .fontSize(13)
-              .fontColor('#9E9E9E')
+              .fontSize(12)
+              .fontColor($r('app.color.list_subtitle'))
               .margin({ top: 2 })
           }
         }
@@ -188,7 +188,7 @@ export struct PreferenceRow {
             step: this.item.step ?? 1,
           })
             .selectedColor('#FF8800')
-            .trackColor('#424242')
+            .trackColor($r('app.color.card_border'))
             .blockColor('#FF8800')
             .width(120)
             .enabled(this.dependencyEnabled)
@@ -208,7 +208,7 @@ export struct PreferenceRow {
             Image($r('app.media.ic_arrow_right'))
               .width(20)
               .height(20)
-              .fillColor('#9E9E9E')
+              .fillColor($r('app.color.list_subtitle'))
           }
         } else if (
           this.item.type === 'list' ||
@@ -221,7 +221,7 @@ export struct PreferenceRow {
           Image($r('app.media.ic_arrow_right'))
             .width(20)
             .height(20)
-            .fillColor('#9E9E9E')
+            .fillColor($r('app.color.list_subtitle'))
         }
       }
       .width('100%')
@@ -230,7 +230,7 @@ export struct PreferenceRow {
       .opacity(this.dependencyEnabled ? 1.0 : 0.4)
       .onClick(() => this.onRowClick())
       Divider()
-        .color('#2A2A2A')
+        .color($r('app.color.divider'))
         .strokeWidth(0.5)
         .margin({ left: 16, right: 16 })
     }

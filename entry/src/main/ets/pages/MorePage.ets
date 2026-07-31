@@ -46,21 +46,13 @@ export struct MorePage {
   ActionButton(icon: Resource, title: string, onClick: () => void) {
     Row() {
       Image(icon)
-        .width(26)
-        .height(26)
-        .objectFit(ImageFit.Contain)
-        .fillColor('#FF8800')
+        .width(26).height(26).objectFit(ImageFit.Contain).fillColor('#FF8800')
       Text(title)
-        .fontSize(17)
-        .fontWeight(FontWeight.Medium)
-        .fontColor('#FF8800')
-        .margin({ left: 12 })
+        .fontSize(15).fontWeight(FontWeight.Medium).fontColor('#FF8800').margin({ left: 12 })
     }
-    .width('100%')
-    .height(56)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(VerticalAlign.Center)
-    .border({ width: 1, color: '#454545', radius: 8 })
+    .width('100%').height(56)
+    .justifyContent(FlexAlign.Center).alignItems(VerticalAlign.Center)
+    .border({ width: 1, color: $r('app.color.card_border'), radius: 8 })
     .onClick(() => onClick())
   }
 
@@ -68,18 +60,12 @@ export struct MorePage {
   SectionTitle(title: string, onClick: () => void) {
     Row() {
       Text(title)
-        .fontSize(20)
-        .fontWeight(FontWeight.Medium)
-        .fontColor('#FF8800')
-        .layoutWeight(1)
+        .fontSize(16).fontWeight(FontWeight.Medium).fontColor('#FF8800').layoutWeight(1)
       Image($r('app.media.ic_arrow_right'))
-        .width(24)
-        .height(24)
-        .fillColor('#FFFFFF')
+        .width(24).height(24).fillColor($r('app.color.list_title'))
         .onClick(() => onClick())
     }
-    .width('100%')
-    .padding({ left: 16, right: 16, top: 24, bottom: 12 })
+    .width('100%').padding({ left: 16, right: 16, top: 24, bottom: 12 })
     .alignItems(VerticalAlign.Center)
     .onClick(() => onClick())
   }
@@ -87,21 +73,14 @@ export struct MorePage {
   @Builder
   NewStreamCard() {
     Column() {
-      Image($r('app.media.ic_add'))
-        .width(42)
-        .height(42)
-        .fillColor('#FF8800')
+      Image($r('app.media.ic_add')).width(42).height(42).fillColor('#FF8800')
       Text('新建串流')
-        .fontSize(16)
-        .fontWeight(FontWeight.Medium)
-        .fontColor('#FFFFFF')
+        .fontSize(14).fontWeight(FontWeight.Medium).fontColor($r('app.color.list_title'))
         .margin({ top: 14 })
     }
-    .width(180)
-    .height(150)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center)
-    .border({ width: 1, color: '#454545', radius: 12 })
+    .width(180).height(150)
+    .justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
+    .border({ width: 1, color: $r('app.color.card_border'), radius: 12 })
     .margin({ left: 16 })
     .onClick(() => NavController.push('MrlPanel'))
   }
@@ -110,35 +89,25 @@ export struct MorePage {
   HistoryCard(item: PlaybackHistoryEntry) {
     Column() {
       Image(item.artworkUrl.length > 0 ? item.artworkUrl : $r('app.media.ic_no_thumbnail_1610'))
-        .width('100%')
-        .height(108)
+        .width('100%').height(108)
         .objectFit(ImageFit.Cover)
         .alt($r('app.media.ic_no_thumbnail_1610'))
         .borderRadius({ topLeft: 8, topRight: 8 })
-        .backgroundColor('#1E1E1E')
+        .backgroundColor($r('app.color.card_background'))
       Column() {
         Text(item.title)
-          .fontSize(14)
-          .fontColor('#FFFFFF')
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .width('100%')
+          .fontSize(14).fontColor($r('app.color.list_title'))
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
         if (item.length > 0) {
           Text(formatDuration(item.length))
-          .fontSize(12)
-            .fontColor('#BDBDBD')
-            .margin({ top: 4 })
+            .fontSize(12).fontColor($r('app.color.list_subtitle')).margin({ top: 4 })
         }
       }
-      .width('100%')
-      .alignItems(HorizontalAlign.Start)
-      .padding(12)
+      .width('100%').alignItems(HorizontalAlign.Start).padding(12)
     }
-    .width(176)
-    .height(166)
-    .border({ width: 1, color: '#454545', radius: 8 })
-    .clip(true)
-    .margin({ right: 12 })
+    .width(176).height(166)
+    .border({ width: 1, color: $r('app.color.card_border'), radius: 8 })
+    .clip(true).margin({ right: 12 })
     .onClick(() => this.playHistoryItem(item))
   }
 
@@ -147,14 +116,12 @@ export struct MorePage {
     if (this.vm.history.length === 0) {
       Column() {
         Text('暂无播放历史')
-          .fontSize(16)
-          .fontColor('#BDBDBD')
+          .fontSize(14).fontColor($r('app.color.list_subtitle'))
       }
-      .width('100%')
-      .height(120)
-      .justifyContent(FlexAlign.Center)
-      .alignItems(HorizontalAlign.Center)
-      .border({ width: 1, color: '#454545', radius: 8 })
+      .width('100%').height(120)
+      .justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Start)
+      .padding({ left: 16 })
+      .border({ width: 1, color: $r('app.color.card_border'), radius: 8 })
       .margin({ left: 16, right: 16 })
       .onClick(() => this.openHistory())
     } else {
@@ -166,10 +133,9 @@ export struct MorePage {
         }
         .padding({ left: 16, right: 4 })
       }
-      .width('100%')
-      .height(190)
-      .scrollable(ScrollDirection.Horizontal)
-      .scrollBar(BarState.Off)
+      .width('100%').height(190)
+      .scrollable(ScrollDirection.Horizontal).scrollBar(BarState.Off)
+      .align(Alignment.Start)
     }
   }
 
@@ -180,15 +146,13 @@ export struct MorePage {
           Column() {
             this.ActionButton($r('app.media.ic_more_preferences'), '设置', () => NavController.push('Preferences'))
           }
-            .layoutWeight(1)
-            .margin({ right: 12 })
+          .layoutWeight(1).margin({ right: 12 })
           Column() {
             this.ActionButton($r('app.media.ic_more_about'), '关于', () => NavController.push('About'))
           }
-            .layoutWeight(1)
+          .layoutWeight(1)
         }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 20 })
+        .width('100%').padding({ left: 16, right: 16, top: 20 })
 
         this.SectionTitle('串流', () => NavController.push('MrlPanel'))
         this.NewStreamCard()
@@ -198,14 +162,10 @@ export struct MorePage {
           this.HistoryPreview()
         }
       }
-      .width('100%')
-      .alignItems(HorizontalAlign.Start)
-      .padding({ bottom: 28 })
+      .width('100%').alignItems(HorizontalAlign.Start).padding({ bottom: 28 })
     }
-    .width('100%')
-    .height('100%')
-    .backgroundColor('#121212')
-    .scrollBar(BarState.Auto)
-    .align(Alignment.TopStart)
+    .width('100%').height('100%')
+    .backgroundColor($r('app.color.background_default'))
+    .scrollBar(BarState.Auto).align(Alignment.TopStart)
   }
 }

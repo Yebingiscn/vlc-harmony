@@ -119,9 +119,9 @@ export struct PreferenceSearchPage {
                 }
                 Text(entry.category)
                   .fontSize(11)
-                  .fontColor('#FF8800')
+                  .fontColor($r('app.color.orange500'))
                   .margin({ left: 72 })
-                Divider().color('#2A2A2A').strokeWidth(0.5).margin({ left: 72, top: 8 })
+                Divider().color($r('app.color.divider')).strokeWidth(0.5).margin({ left: 72, top: 8 })
               }
               .width('100%')
               .onClick(() => this.onItemClick(entry))
@@ -134,7 +134,7 @@ export struct PreferenceSearchPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor('#121212')
+      .backgroundColor($r('app.color.background_default'))
     }
     .hideTitleBar(true)
     .onBackPressed(() => {

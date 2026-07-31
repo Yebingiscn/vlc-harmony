@@ -57,21 +57,22 @@ export struct SearchPage {
       Column() {
         // 搜索栏
         Row() {
-          Image($r('app.media.ic_arrow_back')).width(24).height(24).fillColor('#FFFFFF')
+          Image($r('app.media.ic_arrow_back')).width(24).height(24).fillColor($r('app.color.list_title'))
             .onClick(() => NavController.pop())
           Row() {
             TextInput({ text: this.input, placeholder: $r('app.string.search_hint') })
               .fontSize(15)
-              .fontColor('#FFFFFF')
-              .backgroundColor('#2A2A2A')
+              .fontColor($r('app.color.list_title'))
+              .backgroundColor($r('app.color.card_background'))
               .borderRadius(4)
+              .border({ width: 0.5, color: $r('app.color.card_border') })
               .layoutWeight(1)
               .onChange((v: string) => {
                 this.input = v;
                 this.vm.search(v);
               })
             if (this.input.length > 0) {
-              Image($r('app.media.ic_close_small')).width(20).height(20).fillColor('#9E9E9E')
+              Image($r('app.media.ic_close_small')).width(20).height(20).fillColor($r('app.color.list_subtitle'))
                 .margin({ left: 8 })
                 .onClick(() => {
                   this.input = '';
@@ -92,8 +93,8 @@ export struct SearchPage {
         // 结果 / 空态
         if (this.vm.query.trim().length === 0) {
           Column() {
-            Image($r('app.media.ic_search')).width(96).height(96).fillColor('#424242')
-            Text($r('app.string.search_global')).fontSize(14).fontColor('#9E9E9E').margin({ top: 12 })
+            Image($r('app.media.ic_search')).width(96).height(96).fillColor($r('app.color.grey800'))
+            Text($r('app.string.search_global')).fontSize(14).fontColor($r('app.color.list_subtitle')).margin({ top: 12 })
           }
           .width('100%').height('100%').justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
         } else if (this.vm.results.length === 0) {

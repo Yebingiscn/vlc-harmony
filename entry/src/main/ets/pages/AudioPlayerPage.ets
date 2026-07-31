@@ -1,4 +1,4 @@
-import { PlaybackService, PlaybackListener } from '../common/data/PlaybackService';
+import { PlaybackService, PlaybackState } from '../common/data/PlaybackService';
 import { NavController } from '../common/data/NavController';
 import { PlayState, formatDuration } from '../common/models/MediaModels';
 import { AppColors } from '../common/constants/AppConstants';
@@ -7,37 +7,44 @@ import { EqualizerDialog } from './EqualizerDialog';
 import { promptAction } from '@kit.ArkUI';
 
 /**
- * AudioPlayerPage —— AudioPlayer(底部播放面板,封面态为主)。
- * 头部媒体标题 + 倍速/睡眠 chip + AB 重复标记 + 封面 + 时间轴 + 控制按钮。
- * 绑定 PlaybackService(libVLC)事件驱动。
+ * AudioPlayerPage —— 音频播放详情页。
+ * 封面 + 曲目标题/艺术家 + 时间轴 + 控制按钮。
+ * 绑定 PlaybackService 事件驱动。
  */
 @ObservedV2
-class AudioPlayerViewModel implements PlaybackListener {
+class AudioPlayerViewModel {
   @Trace state: PlayState = PlayState.IDLE;
   @Trace duration: number = 0;
   @Trace position: number = 0;
   @Trace title: string = '';
+  @Trace artist: string = '';
+  @Trace artworkPath: string = '';
   @Trace shuffle: boolean = false;
   @Trace repeatMode: number = 0;
   @Trace speed: number = 1.0;
 
-  onStateChange(state: PlayState): void {
-    this.state = state;
+  private listenerId: number = 0;
+
+  attach(): void {
+    this.listenerId = setInterval(() => {
+      const s: PlaybackState = PlaybackService.snapshot();
+      this.state = s.state;
+      this.duration = s.duration;
+      this.position = s.position;
+      this.title = s.title;
+      this.artist = s.artist;
+      this.artworkPath = s.artworkPath;
+      this.shuffle = s.shuffle;
+      this.repeatMode = s.repeatMode;
+      this.speed = s.speed;
+    }, 300);
   }
 
-  onTimeUpdate(current: number, duration: number): void {
-    this.position = current;
-    this.duration = duration;
-  }
-
-  onQueueChanged(): void {
-    const cur = PlaybackService.getInstance().getCurrent();
-    if (cur) {
-      this.title = cur.title;
+  detach(): void {
+    if (this.listenerId > 0) {
+      clearInterval(this.listenerId);
+      this.listenerId = 0;
     }
-    this.shuffle = PlaybackService.getInstance().getShuffle();
-    this.repeatMode = PlaybackService.getInstance().getRepeatMode();
-    this.speed = PlaybackService.getInstance().getSpeed();
   }
 }
 
@@ -48,116 +55,132 @@ export struct AudioPlayerPage {
   @Local showEq: boolean = false;
 
   aboutToAppear(): void {
-    PlaybackService.getInstance().addListener(this.vm);
-    this.vm.onQueueChanged();
+    const s = PlaybackService.snapshot();
+    this.vm.title = s.title;
+    this.vm.artist = s.artist;
+    this.vm.artworkPath = s.artworkPath;
+    this.vm.duration = s.duration;
+    this.vm.position = s.position;
+    this.vm.state = s.state;
+    this.vm.shuffle = s.shuffle;
+    this.vm.repeatMode = s.repeatMode;
+    this.vm.speed = s.speed;
+    this.vm.attach();
   }
 
   aboutToDisappear(): void {
-    PlaybackService.getInstance().removeListener(this.vm);
+    this.vm.detach();
   }
 
   build() {
     NavDestination() {
       Column() {
-        // 头部:返回 + 标题 + 列表/封面切换
+        // 头部:返回 + 标题
         Row() {
-          Image($r('app.media.ic_arrow_back')).width(24).height(24).fillColor('#FFFFFF')
+          Image($r('app.media.ic_arrow_back')).width(24).height(24).fillColor($r('app.color.list_title'))
             .onClick(() => NavController.pop())
-          Text(this.vm.title).fontSize(16).fontColor('#FFFFFF').layoutWeight(1).margin({ left: 8 })
+          Text(this.vm.title).fontSize(16).fontColor($r('app.color.list_title')).layoutWeight(1).margin({ left: 8 })
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-          Image($r('app.media.ic_player_playqueue')).width(24).height(24).fillColor('#FFFFFF')
+          Image($r('app.media.ic_player_playqueue')).width(24).height(24).fillColor($r('app.color.list_title'))
             .onClick(() => promptAction.showToast({ message: $r('app.string.developing') }))
         }
         .width('100%').padding(12).alignItems(VerticalAlign.Center)
 
-        // chip 行:倍速 / 睡眠 / AB
+        // chip 行:倍速 / 均衡器
         Row() {
           this.chip(this.vm.speed > 0 ? `${this.vm.speed.toFixed(2)}x` : '1.00x',
-            () => {
-              this.showSpeed = true;
-            })
+            () => { this.showSpeed = true; })
           this.chip($r('app.string.equalizer').toString(),
-            () => {
-              this.showEq = true;
-            })
+            () => { this.showEq = true; })
           Blank()
         }
         .width('100%').padding({ left: 12, right: 12, bottom: 8 })
 
-        // 封面
+        // 专辑封面
         Column() {
-          Image($r('app.media.ic_song_big'))
-            .width('60%')
+          Image(this.vm.artworkPath.length > 0 ? this.vm.artworkPath : $r('app.media.ic_song_big'))
+            .width('70%')
             .aspectRatio(1)
-            .objectFit(ImageFit.Contain)
-            .fillColor('#424242')
-            .borderRadius(4)
+            .objectFit(ImageFit.Cover)
+            .borderRadius(8)
+            .shadow({ radius: 16, color: '#33000000', offsetY: 4 })
         }
         .layoutWeight(1)
         .width('100%')
         .justifyContent(FlexAlign.Center)
         .alignItems(HorizontalAlign.Center)
+        .padding({ top: 12, bottom: 12 })
+
+        // 曲目标题 + 艺术家
+        Column() {
+          Text(this.vm.title)
+            .fontSize(18).fontColor($r('app.color.list_title')).fontWeight(FontWeight.Medium)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+            .margin({ bottom: 4 })
+          Text(this.vm.artist.length > 0 ? this.vm.artist : '未知艺术家')
+            .fontSize(14).fontColor($r('app.color.list_subtitle'))
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .width('100%').padding({ left: 24, right: 24, bottom: 12 })
+        .alignItems(HorizontalAlign.Center)
 
         // 时间轴
         Row() {
-          Text(formatDuration(this.vm.position)).fontSize(12).fontColor('#FFFFFF').width(56)
+          Text(formatDuration(this.vm.position)).fontSize(12).fontColor($r('app.color.list_subtitle')).width(48)
           Slider({
             value: this.vm.duration > 0 ? this.vm.position * 100 / this.vm.duration : 0,
             min: 0, max: 100, step: 1, style: SliderStyle.OutSet,
           })
             .layoutWeight(1)
-            .blockColor('#FF8800')
-            .selectedColor('#FF8800')
-            .trackColor('#424242')
+            .blockColor($r('app.color.orange500'))
+            .selectedColor($r('app.color.orange500'))
+            .trackColor($r('app.color.card_border'))
             .onChange((v: number, mode: SliderChangeMode) => {
               if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                PlaybackService.getInstance().seek(Math.floor(this.vm.duration * v / 100));
+                const seekMs = Math.floor(this.vm.duration * v / 100);
+                PlaybackService.seek(seekMs);
               }
             })
-          Text(formatDuration(this.vm.duration)).fontSize(12).fontColor('#FFFFFF').width(56).textAlign(TextAlign.End)
+          Text(formatDuration(this.vm.duration)).fontSize(12).fontColor($r('app.color.list_subtitle')).width(48).textAlign(TextAlign.End)
         }
-        .width('100%').padding({ left: 8, right: 8, bottom: 8 }).alignItems(VerticalAlign.Center)
+        .width('100%').padding({ left: 12, right: 12, bottom: 12 }).alignItems(VerticalAlign.Center)
 
         // 控制按钮行
         Row() {
           Image($r('app.media.ic_shuffle_audio')).width(28).height(28)
-            .fillColor(this.vm.shuffle ? '#FF8800' : '#FFFFFF')
-            .onClick(() => PlaybackService.getInstance().toggleShuffle())
+            .fillColor(this.vm.shuffle ? $r('app.color.orange500') : $r('app.color.list_title'))
+            .onClick(() => PlaybackService.toggleShuffle())
           Blank()
-          Image($r('app.media.ic_player_previous')).width(40).height(40).fillColor('#FFFFFF')
-            .onClick(() => PlaybackService.getInstance().prev())
+          Image($r('app.media.ic_player_previous')).width(40).height(40).fillColor($r('app.color.list_title'))
+            .onClick(() => PlaybackService.prev())
           Blank()
           Image(this.vm.state === PlayState.PLAYING ? $r('app.media.ic_pause_player') : $r('app.media.ic_play_player'))
-            .width(64).height(64).fillColor('#FFFFFF')
-            .onClick(() => PlaybackService.getInstance().togglePlay())
+            .width(64).height(64).fillColor($r('app.color.orange500'))
+            .onClick(() => PlaybackService.togglePlay())
           Blank()
-          Image($r('app.media.ic_player_next')).width(40).height(40).fillColor('#FFFFFF')
-            .onClick(() => PlaybackService.getInstance().next())
+          Image($r('app.media.ic_player_next')).width(40).height(40).fillColor($r('app.color.list_title'))
+            .onClick(() => PlaybackService.next())
           Blank()
           Image(this.vm.repeatMode === 0 ? $r('app.media.ic_repeat_audio') :
             (this.vm.repeatMode === 2 ? $r('app.media.ic_repeat_one_audio') : $r('app.media.ic_repeat_all_audio')))
             .width(28).height(28)
-            .fillColor(this.vm.repeatMode > 0 ? '#FF8800' : '#FFFFFF')
-            .onClick(() => PlaybackService.getInstance().cycleRepeat())
+            .fillColor(this.vm.repeatMode > 0 ? $r('app.color.orange500') : $r('app.color.list_title'))
+            .onClick(() => PlaybackService.cycleRepeat())
         }
-        .width('100%').padding({ left: 24, right: 24, top: 8, bottom: 24 }).alignItems(VerticalAlign.Center)
+        .width('100%').padding({ left: 24, right: 24, top: 8, bottom: 32 }).alignItems(VerticalAlign.Center)
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(AppColors.dark_background)
+      .backgroundColor($r('app.color.background_default'))
       .bindSheet(this.showSpeed, this.speedSheet(), {
         height: SheetSize.FIT_CONTENT,
         dragBar: true,
-        onDisappear: () => {
-          this.showSpeed = false;
-        },
+        onDisappear: () => { this.showSpeed = false; },
       })
       .bindSheet(this.showEq, this.eqSheet(), {
         height: SheetSize.FIT_CONTENT,
         dragBar: true,
-        onDisappear: () => {
-          this.showEq = false;
-        },
+        onDisappear: () => { this.showEq = false; },
       })
     }
     .hideTitleBar(true)
@@ -172,8 +195,8 @@ export struct AudioPlayerPage {
   chip(label: string, onTap: () => void) {
     Text(label)
       .fontSize(12)
-      .fontColor('#FFFFFF')
-      .backgroundColor('#33FF8800')
+      .fontColor($r('app.color.orange500'))
+      .backgroundColor($r('app.color.orange_500_transparent_20'))
       .borderRadius(16)
       .padding({ left: 12, right: 12, top: 6, bottom: 6 })
       .margin({ right: 8 })
@@ -182,15 +205,11 @@ export struct AudioPlayerPage {
 
   @Builder
   speedSheet() {
-    PlaybackSpeedDialog({ onClose: () => {
-      this.showSpeed = false;
-    } }).width('100%')
+    PlaybackSpeedDialog({ onClose: () => { this.showSpeed = false; } }).width('100%')
   }
 
   @Builder
   eqSheet() {
-    EqualizerDialog({ onClose: () => {
-      this.showEq = false;
-    } }).width('100%')
+    EqualizerDialog({ onClose: () => { this.showEq = false; } }).width('100%')
   }
 }

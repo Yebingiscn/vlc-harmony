@@ -21,13 +21,13 @@ export struct SearchItem {
       Column() {
         Text(this.item.title)
           .fontSize(15)
-          .fontColor('#FFFFFF')
+          .fontColor($r('app.color.list_title'))
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         if (this.item.description.length > 0) {
           Text(this.item.description)
             .fontSize(12)
-            .fontColor('#9E9E9E')
+            .fontColor($r('app.color.list_subtitle'))
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .margin({ top: 2 })

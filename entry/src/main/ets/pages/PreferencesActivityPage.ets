@@ -113,19 +113,19 @@ export struct PreferencesActivityPage {
           .width(28)
           .height(28)
           .objectFit(ImageFit.Contain)
-          .fillColor(this.isItemEnabled(item) ? '#E6E6E6' : '#666666')
+          .fillColor(this.isItemEnabled(item) ? $r('app.color.list_title') : $r('app.color.grey600'))
           .margin({ right: 20 })
       }
       Column() {
         Text(item.title)
-          .fontSize(18)
-          .fontColor(this.isItemEnabled(item) ? '#F5F5F5' : '#686868')
+          .fontSize(15)
+          .fontColor(this.isItemEnabled(item) ? $r('app.color.list_title') : $r('app.color.grey700'))
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         if (item.summary.length > 0) {
           Text(item.summary)
             .fontSize(14)
-            .fontColor(this.isItemEnabled(item) ? '#BDBDBD' : '#666666')
+            .fontColor(this.isItemEnabled(item) ? $r('app.color.list_subtitle') : $r('app.color.grey600'))
             .lineHeight(20)
             .margin({ top: 4 })
             .maxLines(3)
@@ -174,7 +174,7 @@ export struct PreferencesActivityPage {
                 this.SettingRow(item)
               }, (item: SettingsHomeItem) => item.key)
               Divider()
-                .color('#303030')
+                .color($r('app.color.divider'))
                 .strokeWidth(1)
                 .margin({ top: 6 })
             }, (section: SettingsHomeSection) => section.key)
@@ -189,7 +189,7 @@ export struct PreferencesActivityPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor('#121212')
+      .backgroundColor($r('app.color.background_default'))
     }
     .hideTitleBar(true)
     .onBackPressed(() => {

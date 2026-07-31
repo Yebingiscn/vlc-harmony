@@ -101,8 +101,6 @@ export struct MainPage {
   build() {
     NavDestination() {
       Column() {
-        // 状态栏同色小条
-        Column().width('100%').height(0)
         VlcToolbar({
           title: $r('app.string.app_name'),
           showBack: false,
@@ -171,6 +169,7 @@ export struct MainPage {
       })
     }
     .hideTitleBar(true)
+    .expandSafeArea([SafeAreaType.SYSTEM, SafeAreaType.KEYBOARD], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   /** 收藏服务器 BottomSheet(复用 NetworkServerDialog)。 */

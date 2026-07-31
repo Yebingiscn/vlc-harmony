@@ -119,7 +119,7 @@ export struct SecondaryPage {
           } else {
             Column() {
               Image($r('app.media.ic_empty')).width(96).height(96).fillColor('#424242')
-              Text($r('app.string.developing')).fontSize(14).fontColor('#9E9E9E').margin({ top: 12 })
+              Text($r('app.string.developing')).fontSize(14).fontColor($r('app.color.list_subtitle')).margin({ top: 12 })
             }
             .width('100%')
             .height('100%')
@@ -150,9 +150,9 @@ export struct SecondaryPage {
           Row() {
             Image($r('app.media.ic_song')).width(40).height(40).fillColor('#FF8800').margin({ right: 12 })
             Column() {
-              Text(t.title).fontSize(15).fontColor('#FFFFFF').maxLines(1)
+              Text(t.title).fontSize(15).fontColor($r('app.color.list_title')).maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
-              Text(t.length > 0 ? formatDuration(t.length) : t.artistName).fontSize(12).fontColor('#9E9E9E')
+              Text(t.length > 0 ? formatDuration(t.length) : t.artistName).fontSize(12).fontColor($r('app.color.list_subtitle'))
                 .margin({ top: 2 })
             }.alignItems(HorizontalAlign.Start).layoutWeight(1)
           }
@@ -171,9 +171,9 @@ export struct SecondaryPage {
     Scroll() {
       Column() {
         Image($r('app.media.ic_about_logo')).width(96).height(96).objectFit(ImageFit.Contain).margin({ top: 32 })
-        Text($r('app.string.app_name')).fontSize(24).fontColor('#FFFFFF').fontWeight(FontWeight.Bold)
+        Text($r('app.string.app_name')).fontSize(24).fontColor($r('app.color.list_title')).fontWeight(FontWeight.Bold)
           .margin({ top: 16 })
-        Text($r('app.string.welcome_subtitle')).fontSize(13).fontColor('#9E9E9E').margin({ top: 8 })
+        Text($r('app.string.welcome_subtitle')).fontSize(13).fontColor($r('app.color.list_subtitle')).margin({ top: 8 })
         Text('© 1996-2026 VideoLAN').fontSize(12).fontColor('#757575').margin({ top: 24 })
         Text('GPLv2').fontSize(12).fontColor('#757575').margin({ top: 4 })
       }

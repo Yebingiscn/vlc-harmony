@@ -32,23 +32,23 @@ export struct PreferenceNumberPickerDialog {
       Text(this.title)
         .fontSize(16)
         .fontWeight(FontWeight.Bold)
-        .fontColor('#E0E0E0')
+        .fontColor($r('app.color.list_title'))
         .margin({ bottom: 16 })
 
       // 数字选择器(+/- 步进,显示当前值;近似 NumberPicker)。
       Row() {
         Text('-')
-          .fontSize(22).fontColor('#9E9E9E').padding(12)
+          .fontSize(22).fontColor($r('app.color.list_subtitle')).padding(12)
           .onClick(() => {
             if (this.picked > this.min) {
               this.picked = this.picked - 1;
             }
           })
         Text(`${this.picked}`)
-          .fontSize(28).fontColor('#FF8800').fontWeight(FontWeight.Bold)
+          .fontSize(28).fontColor($r('app.color.orange500')).fontWeight(FontWeight.Bold)
           .layoutWeight(1).textAlign(TextAlign.Center)
         Text('+')
-          .fontSize(22).fontColor('#9E9E9E').padding(12)
+          .fontSize(22).fontColor($r('app.color.list_subtitle')).padding(12)
           .onClick(() => {
             if (this.picked < this.max) {
               this.picked = this.picked + 1;
@@ -61,13 +61,13 @@ export struct PreferenceNumberPickerDialog {
       Row() {
         Text($r('app.string.cancel'))
           .fontSize(14)
-          .fontColor('#9E9E9E')
+          .fontColor($r('app.color.list_subtitle'))
           .padding(8)
           .onClick(() => this.onDismiss())
         Text($r('app.string.ok'))
           .fontSize(14)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#FF8800')
+          .fontColor($r('app.color.orange500'))
           .margin({ left: 24 })
           .padding(8)
           .onClick(() => {
@@ -80,7 +80,7 @@ export struct PreferenceNumberPickerDialog {
     }
     .width('100%')
     .padding(16)
-    .backgroundColor('#1F1F1F')
+    .backgroundColor($r('app.color.background_default'))
     .borderRadius(12)
   }
 

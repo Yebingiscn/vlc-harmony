@@ -162,7 +162,7 @@ export struct PlaylistsPage {
         if (this.vm.playlists.length === 0) {
           Column() {
             Image($r('app.media.ic_playlist_big')).width(96).height(96).fillColor($r('app.color.grey800'))
-            Text($r('app.string.noplaylist')).fontSize(14).fontColor($r('app.color.list_subtitle')).margin({ top: 12 })
+            Text($r('app.string.noplaylist')).fontSize(15).fontColor($r('app.color.list_subtitle')).margin({ top: 12 })
             Button($r('app.string.create_new_playlist'))
               .type(ButtonType.Normal).borderRadius(4).backgroundColor('#FF8800').fontColor('#FFFFFF').fontSize(14)
               .margin({ top: 16 })
@@ -181,9 +181,9 @@ export struct PlaylistsPage {
                       .onClick(() => { this.openCtxMenu(card); })
                   }
                   .width('100%')
-                  Text(card.name).fontSize(13).fontColor($r('app.color.list_title')).maxLines(1)
+                  Text(card.name).fontSize(14).fontColor($r('app.color.list_title')).maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ top: 6, left: 8, right: 8 })
-                  Text(`${card.trackCount} 首`).fontSize(11).fontColor($r('app.color.list_subtitle'))
+                  Text(`${card.trackCount} 首`).fontSize(12).fontColor($r('app.color.list_subtitle'))
                     .margin({ bottom: 6 })
                 }
                 .width('100%')

@@ -87,7 +87,7 @@ export struct VlcToolbar {
     }
     .width('100%')
     .height(56)
-    .padding({ left: 4, right: 4 })
+    .padding({ left: 4, right: 4, top: 32, bottom: 8 })
     .backgroundColor($r('app.color.background_actionbar'))
     .alignItems(VerticalAlign.Center)
   }

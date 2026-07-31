@@ -99,7 +99,7 @@ export struct HistoryFragmentPage {
       Row() {
         Text('无痕模式')
           .fontSize(16)
-          .fontColor('#FFFFFF')
+          .fontColor($r('app.color.list_title'))
           .layoutWeight(1)
         Toggle({ type: ToggleType.Checkbox, isOn: this.incognitoMode })
           .selectedColor('#FF8800')
@@ -110,11 +110,11 @@ export struct HistoryFragmentPage {
         .padding({ left: 16, right: 12 })
         .alignItems(VerticalAlign.Center)
       Divider()
-        .color('#3A3A3A')
+        .color($r('app.color.divider'))
         .strokeWidth(1)
       Text('刷新')
         .fontSize(16)
-        .fontColor('#FFFFFF')
+        .fontColor($r('app.color.list_title'))
         .width('100%')
         .padding({ left: 16, right: 16, top: 16, bottom: 16 })
         .onClick(() => {
@@ -140,7 +140,7 @@ export struct HistoryFragmentPage {
         Text(this.clearHistoryPrompt.title)
           .fontSize(22)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#FFFFFF')
+          .fontColor($r('app.color.list_title'))
           .width('100%')
         Text(this.clearHistoryPrompt.message)
           .fontSize(16)
@@ -165,7 +165,7 @@ export struct HistoryFragmentPage {
         .margin({ top: 32 })
       }
       .width('84%')
-      .backgroundColor('#2A2A2A')
+      .backgroundColor($r('app.color.card_background'))
       .borderRadius(16)
       .padding(24)
       .alignItems(HorizontalAlign.Start)
@@ -184,7 +184,7 @@ export struct HistoryFragmentPage {
             .width(24)
             .height(24)
             .objectFit(ImageFit.Contain)
-            .fillColor(AppColors.white)
+            .fillColor($r('app.color.list_title'))
             .margin({ left: 12 })
             .onClick(() => NavController.pop())
           Text($r('app.string.history'))
@@ -196,13 +196,13 @@ export struct HistoryFragmentPage {
           Image($r('app.media.ic_search'))
             .width(28)
             .height(28)
-            .fillColor(AppColors.white)
+            .fillColor($r('app.color.list_title'))
             .margin({ right: 24 })
           Button({ type: ButtonType.Normal, stateEffect: true }) {
             Image($r('app.media.ic_delete'))
               .width(28)
               .height(28)
-              .fillColor(AppColors.white)
+              .fillColor($r('app.color.list_title'))
           }
           .width(56)
           .height(56)
@@ -222,21 +222,21 @@ export struct HistoryFragmentPage {
         .width('100%')
         .height(56)
         .alignItems(VerticalAlign.Center)
-        .backgroundColor('#121212')
+        .backgroundColor($r('app.color.background_default'))
 
         if (this.vm.isEmpty) {
-          // 空态文案:居中、20fp、paddingTop=30dp
+          // 空态文案:左对齐
           Column() {
             Text($r('app.string.nohistory'))
-              .fontSize(20)
-              .fontColor('#BDBDBD')
-              .textAlign(TextAlign.Center)
-              .margin({ top: 30, left: AppDimens.kl_normal, right: AppDimens.kl_normal })
+              .fontSize(16)
+              .fontColor($r('app.color.list_subtitle'))
+              .textAlign(TextAlign.Start)
+              .margin({ top: 30 })
+              .padding({ left: AppDimens.kl_normal })
           }
           .width('100%')
           .layoutWeight(1)
-          .justifyContent(FlexAlign.Center)
-          .alignItems(HorizontalAlign.Center)
+          .alignItems(HorizontalAlign.Start)
         } else {
           Refresh({ refreshing: $$this.isRefreshing }) {
             List({ space: 0 }) {
@@ -253,21 +253,21 @@ export struct HistoryFragmentPage {
                     }
                     .width(96)
                     .height(60)
-                    .backgroundColor('#1E1E1E')
+                    .backgroundColor($r('app.color.card_background'))
                     .margin({ left: AppDimens.kl_normal, top: AppDimens.kl_half, bottom: AppDimens.kl_half })
 
                     // 中间文字区
                     Column() {
                       Text(item.title)
-                        .fontSize(18)
-                        .fontColor(AppColors.white)
+                        .fontSize(16)
+                        .fontColor($r('app.color.list_title'))
                         .maxLines(2)
                         .textOverflow({ overflow: TextOverflow.Ellipsis })
                         .width('100%')
                       if (item.length > 0) {
                         Text(formatDuration(item.length))
-                          .fontSize(15)
-                          .fontColor('#BDBDBD')
+                          .fontSize(13)
+                          .fontColor($r('app.color.list_subtitle'))
                           .maxLines(1)
                           .margin({ top: 2 })
                           .width('100%')
@@ -283,6 +283,7 @@ export struct HistoryFragmentPage {
                 }
               }, (item: PlaybackHistoryEntry) => item.uri)
             }
+            .alignListItem(ListItemAlign.Start)
             .width('100%')
             .height('100%')
             .padding({ top: 18, bottom: AppDimens.default_margin })
@@ -294,7 +295,7 @@ export struct HistoryFragmentPage {
         }
         .width('100%')
         .height('100%')
-        .backgroundColor('#121212')
+        .backgroundColor($r('app.color.background_default'))
         if (this.historyMenuOpen) {
           Column()
             .width('100%')
