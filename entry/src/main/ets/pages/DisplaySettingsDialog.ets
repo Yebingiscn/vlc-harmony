@@ -7,6 +7,7 @@ class SortMeta {
   ascText: string;
   descText: string;
   icon: Resource;
+
   constructor(key: number, title: string, ascText: string, descText: string, icon: Resource) {
     this.key = key;
     this.title = title;
@@ -25,8 +26,10 @@ struct SortItem {
   @Param icon: Resource = $r('app.media.ic_sort');
   @Param isCurrentSort: boolean = false;
   @Param currentSortDesc: boolean = false;
-  @Event onSortAsc: () => void = () => {};
-  @Event onSortDesc: () => void = () => {};
+  @Event onSortAsc: () => void = () => {
+  };
+  @Event onSortDesc: () => void = () => {
+  };
 
   build() {
     Row() {
@@ -39,7 +42,7 @@ struct SortItem {
         .margin({ left: 24 })
         .layoutWeight(1)
         .maxLines(1)
-        .textOverflow(TextOverflow.Ellipsis)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
 
       // 升序
       Row() {
@@ -75,7 +78,12 @@ struct SortItem {
       .onClick(() => this.onSortDesc())
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+    .padding({
+      left: 16,
+      right: 16,
+      top: 8,
+      bottom: 8
+    })
     .alignItems(VerticalAlign.Center)
   }
 }
@@ -89,8 +97,8 @@ struct SortItem {
  */
 @ComponentV2
 export struct DisplaySettingsDialog {
-  @Event onClose: () => void = () => {};
-
+  @Event onClose: () => void = () => {
+  };
   @Local displayInCards: boolean = false;
   @Local showAllArtists: boolean = false;
   @Local showOnlyMultimediaFiles: boolean = false;
@@ -99,12 +107,10 @@ export struct DisplaySettingsDialog {
   @Local onlyFavs: boolean = false;
   @Local currentSort: number = 1;
   @Local currentSortDesc: boolean = false;
-
   @Local videoGroupOptions: string[] = ['Group by name', 'Group by folder', 'Do not group videos'];
   @Local videoGroupIndex: number = 0;
   @Local actionOptions: string[] = ['Play', 'Play all', 'Append'];
   @Local actionIndex: number = 0;
-
   @Local sorts: SortMeta[] = [
     new SortMeta(1, 'Name', 'A → Z', 'Z → A', $r('app.media.ic_sort_alpha')),
     new SortMeta(2, 'File name', 'A → Z', 'Z → A', $r('app.media.ic_sort_filename')),
@@ -113,12 +119,16 @@ export struct DisplaySettingsDialog {
   ];
 
   @Builder
-  checkboxRow(icon: Resource, title: Resource, checked: boolean, onChange: (v: boolean) => void) {
+  checkboxRow(icon: Resource, title: ResourceStr, checked: boolean, onChange: (v: boolean) => void) {
     Row() {
       Image(icon).width(24).height(24).fillColor('#FFFFFF')
       Text(title)
-        .fontSize(16).fontColor('#FFFFFF').margin({ left: 24 }).layoutWeight(1)
-        .maxLines(1).textOverflow(TextOverflow.Ellipsis)
+        .fontSize(16)
+        .fontColor('#FFFFFF')
+        .margin({ left: 24 })
+        .layoutWeight(1)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
       Toggle({ type: ToggleType.Checkbox, isOn: checked })
         .selectedColor(AppColors.orange500)
         .margin({ right: 4 })
@@ -149,9 +159,13 @@ export struct DisplaySettingsDialog {
           Text(this.displayInCards ? 'Display in list' : 'Display in grid')
             .fontSize(16).fontColor('#FFFFFF').margin({ left: 24, right: 16 }).layoutWeight(1)
         }
-        .width('100%').constraintSize({ minHeight: 48 }).padding({ left: 16, right: 16 })
+        .width('100%')
+        .constraintSize({ minHeight: 48 })
+        .padding({ left: 16, right: 16 })
         .alignItems(VerticalAlign.Center)
-        .onClick(() => { this.displayInCards = !this.displayInCards; })
+        .onClick(() => {
+          this.displayInCards = !this.displayInCards;
+        })
 
         // CheckBox 行们
         this.checkboxRow($r('app.media.ic_sort_artist'), $r('app.string.artists'),
@@ -169,35 +183,51 @@ export struct DisplaySettingsDialog {
         Row() {
           Image($r('app.media.ic_group_display')).width(24).height(24).fillColor('#FFFFFF')
           Text('Group videos')
-            .fontSize(16).fontColor('#FFFFFF').margin({ left: 24 }).width('50%')
-            .maxLines(1).textOverflow(TextOverflow.Ellipsis)
-          Select(this.videoGroupOptions.map((v: string) => ({ value: v })))
+            .fontSize(16)
+            .fontColor('#FFFFFF')
+            .margin({ left: 24 })
+            .width('50%')
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+          Select(this.actionOptions.map((v: string): SelectOption => ({ value: v })))
             .selected(this.videoGroupIndex)
             .value(this.videoGroupOptions[this.videoGroupIndex])
-            .margin({ left: 8 }).width('50%')
+            .margin({ left: 8 })
+            .width('50%')
             .onSelect((idx: number) => {
               this.videoGroupIndex = idx;
               this.onClose(); // 切换分组后关闭弹窗
             })
         }
-        .width('100%').constraintSize({ minHeight: 48 }).padding({ left: 16, right: 16 })
-        .alignItems(VerticalAlign.Center).margin({ top: 24 })
+        .width('100%')
+        .constraintSize({ minHeight: 48 })
+        .padding({ left: 16, right: 16 })
+        .alignItems(VerticalAlign.Center)
+        .margin({ top: 24 })
 
         // default_actions_group:默认动作 Select + 副标题(alpha 0.7)
         Row() {
           Image($r('app.media.ic_play')).width(24).height(24).fillColor('#FFFFFF')
           Column() {
             Text('Playback action')
-              .fontSize(16).fontColor('#FFFFFF').maxLines(1).textOverflow(TextOverflow.Ellipsis)
+              .fontSize(16).fontColor('#FFFFFF').maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
             Text('Default action when opening media')
-              .fontSize(12).fontColor('#FFFFFF').opacity(0.7).maxLines(1).textOverflow(TextOverflow.Ellipsis)
+              .fontSize(12)
+              .fontColor('#FFFFFF')
+              .opacity(0.7)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
           }
           .layoutWeight(1).margin({ left: 24 })
-          Select(this.actionOptions.map((v: string) => ({ value: v })))
+
+          Select(this.actionOptions.map((v: string): SelectOption => ({ value: v })))
             .selected(this.actionIndex)
             .value(this.actionOptions[this.actionIndex])
-            .margin({ left: 8 }).width('50%')
-            .onSelect((idx: number) => { this.actionIndex = idx; })
+            .margin({ left: 8 })
+            .width('50%')
+            .onSelect((idx: number) => {
+              this.actionIndex = idx;
+            })
         }
         .width('100%').constraintSize({ minHeight: 48 }).padding({ left: 16, right: 16 })
         .alignItems(VerticalAlign.Center)
@@ -211,11 +241,20 @@ export struct DisplaySettingsDialog {
         Column() {
           ForEach(this.sorts, (meta: SortMeta) => {
             SortItem({
-              title: meta.title, ascText: meta.ascText, descText: meta.descText, icon: meta.icon,
+              title: meta.title,
+              ascText: meta.ascText,
+              descText: meta.descText,
+              icon: meta.icon,
               isCurrentSort: this.currentSort === meta.key,
               currentSortDesc: this.currentSortDesc,
-              onSortAsc: () => { this.currentSort = meta.key; this.currentSortDesc = false; },
-              onSortDesc: () => { this.currentSort = meta.key; this.currentSortDesc = true; },
+              onSortAsc: () => {
+                this.currentSort = meta.key;
+                this.currentSortDesc = false;
+              },
+              onSortDesc: () => {
+                this.currentSort = meta.key;
+                this.currentSortDesc = true;
+              },
             })
           }, (meta: SortMeta) => `${meta.key}`)
         }

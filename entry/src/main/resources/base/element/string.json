@@ -577,6 +577,22 @@
       "value": "您的数据库包括您所有媒体的目录。它将发送给 VLC 开发者用于排查问题"
     },
     {
+      "name": "menu_display_settings",
+      "value": "显示设置"
+    },
+    {
+      "name": "menu_incognito_off",
+      "value": "无痕模式已关闭"
+    },
+    {
+      "name": "menu_incognito_on",
+      "value": "无痕模式已开启"
+    },
+    {
+      "name": "menu_refresh",
+      "value": "刷新"
+    },
+    {
       "name": "more",
       "value": "更多"
     },
