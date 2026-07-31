@@ -109,25 +109,45 @@ void CloseOwnedFd(int &fd)
     }
 }
 
-void BindNativeWindowLocked(PlayerEntry &pe, const std::string &id, OHNativeWindow *win)
+void SetOhosNativeWindow(libvlc_media_player_t *mp, OHNativeWindow *win, const std::string &id)
 {
-    if (pe.mp == nullptr || win == nullptr) {
+    if (mp == nullptr) {
         return;
     }
     OH_LOG_INFO(LOG_APP, "set_ohos_nativewindow_ptr mp=%{public}p win=%{public}p id=%{public}s",
-                pe.mp, win, id.c_str());
-    libvlc_media_player_set_ohos_nativewindow_ptr(pe.mp, win);
-    pe.windowBound = true;
+                mp, win, id.c_str());
+    // Must NOT hold g_mtx: may interact with VLC threads / vout events.
+    libvlc_media_player_set_ohos_nativewindow_ptr(mp, win);
+}
+
+void MarkWindowBoundLocked(const std::string &id, bool bound)
+{
+    for (auto &kv : g_players) {
+        PlayerEntry &pe = kv.second;
+        if (pe.videoOutId == id && pe.mp != nullptr) {
+            pe.windowBound = bound;
+        }
+    }
 }
 
 void OnSurfaceReady(const std::string &id, OHNativeWindow *win)
 {
-    std::lock_guard<std::mutex> lk(g_mtx);
-    OH_LOG_INFO(LOG_APP, "OnSurfaceReady id=%{public}s win=%{public}p", id.c_str(), win);
-    for (auto &kv : g_players) {
-        if (!kv.second.videoOutId.empty() && kv.second.videoOutId == id) {
-            BindNativeWindowLocked(kv.second, id, win);
+    std::vector<libvlc_media_player_t *> mps;
+    {
+        std::lock_guard<std::mutex> lk(g_mtx);
+        OH_LOG_INFO(LOG_APP, "OnSurfaceReady id=%{public}s win=%{public}p", id.c_str(), win);
+        for (auto &kv : g_players) {
+            if (!kv.second.videoOutId.empty() && kv.second.videoOutId == id && kv.second.mp != nullptr) {
+                mps.push_back(kv.second.mp);
+            }
         }
+    }
+    for (libvlc_media_player_t *mp : mps) {
+        SetOhosNativeWindow(mp, win, id);
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_mtx);
+        MarkWindowBoundLocked(id, true);
     }
 }
 
@@ -660,12 +680,16 @@ napi_value MediaAddSlave(napi_env env, napi_callback_info info)
     if (argc >= 4) {
         GetI32(env, argv[3], &priority);
     }
-    std::lock_guard<std::mutex> lk(g_mtx);
-    MediaEntry *me = FindMediaLocked(h);
-    if (me == nullptr || me->media == nullptr) {
-        return Bool(env, false);
+    libvlc_media_t *media = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(g_mtx);
+        MediaEntry *me = FindMediaLocked(h);
+        if (me == nullptr || me->media == nullptr) {
+            return Bool(env, false);
+        }
+        media = me->media;
     }
-    int rc = libvlc_media_slaves_add(me->media, static_cast<libvlc_media_slave_type_t>(type),
+    int rc = libvlc_media_slaves_add(media, static_cast<libvlc_media_slave_type_t>(type),
                                      static_cast<unsigned>(priority), uri.c_str());
     return Bool(env, rc == 0);
 }
@@ -829,14 +853,21 @@ napi_value MediaPlayerSetMedia(napi_env env, napi_callback_info info)
     if (argc < 2 || !GetU32(env, argv[0], &ph) || !GetU32(env, argv[1], &mh)) {
         return Bool(env, false);
     }
-    std::lock_guard<std::mutex> lk(g_mtx);
-    PlayerEntry *pe = FindPlayerLocked(ph);
-    MediaEntry *me = FindMediaLocked(mh);
-    if (pe == nullptr || pe->mp == nullptr || me == nullptr || me->media == nullptr) {
-        return Bool(env, false);
+    libvlc_media_player_t *mp = nullptr;
+    libvlc_media_t *media = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(g_mtx);
+        PlayerEntry *pe = FindPlayerLocked(ph);
+        MediaEntry *me = FindMediaLocked(mh);
+        if (pe == nullptr || pe->mp == nullptr || me == nullptr || me->media == nullptr) {
+            return Bool(env, false);
+        }
+        mp = pe->mp;
+        media = me->media;
+        pe->mediaHandle = mh;
     }
-    libvlc_media_player_set_media(pe->mp, me->media);
-    pe->mediaHandle = mh;
+    // Outside g_mtx: set_media can emit media/player events.
+    libvlc_media_player_set_media(mp, media);
     return Bool(env, true);
 }
 
@@ -850,18 +881,30 @@ napi_value MediaPlayerSetVideoOut(napi_env env, napi_callback_info info)
         return Bool(env, false);
     }
     std::string id = GetString(env, argv[1]);
-    std::lock_guard<std::mutex> lk(g_mtx);
-    PlayerEntry *pe = FindPlayerLocked(ph);
-    if (pe == nullptr) {
+    libvlc_media_player_t *mp = nullptr;
+    OHNativeWindow *win = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(g_mtx);
+        PlayerEntry *pe = FindPlayerLocked(ph);
+        if (pe == nullptr) {
+            return Bool(env, false);
+        }
+        pe->videoOutId = id;
+        pe->windowBound = false;
+        mp = pe->mp;
+        win = xMgr.GetNativeWindow(id);
+    }
+    if (win == nullptr || mp == nullptr) {
         return Bool(env, false);
     }
-    pe->videoOutId = id;
-    pe->windowBound = false;
-    OHNativeWindow *win = xMgr.GetNativeWindow(id);
-    if (win == nullptr) {
-        return Bool(env, false);
+    SetOhosNativeWindow(mp, win, id);
+    {
+        std::lock_guard<std::mutex> lk(g_mtx);
+        PlayerEntry *pe = FindPlayerLocked(ph);
+        if (pe != nullptr && pe->videoOutId == id) {
+            pe->windowBound = true;
+        }
     }
-    BindNativeWindowLocked(*pe, id, win);
     return Bool(env, true);
 }
 
@@ -912,19 +955,27 @@ napi_value MediaPlayerPlay(napi_env env, napi_callback_info info)
         return nullptr;
     }
     libvlc_media_player_t *mp = nullptr;
+    OHNativeWindow *pendingWin = nullptr;
+    std::string pendingId;
     {
         std::lock_guard<std::mutex> lk(g_mtx);
         PlayerEntry *pe = FindPlayerLocked(h);
         if (pe == nullptr || pe->mp == nullptr) {
             return nullptr;
         }
-        if (!pe->windowBound && !pe->videoOutId.empty()) {
-            OHNativeWindow *win = xMgr.GetNativeWindow(pe->videoOutId);
-            if (win != nullptr) {
-                BindNativeWindowLocked(*pe, pe->videoOutId, win);
-            }
-        }
         mp = pe->mp;
+        if (!pe->windowBound && !pe->videoOutId.empty()) {
+            pendingId = pe->videoOutId;
+            pendingWin = xMgr.GetNativeWindow(pe->videoOutId);
+        }
+    }
+    if (pendingWin != nullptr) {
+        SetOhosNativeWindow(mp, pendingWin, pendingId);
+        std::lock_guard<std::mutex> lk(g_mtx);
+        PlayerEntry *pe = FindPlayerLocked(h);
+        if (pe != nullptr && pe->videoOutId == pendingId) {
+            pe->windowBound = true;
+        }
     }
     // Call outside g_mtx: play may emit events that re-enter on_player_event → g_mtx.
     libvlc_media_player_play(mp);
@@ -1002,13 +1053,24 @@ napi_value MediaPlayerSetTime(napi_env env, napi_callback_info info)
     napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
     uint32_t h = 0;
     int64_t t = 0;
-    if (argc >= 2 && GetU32(env, argv[0], &h) && GetI64(env, argv[1], &t)) {
-        std::lock_guard<std::mutex> lk(g_mtx);
-        PlayerEntry *pe = FindPlayerLocked(h);
-        if (pe && pe->mp) {
-            libvlc_media_player_set_time(pe->mp, t);
-        }
+    if (argc < 2 || !GetU32(env, argv[0], &h) || !GetI64(env, argv[1], &t)) {
+        return nullptr;
     }
+    // Off UI + outside g_mtx: set_time can block (ISO/DVD) and emits events that need g_mtx
+    // (same deadlock class as stop/play: THREAD_BLOCK while Slider → setTime).
+    std::thread([h, t]() {
+        libvlc_media_player_t *mp = nullptr;
+        {
+            std::lock_guard<std::mutex> lk(g_mtx);
+            PlayerEntry *pe = FindPlayerLocked(h);
+            if (pe && pe->mp) {
+                mp = pe->mp;
+            }
+        }
+        if (mp != nullptr) {
+            libvlc_media_player_set_time(mp, t);
+        }
+    }).detach();
     return nullptr;
 }
 
@@ -1036,12 +1098,19 @@ napi_value MediaPlayerSetRate(napi_env env, napi_callback_info info)
     napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
     uint32_t h = 0;
     double r = 1.0;
-    if (argc >= 2 && GetU32(env, argv[0], &h) && GetF64(env, argv[1], &r)) {
+    if (argc < 2 || !GetU32(env, argv[0], &h) || !GetF64(env, argv[1], &r)) {
+        return nullptr;
+    }
+    libvlc_media_player_t *mp = nullptr;
+    {
         std::lock_guard<std::mutex> lk(g_mtx);
         PlayerEntry *pe = FindPlayerLocked(h);
         if (pe && pe->mp) {
-            libvlc_media_player_set_rate(pe->mp, static_cast<float>(r));
+            mp = pe->mp;
         }
+    }
+    if (mp != nullptr) {
+        libvlc_media_player_set_rate(mp, static_cast<float>(r));
     }
     return nullptr;
 }
@@ -1070,12 +1139,19 @@ napi_value MediaPlayerSetVolume(napi_env env, napi_callback_info info)
     napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
     uint32_t h = 0;
     int32_t v = 100;
-    if (argc >= 2 && GetU32(env, argv[0], &h) && GetI32(env, argv[1], &v)) {
+    if (argc < 2 || !GetU32(env, argv[0], &h) || !GetI32(env, argv[1], &v)) {
+        return nullptr;
+    }
+    libvlc_media_player_t *mp = nullptr;
+    {
         std::lock_guard<std::mutex> lk(g_mtx);
         PlayerEntry *pe = FindPlayerLocked(h);
         if (pe && pe->mp) {
-            libvlc_audio_set_volume(pe->mp, v);
+            mp = pe->mp;
         }
+    }
+    if (mp != nullptr) {
+        libvlc_audio_set_volume(mp, v);
     }
     return nullptr;
 }
@@ -1166,12 +1242,19 @@ napi_value MediaPlayerSetScale(napi_env env, napi_callback_info info)
     napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
     uint32_t h = 0;
     double f = 0;
-    if (argc >= 2 && GetU32(env, argv[0], &h) && GetF64(env, argv[1], &f)) {
+    if (argc < 2 || !GetU32(env, argv[0], &h) || !GetF64(env, argv[1], &f)) {
+        return nullptr;
+    }
+    libvlc_media_player_t *mp = nullptr;
+    {
         std::lock_guard<std::mutex> lk(g_mtx);
         PlayerEntry *pe = FindPlayerLocked(h);
         if (pe && pe->mp) {
-            libvlc_video_set_scale(pe->mp, static_cast<float>(f));
+            mp = pe->mp;
         }
+    }
+    if (mp != nullptr) {
+        libvlc_video_set_scale(mp, static_cast<float>(f));
     }
     return nullptr;
 }
@@ -1193,12 +1276,18 @@ napi_value MediaPlayerAddSlave(napi_env env, napi_callback_info info)
         napi_get_value_bool(env, argv[3], &b);
         select = b;
     }
-    std::lock_guard<std::mutex> lk(g_mtx);
-    PlayerEntry *pe = FindPlayerLocked(h);
-    if (pe == nullptr || pe->mp == nullptr) {
+    libvlc_media_player_t *mp = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(g_mtx);
+        PlayerEntry *pe = FindPlayerLocked(h);
+        if (pe != nullptr && pe->mp != nullptr) {
+            mp = pe->mp;
+        }
+    }
+    if (mp == nullptr) {
         return Bool(env, false);
     }
-    int rc = libvlc_media_player_add_slave(pe->mp, static_cast<libvlc_media_slave_type_t>(type),
+    int rc = libvlc_media_player_add_slave(mp, static_cast<libvlc_media_slave_type_t>(type),
                                            uri.c_str(), select);
     return Bool(env, rc == 0);
 }
@@ -1312,13 +1401,20 @@ napi_value MediaPlayerSetAudioTrack(napi_env env, napi_callback_info info)
     napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
     uint32_t h = 0;
     int32_t id = -1;
-    bool ok = false;
-    if (argc >= 2 && GetU32(env, argv[0], &h) && GetI32(env, argv[1], &id)) {
+    if (argc < 2 || !GetU32(env, argv[0], &h) || !GetI32(env, argv[1], &id)) {
+        return Bool(env, false);
+    }
+    libvlc_media_player_t *mp = nullptr;
+    {
         std::lock_guard<std::mutex> lk(g_mtx);
         PlayerEntry *pe = FindPlayerLocked(h);
         if (pe && pe->mp) {
-            ok = libvlc_audio_set_track(pe->mp, id) == 0;
+            mp = pe->mp;
         }
+    }
+    bool ok = false;
+    if (mp != nullptr) {
+        ok = libvlc_audio_set_track(mp, id) == 0;
     }
     return Bool(env, ok);
 }
@@ -1330,13 +1426,20 @@ napi_value MediaPlayerSetSpuTrack(napi_env env, napi_callback_info info)
     napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
     uint32_t h = 0;
     int32_t id = -1;
-    bool ok = false;
-    if (argc >= 2 && GetU32(env, argv[0], &h) && GetI32(env, argv[1], &id)) {
+    if (argc < 2 || !GetU32(env, argv[0], &h) || !GetI32(env, argv[1], &id)) {
+        return Bool(env, false);
+    }
+    libvlc_media_player_t *mp = nullptr;
+    {
         std::lock_guard<std::mutex> lk(g_mtx);
         PlayerEntry *pe = FindPlayerLocked(h);
         if (pe && pe->mp) {
-            ok = libvlc_video_set_spu(pe->mp, id) == 0;
+            mp = pe->mp;
         }
+    }
+    bool ok = false;
+    if (mp != nullptr) {
+        ok = libvlc_video_set_spu(mp, id) == 0;
     }
     return Bool(env, ok);
 }
@@ -1348,13 +1451,20 @@ napi_value MediaPlayerSetVideoTrack(napi_env env, napi_callback_info info)
     napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
     uint32_t h = 0;
     int32_t id = -1;
-    bool ok = false;
-    if (argc >= 2 && GetU32(env, argv[0], &h) && GetI32(env, argv[1], &id)) {
+    if (argc < 2 || !GetU32(env, argv[0], &h) || !GetI32(env, argv[1], &id)) {
+        return Bool(env, false);
+    }
+    libvlc_media_player_t *mp = nullptr;
+    {
         std::lock_guard<std::mutex> lk(g_mtx);
         PlayerEntry *pe = FindPlayerLocked(h);
         if (pe && pe->mp) {
-            ok = libvlc_video_set_track(pe->mp, id) == 0;
+            mp = pe->mp;
         }
+    }
+    bool ok = false;
+    if (mp != nullptr) {
+        ok = libvlc_video_set_track(mp, id) == 0;
     }
     return Bool(env, ok);
 }
@@ -1366,13 +1476,20 @@ napi_value MediaPlayerSetSpuDelay(napi_env env, napi_callback_info info)
     napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
     uint32_t h = 0;
     int64_t us = 0;
-    bool ok = false;
-    if (argc >= 2 && GetU32(env, argv[0], &h) && GetI64(env, argv[1], &us)) {
+    if (argc < 2 || !GetU32(env, argv[0], &h) || !GetI64(env, argv[1], &us)) {
+        return Bool(env, false);
+    }
+    libvlc_media_player_t *mp = nullptr;
+    {
         std::lock_guard<std::mutex> lk(g_mtx);
         PlayerEntry *pe = FindPlayerLocked(h);
         if (pe && pe->mp) {
-            ok = libvlc_video_set_spu_delay(pe->mp, us) == 0;
+            mp = pe->mp;
         }
+    }
+    bool ok = false;
+    if (mp != nullptr) {
+        ok = libvlc_video_set_spu_delay(mp, us) == 0;
     }
     return Bool(env, ok);
 }
@@ -1442,12 +1559,20 @@ napi_value MediaPlayerSetChapter(napi_env env, napi_callback_info info)
     napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
     uint32_t h = 0;
     int32_t ch = 0;
-    if (argc >= 2 && GetU32(env, argv[0], &h) && GetI32(env, argv[1], &ch)) {
+    if (argc < 2 || !GetU32(env, argv[0], &h) || !GetI32(env, argv[1], &ch)) {
+        return nullptr;
+    }
+    libvlc_media_player_t *mp = nullptr;
+    {
         std::lock_guard<std::mutex> lk(g_mtx);
         PlayerEntry *pe = FindPlayerLocked(h);
         if (pe && pe->mp) {
-            libvlc_media_player_set_chapter(pe->mp, ch);
+            mp = pe->mp;
         }
+    }
+    // Outside g_mtx: chapter change emits player events.
+    if (mp != nullptr) {
+        libvlc_media_player_set_chapter(mp, ch);
     }
     return nullptr;
 }
@@ -1459,14 +1584,23 @@ napi_value MediaPlayerSetRenderer(napi_env env, napi_callback_info info)
     napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
     uint32_t ph = 0;
     uint32_t rh = 0;
-    bool ok = false;
-    if (argc >= 2 && GetU32(env, argv[0], &ph) && GetU32(env, argv[1], &rh)) {
+    if (argc < 2 || !GetU32(env, argv[0], &ph) || !GetU32(env, argv[1], &rh)) {
+        return Bool(env, false);
+    }
+    libvlc_media_player_t *mp = nullptr;
+    libvlc_renderer_item_t *item = nullptr;
+    {
         std::lock_guard<std::mutex> lk(g_mtx);
         PlayerEntry *pe = FindPlayerLocked(ph);
         auto rit = g_renderers.find(rh);
         if (pe && pe->mp && rit != g_renderers.end() && rit->second.item) {
-            ok = libvlc_media_player_set_renderer(pe->mp, rit->second.item) == 0;
+            mp = pe->mp;
+            item = rit->second.item;
         }
+    }
+    bool ok = false;
+    if (mp != nullptr && item != nullptr) {
+        ok = libvlc_media_player_set_renderer(mp, item) == 0;
     }
     return Bool(env, ok);
 }
@@ -1477,13 +1611,20 @@ napi_value MediaPlayerClearRenderer(napi_env env, napi_callback_info info)
     napi_value argv[1];
     napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
     uint32_t ph = 0;
-    bool ok = false;
-    if (argc >= 1 && GetU32(env, argv[0], &ph)) {
+    if (argc < 1 || !GetU32(env, argv[0], &ph)) {
+        return Bool(env, false);
+    }
+    libvlc_media_player_t *mp = nullptr;
+    {
         std::lock_guard<std::mutex> lk(g_mtx);
         PlayerEntry *pe = FindPlayerLocked(ph);
         if (pe && pe->mp) {
-            ok = libvlc_media_player_set_renderer(pe->mp, nullptr) == 0;
+            mp = pe->mp;
         }
+    }
+    bool ok = false;
+    if (mp != nullptr) {
+        ok = libvlc_media_player_set_renderer(mp, nullptr) == 0;
     }
     return Bool(env, ok);
 }
@@ -1495,14 +1636,23 @@ napi_value MediaPlayerSetEqualizer(napi_env env, napi_callback_info info)
     napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
     uint32_t ph = 0;
     uint32_t eh = 0;
-    bool ok = false;
-    if (argc >= 2 && GetU32(env, argv[0], &ph) && GetU32(env, argv[1], &eh)) {
+    if (argc < 2 || !GetU32(env, argv[0], &ph) || !GetU32(env, argv[1], &eh)) {
+        return Bool(env, false);
+    }
+    libvlc_media_player_t *mp = nullptr;
+    libvlc_equalizer_t *eq = nullptr;
+    {
         std::lock_guard<std::mutex> lk(g_mtx);
         PlayerEntry *pe = FindPlayerLocked(ph);
         auto eit = g_eqs.find(eh);
         if (pe && pe->mp && eit != g_eqs.end()) {
-            ok = libvlc_media_player_set_equalizer(pe->mp, eit->second.eq) == 0;
+            mp = pe->mp;
+            eq = eit->second.eq;
         }
+    }
+    bool ok = false;
+    if (mp != nullptr) {
+        ok = libvlc_media_player_set_equalizer(mp, eq) == 0;
     }
     return Bool(env, ok);
 }
@@ -1513,13 +1663,20 @@ napi_value MediaPlayerClearEqualizer(napi_env env, napi_callback_info info)
     napi_value argv[1];
     napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
     uint32_t ph = 0;
-    bool ok = false;
-    if (argc >= 1 && GetU32(env, argv[0], &ph)) {
+    if (argc < 1 || !GetU32(env, argv[0], &ph)) {
+        return Bool(env, false);
+    }
+    libvlc_media_player_t *mp = nullptr;
+    {
         std::lock_guard<std::mutex> lk(g_mtx);
         PlayerEntry *pe = FindPlayerLocked(ph);
         if (pe && pe->mp) {
-            ok = libvlc_media_player_set_equalizer(pe->mp, nullptr) == 0;
+            mp = pe->mp;
         }
+    }
+    bool ok = false;
+    if (mp != nullptr) {
+        ok = libvlc_media_player_set_equalizer(mp, nullptr) == 0;
     }
     return Bool(env, ok);
 }
@@ -1883,13 +2040,20 @@ napi_value MediaDiscovererStart(napi_env env, napi_callback_info info)
     napi_value argv[1];
     napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
     uint32_t h = 0;
-    bool ok = false;
-    if (argc >= 1 && GetU32(env, argv[0], &h)) {
+    if (argc < 1 || !GetU32(env, argv[0], &h)) {
+        return Bool(env, false);
+    }
+    libvlc_media_discoverer_t *md = nullptr;
+    {
         std::lock_guard<std::mutex> lk(g_mtx);
         auto it = g_mds.find(h);
         if (it != g_mds.end() && it->second.md) {
-            ok = libvlc_media_discoverer_start(it->second.md) == 0;
+            md = it->second.md;
         }
+    }
+    bool ok = false;
+    if (md != nullptr) {
+        ok = libvlc_media_discoverer_start(md) == 0;
     }
     return Bool(env, ok);
 }
@@ -1900,12 +2064,19 @@ napi_value MediaDiscovererStop(napi_env env, napi_callback_info info)
     napi_value argv[1];
     napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
     uint32_t h = 0;
-    if (argc >= 1 && GetU32(env, argv[0], &h)) {
+    if (argc < 1 || !GetU32(env, argv[0], &h)) {
+        return nullptr;
+    }
+    libvlc_media_discoverer_t *md = nullptr;
+    {
         std::lock_guard<std::mutex> lk(g_mtx);
         auto it = g_mds.find(h);
         if (it != g_mds.end() && it->second.md) {
-            libvlc_media_discoverer_stop(it->second.md);
+            md = it->second.md;
         }
+    }
+    if (md != nullptr) {
+        libvlc_media_discoverer_stop(md);
     }
     return nullptr;
 }
@@ -1943,23 +2114,39 @@ void on_renderer_event(const struct libvlc_event_t *event, void *user)
             return;
         }
         libvlc_renderer_item_hold(item);
-        std::lock_guard<std::mutex> lk(g_mtx);
-        uint32_t ih = AllocHandleLocked();
-        g_renderers[ih] = RendererItemEntry{item, rdH};
-        rd->itemHandles.push_back(ih);
-        if (rd->tsfn) {
+        napi_threadsafe_function tsfn = nullptr;
+        uint32_t ih = 0;
+        {
+            std::lock_guard<std::mutex> lk(g_mtx);
+            ih = AllocHandleLocked();
+            g_renderers[ih] = RendererItemEntry{item, rdH};
+            rd->itemHandles.push_back(ih);
+            tsfn = rd->tsfn;
+        }
+        // Outside g_mtx + nonblocking: avoid deadlock with UI thread holding g_mtx.
+        if (tsfn) {
             auto *payload = new EventPayload{ih, "rendererItemAdded", static_cast<double>(ih)};
-            napi_acquire_threadsafe_function(rd->tsfn);
-            napi_call_threadsafe_function(rd->tsfn, payload, napi_tsfn_blocking);
-            napi_release_threadsafe_function(rd->tsfn, napi_tsfn_release);
+            napi_acquire_threadsafe_function(tsfn);
+            napi_status st = napi_call_threadsafe_function(tsfn, payload, napi_tsfn_nonblocking);
+            if (st != napi_ok) {
+                delete payload;
+            }
+            napi_release_threadsafe_function(tsfn, napi_tsfn_release);
         }
     } else if (event->type == libvlc_RendererDiscovererItemDeleted) {
-        // best-effort: emit deleted with 0
-        if (rd->tsfn) {
+        napi_threadsafe_function tsfn = nullptr;
+        {
+            std::lock_guard<std::mutex> lk(g_mtx);
+            tsfn = rd->tsfn;
+        }
+        if (tsfn) {
             auto *payload = new EventPayload{0, "rendererItemDeleted", 0};
-            napi_acquire_threadsafe_function(rd->tsfn);
-            napi_call_threadsafe_function(rd->tsfn, payload, napi_tsfn_blocking);
-            napi_release_threadsafe_function(rd->tsfn, napi_tsfn_release);
+            napi_acquire_threadsafe_function(tsfn);
+            napi_status st = napi_call_threadsafe_function(tsfn, payload, napi_tsfn_nonblocking);
+            if (st != napi_ok) {
+                delete payload;
+            }
+            napi_release_threadsafe_function(tsfn, napi_tsfn_release);
         }
     }
 }
@@ -2087,13 +2274,21 @@ napi_value RendererDiscovererStart(napi_env env, napi_callback_info info)
     napi_value argv[1];
     napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
     uint32_t h = 0;
-    bool ok = false;
-    if (argc >= 1 && GetU32(env, argv[0], &h)) {
+    if (argc < 1 || !GetU32(env, argv[0], &h)) {
+        return Bool(env, false);
+    }
+    libvlc_renderer_discoverer_t *rd = nullptr;
+    {
         std::lock_guard<std::mutex> lk(g_mtx);
         auto it = g_rds.find(h);
         if (it != g_rds.end() && it->second.rd) {
-            ok = libvlc_renderer_discoverer_start(it->second.rd) == 0;
+            rd = it->second.rd;
         }
+    }
+    bool ok = false;
+    // Outside g_mtx: start may synchronously fire ItemAdded → on_renderer_event → g_mtx.
+    if (rd != nullptr) {
+        ok = libvlc_renderer_discoverer_start(rd) == 0;
     }
     return Bool(env, ok);
 }
@@ -2104,12 +2299,19 @@ napi_value RendererDiscovererStop(napi_env env, napi_callback_info info)
     napi_value argv[1];
     napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
     uint32_t h = 0;
-    if (argc >= 1 && GetU32(env, argv[0], &h)) {
+    if (argc < 1 || !GetU32(env, argv[0], &h)) {
+        return nullptr;
+    }
+    libvlc_renderer_discoverer_t *rd = nullptr;
+    {
         std::lock_guard<std::mutex> lk(g_mtx);
         auto it = g_rds.find(h);
         if (it != g_rds.end() && it->second.rd) {
-            libvlc_renderer_discoverer_stop(it->second.rd);
+            rd = it->second.rd;
         }
+    }
+    if (rd != nullptr) {
+        libvlc_renderer_discoverer_stop(rd);
     }
     return nullptr;
 }
