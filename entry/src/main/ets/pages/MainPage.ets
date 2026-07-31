@@ -12,6 +12,7 @@ import { NavController } from '../common/data/NavController';
 import { PermissionCoordinator } from '../common/data/PermissionCoordinator';
 import { AppColors } from '../common/constants/AppConstants';
 import { DisplaySettingsDialog } from './DisplaySettingsDialog';
+import { NetworkServerDialog } from './NetworkServerDialog';
 import { promptAction } from '@kit.ArkUI';
 
 /**
@@ -25,6 +26,8 @@ export struct MainPage {
   @Local scanning: boolean = false;
   @Local showFab: boolean = false;
   @Local showDisplaySettings: boolean = false;
+  @Local showFavoriteServer: boolean = false;
+  @Local displaySettingsVersion: number = 0;
 
   async aboutToAppear(): Promise<void> {
     this.scanning = MediaLibrary.isScanning() || !MediaLibrary.hasScanned();
@@ -47,7 +50,13 @@ export struct MainPage {
   }
 
   indexOfTab(id: string): number {
-    const map: Record<string, number> = { 'video': 0, 'audio': 1, 'browse': 2, 'playlists': 3, 'more': 4 };
+    const map: Record<string, number> = {
+      'video': 0,
+      'audio': 1,
+      'browse': 2,
+      'playlists': 3,
+      'more': 4
+    };
     return map[id] ?? 0;
   }
 
@@ -70,6 +79,18 @@ export struct MainPage {
     this.scanning = false;
   }
 
+  async toggleDisplayAsList(): Promise<void> {
+    const next = !(await Settings.getBoolean(Settings.KEY_DISPLAY_AS_LIST, false));
+    Settings.put(Settings.KEY_DISPLAY_AS_LIST, next);
+    promptAction.showToast({
+      message: next ? $r('app.string.menu_display_list_on') : $r('app.string.menu_display_list_off'),
+    });
+  }
+
+  openFavoriteServer(): void {
+    this.showFavoriteServer = true;
+  }
+
   /** 显示设置 BottomSheet(自定义组件 builder 必须 .width('100%'))。 */
   @Builder
   displaySettingsSheet() {
@@ -87,9 +108,13 @@ export struct MainPage {
           showBack: false,
           showSearch: true,
           showMore: true,
+          currentTab: this.currentTab,
           onSearch: () => NavController.push('Search'),
           onMoreSettings: () => this.openDisplaySettings(),
           onMoreIncognito: () => this.toggleIncognito(),
+          onMoreDisplayAsList: () => this.toggleDisplayAsList(),
+          onMoreBrowseNetwork: () => NavController.pushSecondary('NETWORK'),
+          onMoreFavoriteServer: () => this.openFavoriteServer(),
           onMoreRefresh: () => this.refreshMediaLibrary(),
         })
 
@@ -105,7 +130,8 @@ export struct MainPage {
 
         // 内容区:Stack + visibility 保留各 Tab 状态
         Stack() {
-          VideoGridPage().visibility(this.currentTab === 'video' ? Visibility.Visible : Visibility.Hidden)
+          VideoGridPage({ settingsVersion: this.displaySettingsVersion })
+            .visibility(this.currentTab === 'video' ? Visibility.Visible : Visibility.Hidden)
           AudioBrowserPage().visibility(this.currentTab === 'audio' ? Visibility.Visible : Visibility.Hidden)
           MainBrowserPage().visibility(this.currentTab === 'browse' ? Visibility.Visible : Visibility.Hidden)
           PlaylistsPage().visibility(this.currentTab === 'playlists' ? Visibility.Visible : Visibility.Hidden)
@@ -113,6 +139,11 @@ export struct MainPage {
         }
         .layoutWeight(1)
         .width('100%')
+        .bindSheet(this.showFavoriteServer, this.favoriteServerSheet(), {
+          height: SheetSize.FIT_CONTENT,
+          dragBar: true,
+          onDisappear: () => this.showFavoriteServer = false,
+        })
 
         // 迷你播放条:无媒体时由 MiniPlayer 自身按 getCurrent()!=null 不渲染。
         MiniPlayer()
@@ -126,11 +157,29 @@ export struct MainPage {
       .height('100%')
       .backgroundColor($r('app.color.background_default'))
       .bindSheet(this.showDisplaySettings, this.displaySettingsSheet(), {
-        height: SheetSize.FIT_CONTENT,
-        dragBar: true,
-        onDisappear: () => this.showDisplaySettings = false,
+        detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+        dragBar: false,
+        backgroundColor: '#FFFFFF',
+        showClose: false,
+        scrollSizeMode: ScrollSizeMode.CONTINUOUS,
+        onDisappear: () => {
+          this.showDisplaySettings = false;
+          this.displaySettingsVersion++;
+        },
       })
     }
     .hideTitleBar(true)
+  }
+
+  /** 收藏服务器 BottomSheet(复用 NetworkServerDialog)。 */
+  @Builder
+  favoriteServerSheet() {
+    Column() {
+      NetworkServerDialog({
+        onClose: () => this.showFavoriteServer = false,
+      }).width('100%')
+    }
+    .width('100%')
+    .backgroundColor($r('app.color.background_default'))
   }
 }

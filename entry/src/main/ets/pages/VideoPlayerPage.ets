@@ -577,9 +577,9 @@ export struct VideoPlayerPage {
             .width('100%')
             .height('100%')
         }
-          .width('100%')
-          .height('100%')
-          .onClick(() => this.toggleHud())
+        .width('100%')
+        .height('100%')
+        .onClick(() => this.toggleHud())
 
         // 加载中 / 出错提示(居中,不随 HUD 隐藏)
         if (this.vm.state === PlayState.IDLE) {

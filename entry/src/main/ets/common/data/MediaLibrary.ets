@@ -115,7 +115,7 @@ export class MediaLibrary {
       let assets: photoAccessHelper.PhotoAsset[] = [];
       try {
         const opts: photoAccessHelper.FetchOptions = {
-          fetchColumns: ['title', 'duration', 'width', 'height', 'size', 'media_type'],
+          fetchColumns: ['title', 'duration', 'width', 'height', 'size', 'media_type', 'date_added', 'date_modified'],
           predicates: predicates,
         };
         const result = await helper.getAssets(opts);
@@ -158,6 +158,8 @@ export class MediaLibrary {
           mw.width = width;
           mw.height = height;
           mw.size = size;
+          mw.dateAdded = Number(asset.get('date_added') ?? 0);
+          mw.dateModified = Number(asset.get('date_modified') ?? 0);
           mw.displayName = title;
           mw.resolution = width > 0 && height > 0 ? `${width}x${height}` : '';
           // 缩略图:photoAccessHelper 的 uri 可直接交给 Image 组件渲染(有读权限即可),

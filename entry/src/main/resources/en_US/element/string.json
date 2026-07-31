@@ -557,6 +557,26 @@
       "value": "Display settings"
     },
     {
+      "name": "menu_display_as_list",
+      "value": "Display as list"
+    },
+    {
+      "name": "menu_browse_network",
+      "value": "Browse network"
+    },
+    {
+      "name": "menu_favorite_server",
+      "value": "Favorite server"
+    },
+    {
+      "name": "menu_display_list_on",
+      "value": "List mode enabled"
+    },
+    {
+      "name": "menu_display_list_off",
+      "value": "List mode disabled"
+    },
+    {
       "name": "menu_incognito_off",
       "value": "Incognito mode off"
     },

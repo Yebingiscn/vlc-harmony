@@ -47,6 +47,9 @@ export class Settings {
   static readonly KEY_AUDIO_SHOW_TRACK_NUMBERS: string = 'audio_show_track_numbers';
   static readonly KEY_BROWSE_NETWORK: string = 'browse_network';
   static readonly KEY_VIDEOS_CARDS: string = 'video_display_in_cards';
+  static readonly KEY_VIDEO_SORT: string = 'video_sort';
+  static readonly KEY_VIDEO_SORT_DESC: string = 'video_sort_desc';
+  static readonly KEY_DISPLAY_AS_LIST: string = 'display_as_list';
   static readonly KEY_GROUP_VIDEOS: string = 'video_min_group_length';
   static readonly KEY_SHOW_HEADERS: string = 'show_headers';
   static readonly KEY_SHOW_TRACK_INFO: string = 'show_track_info';
