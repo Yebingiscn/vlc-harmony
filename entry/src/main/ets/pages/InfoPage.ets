@@ -3,6 +3,7 @@ import { NavController } from '../common/data/NavController';
 import { MediaWrapper, MediaInfoItem, formatDuration, formatSize } from '../common/models/MediaModels';
 import { AppColors } from '../common/constants/AppConstants';
 import { VideoParam } from './VideoPlayerPage';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 
 export interface InfoParam {
   uri?: string;
@@ -113,7 +114,10 @@ export struct InfoPage {
           .align(Alignment.BottomEnd)
           .margin({ right: 16, bottom: 16 })
           .onClick(() => {
-            const vparam: VideoParam = { uri: this.param.uri ?? '', title: this.title };
+            const uri: string = this.param.uri ?? '';
+            hilog.info(0x0001, 'VLC', '[VLC] InfoPage play uri=%{public}s', uri);
+            const vparam: VideoParam = { uri: uri, title: this.title };
+            // bindAndPlay 会用 fallbackUri 建队列;此处不提前 play
             NavController.push('VideoPlayer', vparam);
           })
       }

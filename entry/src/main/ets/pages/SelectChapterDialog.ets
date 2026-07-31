@@ -1,4 +1,16 @@
 import { AppColors } from '../common/constants/AppConstants';
+import { PlaybackService } from '../common/data/PlaybackService';
+import { VlcChapterInfo } from 'libvlcnapi.so';
+
+function formatChapterTime(ms: number): string {
+  const totalSec = Math.floor(Math.max(0, ms) / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  const mm = m < 10 ? `0${m}` : `${m}`;
+  const ss = s < 10 ? `0${s}` : `${s}`;
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
 
 /** 章节数据载体。 */
 export class Chapter {
@@ -54,9 +66,18 @@ export struct SelectChapterDialog {
   @Local selectedIndex: number = 0;
 
   aboutToAppear(): void {
-    // TODO(契约): chapters=playbackService.getChapters(-1); if (size<=1) dismiss;
-    //   chapterData = chapters.map((c,i)=>new Chapter(formatChapterTitle(i+1,c.name), millisToString(c.timeOffset)));
-    //   selectedIndex=playbackService.chapterIdx; 滚动定位到当前章节。
+    const svc = PlaybackService.getInstance();
+    const chapters = svc.getChapters();
+    if (chapters.length <= 1) {
+      this.onClose();
+      return;
+    }
+    this.chapterData = chapters.map((c: VlcChapterInfo, i: number) => {
+      const title = c.name && c.name.length > 0 ? c.name : `Chapter ${i + 1}`;
+      return new Chapter(title, formatChapterTime(c.timeOffset));
+    });
+    const cur = svc.getChapterIdx();
+    this.selectedIndex = cur >= 0 ? cur : 0;
   }
 
   build() {

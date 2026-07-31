@@ -1,10 +1,14 @@
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { NavController } from '../common/data/NavController';
 import { MediaLibrary } from '../common/data/MediaLibrary';
+import { BundledMedia } from '../common/data/BundledMedia';
 import { EmptyStateView } from '../common/components/EmptyStateView';
+import { AppColors, AppDimens } from '../common/constants/AppConstants';
 import { Folder, SheetItem, EmptyLoadingState } from '../common/models/MediaModels';
+import { VideoParam } from './VideoPlayerPage';
 
 /** 浏览模式。 */
-export type BrowserMode = 'file' | 'network' | 'storage' | 'picker';
+export type BrowserMode = 'file' | 'network' | 'storage' | 'picker' | 'bundled';
 
 @ObservedV2
 class BrowserViewModel {
@@ -13,11 +17,27 @@ class BrowserViewModel {
   @Trace emptyState: EmptyLoadingState = EmptyLoadingState.NONE;
   mode: BrowserMode = 'file';
 
+  // Folder → SheetItem 转换辅助函数。
+  private static folderToSheetItem(f: Folder): SheetItem {
+    return new SheetItem(f.title, `${f.mediaCount} 个视频`, $r('app.media.ic_folder'));
+  }
+
+  isBundledMode(): boolean {
+    return this.mode === 'bundled';
+  }
+
   browseRoot(): void {
     this.loading = true;
     if (this.mode === 'network') {
       this.dataset = [];
       this.emptyState = EmptyLoadingState.EMPTY;
+      this.loading = false;
+      return;
+    }
+    if (this.isBundledMode()) {
+      const folders = BundledMedia.asFolders();
+      this.dataset = folders.map(BrowserViewModel.folderToSheetItem);
+      this.emptyState = folders.length === 0 ? EmptyLoadingState.EMPTY : EmptyLoadingState.NONE;
       this.loading = false;
       return;
     }
@@ -55,9 +75,17 @@ export struct FileBrowserPage {
           Image($r('app.media.ic_arrow_back')).width(24).height(24).fillColor($r('app.color.list_title'))
             .margin({ left: 12 })
             .onClick(() => NavController.pop())
-          Text(this.mode === 'network' ? '网络' : '存储设备')
+          if (this.mode === 'bundled') {
+            Text($r('app.string.browser_app_videos'))
+              .fontSize(20)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(AppColors.white)
+              .margin({ left: AppDimens.kl_half })
+          } else {
+            Text(this.mode === 'network' ? '网络' : '存储设备')
             .fontSize(20).fontWeight(FontWeight.Bold).fontColor($r('app.color.list_title'))
-            .margin({ left: 8 })
+              .margin({ left: 8 })
+          }
           Blank()
         }
         .width('100%').height(56).alignItems(VerticalAlign.Center)

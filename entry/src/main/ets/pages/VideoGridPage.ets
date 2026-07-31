@@ -1,7 +1,6 @@
 import { Settings } from '../common/data/Settings';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { PermissionCoordinator } from '../common/data/PermissionCoordinator';
-import { PlaybackService } from '../common/data/PlaybackService';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { NavController } from '../common/data/NavController';
 import { EmptyStateView } from '../common/components/EmptyStateView';
@@ -13,7 +12,6 @@ import {
   VideoGroupingType,
   EmptyLoadingState,
   SheetItem,
-  PlayState,
 } from '../common/models/MediaModels';
 import { VideoParam, VideoPlayItem } from './VideoPlayerPage';
 import { promptAction } from '@kit.ArkUI';
@@ -30,24 +28,64 @@ class VideoGridViewModel {
   @Trace cardMode: boolean = true; // KEY_VIDEOS_CARDS 默认 true(网格)
   @Trace grouping: VideoGroupingType = VideoGroupingType.NAME;
   @Trace emptyState: EmptyLoadingState = EmptyLoadingState.LOADING;
+  private sortField: number = 1;
+  private sortDesc: boolean = false;
 
   async load(): Promise<void> {
     this.loading = true;
     this.emptyState = EmptyLoadingState.LOADING;
-    const cards = await Settings.getBoolean(Settings.KEY_VIDEOS_CARDS, true);
-    this.cardMode = cards;
-    // 先确保媒体读权限(首次弹授权框),再扫描 —— 否则扫描在授权完成前跑会返回空。
+    this.cardMode = await Settings.getBoolean(Settings.KEY_VIDEOS_CARDS, true);
+    this.sortField = await Settings.getInt(Settings.KEY_VIDEO_SORT, 1);
+    this.sortDesc = await Settings.getBoolean(Settings.KEY_VIDEO_SORT_DESC, false);
+    // 先确保媒体读权限(首次弹授权框),再扫描 -- 否则扫描在授权完成前跑会返回空。
     await PermissionCoordinator.askStoragePermission(false, false, true);
     await MediaLibrary.scan();
-    this.items = MediaLibrary.getVideos().slice();
+    this.items = this.applySort(MediaLibrary.getVideos().slice());
     this.updateEmpty();
     this.loading = false;
   }
 
   async refresh(): Promise<void> {
     await MediaLibrary.scan();
-    this.items = MediaLibrary.getVideos().slice();
+    this.items = this.applySort(MediaLibrary.getVideos().slice());
     this.updateEmpty();
+  }
+
+  /** 仅重读设置(不重新扫描),用于半模态关闭后刷新显示模式和排序。 */
+  async reloadSettings(): Promise<void> {
+    this.cardMode = await Settings.getBoolean(Settings.KEY_VIDEOS_CARDS, true);
+    this.sortField = await Settings.getInt(Settings.KEY_VIDEO_SORT, 1);
+    this.sortDesc = await Settings.getBoolean(Settings.KEY_VIDEO_SORT_DESC, false);
+    this.items = this.applySort(MediaLibrary.getVideos().slice());
+    this.updateEmpty();
+  }
+
+  applySort(items: MediaWrapper[]): MediaWrapper[] {
+    const sorted = items.slice();
+    sorted.sort((a: MediaWrapper, b: MediaWrapper) => {
+      let cmp = 0;
+      switch (this.sortField) {
+        case 1:
+          cmp = a.title.localeCompare(b.title);
+          break;
+        case 2:
+          cmp = a.length - b.length;
+          break;
+        case 3:
+          cmp = a.dateModified - b.dateModified;
+          break;
+        case 4:
+          cmp = a.id - b.id;
+          break;
+        case 5:
+          cmp = a.dateAdded - b.dateAdded;
+          break;
+        default:
+          cmp = a.title.localeCompare(b.title);
+      }
+      return this.sortDesc ? -cmp : cmp;
+    });
+    return sorted;
   }
 
   updateEmpty(): void {
@@ -70,9 +108,15 @@ export struct VideoGridPage {
   @Local refreshing: boolean = false;
   @Local contextItem: MediaWrapper | null = null;
   @Local showContext: boolean = false;
+  @Param settingsVersion: number = 0;
 
   aboutToAppear(): void {
     this.vm.load();
+  }
+
+  @Monitor('settingsVersion')
+  onSettingsVersionChange(): void {
+    this.vm.reloadSettings();
   }
 
   async doRefresh(): Promise<void> {
@@ -81,20 +125,11 @@ export struct VideoGridPage {
     this.refreshing = false;
   }
 
-  /**
-   * 打开视频播放器。
-   * 【注意】这里不能调 PlaybackService.playList() —— 那会让 libVLC 同时播放同一个文件的音轨,
-   * 与 VideoPlayerPage 的 AVPlayer 抢占音频焦点,表现为双份声音 / AVPlayer 直接进 error。
-   * 视频走 AVPlayer,音频才走 libVLC(PlaybackService)。
-   */
-  playVideo(item: MediaWrapper): void {
+  async playVideo(item: MediaWrapper): Promise<void> {
     const items = this.vm.items;
     const index = items.indexOf(item);
     hilog.info(0x0001, 'VLC', '[VLC] playVideo: idx=%{public}d uri=%{public}s', index, item.uri);
-    // 正在播放的音频要停掉,否则与视频声音叠加。
-    if (PlaybackService.getState() === PlayState.PLAYING) {
-      PlaybackService.pause();
-    }
+    // 队列由 VideoPlayer setup 内 prepareList+bindAndPlay;此处只传列表给详情页 UI(上一曲/下一曲)
     const list: VideoPlayItem[] = items.map((m: MediaWrapper) => {
       const e: VideoPlayItem = { uri: m.uri, title: m.title };
       return e;
@@ -161,7 +196,9 @@ export struct VideoGridPage {
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.background_default'))
-    .bindSheet(this.showContext, this.contextSheetBuilder(), {
+    .bindSheet(this.showContext, () => {
+      this.contextSheetBuilder()
+    }, {
       height: SheetSize.FIT_CONTENT,
       dragBar: true,
       onDisappear: () => {
@@ -211,10 +248,7 @@ export struct VideoGridPage {
     .columnsTemplate('1fr 1fr')
     .columnsGap(8)
     .rowsGap(8)
-    // 外边距与列间距一致(原来 padding 4 / gap 8,左右边距比中缝窄一半,视觉上贴边)。
-    .padding({ left: 8, right: 8, top: 8, bottom: 8 })
-    .cachedCount(4)
-    .scrollBar(BarState.Off)
+    .padding(4)
     .width('100%')
     .layoutWeight(1)
   }

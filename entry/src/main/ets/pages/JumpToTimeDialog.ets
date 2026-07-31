@@ -35,24 +35,40 @@ export struct JumpToTimeDialog {
   @Local formatTime: string = '';
   readonly maxTimeSize: number = 6;
 
-  updateValue(value: string): void {
-    if (this.pickedRawTime.length >= this.maxTimeSize && value.length > 0) {
-      return;
-    }
-    if (value.length === 0) {
-      // 重解析(退格后)
-    } else {
-      this.pickedRawTime = this.pickedRawTime + value;
-    }
-    // 从右到左按 2 位切片解析 seconds/minutes/hours
+  /**
+   * 从右往左按 2 位切出 时/分/秒。返回 [hours, minutes, seconds] 字符串。
+   * 原实现用 `length > 4` 才给 seconds、`length > 2` 才给 minutes,导致:
+   *   "30"  → 全空(应为 30s)
+   *   "130" → "1m"(应为 1m 30s,且 getTimeInMillis 也跟着算错 → 跳到错误位置)
+   * 只有输入满 5-6 位时才正确。
+   */
+  private parts(): string[] {
     const raw: string = this.pickedRawTime;
-    const seconds: string = raw.length > 4 ? raw.substring(raw.length - 2) : '';
+    const seconds: string = raw.length > 2 ? raw.substring(raw.length - 2) : raw;
     const minutes: string = raw.length > 2 ? raw.substring(Math.max(0, raw.length - 4), raw.length - 2) : '';
     const hours: string = raw.length > 4 ? raw.substring(0, raw.length - 4) : '';
+    return [hours, minutes, seconds];
+  }
+
+  updateValue(value: string): void {
+    // 追加后不能超过 maxTimeSize —— `:00`/`:30` 一次追加 2 位,原来的"已满才拦"会越界。
+    if (value.length > 0 && this.pickedRawTime.length + value.length > this.maxTimeSize) {
+      return;
+    }
+    if (value.length > 0) {
+      this.pickedRawTime = this.pickedRawTime + value;
+    }
+    const p: string[] = this.parts();
     let out: string = '';
-    if (hours.length > 0) out = out + `${hours}h `;
-    if (minutes.length > 0) out = out + `${minutes}m `;
-    if (seconds.length > 0) out = out + `${seconds}s`;
+    if (p[0].length > 0) {
+      out = out + `${p[0]}h `;
+    }
+    if (p[1].length > 0) {
+      out = out + `${p[1]}m `;
+    }
+    if (p[2].length > 0) {
+      out = out + `${p[2]}s`;
+    }
     this.formatTime = out.trim();
   }
 
@@ -63,12 +79,12 @@ export struct JumpToTimeDialog {
     }
   }
 
-  /** pickedRawTime → 毫秒(从右到左按 2 位切 seconds/minutes/hours)。 */
+  /** pickedRawTime → 毫秒(与 parts() 同一套切分,保证显示与实际跳转一致)。 */
   getTimeInMillis(): number {
-    const raw: string = this.pickedRawTime;
-    const seconds: number = raw.length > 4 ? parseInt(raw.substring(raw.length - 2), 10) : 0;
-    const minutes: number = raw.length > 2 ? parseInt(raw.substring(Math.max(0, raw.length - 4), raw.length - 2), 10) : 0;
-    const hours: number = raw.length > 4 ? parseInt(raw.substring(0, raw.length - 4), 10) : 0;
+    const p: string[] = this.parts();
+    const hours: number = p[0].length > 0 ? parseInt(p[0], 10) : 0;
+    const minutes: number = p[1].length > 0 ? parseInt(p[1], 10) : 0;
+    const seconds: number = p[2].length > 0 ? parseInt(p[2], 10) : 0;
     return (hours * 3600 + minutes * 60 + seconds) * 1000;
   }
 

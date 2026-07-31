@@ -8,7 +8,7 @@ import {
   EmptyLoadingState,
   MediaLibraryItem,
 } from '../common/models/MediaModels';
-import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
+import { PlaybackService } from '../common/data/PlaybackService';
 import { VideoParam } from './VideoPlayerPage';
 
 /**
@@ -106,13 +106,15 @@ export struct SearchPage {
                   item: item,
                   onItemClick: () => {
                     if (item instanceof MediaWrapper && (item as MediaWrapper).isVideo()) {
-                      const mw = item as MediaWrapper;
-                      PlaybackService.playList([new QueueItem(mw.id, mw.title, mw.uri, '', '', mw.artworkPath)], 0, true);
-                      const vparam: VideoParam = { uri: mw.uri, title: mw.title };
-                      NavController.push('VideoPlayer', vparam);
+                      const video = item as MediaWrapper;
+                      void PlaybackService.getInstance().prepareList([video], 0, true).then(() => {
+                        const vparam: VideoParam = { uri: video.uri, title: video.title };
+                        NavController.push('VideoPlayer', vparam);
+                      });
                     } else {
                       const track = item as Track;
-                      PlaybackService.playList([new QueueItem(track.id, track.title, track.uri, track.artistName, track.albumName, track.artworkPath)], 0, true);
+                      const mw = new MediaWrapper(track.id, track.title, track.uri, 1);
+                      void PlaybackService.getInstance().playList([mw], 0, true);
                       NavController.push('AudioPlayer');
                     }
                   },

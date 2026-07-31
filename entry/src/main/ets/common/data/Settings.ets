@@ -47,6 +47,9 @@ export class Settings {
   static readonly KEY_AUDIO_SHOW_TRACK_NUMBERS: string = 'audio_show_track_numbers';
   static readonly KEY_BROWSE_NETWORK: string = 'browse_network';
   static readonly KEY_VIDEOS_CARDS: string = 'video_display_in_cards';
+  static readonly KEY_VIDEO_SORT: string = 'video_sort';
+  static readonly KEY_VIDEO_SORT_DESC: string = 'video_sort_desc';
+  static readonly KEY_DISPLAY_AS_LIST: string = 'display_as_list';
   static readonly KEY_GROUP_VIDEOS: string = 'video_min_group_length';
   static readonly KEY_SHOW_HEADERS: string = 'show_headers';
   static readonly KEY_SHOW_TRACK_INFO: string = 'show_track_info';
@@ -64,6 +67,10 @@ export class Settings {
   static readonly VIDEO_RESUME_URI: string = 'VideoResumeUri';
   static readonly VIDEO_PAUSED: string = 'VideoPaused';
   static readonly VIDEO_SPEED: string = 'VideoSpeed';
+  // ── 睡眠倒计时持久化(避免下次开弹框又是空白)──
+  static readonly SLEEP_TIMER_MILLIS: string = 'SleepTimerMillis';
+  static readonly SLEEP_TIMER_WAIT_MEDIA_END: string = 'SleepTimerWaitMediaEnd';
+  static readonly SLEEP_TIMER_RESET_ON_INTERACTION: string = 'SleepTimerResetOnInteraction';
   static readonly VIDEO_RATIO: string = 'video_ratio';
   static readonly SCREEN_ORIENTATION: string = 'screen_orientation';
   static readonly VIDEO_HUD_TIMEOUT: string = 'video_hud_timeout_in_s';

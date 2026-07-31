@@ -1,12 +1,13 @@
 import { AppColors } from '../common/constants/AppConstants';
+import { Settings } from '../common/data/Settings';
 
-/** 排序元数据载体(class + 构造函数)。 */
 class SortMeta {
   key: number;
   title: string;
   ascText: string;
   descText: string;
   icon: Resource;
+
   constructor(key: number, title: string, ascText: string, descText: string, icon: Resource) {
     this.key = key;
     this.title = title;
@@ -16,7 +17,6 @@ class SortMeta {
   }
 }
 
-/** 排序项:图标 + 标题(左半)+ 升序/降序(右半,行高 42vp,选中态橙字 + ic_check_large)。 */
 @ComponentV2
 struct SortItem {
   @Param title: string = '';
@@ -25,197 +25,258 @@ struct SortItem {
   @Param icon: Resource = $r('app.media.ic_sort');
   @Param isCurrentSort: boolean = false;
   @Param currentSortDesc: boolean = false;
-  @Event onSortAsc: () => void = () => {};
-  @Event onSortDesc: () => void = () => {};
+  @Event onSortAsc: () => void = () => {
+  };
+  @Event onSortDesc: () => void = () => {
+  };
 
   build() {
     Row() {
       Image(this.icon)
         .width(24).height(24)
-        .fillColor(AppColors.grey400)
+        .fillColor(AppColors.grey600)
       Text(this.title)
         .fontSize(16)
-        .fontColor('#FFFFFF')
+        .fontColor(AppColors.grey900)
         .margin({ left: 24 })
-        .layoutWeight(1)
+        .width(100)
         .maxLines(1)
-        .textOverflow(TextOverflow.Ellipsis)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-      // 升序
-      Row() {
-        Text(this.ascText)
-          .fontSize(14)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(this.isCurrentSort && !this.currentSortDesc ? AppColors.orange500 : '#FFFFFF')
-        if (this.isCurrentSort && !this.currentSortDesc) {
-          Image($r('app.media.ic_check_large')).width(20).height(20).fillColor(AppColors.orange500)
-            .margin({ left: 4 })
+      Column() {
+        Row() {
+          Text(this.ascText)
+            .fontSize(14)
+            .fontColor(this.isCurrentSort && !this.currentSortDesc ? AppColors.orange500 : AppColors.grey900)
+          if (this.isCurrentSort && !this.currentSortDesc) {
+            Image($r('app.media.ic_check_large'))
+              .width(20).height(20)
+              .fillColor(AppColors.orange500)
+              .margin({ left: 4 })
+          }
         }
-      }
-      .height(42)
-      .padding({ left: 16, right: 8 })
-      .margin({ right: 8 })
-      .alignItems(VerticalAlign.Center)
-      .onClick(() => this.onSortAsc())
+        .width('100%')
+        .height(36)
+        .padding({ left: 16, right: 8 })
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => this.onSortAsc())
 
-      // 降序
-      Row() {
-        Text(this.descText)
-          .fontSize(14)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(this.isCurrentSort && this.currentSortDesc ? AppColors.orange500 : '#FFFFFF')
-        if (this.isCurrentSort && this.currentSortDesc) {
-          Image($r('app.media.ic_check_large')).width(20).height(20).fillColor(AppColors.orange500)
-            .margin({ left: 4 })
+        Row() {
+          Text(this.descText)
+            .fontSize(14)
+            .fontColor(this.isCurrentSort && this.currentSortDesc ? AppColors.orange500 : AppColors.grey900)
+          if (this.isCurrentSort && this.currentSortDesc) {
+            Image($r('app.media.ic_check_large'))
+              .width(20).height(20)
+              .fillColor(AppColors.orange500)
+              .margin({ left: 4 })
+          }
         }
+        .width('100%')
+        .height(36)
+        .padding({ left: 16, right: 8 })
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => this.onSortDesc())
       }
-      .height(42)
-      .padding({ left: 16, right: 8 })
-      .alignItems(VerticalAlign.Center)
-      .onClick(() => this.onSortDesc())
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+    .padding({
+      left: 16,
+      right: 16,
+      top: 8,
+      bottom: 8
+    })
     .alignItems(VerticalAlign.Center)
   }
 }
 
-/**
- * DisplaySettingsDialog —— 显示设置 BottomSheet。
- * 18fp Medium 标题(display_settings)+ 8 设置行(列表/网格切换 + 6 个 CheckBox 行 + 视频分组 Select + 默认动作 Select)
- * + 排序区标题(sortby)+ 排序列表。minHeight 48vp,图标 24vp marginStart 24vp。
- * TODO(契约): DisplaySettingsViewModel.send(key,value) 事件总线;video_group/default_actions Select 选中后 send;
- *   sort_asc/desc onClick → send(CURRENT_SORT, Pair(sort,desc));VIDEO_GROUPING 变更后 dismiss()。
- */
 @ComponentV2
 export struct DisplaySettingsDialog {
-  @Event onClose: () => void = () => {};
-
+  @Event onClose: () => void = () => {
+  };
   @Local displayInCards: boolean = false;
-  @Local showAllArtists: boolean = false;
-  @Local showOnlyMultimediaFiles: boolean = false;
-  @Local showTrackNumbers: boolean = false;
-  @Local showHiddenFiles: boolean = false;
   @Local onlyFavs: boolean = false;
   @Local currentSort: number = 1;
   @Local currentSortDesc: boolean = false;
-
-  @Local videoGroupOptions: string[] = ['Group by name', 'Group by folder', 'Do not group videos'];
   @Local videoGroupIndex: number = 0;
-  @Local actionOptions: string[] = ['Play', 'Play all', 'Append'];
   @Local actionIndex: number = 0;
-
+  @Local videoGroupOptions: string[] = ['按名称分组', '按文件夹分组', '不分组'];
+  @Local actionOptions: string[] = ['播放', '全部播放', '追加'];
   @Local sorts: SortMeta[] = [
-    new SortMeta(1, 'Name', 'A → Z', 'Z → A', $r('app.media.ic_sort_alpha')),
-    new SortMeta(2, 'File name', 'A → Z', 'Z → A', $r('app.media.ic_sort_filename')),
-    new SortMeta(5, 'Length', 'Shortest first', 'Longest first', $r('app.media.ic_sort_length')),
-    new SortMeta(7, 'Album name', 'A → Z', 'Z → A', $r('app.media.ic_sort_album')),
+    new SortMeta(1, '名称', 'A -> Z', 'Z -> A', $r('app.media.ic_sort_alpha')),
+    new SortMeta(2, '长度', '时长 短 -> 长', '时长长 -> 短', $r('app.media.ic_sort_length')),
+    new SortMeta(3, '修改时间', '最旧的优先', '最新的优先', $r('app.media.ic_sort_date')),
+    new SortMeta(4, '轨道编号', '视频较多的群组优先', '视频较少的群组优先', $r('app.media.ic_sort_track')),
+    new SortMeta(5, '插入时间', '最旧的优先', '最新的优先', $r('app.media.ic_medialibrary_date')),
   ];
 
-  @Builder
-  checkboxRow(icon: Resource, title: Resource, checked: boolean, onChange: (v: boolean) => void) {
-    Row() {
-      Image(icon).width(24).height(24).fillColor('#FFFFFF')
-      Text(title)
-        .fontSize(16).fontColor('#FFFFFF').margin({ left: 24 }).layoutWeight(1)
-        .maxLines(1).textOverflow(TextOverflow.Ellipsis)
-      Toggle({ type: ToggleType.Checkbox, isOn: checked })
-        .selectedColor(AppColors.orange500)
-        .margin({ right: 4 })
-        .onChange((on: boolean) => onChange(on))
-    }
-    .width('100%')
-    .constraintSize({ minHeight: 48 })
-    .padding({ left: 16, right: 16 })
-    .alignItems(VerticalAlign.Center)
+  async aboutToAppear(): Promise<void> {
+    const cards = await Settings.getBoolean(Settings.KEY_VIDEOS_CARDS, true);
+    this.displayInCards = !cards;
+    this.currentSort = await Settings.getInt(Settings.KEY_VIDEO_SORT, 1);
+    this.currentSortDesc = await Settings.getBoolean(Settings.KEY_VIDEO_SORT_DESC, false);
+  }
+
+  toggleDisplayMode(): void {
+    this.displayInCards = !this.displayInCards;
+    Settings.put(Settings.KEY_VIDEOS_CARDS, !this.displayInCards);
+  }
+
+  setSort(key: number, desc: boolean): void {
+    this.currentSort = key;
+    this.currentSortDesc = desc;
+    Settings.put(Settings.KEY_VIDEO_SORT, key);
+    Settings.put(Settings.KEY_VIDEO_SORT_DESC, desc);
   }
 
   build() {
     Scroll() {
       Column() {
         // 标题
-        Text('Display settings')
-          .fontSize(18)
+        Text('显示设置')
+          .fontSize(20)
           .fontWeight(FontWeight.Medium)
           .fontColor(AppColors.orange500)
           .width('100%')
-          .margin({ left: 16, right: 16, top: 16 })
+          .margin({
+            left: 16,
+            right: 16,
+            top: 16,
+            bottom: 8
+          })
           .maxLines(1)
 
-        // display_mode_group:列表/网格切换
+        // 显示模式:当前为列表时显示"网格",当前为网格时显示"列表"
         Row() {
           Image(this.displayInCards ? $r('app.media.ic_view_list') : $r('app.media.ic_view_grid'))
-            .width(24).height(24).fillColor('#FFFFFF')
-          Text(this.displayInCards ? 'Display in list' : 'Display in grid')
-            .fontSize(16).fontColor('#FFFFFF').margin({ left: 24, right: 16 }).layoutWeight(1)
+            .width(24).height(24).fillColor(AppColors.grey600)
+          Text(this.displayInCards ? '以列表形式显示' : '以网格形式显示')
+            .fontSize(16)
+            .fontColor(AppColors.grey900)
+            .margin({ left: 24 })
+            .layoutWeight(1)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
         }
-        .width('100%').constraintSize({ minHeight: 48 }).padding({ left: 16, right: 16 })
+        .width('100%')
+        .constraintSize({ minHeight: 48 })
+        .padding({ left: 16, right: 16 })
         .alignItems(VerticalAlign.Center)
-        .onClick(() => { this.displayInCards = !this.displayInCards; })
+        .onClick(() => {
+          this.toggleDisplayMode();
+        })
 
-        // CheckBox 行们
-        this.checkboxRow($r('app.media.ic_sort_artist'), $r('app.string.artists'),
-          this.showAllArtists, (v) => this.showAllArtists = v)
-        this.checkboxRow($r('app.media.ic_multimedia'), 'Show only multimedia files',
-          this.showOnlyMultimediaFiles, (v) => this.showOnlyMultimediaFiles = v)
-        this.checkboxRow($r('app.media.ic_sort_track'), $r('app.string.albums_show_track_numbers'),
-          this.showTrackNumbers, (v) => this.showTrackNumbers = v)
-        this.checkboxRow($r('app.media.ic_hidden'), 'Show hidden files',
-          this.showHiddenFiles, (v) => this.showHiddenFiles = v)
-        this.checkboxRow($r('app.media.ic_favorite'), 'Show only favorites',
-          this.onlyFavs, (v) => this.onlyFavs = v)
-
-        // video_groups_group:分组 Select(占右半)
+        // 只显示收藏
         Row() {
-          Image($r('app.media.ic_group_display')).width(24).height(24).fillColor('#FFFFFF')
-          Text('Group videos')
-            .fontSize(16).fontColor('#FFFFFF').margin({ left: 24 }).width('50%')
-            .maxLines(1).textOverflow(TextOverflow.Ellipsis)
-          Select(this.videoGroupOptions.map((v: string) => ({ value: v })))
-            .selected(this.videoGroupIndex)
-            .value(this.videoGroupOptions[this.videoGroupIndex])
-            .margin({ left: 8 }).width('50%')
-            .onSelect((idx: number) => {
-              this.videoGroupIndex = idx;
-              this.onClose(); // 切换分组后关闭弹窗
+          Image($r('app.media.ic_favorite'))
+            .width(24).height(24).fillColor(AppColors.grey600)
+          Text('只显示收藏')
+            .fontSize(16)
+            .fontColor(AppColors.grey900)
+            .margin({ left: 24 })
+            .layoutWeight(1)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+          Toggle({ type: ToggleType.Checkbox, isOn: this.onlyFavs })
+            .selectedColor(AppColors.orange500)
+            .margin({ right: 4 })
+            .onChange((on: boolean) => {
+              this.onlyFavs = on;
             })
         }
-        .width('100%').constraintSize({ minHeight: 48 }).padding({ left: 16, right: 16 })
-        .alignItems(VerticalAlign.Center).margin({ top: 24 })
-
-        // default_actions_group:默认动作 Select + 副标题(alpha 0.7)
-        Row() {
-          Image($r('app.media.ic_play')).width(24).height(24).fillColor('#FFFFFF')
-          Column() {
-            Text('Playback action')
-              .fontSize(16).fontColor('#FFFFFF').maxLines(1).textOverflow(TextOverflow.Ellipsis)
-            Text('Default action when opening media')
-              .fontSize(12).fontColor('#FFFFFF').opacity(0.7).maxLines(1).textOverflow(TextOverflow.Ellipsis)
-          }
-          .layoutWeight(1).margin({ left: 24 })
-          Select(this.actionOptions.map((v: string) => ({ value: v })))
-            .selected(this.actionIndex)
-            .value(this.actionOptions[this.actionIndex])
-            .margin({ left: 8 }).width('50%')
-            .onSelect((idx: number) => { this.actionIndex = idx; })
-        }
-        .width('100%').constraintSize({ minHeight: 48 }).padding({ left: 16, right: 16 })
+        .width('100%')
+        .constraintSize({ minHeight: 48 })
+        .padding({ left: 16, right: 16 })
         .alignItems(VerticalAlign.Center)
 
-        // 排序区标题
-        Text('Sort by…')
-          .fontSize(18).fontWeight(FontWeight.Medium).fontColor(AppColors.orange500)
-          .margin({ left: 16, top: 8 })
+        // 视频分组
+        Row() {
+          Image($r('app.media.ic_group_display')).width(24).height(24).fillColor(AppColors.grey600)
+          Text('视频分组')
+            .fontSize(16)
+            .fontColor(AppColors.grey900)
+            .margin({ left: 24 })
+            .layoutWeight(1)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+          Select(this.videoGroupOptions.map((v: string): SelectOption => ({ value: v })))
+            .selected(this.videoGroupIndex)
+            .value(this.videoGroupOptions[this.videoGroupIndex])
+            .margin({ left: 8 })
+            .width('40%')
+            .onSelect((idx: number) => {
+              this.videoGroupIndex = idx;
+            })
+        }
+        .width('100%')
+        .constraintSize({ minHeight: 48 })
+        .padding({ left: 16, right: 16 })
+        .alignItems(VerticalAlign.Center)
+
+        // 「播放」动作
+        Row() {
+          Image($r('app.media.ic_play')).width(24).height(24).fillColor(AppColors.grey600)
+          Column() {
+            Text('「播放」动作')
+              .fontSize(16)
+              .fontColor(AppColors.grey900)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+            Text('视频')
+              .fontSize(12)
+              .fontColor(AppColors.grey600)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+          .layoutWeight(1)
+          .margin({ left: 24 })
+          .alignItems(HorizontalAlign.Start)
+
+          Select(this.actionOptions.map((v: string): SelectOption => ({ value: v })))
+            .selected(this.actionIndex)
+            .value(this.actionOptions[this.actionIndex])
+            .margin({ left: 8 })
+            .width('40%')
+            .onSelect((idx: number) => {
+              this.actionIndex = idx;
+            })
+        }
+        .width('100%')
+        .constraintSize({ minHeight: 48 })
+        .padding({ left: 16, right: 16 })
+        .alignItems(VerticalAlign.Center)
+
+        // 排序条件标题
+        Text('排序条件')
+          .fontSize(20)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(AppColors.orange500)
+          .width('100%')
+          .margin({
+            left: 16,
+            right: 16,
+            top: 24,
+            bottom: 8
+          })
 
         // 排序列表
         Column() {
           ForEach(this.sorts, (meta: SortMeta) => {
             SortItem({
-              title: meta.title, ascText: meta.ascText, descText: meta.descText, icon: meta.icon,
+              title: meta.title,
+              ascText: meta.ascText,
+              descText: meta.descText,
+              icon: meta.icon,
               isCurrentSort: this.currentSort === meta.key,
               currentSortDesc: this.currentSortDesc,
-              onSortAsc: () => { this.currentSort = meta.key; this.currentSortDesc = false; },
-              onSortDesc: () => { this.currentSort = meta.key; this.currentSortDesc = true; },
+              onSortAsc: () => {
+                this.setSort(meta.key, false);
+              },
+              onSortDesc: () => {
+                this.setSort(meta.key, true);
+              },
             })
           }, (meta: SortMeta) => `${meta.key}`)
         }
@@ -228,7 +289,9 @@ export struct DisplaySettingsDialog {
     .width('100%')
     .layoutWeight(1)
     .scrollBar(BarState.Auto)
-    .backgroundColor($r('app.color.background_default'))
-    .borderRadius({ topLeft: 16, topRight: 16 })
+    .nestedScroll({
+      scrollForward: NestedScrollMode.PARENT_FIRST,
+      scrollBackward: NestedScrollMode.PARENT_FIRST,
+    })
   }
 }

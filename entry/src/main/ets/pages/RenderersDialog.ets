@@ -1,4 +1,6 @@
 import { AppColors } from '../common/constants/AppConstants';
+import { PlaybackService } from '../common/data/PlaybackService';
+import { VlcRendererInfo } from 'libvlcnapi.so';
 
 /** 渲染器行:36vp 图标(chromecast→ic_dialog_renderer/其它→ic_dialog_unknown)+ 16fp 渲染器名,当前项橙色高亮。 */
 @ComponentV2
@@ -45,8 +47,15 @@ export struct RenderersDialog {
   @Local hasRenderer: boolean = false;
 
   aboutToAppear(): void {
-    // TODO(契约): renderers=RendererDelegate.renderers 快照;currentId=PlaybackService.renderer.value;
-    //   hasRenderer=PlaybackService.hasRenderer();showPinIfNeeded() PIN 校验。
+    const svc = PlaybackService.getInstance();
+    this.currentId = svc.getCurrentRendererHandle();
+    this.hasRenderer = svc.hasRenderer();
+    svc.startRendererDiscovery().then((items: VlcRendererInfo[]) => {
+      this.renderers = items.map((it: VlcRendererInfo) =>
+        new RendererEntry(it.handle, it.name, it.type));
+      this.currentId = svc.getCurrentRendererHandle();
+      this.hasRenderer = svc.hasRenderer();
+    });
   }
 
   build() {
