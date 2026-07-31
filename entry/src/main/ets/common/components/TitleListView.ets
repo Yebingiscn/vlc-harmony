@@ -17,7 +17,7 @@ export struct TitleListView {
     Column() {
       Text(this.title)
         .fontSize(18)
-        .fontColor('#FFFFFF')
+        .fontColor($r('app.color.list_title'))
         .fontWeight(FontWeight.Medium)
         .margin({ left: 12, top: 12, bottom: 8 })
 
@@ -26,7 +26,7 @@ export struct TitleListView {
       } else if (this.items.length === 0) {
         Text(this.emptyText)
           .fontSize(13)
-          .fontColor('#9E9E9E')
+          .fontColor($r('app.color.list_subtitle'))
           .margin({ left: 12, bottom: 8 })
       } else {
         List({ space: 8 }) {
@@ -40,13 +40,13 @@ export struct TitleListView {
                 Column() {
                   Text(item.title)
                     .fontSize(14)
-                    .fontColor('#FFFFFF')
+                    .fontColor($r('app.color.list_title'))
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                   if (item.subtitle.length > 0) {
                     Text(item.subtitle)
                       .fontSize(12)
-                      .fontColor('#9E9E9E')
+                      .fontColor($r('app.color.list_subtitle'))
                       .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
                       .margin({ top: 2 })
@@ -59,7 +59,7 @@ export struct TitleListView {
               .padding(12)
               .borderRadius(4)
               .borderWidth(1)
-              .borderColor('#33EEEEEE')
+              .borderColor($r('app.color.divider'))
               .backgroundColor($r('app.color.video_card_background'))
               .alignItems(VerticalAlign.Center)
               .onClick(() => this.onItemClick(item, index))

@@ -7,6 +7,9 @@ import { Settings } from '../common/data/Settings';
 import { picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
+import { hilog } from '@kit.PerformanceAnalysisKit';
+
+const TAG = 'VLC-Audio';
 
 // ---- 网格卡片数据 ----
 
@@ -65,6 +68,12 @@ class AudioBrowserVM {
 
   syncData(): void {
     const all = MediaLibrary.getAudios();
+    hilog.info(0x0001, TAG, 'syncData: total tracks=%{public}d', all.length);
+    for (let i = 0; i < all.length; i++) {
+      const t = all[i];
+      hilog.info(0x0001, TAG, '  track[%{public}d]: id=%{public}d title="%{public}s" artist="%{public}s" album="%{public}s" art="%{public}s"',
+        i, t.id, t.title, t.artistName, t.albumName, t.artworkPath);
+    }
     this.tracks = all.slice().sort((a, b) => a.title.localeCompare(b.title));
 
     // 艺术家分组:每个歌手 → 专辑列表。
@@ -78,6 +87,7 @@ class AudioBrowserVM {
       albumMap2.get(alKey)!.push(t);
     }
     this.artistNames = Array.from(artistMap.keys()).sort((a, b) => a.localeCompare(b));
+    hilog.info(0x0001, TAG, 'artists: %{public}s', this.artistNames.join(', '));
     this.artistAlbums = this.artistNames.map(name => {
       const alMap = artistMap.get(name)!;
       return Array.from(alMap.entries()).sort((a, b) => a[0].localeCompare(b[0])).map((e, idx) => {
@@ -217,7 +227,7 @@ export struct AudioBrowserPage {
 
       // FAB
       Button() {
-        Image($r('app.media.ic_add')).width(22).height(22).fillColor('#FFFFFF')
+        Image($r('app.media.ic_add')).width(22).height(22).fillColor($r('app.color.colorOnPrimary'))
       }
       .width(48).height(48).borderRadius(24).backgroundColor('#FF8800')
       .shadow({ radius: 8, color: '#44000000', offsetY: 4 })
@@ -236,7 +246,7 @@ export struct AudioBrowserPage {
   tabBuilder(title: Resource, index: number) {
     Column() {
       Text(title).fontSize(13)
-        .fontColor(this.vm.tabIndex === index ? '#FF8800' : '#9E9E9E')
+        .fontColor(this.vm.tabIndex === index ? '#FF8800' : $r('app.color.list_subtitle'))
         .fontWeight(this.vm.tabIndex === index ? FontWeight.Medium : FontWeight.Normal)
       Divider().strokeWidth(2).color('#FF8800').width(20).margin({ top: 4 })
         .visibility(this.vm.tabIndex === index ? Visibility.Visible : Visibility.Hidden)
@@ -255,7 +265,7 @@ export struct AudioBrowserPage {
             Grid() {
               ForEach(albums, (card: AlbumCard) => {
                 GridItem() { this.albumCard(card) }
-              }, (_: AlbumCard, idx: number) => `al${aIdx}_${idx}`)
+              }, (card: AlbumCard) => `artist_${this.vm.artistNames[aIdx]}_${card.name}`)
             }
             .columnsTemplate('1fr 1fr')
             .columnsGap(10).rowsGap(10)
@@ -263,7 +273,7 @@ export struct AudioBrowserPage {
             .width('100%')
           }
         }
-      }, (_: AlbumCard[], idx: number) => `artist${idx}`)
+      }, (_: AlbumCard[], idx: number) => this.vm.artistNames[idx])
     }
     .divider({ strokeWidth: 0.5, color: $r('app.color.divider'), startMargin: 16, endMargin: 8 })
     .alignListItem(ListItemAlign.Start).width('100%').height('100%')
@@ -272,10 +282,10 @@ export struct AudioBrowserPage {
   @Builder
   artistHeader(aIdx: number) {
     Row() {
-      Text(this.vm.artistNames[aIdx]).fontSize(15).fontColor('#FF8800').fontWeight(FontWeight.Medium)
-      Text(` · ${this.vm.artistAlbums[aIdx].length} 专辑`).fontSize(12).fontColor('#9E9E9E')
+      Text(this.vm.artistNames[aIdx]).fontSize(15).fontColor($r('app.color.colorAccent')).fontWeight(FontWeight.Medium)
+      Text(` · ${this.vm.artistAlbums[aIdx].length} 专辑`).fontSize(12).fontColor($r('app.color.list_subtitle'))
     }
-    .width('100%').padding({ left: 16, right: 16, top: 12, bottom: 6 }).backgroundColor('#212121')
+    .width('100%').padding({ left: 16, right: 16, top: 12, bottom: 6 }).backgroundColor($r('app.color.audio_header_background'))
   }
 
   /** 专辑方块卡片:上图(带三点) + 下文(专辑名/曲目数)。 */
@@ -285,13 +295,13 @@ export struct AudioBrowserPage {
       Stack({ alignContent: Alignment.TopEnd }) {
         Image(card.artwork.length > 0 ? card.artwork : $r('app.media.ic_album_big'))
           .width('100%').aspectRatio(1).objectFit(ImageFit.Cover).borderRadius(6)
-        Image($r('app.media.ic_more')).width(20).height(20).fillColor('#FFFFFF').margin(4)
+        Image($r('app.media.ic_more')).width(20).height(20).fillColor($r('app.color.list_title')).margin(4)
           .onClick(() => { this.sheetAlbum = card; this.showSheet = true; })
       }
       .width('100%')
-      Text(card.name).fontSize(13).fontColor('#FFFFFF').maxLines(1)
+      Text(card.name).fontSize(13).fontColor($r('app.color.list_title')).maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ top: 6 })
-      Text(`${card.trackCount} 首`).fontSize(11).fontColor('#9E9E9E')
+      Text(`${card.trackCount} 首`).fontSize(11).fontColor($r('app.color.list_subtitle'))
     }
     .width('100%')
     .onClick(() => { if (card.tracks.length > 0) { this.playTrack(card.tracks[0], card.tracks); } })
@@ -311,16 +321,16 @@ export struct AudioBrowserPage {
                 .width('100%').aspectRatio(1).objectFit(ImageFit.Cover).borderRadius(8)
               // 三点菜单
               Image($r('app.media.ic_more')).width(20).height(20)
-                .fillColor('#FFFFFF').margin(4)
+                .fillColor($r('app.color.list_title')).margin(4)
                 .onClick(() => {
                   this.sheetAlbum = card;
                   this.showSheet = true;
                 })
             }
             .width('100%')
-            Text(card.name).fontSize(13).fontColor('#FFFFFF').maxLines(1)
+            Text(card.name).fontSize(13).fontColor($r('app.color.list_title')).maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ top: 6 })
-            Text(`${card.trackCount} 首 · ${card.artist}`).fontSize(11).fontColor('#9E9E9E').maxLines(1)
+            Text(`${card.trackCount} 首 · ${card.artist}`).fontSize(11).fontColor($r('app.color.list_subtitle')).maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
           }
           .width('100%').padding(6)
@@ -355,9 +365,9 @@ export struct AudioBrowserPage {
         ListItemGroup({ header: this.genreHeader(this.vm.genreNames[idx], tracks.length) }) {
           ForEach(tracks, (t: Track) => {
             ListItem() { this.trackRow(t, tracks) }
-          }, (t: Track) => `g${idx}_${t.id}`)
+          }, (t: Track) => `genre_${this.vm.genreNames[idx]}_${t.id}`)
         }
-      }, (_: Track[], idx: number) => `genre${idx}`)
+      }, (_: Track[], idx: number) => this.vm.genreNames[idx])
     }
     .divider({ strokeWidth: 0.5, color: $r('app.color.divider'), startMargin: 16, endMargin: 8 })
     .alignListItem(ListItemAlign.Start).width('100%').height('100%')
@@ -366,10 +376,10 @@ export struct AudioBrowserPage {
   @Builder
   genreHeader(name: string, count: number) {
     Row() {
-      Text(name).fontSize(14).fontColor('#FF8800').fontWeight(FontWeight.Medium)
-      Text(` · ${count}`).fontSize(12).fontColor('#9E9E9E')
+      Text(name).fontSize(14).fontColor($r('app.color.colorAccent')).fontWeight(FontWeight.Medium)
+      Text(` · ${count}`).fontSize(12).fontColor($r('app.color.list_subtitle'))
     }
-    .width('100%').padding({ left: 16, right: 16, top: 10, bottom: 6 }).backgroundColor('#212121')
+    .width('100%').padding({ left: 16, right: 16, top: 10, bottom: 6 }).backgroundColor($r('app.color.audio_header_background'))
   }
 
   // ---- 曲目行 ----
@@ -380,15 +390,15 @@ export struct AudioBrowserPage {
       Image(t.artworkPath.length > 0 ? t.artworkPath : $r('app.media.ic_song'))
         .width(36).height(36).objectFit(ImageFit.Cover).borderRadius(4).margin({ right: 12 })
       Column() {
-        Text(t.title).fontSize(14).fontColor('#FFFFFF').maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(t.title).fontSize(14).fontColor($r('app.color.list_title')).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
         if (t.artistName.length > 0) {
-          Text(t.artistName).fontSize(12).fontColor('#9E9E9E').margin({ top: 2 })
+          Text(t.artistName).fontSize(12).fontColor($r('app.color.list_subtitle')).margin({ top: 2 })
         } else {
-          Text(this.fileNameFromUri(t.filePath)).fontSize(11).fontColor('#757575').margin({ top: 2 })
+          Text(this.fileNameFromUri(t.filePath)).fontSize(11).fontColor($r('app.color.font_light')).margin({ top: 2 })
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
         }
       }.alignItems(HorizontalAlign.Start).layoutWeight(1)
-      if (t.length > 0) { Text(formatDuration(t.length)).fontSize(11).fontColor('#757575').margin({ left: 8 }) }
+      if (t.length > 0) { Text(formatDuration(t.length)).fontSize(11).fontColor($r('app.color.font_light')).margin({ left: 8 }) }
     }
     .width('100%').padding({ left: 16, right: 16, top: 6, bottom: 6 }).alignItems(VerticalAlign.Center)
     .onClick(() => {

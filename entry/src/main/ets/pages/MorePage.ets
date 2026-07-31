@@ -1,97 +1,211 @@
 import { NavController } from '../common/data/NavController';
-import { TitleListView } from '../common/components/TitleListView';
-import { SheetItem } from '../common/models/MediaModels';
-import { AppColors } from '../common/constants/AppConstants';
-import { promptAction } from '@kit.ArkUI';
+import { PlaybackHistory } from '../common/data/PlaybackHistory';
+import { formatDuration, VideoNavParam } from '../common/models/MediaModels';
+import { PlaybackHistoryEntry } from '../common/models/PlaybackHistoryModels';
+import { historyPreview } from '../common/models/MoreHomeModels';
 
-/**
- * MorePage —— More Tab 根(MoreFragment)。
- * settings/about 双 OutlinedButton + 捐赠卡片 + Streams/History 两个 TitleListView。
- */
 @ObservedV2
 class MoreViewModel {
-  @Trace streams: SheetItem[] = [];
-  @Trace history: SheetItem[] = [];
+  @Trace history: PlaybackHistoryEntry[] = [];
 }
 
+/** 更多 tab：首页结构与安卓 VLC 对齐，串流保留为明确的功能占位。 */
 @ComponentV2
 export struct MorePage {
   @Local vm: MoreViewModel = new MoreViewModel();
+  private removeHistoryListener: (() => void) | null = null;
+
+  async aboutToAppear(): Promise<void> {
+    if (this.removeHistoryListener) {
+      this.removeHistoryListener();
+      this.removeHistoryListener = null;
+    }
+    this.vm.history = historyPreview(await PlaybackHistory.load());
+    this.removeHistoryListener = PlaybackHistory.subscribe((entries: PlaybackHistoryEntry[]) => {
+      this.vm.history = historyPreview(entries);
+    });
+  }
+
+  aboutToDisappear(): void {
+    if (this.removeHistoryListener) {
+      this.removeHistoryListener();
+      this.removeHistoryListener = null;
+    }
+  }
+
+  private openHistory(): void {
+    NavController.push('History');
+  }
+
+  private playHistoryItem(item: PlaybackHistoryEntry): void {
+    const param: VideoNavParam = { uri: item.uri, title: item.title };
+    NavController.push('VideoPlayer', param);
+  }
+
+  @Builder
+  ActionButton(icon: Resource, title: string, onClick: () => void) {
+    Row() {
+      Image(icon)
+        .width(26)
+        .height(26)
+        .objectFit(ImageFit.Contain)
+        .fillColor('#FF8800')
+      Text(title)
+        .fontSize(17)
+        .fontWeight(FontWeight.Medium)
+        .fontColor('#FF8800')
+        .margin({ left: 12 })
+    }
+    .width('100%')
+    .height(56)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .border({ width: 1, color: '#454545', radius: 8 })
+    .onClick(() => onClick())
+  }
+
+  @Builder
+  SectionTitle(title: string, onClick: () => void) {
+    Row() {
+      Text(title)
+        .fontSize(20)
+        .fontWeight(FontWeight.Medium)
+        .fontColor('#FF8800')
+        .layoutWeight(1)
+      Image($r('app.media.ic_arrow_right'))
+        .width(24)
+        .height(24)
+        .fillColor('#FFFFFF')
+        .onClick(() => onClick())
+    }
+    .width('100%')
+    .padding({ left: 16, right: 16, top: 24, bottom: 12 })
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => onClick())
+  }
+
+  @Builder
+  NewStreamCard() {
+    Column() {
+      Image($r('app.media.ic_add'))
+        .width(42)
+        .height(42)
+        .fillColor('#FF8800')
+      Text('新建串流')
+        .fontSize(16)
+        .fontWeight(FontWeight.Medium)
+        .fontColor('#FFFFFF')
+        .margin({ top: 14 })
+    }
+    .width(180)
+    .height(150)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .border({ width: 1, color: '#454545', radius: 12 })
+    .margin({ left: 16 })
+    .onClick(() => NavController.push('MrlPanel'))
+  }
+
+  @Builder
+  HistoryCard(item: PlaybackHistoryEntry) {
+    Column() {
+      Image(item.artworkUrl.length > 0 ? item.artworkUrl : $r('app.media.ic_no_thumbnail_1610'))
+        .width('100%')
+        .height(108)
+        .objectFit(ImageFit.Cover)
+        .alt($r('app.media.ic_no_thumbnail_1610'))
+        .borderRadius({ topLeft: 8, topRight: 8 })
+        .backgroundColor('#1E1E1E')
+      Column() {
+        Text(item.title)
+          .fontSize(14)
+          .fontColor('#FFFFFF')
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+        if (item.length > 0) {
+          Text(formatDuration(item.length))
+          .fontSize(12)
+            .fontColor('#BDBDBD')
+            .margin({ top: 4 })
+        }
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding(12)
+    }
+    .width(176)
+    .height(166)
+    .border({ width: 1, color: '#454545', radius: 8 })
+    .clip(true)
+    .margin({ right: 12 })
+    .onClick(() => this.playHistoryItem(item))
+  }
+
+  @Builder
+  HistoryPreview() {
+    if (this.vm.history.length === 0) {
+      Column() {
+        Text('暂无播放历史')
+          .fontSize(16)
+          .fontColor('#BDBDBD')
+      }
+      .width('100%')
+      .height(120)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
+      .border({ width: 1, color: '#454545', radius: 8 })
+      .margin({ left: 16, right: 16 })
+      .onClick(() => this.openHistory())
+    } else {
+      Scroll() {
+        Row() {
+          ForEach(this.vm.history, (item: PlaybackHistoryEntry) => {
+            this.HistoryCard(item)
+          }, (item: PlaybackHistoryEntry) => item.uri)
+        }
+        .padding({ left: 16, right: 4 })
+      }
+      .width('100%')
+      .height(190)
+      .scrollable(ScrollDirection.Horizontal)
+      .scrollBar(BarState.Off)
+    }
+  }
 
   build() {
     Scroll() {
       Column() {
-        // settings + about 双按钮
         Row() {
           Column() {
-            Image($r('app.media.ic_more_preferences')).width(24).height(24).fillColor('#FF8800')
-            Text($r('app.string.preferences')).fontSize(13).fontColor('#FFFFFF').margin({ top: 6 })
+            this.ActionButton($r('app.media.ic_more_preferences'), '设置', () => NavController.push('Preferences'))
           }
-          .justifyContent(FlexAlign.Center)
-          .alignItems(HorizontalAlign.Center)
-          .layoutWeight(1)
-          .constraintSize({ maxWidth: 200 })
-          .padding(12)
-          .borderWidth(1)
-          .borderColor('#33EEEEEE')
-          .borderRadius(4)
-          .margin({ right: 8 })
-          .onClick(() => NavController.push('Preferences'))
-
+            .layoutWeight(1)
+            .margin({ right: 12 })
           Column() {
-            Image($r('app.media.ic_more_about')).width(24).height(24).fillColor('#FF8800')
-            Text($r('app.string.about')).fontSize(13).fontColor('#FFFFFF').margin({ top: 6 })
+            this.ActionButton($r('app.media.ic_more_about'), '关于', () => NavController.push('About'))
           }
-          .justifyContent(FlexAlign.Center)
-          .alignItems(HorizontalAlign.Center)
-          .layoutWeight(1)
-          .constraintSize({ maxWidth: 200 })
-          .padding(12)
-          .borderWidth(1)
-          .borderColor('#33EEEEEE')
-          .borderRadius(4)
-          .onClick(() => NavController.push('About'))
+            .layoutWeight(1)
         }
         .width('100%')
-        .padding(12)
+        .padding({ left: 16, right: 16, top: 20 })
 
-        // 捐赠卡片(orange500 圆角4)
-        Row() {
-          Column() {
-            Text($r('app.string.donate')).fontSize(16).fontColor('#FFFFFF').fontWeight(FontWeight.Bold)
-            Text($r('app.string.donate_desc')).fontSize(12).fontColor('#E6FFFFFF').margin({ top: 4 })
-          }
-          .alignItems(HorizontalAlign.Start)
-          .layoutWeight(1)
-          Blank()
-          Image($r('app.media.ic_donate')).width(40).height(40).objectFit(ImageFit.Contain).fillColor('#FFFFFF')
+        this.SectionTitle('串流', () => NavController.push('MrlPanel'))
+        this.NewStreamCard()
+
+        if (this.vm.history.length > 0) {
+          this.SectionTitle('历史', () => this.openHistory())
+          this.HistoryPreview()
         }
-        .width('100%')
-        .padding(16)
-        .backgroundColor(AppColors.orange500)
-        .borderRadius(4)
-        .margin({ left: 12, right: 12, bottom: 8 })
-        .onClick(() => promptAction.showToast({ message: $r('app.string.developing') }))
-
-        TitleListView({
-          title: $r('app.string.streams'),
-          items: this.vm.streams,
-          emptyText: $r('app.string.noplaylist'),
-          onItemClick: (item: SheetItem) => NavController.push('MrlPanel'),
-        })
-        TitleListView({
-          title: $r('app.string.history'),
-          items: this.vm.history,
-          emptyText: $r('app.string.nomedia'),
-          onItemClick: (item: SheetItem) => NavController.push('History'),
-        })
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
+      .padding({ bottom: 28 })
     }
     .width('100%')
     .height('100%')
-    .backgroundColor($r('app.color.background_default'))
+    .backgroundColor('#121212')
     .scrollBar(BarState.Auto)
+    .align(Alignment.TopStart)
   }
 }

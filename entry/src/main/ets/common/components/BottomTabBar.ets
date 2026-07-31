@@ -17,10 +17,10 @@ export struct BottomTabBar {
         .width(24)
         .height(24)
         .objectFit(ImageFit.Contain)
-        .fillColor(this.currentTab === tab.id ? '#FF8800' : '#9E9E9E')
+        .fillColor(this.currentTab === tab.id ? '#FF8800' : $r('app.color.list_subtitle'))
       Text(tab.label)
         .fontSize(12)
-        .fontColor(this.currentTab === tab.id ? '#FF8800' : '#9E9E9E')
+        .fontColor(this.currentTab === tab.id ? '#FF8800' : $r('app.color.list_subtitle'))
         .margin({ top: 4 })
         .maxLines(1)
     }

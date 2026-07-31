@@ -1,165 +1,159 @@
+import { promptAction } from '@kit.ArkUI';
 import { VlcToolbar } from '../common/components/VlcToolbar';
 import { NavController } from '../common/data/NavController';
-import { AppColors, AppDimens } from '../common/constants/AppConstants';
+import { PlaybackHistory } from '../common/data/PlaybackHistory';
 import { Settings } from '../common/data/Settings';
-import { promptAction } from '@kit.ArkUI';
-
-/** 设置分组标题(PreferenceCategory)。 */
-export class PrefHeader {
-  title: Resource;
-  constructor(title: Resource) {
-    this.title = title;
-  }
-}
-
-/** 设置导航条目(PrefNav:带图标跳转行)。 */
-export class PrefNav {
-  title: Resource;
-  icon: Resource;
-  key: string;
-  constructor(title: Resource, icon: Resource, key: string) {
-    this.title = title;
-    this.icon = icon;
-    this.key = key;
-  }
-}
-
-/** 设置开关条目(PrefToggle:CheckBoxPreference)。 */
-export class PrefToggle {
-  title: ResourceStr;
-  summary: ResourceStr;
-  key: string;
-  checked: boolean;
-  constructor(title: ResourceStr, summary: ResourceStr, key: string, checked: boolean) {
-    this.title = title;
-    this.summary = summary;
-    this.key = key;
-    this.checked = checked;
-  }
-}
-
-/** 设置列表条目(PrefList/PrefRow)。 */
-export class PrefRow {
-  title: ResourceStr;
-  summary: ResourceStr;
-  key: string;
-  constructor(title: ResourceStr, summary: ResourceStr, key: string) {
-    this.title = title;
-    this.summary = summary;
-    this.key = key;
-  }
-}
+import {
+  SettingsHomeCatalog,
+  SettingsHomeItem,
+  SettingsHomeSection,
+} from '../common/models/SettingsHomeModels';
 
 /**
- * PreferencesActivityPage —— 设置宿主页(PreferencesActivity)。
- * 角色:pushed。VlcToolbar + 渲染 PreferencesFragment 的根 screenKey='root'(设置根列表)。
- * 结构:Toolbar(返回箭头 + "Settings" + 搜索 ic_search) + 设置分组列表(Media library / Video / Network / Permissions / History / Extra settings)。
+ * 更多 > 设置的首页。
+ *
+ * 本页只负责复刻安卓 VLC 设置列表的视觉结构和临时交互状态；具体设置、跳转和权限能力
+ * 统一留在 onSettingAction/onSearch 两个接口中，后续接入时不需要重新调整页面布局。
  */
-@ObservedV2
-export class PreferencesVM {
-  @Trace autoRescan: boolean = true;
-  @Trace playbackHistory: boolean = true;
-  @Trace videoResume: boolean = true;
-  @Trace audioResume: boolean = true;
-
-  async loadDefaults(): Promise<void> {
-    // 默认值:auto_rescan/playback_history/video_resume_playback/audio_resume_playback 默认 true。
-    this.autoRescan = await Settings.getBoolean(Settings.KEY_MEDIALIBRARY_AUTO_RESCAN, true);
-    this.playbackHistory = await Settings.getBoolean(Settings.PLAYBACK_HISTORY, true);
-  }
-}
-
 @ComponentV2
 export struct PreferencesActivityPage {
-  @Local vm: PreferencesVM = new PreferencesVM();
+  @Local sections: SettingsHomeSection[] = [];
+  @Local toggleValues: Record<string, boolean> = {};
 
-  aboutToAppear(): void {
-    // TODO(契约): KEY_RESTRICT_SETTINGS → 若为 true 启动 PinCodeActivity(CHECK) 校验,回调非 RESULT_OK → finish()。
-    this.vm.loadDefaults();
+  async aboutToAppear(): Promise<void> {
+    this.sections = SettingsHomeCatalog.create();
+    const values: Record<string, boolean> = {};
+    for (const section of this.sections) {
+      for (const item of section.items) {
+        if (item.type === 'toggle') {
+          values[item.key] = item.defaultOn;
+        }
+      }
+    }
+    values[Settings.KEY_INCOGNITO] = await Settings.getBoolean(Settings.KEY_INCOGNITO, false);
+    this.toggleValues = values;
+  }
+
+  isItemEnabled(item: SettingsHomeItem): boolean {
+    return SettingsHomeCatalog.isEnabled(item, this.toggleValues.playback_history === true);
+  }
+
+  isToggleOn(item: SettingsHomeItem): boolean {
+    return this.toggleValues[item.key] === true;
+  }
+
+  async onToggle(item: SettingsHomeItem, value: boolean): Promise<void> {
+    if (!this.isItemEnabled(item)) {
+      return;
+    }
+    const next: Record<string, boolean> = this.toggleValues;
+    next[item.key] = value;
+    this.toggleValues = next;
+    if (item.key === Settings.KEY_INCOGNITO) {
+      await PlaybackHistory.setIncognito(value);
+    }
+  }
+
+  /** 后续接入子页、单选弹窗、权限页或业务设置的统一入口。 */
+  onSettingAction(key: string): void {
+    promptAction.showToast({ message: `“${key}”功能暂未实现` });
+  }
+
+  /** 后续接入 PreferenceSearchActivityPage 的统一入口。 */
+  onSearch(): void {
+    promptAction.showToast({ message: '设置搜索功能暂未实现' });
+  }
+
+  iconFor(item: SettingsHomeItem): Resource {
+    if (item.iconKey === 'ui') {
+      return $r('app.media.ic_ui');
+    }
+    if (item.iconKey === 'video') {
+      return $r('app.media.ic_pref_video');
+    }
+    if (item.iconKey === 'subtitles') {
+      return $r('app.media.ic_pref_subtitles');
+    }
+    if (item.iconKey === 'audio') {
+      return $r('app.media.ic_pref_audio');
+    }
+    if (item.iconKey === 'equalizer') {
+      return $r('app.media.ic_pref_equalizer');
+    }
+    if (item.iconKey === 'casting') {
+      return $r('app.media.ic_renderer');
+    }
+    if (item.iconKey === 'parental') {
+      return $r('app.media.ic_pref_parental_control');
+    }
+    if (item.iconKey === 'remote') {
+      return $r('app.media.ic_pref_remote_access');
+    }
+    if (item.iconKey === 'android_auto') {
+      return $r('app.media.ic_pref_android_auto');
+    }
+    return $r('app.media.ic_pref_advanced_settings');
   }
 
   @Builder
-  HeaderItem(title: Resource) {
-    Text(title)
-      .fontSize(13)
-      .fontColor(AppColors.orange800)
+  SectionHeader(section: SettingsHomeSection) {
+    Text(section.title)
+      .fontSize(16)
+      .fontWeight(FontWeight.Medium)
+      .fontColor('#FF8800')
       .width('100%')
-      .textAlign(TextAlign.Start)
-      .margin({ left: AppDimens.kl_normal, top: AppDimens.kl_normal, bottom: AppDimens.half_default_margin })
+      .padding({ left: 16, right: 16, top: 26, bottom: 14 })
   }
 
   @Builder
-  NavRow(item: PrefNav, onClick: () => void) {
+  SettingRow(item: SettingsHomeItem) {
     Row() {
-      Image(item.icon)
-        .width(24)
-        .height(24)
-        .fillColor(AppColors.grey700)
-        .margin({ right: AppDimens.kl_normal })
-      Text(item.title)
-        .fontSize(16)
-        .fontColor(AppColors.grey900)
-        .layoutWeight(1)
-      Image($r('app.media.ic_chevron_right'))
-        .width(24)
-        .height(24)
-        .fillColor(AppColors.grey600)
-    }
-    .width('100%')
-    .padding({ left: AppDimens.kl_normal, top: AppDimens.default_margin, bottom: AppDimens.default_margin, right: AppDimens.kl_normal })
-    .alignItems(VerticalAlign.Center)
-    .onClick(() => onClick())
-  }
-
-  @Builder
-  ToggleRow(item: PrefToggle) {
-    Row() {
+      if (item.iconKey.length > 0) {
+        Image(this.iconFor(item))
+          .width(28)
+          .height(28)
+          .objectFit(ImageFit.Contain)
+          .fillColor(this.isItemEnabled(item) ? '#E6E6E6' : '#666666')
+          .margin({ right: 20 })
+      }
       Column() {
         Text(item.title)
-          .fontSize(16)
-          .fontColor(AppColors.grey900)
-        Text(item.summary)
-          .fontSize(12)
-          .fontColor(AppColors.grey600)
-          .margin({ top: 2 })
+          .fontSize(18)
+          .fontColor(this.isItemEnabled(item) ? '#F5F5F5' : '#686868')
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        if (item.summary.length > 0) {
+          Text(item.summary)
+            .fontSize(14)
+            .fontColor(this.isItemEnabled(item) ? '#BDBDBD' : '#666666')
+            .lineHeight(20)
+            .margin({ top: 4 })
+            .maxLines(3)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
-      Toggle({ type: ToggleType.Switch, isOn: item.checked })
-        .onChange((c: boolean) => {
-          // TODO(契约): 关闭 playback_history/audio_resume_playback 弹 ConfirmPreferenceChangeDialog;video_resume 清队列 prefs。
-          item.checked = c;
-          Settings.put(item.key, c);
-        })
-    }
-    .width('100%')
-    .padding({ left: AppDimens.kl_normal, top: AppDimens.default_margin, bottom: AppDimens.default_margin, right: AppDimens.kl_normal })
-    .alignItems(VerticalAlign.Center)
-  }
-
-  @Builder
-  ListRow(item: PrefRow, onClick: () => void) {
-    Row() {
-      Column() {
-        Text(item.title)
-          .fontSize(16)
-          .fontColor(AppColors.grey900)
-        Text(item.summary)
-          .fontSize(12)
-          .fontColor(AppColors.grey600)
-          .margin({ top: 2 })
+      if (item.type === 'toggle') {
+        Toggle({ type: ToggleType.Checkbox, isOn: this.isToggleOn(item) })
+          .selectedColor('#FF8800')
+          .enabled(this.isItemEnabled(item))
+          .margin({ left: 16 })
+          .onChange((value: boolean) => this.onToggle(item, value))
       }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-      Image($r('app.media.ic_chevron_right'))
-        .width(24)
-        .height(24)
-        .fillColor(AppColors.grey600)
     }
     .width('100%')
-    .padding({ left: AppDimens.kl_normal, top: AppDimens.default_margin, bottom: AppDimens.default_margin, right: AppDimens.kl_normal })
+    .padding({ left: 16, right: 16, top: 18, bottom: 18 })
     .alignItems(VerticalAlign.Center)
-    .onClick(() => onClick())
+    .opacity(this.isItemEnabled(item) ? 1 : 0.45)
+    .onClick(() => {
+      if (item.type === 'navigation' && this.isItemEnabled(item)) {
+        this.onSettingAction(item.key);
+      }
+      if (item.type === 'toggle') {
+        this.onToggle(item, !this.isToggleOn(item));
+      }
+    })
   }
 
   build() {
@@ -168,85 +162,34 @@ export struct PreferencesActivityPage {
         VlcToolbar({
           title: $r('app.string.preferences'),
           showBack: true,
-          onBack: () => NavController.pop(),
           showSearch: true,
-          onSearch: () => {
-            // TODO(契约): startActivityForResult(PreferenceSearchActivity, searchRequestCode=167)
-            NavController.push('PreferenceSearchPage');
-          },
+          onBack: () => NavController.pop(),
+          onSearch: () => this.onSearch(),
         })
-
         Scroll() {
           Column() {
-            // ========== Media library ==========
-            this.HeaderItem($r('app.string.medialibrary_scan'))
-            this.ListRow(
-              new PrefRow($r('app.string.medialibrary_scan'), $r('app.string.medialibrary_scan_explanation'), 'directories'),
-              () => {
-                // TODO(契约): SecondaryActivity(STORAGE_BROWSER) + setResult(RESULT_RESTART)
-                NavController.pushSecondary('STORAGE_BROWSER');
-              })
-            this.ToggleRow(new PrefToggle($r('app.string.medialibrary_scan'), $r('app.string.medialibrary_scan_explanation'),
-              Settings.KEY_MEDIALIBRARY_AUTO_RESCAN, this.vm.autoRescan))
-
-            // ========== Video ==========
-            this.HeaderItem($r('app.string.video'))
-            this.ListRow(new PrefRow($r('app.string.video'), '', 'video_action_switch'),
-              () => promptAction.showToast({ message: 'video_action_switch' }))
-            this.ListRow(new PrefRow($r('app.string.opengl_title'), $r('app.string.opengl_summary'), 'hardware_acceleration'),
-              () => promptAction.showToast({ message: 'hardware_acceleration' }))
-
-            // ========== Network ==========
-            this.HeaderItem($r('app.string.network_browsing'))
-            this.ListRow(new PrefRow($r('app.string.network_caching'), $r('app.string.network_caching_summary'), 'metered_connection'),
-              () => promptAction.showToast({ message: 'metered_connection' }))
-
-            // ========== Permissions ==========
-            this.HeaderItem($r('app.string.permissions'))
-            this.ListRow(new PrefRow($r('app.string.permissions'), $r('app.string.permission_expanation_allow'), 'permissions'),
-              () => promptAction.showToast({ message: 'PermissionListDialog' }))
-
-            // ========== History ==========
-            this.HeaderItem($r('app.string.history'))
-            this.ToggleRow(new PrefToggle($r('app.string.clear_playback_history'), $r('app.string.clear_history_message'),
-              Settings.PLAYBACK_HISTORY, this.vm.playbackHistory))
-            this.ToggleRow(new PrefToggle($r('app.string.video'), '', Settings.VIDEO_RESUME_TIME, this.vm.videoResume))
-            this.ToggleRow(new PrefToggle($r('app.string.audio'), '', Settings.KEY_AUDIO_LAST_PLAYLIST, this.vm.audioResume))
-
-            // ========== Extra settings ==========
-            this.HeaderItem($r('app.string.advanced_prefs_category'))
-            this.NavRow(new PrefNav($r('app.string.interface_prefs_screen'), $r('app.media.ic_ui'), 'ui_category'),
-              () => promptAction.showToast({ message: 'PreferencesUi' }))
-            this.NavRow(new PrefNav($r('app.string.video'), $r('app.media.ic_pref_video'), 'video_category'),
-              () => promptAction.showToast({ message: 'PreferencesVideo' }))
-            this.NavRow(new PrefNav($r('app.string.subtitles'), $r('app.media.ic_pref_subtitles'), 'subtitles_category'),
-              () => promptAction.showToast({ message: 'PreferencesSubtitles' }))
-            this.NavRow(new PrefNav($r('app.string.audio'), $r('app.media.ic_pref_audio'), 'audio_category'),
-              () => promptAction.showToast({ message: 'PreferencesAudio' }))
-            this.NavRow(new PrefNav($r('app.string.equalizer'), $r('app.media.ic_pref_equalizer'), 'equalizer'),
-              () => NavController.push('EqualizerSettingsActivityPage'))
-            this.NavRow(new PrefNav($r('app.string.casting_connected_renderer'), $r('app.media.ic_renderer'), 'casting_category'),
-              () => promptAction.showToast({ message: 'PreferencesCasting' }))
-            this.NavRow(new PrefNav($r('app.string.permission_media_title'), $r('app.media.ic_pref_parental_control'), 'parental_control'),
-              () => promptAction.showToast({ message: 'PreferencesParentalControl' }))
-            this.NavRow(new PrefNav($r('app.string.remote_access_version'), $r('app.media.ic_pref_remote_access'), 'remote_access_category'),
-              () => promptAction.showToast({ message: 'PreferencesRemoteAccess' }))
-            this.NavRow(new PrefNav($r('app.string.android_auto'), $r('app.media.ic_pref_android_auto'), 'android_auto_category'),
-              () => promptAction.showToast({ message: 'PreferencesAndroidAuto' }))
-            this.NavRow(new PrefNav($r('app.string.advanced_prefs_category'), $r('app.media.ic_pref_advanced_settings'), 'adv_category'),
-              () => promptAction.showToast({ message: 'PreferencesAdvanced' }))
+            ForEach(this.sections, (section: SettingsHomeSection) => {
+              this.SectionHeader(section)
+              ForEach(section.items, (item: SettingsHomeItem) => {
+                this.SettingRow(item)
+              }, (item: SettingsHomeItem) => item.key)
+              Divider()
+                .color('#303030')
+                .strokeWidth(1)
+                .margin({ top: 6 })
+            }, (section: SettingsHomeSection) => section.key)
           }
           .width('100%')
           .alignItems(HorizontalAlign.Start)
-          .padding({ bottom: 54 })
+          .padding({ bottom: 28 })
         }
         .width('100%')
         .layoutWeight(1)
-        .backgroundColor(AppColors.white)
+        .scrollBar(BarState.Auto)
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(AppColors.white)
+      .backgroundColor('#121212')
     }
     .hideTitleBar(true)
     .onBackPressed(() => {
