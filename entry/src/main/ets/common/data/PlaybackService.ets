@@ -99,6 +99,8 @@ export class PlaybackService {
   private videoWidth: number = 0;
   private videoHeight: number = 0;
   private volume: number = 100;
+  /** 睡眠计时「先等当前媒体播完」:播完后 stop,不自动下一首。 */
+  private stopAfterCurrent: boolean = false;
 
   private lib: LibVLC | null = null;
   private player: MediaPlayer | null = null;
@@ -634,7 +636,16 @@ export class PlaybackService {
     this.emitState();
   }
 
+  setStopAfterCurrent(v: boolean): void {
+    this.stopAfterCurrent = v;
+  }
+
   private onComplete(): void {
+    if (this.stopAfterCurrent) {
+      this.stopAfterCurrent = false;
+      this.stop();
+      return;
+    }
     if (this.repeatMode === 2) {
       this.player?.setTime(0);
       this.player?.play();

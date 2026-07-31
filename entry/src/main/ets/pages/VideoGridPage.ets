@@ -1,7 +1,6 @@
 import { Settings } from '../common/data/Settings';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { PermissionCoordinator } from '../common/data/PermissionCoordinator';
-import { PlaybackService } from '../common/data/PlaybackService';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { NavController } from '../common/data/NavController';
 import { EmptyStateView } from '../common/components/EmptyStateView';
@@ -14,7 +13,7 @@ import {
   EmptyLoadingState,
   SheetItem,
 } from '../common/models/MediaModels';
-import { VideoParam } from './VideoPlayerPage';
+import { VideoParam, VideoPlayItem } from './VideoPlayerPage';
 import { promptAction } from '@kit.ArkUI';
 
 /**
@@ -81,13 +80,21 @@ export struct VideoGridPage {
   }
 
   async playVideo(item: MediaWrapper): Promise<void> {
-    hilog.info(0x0001, 'VLC', '[VLC] playVideo clicked: uri=%{public}s title=%{public}s', item.uri, item.title);
     const items = this.vm.items;
-    // 仅准备队列,等 VideoPlayer XComponent Surface 就绪后再 bindAndPlay(避免无窗 play + 双引擎)
-    await PlaybackService.getInstance().prepareList(items, items.indexOf(item), true);
-    const param: VideoParam = { uri: item.uri, title: item.title };
+    const index = items.indexOf(item);
+    hilog.info(0x0001, 'VLC', '[VLC] playVideo: idx=%{public}d uri=%{public}s', index, item.uri);
+    // 队列由 VideoPlayer setup 内 prepareList+bindAndPlay;此处只传列表给详情页 UI(上一曲/下一曲)
+    const list: VideoPlayItem[] = items.map((m: MediaWrapper) => {
+      const e: VideoPlayItem = { uri: m.uri, title: m.title };
+      return e;
+    });
+    const param: VideoParam = {
+      uri: item.uri,
+      title: item.title,
+      list: list,
+      index: index >= 0 ? index : 0,
+    };
     NavController.push('VideoPlayer', param);
-    hilog.info(0x0001, 'VLC', '[VLC] prepareList+push VideoPlayer (defer play until surface)');
   }
 
   /** 长按/更多 → 打开 ContextSheet。 */

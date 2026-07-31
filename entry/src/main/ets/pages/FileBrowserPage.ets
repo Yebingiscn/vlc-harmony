@@ -2,7 +2,6 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { NavController } from '../common/data/NavController';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { BundledMedia } from '../common/data/BundledMedia';
-import { PlaybackService } from '../common/data/PlaybackService';
 import { EmptyStateView } from '../common/components/EmptyStateView';
 import { AppColors, AppDimens } from '../common/constants/AppConstants';
 import { Folder, EmptyLoadingState } from '../common/models/MediaModels';
@@ -123,7 +122,6 @@ export struct FileBrowserPage {
       hilog.error(0x0001, 'VLC', '[VLC] playBundled resolve failed raw=%{public}s', rawName);
       return;
     }
-    await PlaybackService.getInstance().prepareList([media], 0, true);
     const param: VideoParam = { uri: media.uri, title: media.title };
     NavController.push('VideoPlayer', param);
   }
