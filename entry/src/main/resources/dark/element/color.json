@@ -1,8 +1,31 @@
 {
   "color": [
-    {
-      "name": "start_window_background",
-      "value": "#000000"
-    }
+    { "name": "start_window_background", "value": "#131313" },
+    { "name": "background_default", "value": "#131313" },
+    { "name": "background_actionbar", "value": "#131313" },
+    { "name": "background_default_darker", "value": "#2A2A2A" },
+    { "name": "list_title", "value": "#FFFFFF" },
+    { "name": "list_subtitle", "value": "#BDBDBD" },
+    { "name": "font_default", "value": "#FAFAFA" },
+    { "name": "font_light", "value": "#757575" },
+    { "name": "video_card_background", "value": "#212121" },
+    { "name": "video_list_background", "value": "#131313" },
+    { "name": "card_background", "value": "#1E1E1E" },
+    { "name": "card_border", "value": "#424242" },
+    { "name": "dark_background", "value": "#131313" },
+    { "name": "mini_player_dark", "value": "#121212" },
+    { "name": "audio_header_background", "value": "#121212" },
+    { "name": "bottom_navigation_background", "value": "#212121" },
+    { "name": "bottom_navigation_color", "value": "#9E9E9E" },
+    { "name": "bottom_sheet_background", "value": "#2A2A2A" },
+    { "name": "divider", "value": "#33FFFFFF" },
+    { "name": "default_separator", "value": "#616161" },
+    { "name": "white_transparent_10", "value": "#1AFFFFFF" },
+    { "name": "white_transparent_20", "value": "#33FFFFFF" },
+    { "name": "white_transparent_50", "value": "#80FFFFFF" },
+    { "name": "white_transparent_75", "value": "#BFFFFFFF" },
+    { "name": "white_transparent_80", "value": "#CCFFFFFF" },
+    { "name": "disabled_overlay", "value": "#80000000" },
+    { "name": "colorControlNormal", "value": "#E0E0E0" }
   ]
 }
