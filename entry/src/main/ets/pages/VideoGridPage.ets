@@ -92,9 +92,8 @@ export struct VideoGridPage {
     const index = items.indexOf(item);
     hilog.info(0x0001, 'VLC', '[VLC] playVideo: idx=%{public}d uri=%{public}s', index, item.uri);
     // 正在播放的音频要停掉,否则与视频声音叠加。
-    const svc = PlaybackService.getInstance();
-    if (svc.getState() === PlayState.PLAYING) {
-      svc.pause();
+    if (PlaybackService.getState() === PlayState.PLAYING) {
+      PlaybackService.pause();
     }
     const list: VideoPlayItem[] = items.map((m: MediaWrapper) => {
       const e: VideoPlayItem = { uri: m.uri, title: m.title };

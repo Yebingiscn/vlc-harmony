@@ -4,7 +4,7 @@
  */
 @ComponentV2
 export struct VlcToolbar {
-  @Param title: Resource = $r('app.string.app_name');
+  @Param title: Resource | string = $r('app.string.app_name');
   @Param showBack: boolean = false;
   @Param showIncognito: boolean = false;
   @Event onBack: () => void = () => {};

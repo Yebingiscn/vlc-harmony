@@ -457,6 +457,26 @@
       "value": "无法播放此视频"
     },
     {
+      "name": "sleep_timer_input_hint",
+      "value": "数字键为小时,:00 / :30 为分钟"
+    },
+    {
+      "name": "sleep_timer_set",
+      "value": "睡眠倒计时已设定:%s"
+    },
+    {
+      "name": "sleep_timer_set_wait",
+      "value": "睡眠倒计时已设定:%s,播完当前视频后暂停"
+    },
+    {
+      "name": "sleep_timer_cancelled",
+      "value": "睡眠倒计时已取消"
+    },
+    {
+      "name": "sleep_timer_fired",
+      "value": "睡眠倒计时结束,已暂停播放"
+    },
+    {
       "name": "history",
       "value": "历史"
     },

@@ -79,7 +79,7 @@ export struct HeaderMediaListActivityPage {
       const mw = new MediaWrapper(t.id, t.title, '', 1);
       items.push(mw);
     }
-    PlaybackService.getInstance().playList(items, 0, true);
+    PlaybackService.playList(MediaLibrary.toQueueItems(items), 0, true);
   }
 
   private shuffleAll(): void {
@@ -92,8 +92,8 @@ export struct HeaderMediaListActivityPage {
       return;
     }
     const start = Math.floor(Math.random() * items.length);
-    PlaybackService.getInstance().playList(items, start, true);
-    PlaybackService.getInstance().toggleShuffle();
+    PlaybackService.playList(MediaLibrary.toQueueItems(items), start, true);
+    PlaybackService.toggleShuffle();
   }
 
   private addToPlaylist(): void {
@@ -162,7 +162,7 @@ export struct HeaderMediaListActivityPage {
       for (const t of this.vm.tracks) {
         items.push(new MediaWrapper(t.id, t.title, '', 1));
       }
-      PlaybackService.getInstance().playList(items, position, true);
+      PlaybackService.playList(MediaLibrary.toQueueItems(items), position, true);
     })
   }
 
