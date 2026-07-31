@@ -18,7 +18,7 @@ export struct VlcToolbar {
           .width(24)
           .height(24)
           .objectFit(ImageFit.Contain)
-          .fillColor('#FFFFFF')
+          .fillColor($r('app.color.list_title'))
           .margin({ left: 4 })
           .onClick(() => this.onBack())
       }
@@ -32,7 +32,7 @@ export struct VlcToolbar {
       }
       Text(this.title)
         .fontSize(20)
-        .fontColor('#FFFFFF')
+        .fontColor($r('app.color.list_title'))
         .fontWeight(FontWeight.Bold)
         .layoutWeight(1)
         .margin({ left: 8 })
@@ -49,7 +49,7 @@ export struct VlcToolbar {
           .width(24)
           .height(24)
           .objectFit(ImageFit.Contain)
-          .fillColor('#FFFFFF')
+          .fillColor($r('app.color.list_title'))
           .margin({ right: 8 })
           .onClick(() => this.onSearch())
       }

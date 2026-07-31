@@ -25,7 +25,7 @@ export struct MorePage {
         Row() {
           Column() {
             Image($r('app.media.ic_more_preferences')).width(24).height(24).fillColor('#FF8800')
-            Text($r('app.string.preferences')).fontSize(13).fontColor('#FFFFFF').margin({ top: 6 })
+            Text($r('app.string.preferences')).fontSize(13).fontColor($r('app.color.list_title')).margin({ top: 6 })
           }
           .justifyContent(FlexAlign.Center)
           .alignItems(HorizontalAlign.Center)
@@ -33,14 +33,14 @@ export struct MorePage {
           .constraintSize({ maxWidth: 200 })
           .padding(12)
           .borderWidth(1)
-          .borderColor('#33EEEEEE')
+          .borderColor($r('app.color.default_separator'))
           .borderRadius(4)
           .margin({ right: 8 })
           .onClick(() => NavController.push('Preferences'))
 
           Column() {
             Image($r('app.media.ic_more_about')).width(24).height(24).fillColor('#FF8800')
-            Text($r('app.string.about')).fontSize(13).fontColor('#FFFFFF').margin({ top: 6 })
+            Text($r('app.string.about')).fontSize(13).fontColor($r('app.color.list_title')).margin({ top: 6 })
           }
           .justifyContent(FlexAlign.Center)
           .alignItems(HorizontalAlign.Center)
@@ -48,7 +48,7 @@ export struct MorePage {
           .constraintSize({ maxWidth: 200 })
           .padding(12)
           .borderWidth(1)
-          .borderColor('#33EEEEEE')
+          .borderColor($r('app.color.default_separator'))
           .borderRadius(4)
           .onClick(() => NavController.push('About'))
         }

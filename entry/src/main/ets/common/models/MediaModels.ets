@@ -263,11 +263,15 @@ export class SheetItem {
   title: string;
   subtitle: string;
   icon: Resource | null;
+  uri: string;
+  artworkPath: string;
 
-  constructor(title: string, subtitle: string = '', icon: Resource | null = null) {
+  constructor(title: string, subtitle: string = '', icon: Resource | null = null, uri: string = '', artworkPath: string = '') {
     this.title = title;
     this.subtitle = subtitle;
     this.icon = icon;
+    this.uri = uri;
+    this.artworkPath = artworkPath;
   }
 }
 

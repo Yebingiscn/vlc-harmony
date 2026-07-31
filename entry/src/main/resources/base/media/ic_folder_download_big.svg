@@ -1,3 +1,65 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 96 96">
-<path d="M14,16C10.722,16 8,18.722 8,22L8,74C8,77.278 10.722,80 14,80L82,80C85.278,80 88,77.278 88,74L88,32C88,28.722 85.278,26 82,26L48.002,26L38.881,16.879A3,3 0,0 0,36.76 16L14,16zM14,22L35.518,22L44.639,31.121A3,3 0,0 0,46.76 32L82,32L82,74L14,74L14,22zM58,39.5C57.175,39.5 56.5,40.175 56.5,41L56.5,48.5L54.115,48.5C52.78,48.5 52.106,50.119 53.051,51.064L59.936,57.949C60.521,58.534 61.466,58.534 62.051,57.949L68.936,51.064C69.881,50.119 69.22,48.5 67.885,48.5L65.5,48.5L65.5,41C65.5,40.175 64.825,39.5 64,39.5L58,39.5zM52,62C51.175,62 50.5,62.675 50.5,63.5C50.5,64.325 51.175,65 52,65L70,65C70.825,65 71.5,64.325 71.5,63.5C71.5,62.675 70.825,62 70,62L52,62z" fill="currentColor"/>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="96"
+   height="96"
+   viewBox="0 0 96 96"
+   version="1.1"
+   id="SVGRoot"
+   sodipodi:docname="ic_browser_downoad_big.svg"
+   inkscape:version="1.2.2 (b0a8486541, 2022-12-01)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview17188"
+     pagecolor="#ffffff"
+     bordercolor="#111111"
+     borderopacity="1"
+     inkscape:pageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="1"
+     inkscape:document-units="px"
+     showgrid="true"
+     inkscape:zoom="5.1241865"
+     inkscape:cx="54.154938"
+     inkscape:cy="65.473807"
+     inkscape:window-width="1600"
+     inkscape:window-height="829"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1"
+     inkscape:snap-bbox="true"
+     inkscape:bbox-paths="true"
+     inkscape:bbox-nodes="true"
+     inkscape:snap-bbox-edge-midpoints="true"
+     inkscape:snap-bbox-midpoints="true"
+     inkscape:object-paths="true"
+     inkscape:snap-intersection-paths="true"
+     inkscape:snap-smooth-nodes="true"
+     inkscape:snap-midpoints="true"
+     inkscape:snap-object-midpoints="true"
+     inkscape:snap-center="true"
+     inkscape:showpageshadow="2"
+     inkscape:deskcolor="#d1d1d1">
+    <inkscape:grid
+       type="xygrid"
+       id="grid17251"
+       originx="0"
+       originy="0" />
+  </sodipodi:namedview>
+  <defs
+     id="defs17183" />
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <path
+       id="path26438"
+       style="color:#000000;fill:#000000;stroke-linejoin:round;-inkscape-stroke:none;paint-order:markers fill stroke"
+       d="M 14 16 C 10.721886 16 8 18.721886 8 22 L 8 74 C 8 77.278114 10.721886 80 14 80 L 82 80 C 85.278114 80 88 77.278114 88 74 L 88 32 C 88 28.721884 85.278114 26 82 26 L 48.001953 26 L 38.880859 16.878906 A 3.0003 3.0003 0 0 0 36.759766 16 L 14 16 z M 14 22 L 35.517578 22 L 44.638672 31.121094 A 3.0003 3.0003 0 0 0 46.759766 32 L 82 32 L 82 74 L 14 74 L 14 22 z M 58 39.5 C 57.175001 39.5 56.5 40.175001 56.5 41 L 56.5 48.5 L 54.115234 48.5 C 52.780236 48.5 52.105782 50.119354 53.050781 51.064453 L 59.935547 57.949219 C 60.520546 58.534218 61.465782 58.534218 62.050781 57.949219 L 68.935547 51.064453 C 69.880546 50.119354 69.219764 48.5 67.884766 48.5 L 65.5 48.5 L 65.5 41 C 65.5 40.175001 64.824999 39.5 64 39.5 L 58 39.5 z M 52 62 C 51.175001 62 50.5 62.675001 50.5 63.5 C 50.5 64.324999 51.175001 65 52 65 L 70 65 C 70.824999 65 71.5 64.324999 71.5 63.5 C 71.5 62.675001 70.824999 62 70 62 L 52 62 z " />
+  </g>
 </svg>

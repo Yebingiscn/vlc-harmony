@@ -71,12 +71,12 @@ export struct MainPage {
         }
 
         // 内容区:Stack + visibility 保留各 Tab 状态
-        Stack() {
-          VideoGridPage().visibility(this.currentTab === 'video' ? Visibility.Visible : Visibility.Hidden)
-          AudioBrowserPage().visibility(this.currentTab === 'audio' ? Visibility.Visible : Visibility.Hidden)
-          MainBrowserPage().visibility(this.currentTab === 'browse' ? Visibility.Visible : Visibility.Hidden)
-          PlaylistsPage().visibility(this.currentTab === 'playlists' ? Visibility.Visible : Visibility.Hidden)
-          MorePage().visibility(this.currentTab === 'more' ? Visibility.Visible : Visibility.Hidden)
+        Stack({ alignContent: Alignment.TopStart }) {
+          VideoGridPage().visibility(this.currentTab === 'video' ? Visibility.Visible : Visibility.None)
+          AudioBrowserPage().visibility(this.currentTab === 'audio' ? Visibility.Visible : Visibility.None)
+          MainBrowserPage().visibility(this.currentTab === 'browse' ? Visibility.Visible : Visibility.None)
+          PlaylistsPage().visibility(this.currentTab === 'playlists' ? Visibility.Visible : Visibility.None)
+          MorePage().visibility(this.currentTab === 'more' ? Visibility.Visible : Visibility.None)
         }
         .layoutWeight(1)
         .width('100%')

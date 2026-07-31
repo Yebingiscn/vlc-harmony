@@ -5,7 +5,7 @@ import { image } from '@kit.ImageKit';
 import { dataSharePredicates } from '@kit.ArkData';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { AppContext } from './AppContext';
-import { MediaWrapper, Track, Artist, Album, Genre, Folder, VideoGroup } from '../models/MediaModels';
+import { MediaWrapper, Track, Artist, Album, Genre, Folder, VideoGroup, SheetItem } from '../models/MediaModels';
 import { QueueItem } from './PlaybackService';
 import { Settings } from './Settings';
 
@@ -28,6 +28,15 @@ interface AudioMeta {
 
 /** 持久化存储 key:用户导入的音频轨道 JSON 数组。 */
 const KEY_AUDIO_LIBRARY: string = 'audio_library_persisted';
+
+/** 收藏条目持久化结构。 */
+interface FavItem {
+  title: string;
+  subtitle: string;
+  iconType: string;
+  uri: string;
+  artworkPath: string;
+}
 
 /** 持久化用的音频元数据结构(避免匿名对象字面量)。 */
 interface PersistedTrack {
@@ -353,11 +362,13 @@ export class MediaLibrary {
     let file: fs.File | null = null;
     try {
       file = fs.openSync(filePath, fs.OpenMode.READ_ONLY);
+      HILog(`[sysExtractor] file opened: ${filePath}`);
       extractor = await media.createAVMetadataExtractor();
       extractor.fdSrc = file;
+      HILog(`[sysExtractor] extractor created, calling fetchMetadata...`);
       const meta: media.AVMetadata = await extractor.fetchMetadata();
-      fs.closeSync(file);
-      file = null;
+      HILog(`[sysExtractor] fetchMetadata done: title="${meta.title}" artist="${meta.artist}" album="${meta.album}"`);
+      // ★ 不要在这里 close file,album cover 提取还需要 fd。
       const result: AudioMeta = {
         title: meta.title ?? '',
         artist: meta.artist ?? '',
@@ -370,11 +381,11 @@ export class MediaLibrary {
         duration: Number(meta.duration ?? 0),
         artworkPath: '',
       };
-      // 提取专辑封面并缓存到本地。
+      // 提取专辑封面并缓存到本地(修复:file 保持打开)。
       try {
-        HILog(`[art] fetching album cover...`);
+        HILog(`[art] fetching album cover for ${filePath}...`);
         const pixelMap = await extractor.fetchAlbumCover();
-        HILog(`[art] pixelMap obtained, checking...`);
+        HILog(`[art] pixelMap obtained: ${pixelMap !== null && pixelMap !== undefined ? 'yes' : 'null'}`);
         if (pixelMap !== null && pixelMap !== undefined) {
           const cacheName = `album_${MediaLibrary.hashCode(filePath)}.jpg`;
           const cacheDir = AppContext.get().cacheDir;
@@ -397,6 +408,9 @@ export class MediaLibrary {
       } catch (e) {
         HILog(`[art] FAILED: ${(e as Error).message ?? String(e)}`);
       }
+      // ★ 在 album cover 提取完成后才关闭文件。
+      fs.closeSync(file);
+      file = null;
       HILog(`sysExtractor ok: artist="${result.artist}" album="${result.album}" genre="${result.genre}" art="${result.artworkPath}"`);
       return result;
     } catch (e) {
@@ -407,7 +421,8 @@ export class MediaLibrary {
       return null;
     } finally {
       if (extractor !== null) {
-        try { extractor.release(); } catch (e3) { /* ignore */ }
+        // ★ release() 返回 Promise<void>,必须 await 确保释放完成,否则下一个 extractor 可能复用内部缓存。
+        try { await extractor.release(); } catch (e3) { /* ignore */ }
       }
     }
   }
@@ -522,10 +537,10 @@ export class MediaLibrary {
     }
     HILog(`importAudioUris: received ${uris.length} URI(s)`);
     const uniqueUris = Array.from(new Set(uris));
-    const existing = new Set(MediaLibrary.audios.map((t: Track) => t.uri));
-    const newUris = uniqueUris.filter((u: string) => !existing.has(u));
-    HILog(`importAudioUris: after dedup: ${newUris.length} new`);
-    if (newUris.length === 0) {
+    const existingUris = new Set(MediaLibrary.audios.map((t: Track) => t.uri));
+    const newByUri = uniqueUris.filter((u: string) => !existingUris.has(u));
+    HILog(`importAudioUris: after uri dedup: ${newByUri.length} new`);
+    if (newByUri.length === 0) {
       return;
     }
     // 确保沙箱音频目录存在。
@@ -534,31 +549,47 @@ export class MediaLibrary {
     try { fs.mkdirSync(audioDir, true); } catch (e) { /* may exist */ }
 
     const startIndex = MediaLibrary.audios.length;
-    for (let i = 0; i < newUris.length; i++) {
-      const pickerUri = newUris[i];
+    let addedCount = 0;
+    for (let i = 0; i < newByUri.length; i++) {
+      const pickerUri = newByUri[i];
       HILog(`importAudioUris[${i}]: ${pickerUri}`);
-      // 复制到沙箱(持久化,不受临时权限影响)。
+      // 复制到沙箱(持久化,不受临时权限影响)。用原始文件名作为沙箱路径,保证同一文件重复导入时 URI 不变。
       let permUri = pickerUri;
       try {
         const srcFile = fs.openSync(pickerUri, fs.OpenMode.READ_ONLY);
         const ext = pickerUri.includes('.') ? pickerUri.slice(pickerUri.lastIndexOf('.')) : '.mp3';
-        const destName = `import_${Date.now()}_${i}${ext}`;
-        const destPath = `${audioDir}/${destName}`;
-        const stat = fs.statSync(pickerUri);
-        const buf = new ArrayBuffer(stat.size);
-        fs.readSync(srcFile.fd, buf);
-        fs.closeSync(srcFile);
-        const destFile = fs.openSync(destPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY);
-        fs.writeSync(destFile.fd, buf);
-        fs.closeSync(destFile);
+        // 用原始文件名(不含目录)确保同一文件第二次导入时沙箱路径相同,URI 去重生效。
+        const originalName = pickerUri.includes('/') ? pickerUri.slice(pickerUri.lastIndexOf('/') + 1) : pickerUri;
+        const safeName = originalName.replace(/[^a-zA-Z0-9._\-一-鿿]/g, '_');
+        const destPath = `${audioDir}/${safeName}`;
+        // 仅在文件不存在时复制;已存在则直接复用。
+        let alreadyExists = false;
+        try { fs.statSync(destPath); alreadyExists = true; } catch (e) { /* not exists */ }
+        if (!alreadyExists) {
+          const stat = fs.statSync(pickerUri);
+          const buf = new ArrayBuffer(stat.size);
+          fs.readSync(srcFile.fd, buf);
+          fs.closeSync(srcFile);
+          const destFile = fs.openSync(destPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY);
+          fs.writeSync(destFile.fd, buf);
+          fs.closeSync(destFile);
+        } else {
+          fs.closeSync(srcFile);
+        }
         permUri = `file://${destPath}`;
+        // 沙箱 URI 去重:若已存在则跳过。
+        if (existingUris.has(permUri)) {
+          HILog(`importAudioUris[${i}]: SKIP duplicate sandbox uri: ${permUri}`);
+          continue;
+        }
+        existingUris.add(permUri);
         HILog(`importAudioUris[${i}]: copied to sandbox: ${permUri}`);
       } catch (e) {
         HILog(`importAudioUris[${i}]: copy failed, keeping picker URI: ${(e as Error).message ?? String(e)}`);
       }
       const meta = await MediaLibrary.parseFileMeta(permUri);
       HILog(`importAudioUris[${i}]: meta title="${meta.title}" artist="${meta.artist}" album="${meta.album}"`);
-      const t = new Track(startIndex + i, meta.title, permUri);
+      const t = new Track(startIndex + addedCount, meta.title, permUri);
       t.displayName = meta.title;
       t.filePath = permUri;
       t.length = meta.duration;
@@ -569,10 +600,13 @@ export class MediaLibrary {
       t.year = meta.year;
       t.artworkPath = meta.artworkPath;
       MediaLibrary.audios.push(t);
+      addedCount++;
     }
-    MediaLibrary.deriveFromMeta();
-    await MediaLibrary.saveAudioLibrary();
-    HILog(`importAudioUris done, total audios: ${MediaLibrary.audios.length}`);
+    if (addedCount > 0) {
+      MediaLibrary.deriveFromMeta();
+      await MediaLibrary.saveAudioLibrary();
+    }
+    HILog(`importAudioUris done, added ${addedCount}, total audios: ${MediaLibrary.audios.length}`);
   }
 
   /** 将当前音频列表序列化为 JSON 并持久化到 preferences。 */
@@ -653,7 +687,6 @@ export class MediaLibrary {
     return Array.from(map.values());
   }
 
-  /** 按名称首字母分组(VideoGroupingType.NAME)。 */
   static getVideoGroups(): VideoGroup[] {
     const map = new Map<string, VideoGroup>();
     let gid = 0;
@@ -665,5 +698,189 @@ export class MediaLibrary {
       (map.get(letter) as VideoGroup).mediaCount += 1;
     }
     return Array.from(map.values());
+  }
+
+  /** 仅扫描视频(浏览页使用,不触发慢速音频扫描)。 */
+  static async scanVideosOnly(): Promise<void> {
+    MediaLibrary.scanning = true;
+    try {
+      await MediaLibrary.scanVideos();
+      MediaLibrary.scanned = true;
+    } finally {
+      MediaLibrary.scanning = false;
+    }
+  }
+
+  // ---- 存储文件管理(浏览页使用,仅追踪通过 picker 导入的音视频) ----
+
+  private static readonly KEY_STORAGE_FILES = 'browser_storage_files';
+
+  private static storageItems: SheetItem[] = [];
+
+  static getStorageFiles(): SheetItem[] {
+    return MediaLibrary.storageItems;
+  }
+
+  /** 启动时从持久化恢复存储文件列表(仅恢复元数据,URI 指向沙箱永久副本)。 */
+  static async loadStorageFiles(): Promise<void> {
+    const raw: string = await Settings.getString(MediaLibrary.KEY_STORAGE_FILES, '[]');
+    try {
+      const arr: FavItem[] = JSON.parse(raw) as FavItem[];
+      const items: SheetItem[] = [];
+      for (const item of arr) {
+        const icon: Resource = item.iconType === 'video' ? $r('app.media.ic_video') : $r('app.media.ic_song');
+        let artworkPath = item.artworkPath || '';
+        // 旧数据可能没有 artworkPath,尝试从已有沙箱文件中提取。
+        if (artworkPath.length === 0 && item.iconType === 'audio' && item.uri.length > 0) {
+          try {
+            const meta = await MediaLibrary.parseFileMeta(item.uri);
+            artworkPath = meta.artworkPath;
+            if (artworkPath.length > 0) {
+              HILog(`loadStorageFiles: extracted artwork for "${item.title}": ${artworkPath}`);
+            }
+          } catch (e) {
+            // extraction failed, keep empty
+          }
+        }
+        items.push(new SheetItem(item.title, item.subtitle, icon, item.uri, artworkPath));
+      }
+      MediaLibrary.storageItems = items;
+      // 如果旧数据补全了封面,回写到 prefs 避免下次启动再重复提取。
+      const hasNewArtwork = items.some((s: SheetItem) => s.artworkPath.length > 0 && !arr.find((f: FavItem) => f.title === s.title)?.artworkPath);
+      if (hasNewArtwork) {
+        await MediaLibrary.saveStorageItemsToPrefs();
+        HILog('loadStorageFiles: saved re-extracted artwork to prefs');
+      }
+    } catch (e) {
+      MediaLibrary.storageItems = [];
+    }
+  }
+
+  static async importStorageFiles(uris: string[]): Promise<void> {
+    const uniqueUris = Array.from(new Set(uris));
+    const ctx = AppContext.get();
+    const mediaDir = `${ctx.filesDir}/media`;
+    try { fs.mkdirSync(mediaDir, true); } catch (e) { /* may exist */ }
+
+    for (let i = 0; i < uniqueUris.length; i++) {
+      const pickerUri = uniqueUris[i];
+      HILog(`importStorage: ${pickerUri}`);
+      let permUri = pickerUri;
+      try {
+        const srcFile = fs.openSync(pickerUri, fs.OpenMode.READ_ONLY);
+        const ext = pickerUri.includes('.') ? pickerUri.slice(pickerUri.lastIndexOf('.')) : '.mp4';
+        const destName = `media_${Date.now()}_${i}${ext}`;
+        const destPath = `${mediaDir}/${destName}`;
+        const stat = fs.statSync(pickerUri);
+        const buf = new ArrayBuffer(stat.size);
+        fs.readSync(srcFile.fd, buf);
+        fs.closeSync(srcFile);
+        const destFile = fs.openSync(destPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY);
+        fs.writeSync(destFile.fd, buf);
+        fs.closeSync(destFile);
+        permUri = `file://${destPath}`;
+      } catch (e) {
+        HILog(`importStorage copy failed: ${(e as Error).message ?? String(e)}`);
+      }
+      const lower = pickerUri.toLowerCase();
+      const isAudio = AUDIO_EXTS.some(f => lower.endsWith(f));
+      const meta = await MediaLibrary.parseFileMeta(permUri);
+      const title = meta.title.length > 0 ? meta.title : MediaLibrary.fileNameTitle(pickerUri);
+      const subtitle = isAudio ? (meta.artist.length > 0 ? meta.artist : '音频') : '视频';
+      const icon: Resource = isAudio ? $r('app.media.ic_song') : $r('app.media.ic_video');
+      const artworkPath = meta.artworkPath.length > 0 ? meta.artworkPath : '';
+      HILog(`importStorage: title="${title}" isAudio=${isAudio} artworkPath="${artworkPath}"`);
+      MediaLibrary.storageItems.push(new SheetItem(title, subtitle, icon, permUri, artworkPath));
+    }
+    // 整批持久化当前 storageItems。
+    await MediaLibrary.saveStorageItemsToPrefs();
+    HILog(`importStorage done: ${MediaLibrary.storageItems.length} items`);
+  }
+
+  private static async saveStorageItemsToPrefs(): Promise<void> {
+    const arr: FavItem[] = MediaLibrary.storageItems.map(item => ({
+      title: item.title,
+      subtitle: item.subtitle,
+      iconType: item.uri.toLowerCase().match(/\.(mp3|flac|ogg|wav|aac|m4a|wma|opus)$/i) ? 'audio' : 'video',
+      uri: item.uri,
+      artworkPath: item.artworkPath,
+    } as FavItem));
+    await Settings.put(MediaLibrary.KEY_STORAGE_FILES, JSON.stringify(arr));
+  }
+
+  /** 存储设备列表(浏览页使用)。 */
+  static getStorageDevices(): SheetItem[] {
+    const result: SheetItem[] = [];
+    const folders: Folder[] = MediaLibrary.getVideoFolders();
+    result.push(new SheetItem('内部存储',
+      `${folders.length} 个文件夹 · ${MediaLibrary.videos.length} 个视频`,
+      $r('app.media.ic_folder_usb')));
+    return result;
+  }
+
+  /** 视频目录列表。 */
+  static getVideoDirectories(): SheetItem[] {
+    const result: SheetItem[] = [];
+    const folders: Folder[] = MediaLibrary.getVideoFolders();
+    for (const f of folders) {
+      result.push(new SheetItem(f.title, `${f.mediaCount} 个视频`, $r('app.media.ic_folder')));
+    }
+    return result;
+  }
+
+  // ---- 收藏管理 ----
+
+  private static readonly KEY_FAVORITES: string = 'browser_favorites';
+
+  static async getFavorites(): Promise<SheetItem[]> {
+    const raw: string = await Settings.getString(MediaLibrary.KEY_FAVORITES, '[]');
+    const result: SheetItem[] = [];
+    try {
+      const arr: FavItem[] = JSON.parse(raw) as FavItem[];
+      for (const item of arr) {
+        const icon: Resource = item.iconType === 'video' ? $r('app.media.ic_video') : $r('app.media.ic_song');
+        result.push(new SheetItem(item.title, item.subtitle, icon, item.uri, item.artworkPath || ''));
+      }
+    } catch (e) {
+      // parse error
+    }
+    return result;
+  }
+
+  static async addFavorite(item: SheetItem): Promise<void> {
+    const cur: FavItem[] = await MediaLibrary.loadFavRaw();
+    for (const c of cur) {
+      if (c.title === item.title) {
+        return;
+      }
+    }
+    const iconType: string = item.subtitle === '视频' ? 'video' : 'audio';
+    const newItem: FavItem = { title: item.title, subtitle: item.subtitle, iconType: iconType, uri: item.uri, artworkPath: item.artworkPath };
+    cur.push(newItem);
+    await MediaLibrary.saveFavRaw(cur);
+  }
+
+  static async removeFavorite(title: string): Promise<void> {
+    const cur: FavItem[] = await MediaLibrary.loadFavRaw();
+    const filtered: FavItem[] = [];
+    for (const s of cur) {
+      if (s.title !== title) {
+        filtered.push(s);
+      }
+    }
+    await MediaLibrary.saveFavRaw(filtered);
+  }
+
+  private static async loadFavRaw(): Promise<FavItem[]> {
+    const raw: string = await Settings.getString(MediaLibrary.KEY_FAVORITES, '[]');
+    try {
+      return JSON.parse(raw) as FavItem[];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  private static async saveFavRaw(items: FavItem[]): Promise<void> {
+    await Settings.put(MediaLibrary.KEY_FAVORITES, JSON.stringify(items));
   }
 }
