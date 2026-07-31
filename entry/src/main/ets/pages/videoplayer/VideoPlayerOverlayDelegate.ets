@@ -334,6 +334,8 @@ export struct VideoPlayerOverlayHud {
     .padding({ left: 16, right: 16, top: 44, bottom: 16 })
     .alignItems(VerticalAlign.Center)
     .linearGradient({ angle: 180, colors: [['#cb000000', 0.0], ['#00000000', 1.0]] })
+    // 顶栏必须 Default，否则 Transparent 父层会把返回/菜单点透下去
+    .hitTestBehavior(HitTestMode.Default)
   }
 
   @Builder
@@ -406,6 +408,8 @@ export struct VideoPlayerOverlayHud {
     }
     .width('100%')
     .linearGradient({ angle: 180, colors: [['#00000000', 0.0], ['#cb000000', 1.0]] })
+    // 底栏必须 Default，否则 Transparent 父层会把进度条/按钮点透下去
+    .hitTestBehavior(HitTestMode.Default)
   }
 
   @Builder
