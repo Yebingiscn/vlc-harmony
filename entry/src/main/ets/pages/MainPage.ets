@@ -142,6 +142,8 @@ export struct MainPage {
         .bindSheet(this.showFavoriteServer, this.favoriteServerSheet(), {
           height: SheetSize.FIT_CONTENT,
           dragBar: true,
+          backgroundColor: '#FFFFFF',
+          showClose: false,
           onDisappear: () => this.showFavoriteServer = false,
         })
 
@@ -180,6 +182,5 @@ export struct MainPage {
       }).width('100%')
     }
     .width('100%')
-    .backgroundColor($r('app.color.background_default'))
   }
 }

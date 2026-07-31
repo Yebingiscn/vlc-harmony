@@ -120,6 +120,7 @@ export struct MainBrowserPage {
     .bindSheet(this.showServerSheet, this.serverSheet(), {
       height: SheetSize.FIT_CONTENT,
       dragBar: true,
+      backgroundColor: '#FFFFFF',
       onDisappear: () => {
         this.showServerSheet = false;
       },
@@ -137,6 +138,5 @@ export struct MainBrowserPage {
       }).width('100%')
     }
     .width('100%')
-    .backgroundColor($r('app.color.background_default'))
   }
 }
