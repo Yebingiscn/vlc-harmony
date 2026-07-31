@@ -9,7 +9,7 @@ import { promptAction } from '@kit.ArkUI';
 /**
  * AudioPlayerPage —— AudioPlayer(底部播放面板,封面态为主)。
  * 头部媒体标题 + 倍速/睡眠 chip + AB 重复标记 + 封面 + 时间轴 + 控制按钮。
- * 绑定 PlaybackService(AVPlayer)事件驱动。
+ * 绑定 PlaybackService(libVLC)事件驱动。
  */
 @ObservedV2
 class AudioPlayerViewModel implements PlaybackListener {

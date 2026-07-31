@@ -80,13 +80,14 @@ export struct VideoGridPage {
     this.refreshing = false;
   }
 
-  playVideo(item: MediaWrapper): void {
+  async playVideo(item: MediaWrapper): Promise<void> {
     hilog.info(0x0001, 'VLC', '[VLC] playVideo clicked: uri=%{public}s title=%{public}s', item.uri, item.title);
     const items = this.vm.items;
-    PlaybackService.getInstance().playList(items, items.indexOf(item), true);
+    // 仅准备队列,等 VideoPlayer XComponent Surface 就绪后再 bindAndPlay(避免无窗 play + 双引擎)
+    await PlaybackService.getInstance().prepareList(items, items.indexOf(item), true);
     const param: VideoParam = { uri: item.uri, title: item.title };
     NavController.push('VideoPlayer', param);
-    hilog.info(0x0001, 'VLC', '[VLC] pushed VideoPlayer route');
+    hilog.info(0x0001, 'VLC', '[VLC] prepareList+push VideoPlayer (defer play until surface)');
   }
 
   /** 长按/更多 → 打开 ContextSheet。 */

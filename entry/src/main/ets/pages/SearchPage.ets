@@ -106,13 +106,15 @@ export struct SearchPage {
                   item: item,
                   onItemClick: () => {
                     if (item instanceof MediaWrapper && (item as MediaWrapper).isVideo()) {
-                      PlaybackService.getInstance().playList([item as MediaWrapper], 0, true);
-                      const vparam: VideoParam = { uri: (item as MediaWrapper).uri, title: item.title };
-                      NavController.push('VideoPlayer', vparam);
+                      const video = item as MediaWrapper;
+                      void PlaybackService.getInstance().prepareList([video], 0, true).then(() => {
+                        const vparam: VideoParam = { uri: video.uri, title: video.title };
+                        NavController.push('VideoPlayer', vparam);
+                      });
                     } else {
                       const track = item as Track;
                       const mw = new MediaWrapper(track.id, track.title, track.uri, 1);
-                      PlaybackService.getInstance().playList([mw], 0, true);
+                      void PlaybackService.getInstance().playList([mw], 0, true);
                       NavController.push('AudioPlayer');
                     }
                   },

@@ -1,15 +1,17 @@
-import { media } from '@kit.MediaKit';
-import { fileIo as fs } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { NavController } from '../common/data/NavController';
+import { PlaybackService, PlaybackListener } from '../common/data/PlaybackService';
 import { Settings } from '../common/data/Settings';
 import { PlayState, formatDuration } from '../common/models/MediaModels';
-import { AppColors } from '../common/constants/AppConstants';
 import { JumpToTimeDialog } from './JumpToTimeDialog';
 import { SleepTimerDialog } from './SleepTimerDialog';
 import { SelectChapterDialog } from './SelectChapterDialog';
 import { VideoTracksDialog } from './VideoTracksDialog';
 import { RenderersDialog } from './RenderersDialog';
+
+/** 与 Native / XComponent id 一致;libraryname 对齐 nm_modname=libvlcnapi。 */
+export const VLC_VIDEO_XCOMPONENT_ID: string = 'vlc_video_surface';
+export const VLC_NAPI_LIBRARY: string = 'libvlcnapi';
 
 export interface VideoParam {
   uri: string;
@@ -17,132 +19,173 @@ export interface VideoParam {
 }
 
 /**
- * VideoPlayerPage —— VideoPlayerActivity(全屏视频播放器)。
- * 视频画面铺底(AVPlayer + XComponent surface)+ 顶/底 HUD + seek 手势 + 倍速。
- * 能力替换约定:libVLC → @kit.MediaKit AVPlayer(videoSurfaceId 绑 XComponent)。
- * 状态机事件驱动(对齐 harmonyos-avplayer 手册)。
+ * 在容器内按视频原始宽高比做 contain 适配(不拉伸)。
+ * 返回显示宽高(vp)。
+ */
+export function fitContain(
+  containerW: number,
+  containerH: number,
+  videoW: number,
+  videoH: number
+): [number, number] {
+  if (containerW <= 0 || containerH <= 0) {
+    return [containerW, containerH];
+  }
+  if (videoW <= 0 || videoH <= 0) {
+    return [containerW, containerH];
+  }
+  const videoAspect = videoW / videoH;
+  const viewAspect = containerW / containerH;
+  if (videoAspect > viewAspect) {
+    // 视频更宽 → 以宽为基准,上下留黑边
+    return [containerW, containerW / videoAspect];
+  }
+  // 视频更高 → 以高为基准,左右留黑边
+  return [containerH * videoAspect, containerH];
+}
+
+/**
+ * VideoPlayerPage —— 全屏视频播放器。
+ * XComponent 按原始视频比例 contain 居中,背景黑边 letterbox/pillarbox。
  */
 @ObservedV2
-class VideoPlayerViewModel {
+class VideoPlayerViewModel implements PlaybackListener {
   @Trace state: PlayState = PlayState.IDLE;
   @Trace duration: number = 0;
   @Trace position: number = 0;
   @Trace hudVisible: boolean = true;
   @Trace speed: number = 1.0;
   @Trace title: string = '';
+  /** 视频原始像素 */
+  @Trace videoWidth: number = 0;
+  @Trace videoHeight: number = 0;
+  /** 容器(全屏 Stack)尺寸 */
+  @Trace containerWidth: number = 0;
+  @Trace containerHeight: number = 0;
+  /** contain 后的 XComponent 显示尺寸 */
+  @Trace surfaceWidth: number = 0;
+  @Trace surfaceHeight: number = 0;
   uri: string = '';
-  player: media.AVPlayer | null = null;
-  surfaceId: string = '';
+  private listening: boolean = false;
 
-  async setup(uri: string, title: string, surfaceId: string): Promise<void> {
-    hilog.info(0x0001, 'VLC', '[VLC] VideoPlayer setup: uri=%{public}s surfaceId=%{public}s', uri, surfaceId);
+  async setup(uri: string, title: string, xcomponentId: string): Promise<void> {
+    hilog.info(0x0001, 'VLC',
+      '[VLC] VideoPlayer.setup uri=%{public}s title=%{public}s xc=%{public}s',
+      uri, title, xcomponentId);
     this.uri = uri;
     this.title = title;
-    this.surfaceId = surfaceId;
-    if (!this.player) {
-      this.player = await media.createAVPlayer();
-      this.player.on('stateChange', (s: string) => this.onState(s));
-      this.player.on('timeUpdate', (t: number) => {
-        this.position = t;
-      });
-      this.player.on('durationUpdate', (d: number) => {
-        this.duration = d;
-      });
+    const svc = PlaybackService.getInstance();
+    if (!this.listening) {
+      svc.addListener(this);
+      this.listening = true;
     }
-    this.player.surfaceId = surfaceId;
+    this.state = svc.getState();
+    this.duration = svc.getDuration();
+    this.position = svc.getPosition();
+    // 若队列项已有元数据尺寸,先排版
+    const cur = svc.getCurrent();
+    if (cur && cur.width > 0 && cur.height > 0) {
+      this.onVideoSize(cur.width, cur.height);
+    } else if (svc.getVideoWidth() > 0) {
+      this.onVideoSize(svc.getVideoWidth(), svc.getVideoHeight());
+    }
     const savedSpeed = await Settings.getFloat(Settings.VIDEO_SPEED, 1.0);
     this.speed = savedSpeed;
-    // photoAccessHelper URI(file://media/Photo/...)用 fdSrc 打开(AVPlayer 的 .url 可能解析不了)。
-    // fdSrc 设定后 AVPlayer 异步进 initialized;prepare 在 onState('initialized') 里调(状态机铁律)。
-    try {
-      const f = fs.openSync(uri, fs.OpenMode.READ_ONLY);
-      this.player.fdSrc = { fd: f.fd, offset: 0, length: -1 };
-      hilog.info(0x0001, 'VLC', '[VLC] fdSrc set (fd=%{public}d), waiting for initialized...', f.fd);
-    } catch (e) {
-      // 回退:直接用 url
-      this.player.url = uri;
-      hilog.info(0x0001, 'VLC', '[VLC] openSync fail, fallback to url: %{public}s', (e as Error).message ?? String(e));
+    svc.setSpeed(savedSpeed);
+
+    const bound = await svc.bindAndPlay(xcomponentId, uri, title);
+    hilog.info(0x0001, 'VLC', '[VLC] VideoPlayer.bindAndPlay done bound=%{public}s state=%{public}s',
+      String(bound), String(this.state));
+  }
+
+  onStateChange(state: PlayState): void {
+    hilog.info(0x0001, 'VLC', '[VLC] VideoPlayer state=%{public}s', String(state));
+    this.state = state;
+    if (state === PlayState.PLAYING) {
+      PlaybackService.getInstance().refreshVideoSize();
     }
   }
 
-  private onState(s: string): void {
-    hilog.info(0x0001, 'VLC', '[VLC] VideoPlayer state: %{public}s', s);
-    switch (s) {
-      case 'initialized':
-        // AVPlayer 进入 initialized → 此时才能调 prepare()(状态机铁律)。
-        this.player!.prepare();
-        break;
-      case 'prepared':
-        // prepare 完成 → 开始播放。
-        this.state = PlayState.PREPARED;
-        this.player!.play();
-        break;
-      case 'playing':
-        this.state = PlayState.PLAYING;
-        this.player!.setSpeed(VideoPlayerViewModel.toPlaybackSpeed(this.speed));
-        break;
-      case 'paused':
-        this.state = PlayState.PAUSED;
-        break;
-      case 'error':
-        this.state = PlayState.ERROR;
-        break;
-      case 'completed':
-        this.state = PlayState.STOPPED;
-        break;
-      default:
-        break;
+  onTimeUpdate(current: number, duration: number): void {
+    this.position = current;
+    this.duration = duration;
+  }
+
+  onQueueChanged(): void {
+    const cur = PlaybackService.getInstance().getCurrent();
+    if (cur) {
+      this.uri = cur.uri;
+      this.title = cur.title;
+      if (cur.width > 0 && cur.height > 0) {
+        this.onVideoSize(cur.width, cur.height);
+      }
     }
+  }
+
+  onVideoSize(width: number, height: number): void {
+    if (width <= 0 || height <= 0) {
+      return;
+    }
+    this.videoWidth = width;
+    this.videoHeight = height;
+    this.recomputeSurface();
+  }
+
+  onContainerSize(width: number, height: number): void {
+    if (width <= 0 || height <= 0) {
+      return;
+    }
+    this.containerWidth = width;
+    this.containerHeight = height;
+    this.recomputeSurface();
+  }
+
+  private recomputeSurface(): void {
+    const result = fitContain(
+      this.containerWidth,
+      this.containerHeight,
+      this.videoWidth,
+      this.videoHeight
+    );
+    this.surfaceWidth = result[0];
+    this.surfaceHeight = result[1];
+    hilog.info(0x0001, 'VLC',
+      '[VLC] contain container=%{public}sx%{public}s video=%{public}sx%{public}s surface=%{public}sx%{public}s',
+      String(this.containerWidth), String(this.containerHeight),
+      String(this.videoWidth), String(this.videoHeight),
+      String(Math.round(result[0])), String(Math.round(result[1])));
   }
 
   toggle(): void {
-    if (!this.player) {
-      return;
-    }
-    if (this.state === PlayState.PLAYING) {
-      this.player.pause();
-    } else {
-      this.player.play();
-    }
+    PlaybackService.getInstance().togglePlay();
     this.hudVisible = true;
   }
 
   seekTo(ms: number): void {
-    if (this.player) {
-      this.player.seek(ms);
-    }
+    PlaybackService.getInstance().seek(ms);
   }
 
   setSpeed(rate: number): void {
     this.speed = rate;
-    if (this.player) {
-      this.player.setSpeed(VideoPlayerViewModel.toPlaybackSpeed(rate));
-    }
+    PlaybackService.getInstance().setSpeed(rate);
     Settings.put(Settings.VIDEO_SPEED, rate);
   }
 
-  /** 数值倍速 → AVPlayer PlaybackSpeed 枚举(最近档位)。 */
-  private static toPlaybackSpeed(rate: number): media.PlaybackSpeed {
-    if (rate <= 0.875) {
-      return media.PlaybackSpeed.SPEED_FORWARD_0_75_X;
-    }
-    if (rate <= 1.125) {
-      return media.PlaybackSpeed.SPEED_FORWARD_1_00_X;
-    }
-    if (rate <= 1.5) {
-      return media.PlaybackSpeed.SPEED_FORWARD_1_25_X;
-    }
-    if (rate <= 2.0) {
-      return media.PlaybackSpeed.SPEED_FORWARD_1_75_X;
-    }
-    return media.PlaybackSpeed.SPEED_FORWARD_2_00_X;
+  next(): void {
+    PlaybackService.getInstance().next(false);
+  }
+
+  prev(): void {
+    PlaybackService.getInstance().prev();
   }
 
   release(): void {
-    if (this.player) {
-      this.player.release();
-      this.player = null;
+    if (this.listening) {
+      PlaybackService.getInstance().removeListener(this);
+      this.listening = false;
     }
+    PlaybackService.getInstance().stop();
+    hilog.info(0x0001, 'VLC', '[VLC] VideoPlayer.release/stop');
   }
 }
 
@@ -150,62 +193,52 @@ class VideoPlayerViewModel {
 export struct VideoPlayerPage {
   @Local vm: VideoPlayerViewModel = new VideoPlayerViewModel();
   @Param param: VideoParam = { uri: '', title: '' };
-  private xComponentController: XComponentController = new XComponentController();
   private hudTimer: number = -1;
+  private surfaceStarted: boolean = false;
 
-  /** 更多选项/二级弹窗的 sheet 状态。sheetKind 空串=主选项列表;否则=对应二级弹窗。 */
   @Local sheetOpen: boolean = false;
-  @Local sheetKind: string = ''; // '' | 'jump' | 'sleep' | 'chapter' | 'tracks' | 'renderer'
+  @Local sheetKind: string = '';
 
-  /** 打开主选项列表。 */
   openOptions(): void {
     this.sheetKind = '';
     this.sheetOpen = true;
   }
 
-  /** 进入指定二级弹窗(切换 sheetKind,保持 sheet 展开)。 */
   openSub(kind: string): void {
     this.sheetKind = kind;
     this.sheetOpen = true;
   }
 
-  /** Jump to Time 确认 → AVPlayer seek(timeMs) 可落地;弹窗关闭。 */
   onJumpConfirm(timeMs: number): void {
     this.vm.seekTo(timeMs);
     this.sheetOpen = false;
     this.sheetKind = '';
   }
 
-  /** Sleep timer 确认:定时动作体依赖 libVLC 媒体引擎契约,保留 TODO。 */
   onSleepConfirm(): void {
-    // TODO(libVLC 契约): 写入睡眠定时器(waitBeforeSleep / resetOnInteraction 选项)+ 定时暂停;AVPlayer 无原生定时器接口。
     this.sheetOpen = false;
     this.sheetKind = '';
   }
 
-  /** 章节选择:libVLC getChapters 契约,保留 TODO。 */
   onChapterSelect(index: number): void {
-    // TODO(libVLC 契约): playbackService.chapterIdx = index;当前 AVPlayer 无章节概念。
+    hilog.info(0x0001, 'VLC', '[VLC] chapter select %{public}d (TODO libVLC chapters)', index);
     this.sheetOpen = false;
     this.sheetKind = '';
   }
 
-  /** 音轨/字幕/视频轨切换:libVLC 轨道契约,保留 TODO。 */
   onTrackSelect(id: number, type: string): void {
-    // TODO(libVLC 契约): 按 type(audio/spu/video) 切换 PlaybackService 轨道;AVPlayer 无多轨切换接口。
+    hilog.info(0x0001, 'VLC', '[VLC] track select id=%{public}d type=%{public}s (TODO)', id, type);
     this.sheetOpen = false;
     this.sheetKind = '';
   }
 
-  /** 投屏渲染器:libVLC renderer 契约,保留 TODO。 */
   onRendererConnect(id: number): void {
-    // TODO(libVLC 契约): PlaybackService.renderer.value = 连接的 renderer item;需 RendererDelegate。
+    hilog.info(0x0001, 'VLC', '[VLC] renderer connect %{public}d (TODO)', id);
     this.sheetOpen = false;
     this.sheetKind = '';
   }
 
   onRendererDisconnect(): void {
-    // TODO(libVLC 契约): PlaybackService.renderer.value = null(断开)。
     this.sheetOpen = false;
     this.sheetKind = '';
   }
@@ -230,20 +263,36 @@ export struct VideoPlayerPage {
     }, 4000);
   }
 
+  private onSurfaceLoad(): void {
+    if (this.surfaceStarted) {
+      hilog.warn(0x0001, 'VLC', '[VLC] XComponent onLoad duplicate ignored');
+      return;
+    }
+    this.surfaceStarted = true;
+    hilog.info(0x0001, 'VLC',
+      '[VLC] XComponent.onLoad id=%{public}s library=%{public}s',
+      VLC_VIDEO_XCOMPONENT_ID, VLC_NAPI_LIBRARY);
+    this.vm.setup(this.param.uri, this.param.title, VLC_VIDEO_XCOMPONENT_ID);
+  }
+
   build() {
     NavDestination() {
-      Stack() {
-        // 视频画面铺底
-        XComponent({ id: 'vlc_video_surface', type: XComponentType.SURFACE, controller: this.xComponentController })
-          .onLoad(() => {
-            const sid = this.xComponentController.getXComponentSurfaceId();
-            this.vm.setup(this.param.uri, this.param.title, sid);
+      Stack({ alignContent: Alignment.Center }) {
+        // contain 后的 Surface 居中;未拿到尺寸前先铺满,拿到后按比例收缩
+        XComponent({
+          id: VLC_VIDEO_XCOMPONENT_ID,
+          type: XComponentType.SURFACE,
+          libraryname: VLC_NAPI_LIBRARY,
+        })
+          .onLoad(() => this.onSurfaceLoad())
+          .onDestroy(() => {
+            hilog.info(0x0001, 'VLC', '[VLC] XComponent.onDestroy');
+            this.surfaceStarted = false;
           })
-          .width('100%')
-          .height('100%')
+          .width(this.vm.surfaceWidth > 0 ? this.vm.surfaceWidth : '100%')
+          .height(this.vm.surfaceHeight > 0 ? this.vm.surfaceHeight : '100%')
           .onClick(() => this.resetHudTimer())
 
-        // 顶部信息 HUD(线性渐变 #cb000000→transparent)
         if (this.vm.hudVisible) {
           Column() {
             Row() {
@@ -260,9 +309,7 @@ export struct VideoPlayerPage {
           .linearGradient({ angle: 90, colors: [['#cb000000', 0.0], ['#00000000', 1.0]] })
           .align(Alignment.Top)
 
-          // 底部控制 HUD
           Column() {
-            // seek bar
             Row() {
               Text(formatDuration(this.vm.position)).fontSize(12).fontColor('#FFFFFF').width(56)
               Slider({
@@ -283,18 +330,19 @@ export struct VideoPlayerPage {
             }
             .width('100%').padding({ left: 8, right: 8 }).alignItems(VerticalAlign.Center)
 
-            // 控制按钮行
             Row() {
               Image($r('app.media.ic_player_rewind_10')).width(36).height(36).fillColor('#FFFFFF')
                 .onClick(() => this.vm.seekTo(Math.max(0, this.vm.position - 10000)))
               Blank()
               Image($r('app.media.ic_player_previous')).width(40).height(40).fillColor('#FFFFFF')
+                .onClick(() => this.vm.prev())
               Blank()
               Image(this.vm.state === PlayState.PLAYING ? $r('app.media.ic_pause_player') : $r('app.media.ic_play_player'))
                 .width(56).height(56).fillColor('#FFFFFF')
                 .onClick(() => this.vm.toggle())
               Blank()
               Image($r('app.media.ic_player_next')).width(40).height(40).fillColor('#FFFFFF')
+                .onClick(() => this.vm.next())
               Blank()
               Image($r('app.media.ic_player_forward_10')).width(36).height(36).fillColor('#FFFFFF')
                 .onClick(() => this.vm.seekTo(Math.min(this.vm.duration, this.vm.position + 10000)))
@@ -309,6 +357,11 @@ export struct VideoPlayerPage {
       .width('100%')
       .height('100%')
       .backgroundColor('#000000')
+      .onAreaChange((_old: Area, area: Area) => {
+        const w = Number(area.width);
+        const h = Number(area.height);
+        this.vm.onContainerSize(w, h);
+      })
     }
     .hideTitleBar(true)
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
@@ -326,7 +379,6 @@ export struct VideoPlayerPage {
     })
   }
 
-  /** 更多选项 / 二级弹窗统一 sheet:sheetKind 决定渲染哪一层。 */
   @Builder
   playerSheet() {
     Column() {
@@ -347,7 +399,6 @@ export struct VideoPlayerPage {
             this.sheetKind = '';
           },
           onDeleteCurrent: () => {
-            // TODO(libVLC 契约): 清除已设睡眠定时器。
           },
         }).width('100%')
       } else if (this.sheetKind === 'chapter') {
@@ -381,7 +432,6 @@ export struct VideoPlayerPage {
     .backgroundColor($r('app.color.background_default'))
   }
 
-  /** 主选项列表(Jump to time / Sleep timer / Chapters / Audio&Subtitles / Displays)。 */
   @Builder
   optionsList() {
     Column() {
@@ -406,7 +456,6 @@ export struct VideoPlayerPage {
     .alignItems(HorizontalAlign.Start)
   }
 
-  /** 选项单行(标题 + 右箭头,高 52vp,点击回调)。 */
   @Builder
   optionRow(title: ResourceStr, onTap: () => void) {
     Row() {
