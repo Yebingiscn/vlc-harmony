@@ -12,7 +12,10 @@ import { NavController } from '../common/data/NavController';
 import { PermissionCoordinator } from '../common/data/PermissionCoordinator';
 import { AppColors } from '../common/constants/AppConstants';
 import { DisplaySettingsDialog } from './DisplaySettingsDialog';
+import { AudioDisplaySettingsDialog } from './AudioDisplaySettingsDialog';
 import { NetworkServerDialog } from './NetworkServerDialog';
+import { PlaybackHistory } from '../common/data/PlaybackHistory';
+import { VideoParam, VideoPlayItem } from './VideoPlayerPage';
 import { promptAction } from '@kit.ArkUI';
 
 /**
@@ -28,8 +31,12 @@ export struct MainPage {
   @Local showDisplaySettings: boolean = false;
   @Local showFavoriteServer: boolean = false;
   @Local displaySettingsVersion: number = 0;
+  @Local incognitoMode: boolean = false;
+  @Local showAudioDisplaySettings: boolean = false;
+  @Local audioSettingsVersion: number = 0;
 
   async aboutToAppear(): Promise<void> {
+    this.incognitoMode = Settings.incognitoMode;
     this.scanning = MediaLibrary.isScanning() || !MediaLibrary.hasScanned();
     const autoRescan = await Settings.getBoolean(Settings.KEY_MEDIALIBRARY_AUTO_RESCAN, true);
     if (autoRescan) {
@@ -64,9 +71,30 @@ export struct MainPage {
     this.showDisplaySettings = true;
   }
 
+  openAudioDisplaySettings(): void {
+    this.showAudioDisplaySettings = true;
+  }
+
+  async resumePlayback(): Promise<void> {
+    const entries = await PlaybackHistory.load();
+    if (entries.length === 0) {
+      promptAction.showToast({ message: '暂无播放历史' });
+      return;
+    }
+    const latest = entries[0];
+    const param: VideoParam = {
+      uri: latest.uri,
+      title: latest.title,
+      list: [{ uri: latest.uri, title: latest.title } as VideoPlayItem],
+      index: 0,
+    };
+    NavController.push('VideoPlayer', param);
+  }
+
   toggleIncognito(): void {
     const next = !Settings.incognitoMode;
     Settings.put(Settings.KEY_INCOGNITO, next);
+    this.incognitoMode = next;
     promptAction.showToast({
       message: next ? $r('app.string.menu_incognito_on') : $r('app.string.menu_incognito_off'),
     });
@@ -98,15 +126,23 @@ export struct MainPage {
       .width('100%')
   }
 
+  /** 音频显示设置 BottomSheet。 */
+  @Builder
+  audioDisplaySettingsSheet() {
+    AudioDisplaySettingsDialog({ onClose: () => this.showAudioDisplaySettings = false })
+      .width('100%')
+  }
+
   build() {
     NavDestination() {
       Column() {
         VlcToolbar({
           title: $r('app.string.app_name'),
           showBack: false,
-          showSearch: true,
+          showSearch: this.currentTab === 'video' || this.currentTab === 'audio' || this.currentTab === 'playlists',
           showMore: true,
           currentTab: this.currentTab,
+          incognitoMode: this.incognitoMode,
           onSearch: () => NavController.push('Search'),
           onMoreSettings: () => this.openDisplaySettings(),
           onMoreIncognito: () => this.toggleIncognito(),
@@ -114,6 +150,8 @@ export struct MainPage {
           onMoreBrowseNetwork: () => NavController.pushSecondary('NETWORK'),
           onMoreFavoriteServer: () => this.openFavoriteServer(),
           onMoreRefresh: () => this.refreshMediaLibrary(),
+          onResumePlayback: () => this.resumePlayback(),
+          onAudioDisplaySettings: () => this.openAudioDisplaySettings(),
         })
 
         if (this.scanning) {
@@ -130,7 +168,8 @@ export struct MainPage {
         Stack({ alignContent: Alignment.TopStart }) {
           VideoGridPage({ settingsVersion: this.displaySettingsVersion })
             .visibility(this.currentTab === 'video' ? Visibility.Visible : Visibility.None)
-          AudioBrowserPage().visibility(this.currentTab === 'audio' ? Visibility.Visible : Visibility.None)
+          AudioBrowserPage({ settingsVersion: this.audioSettingsVersion })
+            .visibility(this.currentTab === 'audio' ? Visibility.Visible : Visibility.None)
           MainBrowserPage().visibility(this.currentTab === 'browse' ? Visibility.Visible : Visibility.None)
           PlaylistsPage().visibility(this.currentTab === 'playlists' ? Visibility.Visible : Visibility.None)
           MorePage().visibility(this.currentTab === 'more' ? Visibility.Visible : Visibility.None)
@@ -169,7 +208,17 @@ export struct MainPage {
       })
     }
     .hideTitleBar(true)
-    .expandSafeArea([SafeAreaType.SYSTEM, SafeAreaType.KEYBOARD], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .bindSheet(this.showAudioDisplaySettings, this.audioDisplaySettingsSheet(), {
+      detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+      dragBar: false,
+      backgroundColor: '#FFFFFF',
+      showClose: false,
+      scrollSizeMode: ScrollSizeMode.CONTINUOUS,
+      onDisappear: () => {
+        this.showAudioDisplaySettings = false;
+        this.audioSettingsVersion++;
+      },
+    })
   }
 
   /** 收藏服务器 BottomSheet(复用 NetworkServerDialog)。 */

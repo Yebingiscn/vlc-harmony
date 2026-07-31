@@ -49,13 +49,26 @@ class AudioBrowserVM {
   @Trace loading: boolean = true;
   @Trace tabIndex: number = 0;
   @Trace emptyState: EmptyLoadingState = EmptyLoadingState.LOADING;
+  @Trace displayAsList: boolean = false;
+  private sortDesc: boolean = false;
+  private showAllArtists: boolean = false;
 
   async load(): Promise<void> {
     this.loading = true;
     this.tabIndex = await Settings.getInt(Settings.KEY_AUDIO_CURRENT_TAB, 0);
+    this.displayAsList = await Settings.getBoolean(Settings.KEY_DISPLAY_AS_LIST, false);
+    this.sortDesc = await Settings.getBoolean(Settings.KEY_AUDIO_SORT_DESC, false);
+    this.showAllArtists = await Settings.getBoolean(Settings.KEY_ARTISTS_SHOW_ALL, false);
     await MediaLibrary.scan();
     this.syncData();
     this.loading = false;
+  }
+
+  async reloadSettings(): Promise<void> {
+    this.displayAsList = await Settings.getBoolean(Settings.KEY_DISPLAY_AS_LIST, false);
+    this.sortDesc = await Settings.getBoolean(Settings.KEY_AUDIO_SORT_DESC, false);
+    this.showAllArtists = await Settings.getBoolean(Settings.KEY_ARTISTS_SHOW_ALL, false);
+    this.syncData();
   }
 
   async reload(): Promise<void> {
@@ -74,7 +87,10 @@ class AudioBrowserVM {
       hilog.info(0x0001, TAG, '  track[%{public}d]: id=%{public}d title="%{public}s" artist="%{public}s" album="%{public}s" art="%{public}s"',
         i, t.id, t.title, t.artistName, t.albumName, t.artworkPath);
     }
-    this.tracks = all.slice().sort((a, b) => a.title.localeCompare(b.title));
+    this.tracks = all.slice().sort((a, b) => {
+      const cmp = a.title.localeCompare(b.title);
+      return this.sortDesc ? -cmp : cmp;
+    });
 
     // 艺术家分组:每个歌手 → 专辑列表。
     const artistMap = new Map<string, Map<string, Track[]>>();
@@ -149,9 +165,13 @@ export struct AudioBrowserPage {
   @Local refreshing: boolean = false;
   @Local sheetAlbum: AlbumCard | null = null;
   @Local showSheet: boolean = false;
+  @Param settingsVersion: number = 0;
   private controller: TabsController = new TabsController();
 
   aboutToAppear(): void { this.vm.load(); }
+
+  @Monitor('settingsVersion')
+  onSettingsVersionChange(): void { this.vm.reloadSettings(); }
 
   async doRefresh(): Promise<void> { this.refreshing = true; await this.vm.reload(); this.refreshing = false; }
 

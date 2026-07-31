@@ -88,10 +88,6 @@ export struct MediaListCard {
 
       if (this.selected) {
         Image($r('app.media.ic_video_grid_check')).width(24).height(24).fillColor('#FF8800').margin({ right: 8 })
-      } else if (this.isPresent && !this.inSelection) {
-        Image($r('app.media.ic_more')).width(24).height(24).objectFit(ImageFit.Contain).fillColor('#9E9E9E')
-          .padding(8)
-          .onClick(() => this.onItemMoreClick())
       }
     }
     .width('100%')

@@ -111,14 +111,15 @@ export struct PlaybackSpeedDialog {
       Text(label)
         .fontSize(12).fontWeight(FontWeight.Medium)
         .fontColor(selected ? '#FFFFFF' : this.cDim)
-        .layoutWeight(1)
         .textAlign(TextAlign.Center)
     }
+    .layoutWeight(1)
+    .width('100%')
     .height(32)
+    .justifyContent(FlexAlign.Center)
     .borderRadius(4)
     .border({ width: selected ? 0 : 1, color: this.cBorder })
-    .backgroundColor(selected ? '#40FF8800' : Color.Transparent)
-    .margin({ left: 4, right: 4 })
+    .backgroundColor(selected ? '#FF8800' : '#2A2A2A')
     .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.97 })
     .onClick(() => {
       if (!selected) {
