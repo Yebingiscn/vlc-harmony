@@ -32,6 +32,8 @@ export class BundledMedia {
   /** 内置媒体清单(随 rawfile 同步维护)。 */
   static readonly ENTRIES: BundledMediaEntry[] = [
     new BundledMediaEntry('test_dvd.iso', 'test_dvd.iso', 'DVD ISO'),
+    new BundledMediaEntry('test_bd.iso', 'test_bd.iso', 'Blu-ray ISO'),
+    new BundledMediaEntry('test_vcd.iso', 'test_vcd.iso', 'VCD ISO'),
   ];
 
   static listEntries(): BundledMediaEntry[] {
