@@ -1,5 +1,8 @@
+import { promptAction, window } from '@kit.ArkUI';
+import { audio, AVVolumePanel } from '@kit.AudioKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { NavController } from '../common/data/NavController';
+import { AppContext } from '../common/data/AppContext';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
 import { PlaybackService, PlaybackListener } from '../common/data/PlaybackService';
 import { Settings } from '../common/data/Settings';
@@ -15,7 +18,6 @@ import { VideoControlsSettingsDialog, ControlsState } from './VideoControlsSetti
 import { EqualizerDialog } from './EqualizerDialog';
 import { VideoInfoDialog } from './VideoInfoDialog';
 import { BookmarkDialog } from './BookmarkDialog';
-import { promptAction } from '@kit.ArkUI';
 import {
   buildPlayerAdvancedOptions,
   PlayerAdvancedOptionId,
@@ -26,6 +28,7 @@ import {
   VideoPlayerBottomAction,
   VideoPlayerBottomActionId,
 } from '../common/components/VideoPlayerControls';
+import { VideoPanMode, VideoTouchDelegate } from './videoplayer/VideoTouchDelegate';
 
 /** 与 Native / XComponent id 一致;libraryname 对齐 nm_modname=libvlcnapi。 */
 export const VLC_VIDEO_XCOMPONENT_ID: string = 'vlc_video_surface';
@@ -358,6 +361,25 @@ export struct VideoPlayerPage {
   @Param param: VideoParam = { uri: '', title: '' };
   private hudTimer: number = -1;
   private surfaceStarted: boolean = false;
+  private touch: VideoTouchDelegate = new VideoTouchDelegate();
+  private touchBound: boolean = false;
+  private mainWindow: window.Window | null = null;
+  private brightnessHudTimer: number = -1;
+  private volumeHudTimer: number = -1;
+  private seekHudTimer: number = -1;
+  private saveBrightness: boolean = false;
+  private volumeAcc: number = 0;
+  private pendingSeekTarget: number = -1;
+
+  @Local volumeLevel: number = 0;
+  @Local volumeMin: number = 0;
+  @Local volumeMax: number = 15;
+  /** 窗口亮度 0..1（勿命名 brightness：与组件属性冲突）。 */
+  @Local brightnessLevel: number = 0.5;
+  @Local brightnessHudVisible: boolean = false;
+  @Local volumeHudVisible: boolean = false;
+  @Local seekHudVisible: boolean = false;
+  @Local seekHudText: string = '';
 
   /** 拖动 seek 条期间冻结 timeUpdate 回写,否则滑块被不断拉回。 */
   @Local seeking: boolean = false;
@@ -503,12 +525,17 @@ export struct VideoPlayerPage {
     Settings.put(Settings.ENABLE_VOLUME_GESTURE, s.volGesture);
     Settings.put(Settings.ENABLE_BRIGHTNESS_GESTURE, s.brightGesture);
     Settings.put(Settings.ENABLE_SEEK_BUTTONS, s.swipeSeek);
+    Settings.put(Settings.ENABLE_SWIPE_SEEK, s.swipeSeek);
     Settings.put(Settings.ENABLE_DOUBLE_TAP_SEEK, s.doubleTapSeek);
+    void this.touch.refreshPrefs();
     promptAction.showToast({ message: '控制设置已保存' });
     this.closeSheet();
   }
 
   aboutToAppear(): void {
+    this.bindTouch();
+    void this.initVolumeAndBrightness();
+    void this.touch.refreshPrefs();
     this.resetHudTimer();
   }
 
@@ -517,8 +544,206 @@ export struct VideoPlayerPage {
       clearTimeout(this.hudTimer);
       this.hudTimer = -1;
     }
+    if (this.brightnessHudTimer !== -1) {
+      clearTimeout(this.brightnessHudTimer);
+      this.brightnessHudTimer = -1;
+    }
+    if (this.volumeHudTimer !== -1) {
+      clearTimeout(this.volumeHudTimer);
+      this.volumeHudTimer = -1;
+    }
+    if (this.seekHudTimer !== -1) {
+      clearTimeout(this.seekHudTimer);
+      this.seekHudTimer = -1;
+    }
+    void this.restoreSystemBrightnessIfNeeded();
+    this.touch.clearTouchAction();
     this.clearSleepTimer();
     this.vm.release();
+  }
+
+  private bindTouch(): void {
+    if (this.touchBound) {
+      return;
+    }
+    this.touchBound = true;
+    this.touch.bind({
+      doPlayPause: (): void => {
+        this.vm.toggle();
+        this.resetHudTimer();
+      },
+      onSingleTap: (): void => {
+        this.toggleHud();
+      },
+      seekDelta: (deltaMs: number): void => {
+        const next: number = this.vm.position + deltaMs;
+        const clamped: number = this.vm.duration > 0
+          ? Math.max(0, Math.min(this.vm.duration, next))
+          : Math.max(0, next);
+        this.vm.seekTo(clamped);
+        this.resetHudTimer();
+      },
+      getContainerWidth: (): number => {
+        return this.vm.containerWidth;
+      },
+      getContainerHeight: (): number => {
+        return this.vm.containerHeight;
+      },
+      getPosition: (): number => {
+        return this.vm.position;
+      },
+      getDuration: (): number => {
+        return this.vm.duration;
+      },
+      isHudVisible: (): boolean => {
+        return this.vm.hudVisible;
+      },
+      onPanBegan: (): void => {
+        if (this.hudTimer !== -1) {
+          clearTimeout(this.hudTimer);
+          this.hudTimer = -1;
+        }
+        this.vm.hudVisible = false;
+        this.volumeAcc = this.volumeLevel;
+      },
+      onVolumePan: (deltaNorm: number): void => {
+        const span: number = Math.max(1, this.volumeMax - this.volumeMin);
+        this.volumeAcc = Math.max(this.volumeMin, Math.min(this.volumeMax, this.volumeAcc + deltaNorm * span));
+        const next: number = Math.round(this.volumeAcc);
+        if (next !== this.volumeLevel) {
+          this.volumeLevel = next;
+          hilog.info(0x0001, 'VLC', '[VLC] volumeLevel -> %{public}d', next);
+        }
+        this.volumeHudVisible = true;
+        this.brightnessHudVisible = false;
+        this.seekHudVisible = false;
+        this.armVolumeHudTimer();
+      },
+      onBrightnessPan: (deltaNorm: number): void => {
+        this.brightnessLevel = Math.max(0, Math.min(1, this.brightnessLevel + deltaNorm));
+        this.brightnessHudVisible = true;
+        this.volumeHudVisible = false;
+        this.seekHudVisible = false;
+        void this.applyBrightness(this.brightnessLevel);
+        hilog.info(0x0001, 'VLC', '[VLC] brightnessLevel -> %{public}s',
+          this.brightnessLevel.toFixed(2));
+        this.armBrightnessHudTimer();
+      },
+      onSeekPan: (jumpMs: number, targetMs: number): void => {
+        this.pendingSeekTarget = targetMs;
+        const sign: string = jumpMs >= 0 ? '+' : '';
+        this.seekHudText = `${sign}${fmtTime(Math.abs(jumpMs))} (${fmtTime(targetMs)})`;
+        this.seekHudVisible = true;
+        this.volumeHudVisible = false;
+        this.brightnessHudVisible = false;
+        if (this.seekHudTimer !== -1) {
+          clearTimeout(this.seekHudTimer);
+          this.seekHudTimer = -1;
+        }
+      },
+      onPanEnded: (mode: VideoPanMode): void => {
+        if (mode === VideoPanMode.Brightness && this.saveBrightness) {
+          void Settings.put(Settings.BRIGHTNESS_VALUE, this.brightnessLevel);
+        }
+        if (mode === VideoPanMode.Brightness) {
+          this.armBrightnessHudTimer();
+        }
+        if (mode === VideoPanMode.Volume) {
+          this.volumeAcc = this.volumeLevel;
+          this.armVolumeHudTimer();
+        }
+        if (mode === VideoPanMode.Seek) {
+          if (this.pendingSeekTarget >= 0) {
+            this.vm.seekTo(this.pendingSeekTarget);
+            hilog.info(0x0001, 'VLC', '[VLC] swipe seek -> %{public}d', this.pendingSeekTarget);
+            this.pendingSeekTarget = -1;
+          }
+          this.armSeekHudTimer();
+        }
+      },
+    });
+  }
+
+  private async initVolumeAndBrightness(): Promise<void> {
+    try {
+      const volMgr = audio.getAudioManager().getVolumeManager();
+      const group = await volMgr.getVolumeGroupManager(audio.DEFAULT_VOLUME_GROUP_ID);
+      this.volumeMin = await group.getMinVolume(audio.AudioVolumeType.MEDIA);
+      this.volumeMax = await group.getMaxVolume(audio.AudioVolumeType.MEDIA);
+      this.volumeLevel = await group.getVolume(audio.AudioVolumeType.MEDIA);
+      this.volumeAcc = this.volumeLevel;
+    } catch (e) {
+      hilog.warn(0x0001, 'VLC', '[VLC] init volume failed %{public}s', JSON.stringify(e));
+    }
+    try {
+      this.mainWindow = await window.getLastWindow(AppContext.get());
+      this.saveBrightness = await Settings.getBoolean(Settings.SAVE_BRIGHTNESS, false);
+      if (this.saveBrightness) {
+        const saved: number = await Settings.getFloat(Settings.BRIGHTNESS_VALUE, 0.5);
+        this.brightnessLevel = Math.max(0, Math.min(1, saved));
+        await this.mainWindow.setWindowBrightness(this.brightnessLevel);
+      } else {
+        this.brightnessLevel = 0.5;
+      }
+      await this.mainWindow.setWindowKeepScreenOn(true);
+    } catch (e) {
+      hilog.warn(0x0001, 'VLC', '[VLC] init brightness failed %{public}s', JSON.stringify(e));
+    }
+  }
+
+  private async restoreSystemBrightnessIfNeeded(): Promise<void> {
+    if (this.mainWindow === null) {
+      return;
+    }
+    try {
+      await this.mainWindow.setWindowKeepScreenOn(false);
+      if (!this.saveBrightness) {
+        await this.mainWindow.setWindowBrightness(-1);
+      }
+    } catch (_e) {
+      // ignore
+    }
+  }
+
+  private async applyBrightness(value: number): Promise<void> {
+    try {
+      if (this.mainWindow === null) {
+        this.mainWindow = await window.getLastWindow(AppContext.get());
+      }
+      await this.mainWindow.setWindowBrightness(value);
+    } catch (e) {
+      hilog.warn(0x0001, 'VLC', '[VLC] setWindowBrightness failed %{public}s', JSON.stringify(e));
+    }
+  }
+
+  private armBrightnessHudTimer(): void {
+    if (this.brightnessHudTimer !== -1) {
+      clearTimeout(this.brightnessHudTimer);
+    }
+    this.brightnessHudTimer = setTimeout(() => {
+      this.brightnessHudTimer = -1;
+      this.brightnessHudVisible = false;
+    }, 1200);
+  }
+
+  private armVolumeHudTimer(): void {
+    if (this.volumeHudTimer !== -1) {
+      clearTimeout(this.volumeHudTimer);
+    }
+    this.volumeHudTimer = setTimeout(() => {
+      this.volumeHudTimer = -1;
+      this.volumeHudVisible = false;
+    }, 1200);
+  }
+
+  private armSeekHudTimer(): void {
+    if (this.seekHudTimer !== -1) {
+      clearTimeout(this.seekHudTimer);
+    }
+    this.seekHudTimer = setTimeout(() => {
+      this.seekHudTimer = -1;
+      this.seekHudVisible = false;
+    }, 1200);
   }
 
   /** 显示 HUD 并重置 4s 自动隐藏计时。任何一次交互都应调用。 */
@@ -590,7 +815,7 @@ export struct VideoPlayerPage {
 
   build() {
     NavDestination() {
-      // alignContent=Center: 视频 Surface 按比例居中;HUD 用整屏 Column 顶底铺开
+      // z 序：XComponent → 指示 HUD → 控制 HUD → 顶层 Transparent 手势层
       Stack({ alignContent: Alignment.Center }) {
         // 视频画面 —— contain 等比例;未拿到尺寸前先铺满
         XComponent({
@@ -613,19 +838,24 @@ export struct VideoPlayerPage {
           .height(this.vm.surfaceHeight > 0 ? this.vm.surfaceHeight : '100%')
           .hitTestBehavior(HitTestMode.None)
 
-        // Keep empty-area taps above the native video surface, below the HUD.
-        Column() {
-          Blank()
-            .width('100%')
-            .height('100%')
+        AVVolumePanel({ volumeLevel: this.volumeLevel })
+          .hitTestBehavior(HitTestMode.None)
+
+        if (this.brightnessHudVisible) {
+          this.brightnessHud()
         }
-        .width('100%')
-        .height('100%')
-        .onClick(() => this.toggleHud())
+        if (this.volumeHudVisible) {
+          this.volumeHud()
+        }
+        if (this.seekHudVisible) {
+          this.seekHud()
+        }
 
         // 加载中 / 出错提示(居中,不随 HUD 隐藏)
         if (this.vm.state === PlayState.IDLE) {
-          LoadingProgress().width(48).height(48).color('#FFFFFF')
+          LoadingProgress()
+            .width(48).height(48).color('#FFFFFF')
+            .hitTestBehavior(HitTestMode.None)
         } else if (this.vm.state === PlayState.ERROR) {
           Column() {
             Text($r('app.string.encountered_error_message'))
@@ -637,19 +867,41 @@ export struct VideoPlayerPage {
           }
           .padding(24)
           .width('100%')
+          .hitTestBehavior(HitTestMode.None)
         }
 
-        // HUD 层:整屏 Column + SpaceBetween,把顶栏推到顶、控制栏推到底。
+        // HUD 在手势层之下；中间 Transparent 透传，顶/底栏 Default 可点
         if (this.vm.hudVisible) {
           Column() {
             this.topBar()
+            Blank().layoutWeight(1).hitTestBehavior(HitTestMode.None)
             this.bottomBar()
           }
           .width('100%')
           .height('100%')
           .justifyContent(FlexAlign.SpaceBetween)
-          .hitTestBehavior(HitTestMode.None)
+          .hitTestBehavior(HitTestMode.Transparent)
         }
+
+        // 最顶手势层：竖/横滑 + 延迟单击；双击用 TapGesture
+        Column()
+          .width('100%')
+          .height('100%')
+          .backgroundColor('#01000000')
+          .hitTestBehavior(HitTestMode.Transparent)
+          .onTouch((event: TouchEvent) => {
+            this.touch.onTouchEvent(event);
+          })
+          .gesture(
+            TapGesture({ count: 2 })
+              .onAction((event: GestureEvent) => {
+                let x: number = 0;
+                if (event.fingerList.length > 0) {
+                  x = event.fingerList[0].localX;
+                }
+                this.touch.onDoubleTap(x);
+              })
+          )
       }
       .width('100%')
       .height('100%')
@@ -709,6 +961,7 @@ export struct VideoPlayerPage {
     .padding({ left: 16, right: 16, top: 44, bottom: 16 })
     .alignItems(VerticalAlign.Center)
     .linearGradient({ angle: 180, colors: [['#cb000000', 0.0], ['#00000000', 1.0]] })
+    .hitTestBehavior(HitTestMode.Default)
   }
 
   /** 底部控制栏(遮罩自下而上渐隐 → 颜色停靠反过来,角度仍是 180)。 */
@@ -785,6 +1038,69 @@ export struct VideoPlayerPage {
     }
     .width('100%')
     .linearGradient({ angle: 180, colors: [['#00000000', 0.0], ['#cb000000', 1.0]] })
+    .hitTestBehavior(HitTestMode.Default)
+  }
+
+  @Builder
+  seekHud() {
+    Column({ space: 6 }) {
+      Text('进度')
+        .fontSize(14).fontColor('#FFFFFF')
+      Text(this.seekHudText)
+        .fontSize(16).fontColor('#FF8800').fontWeight(FontWeight.Medium)
+    }
+    .padding({ left: 24, right: 24, top: 16, bottom: 16 })
+    .backgroundColor('#99000000')
+    .borderRadius(12)
+    .hitTestBehavior(HitTestMode.None)
+  }
+
+  @Builder
+  brightnessHud() {
+    Column({ space: 8 }) {
+      Text('亮度')
+        .fontSize(14).fontColor('#FFFFFF')
+      Progress({
+        value: this.brightnessLevel * 100,
+        total: 100,
+        type: ProgressType.Linear,
+      })
+        .width(140)
+        .height(4)
+        .color('#FF8800')
+        .backgroundColor('#61FFFFFF')
+      Text(`${Math.round(this.brightnessLevel * 100)}%`)
+        .fontSize(12).fontColor('#FFFFFF')
+    }
+    .padding({ left: 20, right: 20, top: 16, bottom: 16 })
+    .backgroundColor('#99000000')
+    .borderRadius(12)
+    .hitTestBehavior(HitTestMode.None)
+  }
+
+  @Builder
+  volumeHud() {
+    Column({ space: 8 }) {
+      Text('音量')
+        .fontSize(14).fontColor('#FFFFFF')
+      Progress({
+        value: this.volumeMax > this.volumeMin
+          ? ((this.volumeLevel - this.volumeMin) * 100 / (this.volumeMax - this.volumeMin))
+          : 0,
+        total: 100,
+        type: ProgressType.Linear,
+      })
+        .width(140)
+        .height(4)
+        .color('#FF8800')
+        .backgroundColor('#61FFFFFF')
+      Text(`${this.volumeLevel}`)
+        .fontSize(12).fontColor('#FFFFFF')
+    }
+    .padding({ left: 20, right: 20, top: 16, bottom: 16 })
+    .backgroundColor('#99000000')
+    .borderRadius(12)
+    .hitTestBehavior(HitTestMode.None)
   }
 
   /** 更多选项 / 二级弹窗统一 sheet:sheetKind 决定渲染哪一层。 */
