@@ -4,6 +4,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { NavController } from '../common/data/NavController';
 import { Settings } from '../common/data/Settings';
+import { PlaybackHistory } from '../common/data/PlaybackHistory';
 import { PlayState } from '../common/models/MediaModels';
 import { JumpToTimeDialog } from './JumpToTimeDialog';
 import { SleepTimerDialog } from './SleepTimerDialog';
@@ -95,6 +96,7 @@ class VideoPlayerViewModel {
   private list: VideoPlayItem[] = [];
   private fd: number = -1;
   private released: boolean = false;
+  private recordedHistoryUri: string = '';
 
   hasPrev(): boolean {
     return this.index > 0;
@@ -217,6 +219,7 @@ class VideoPlayerViewModel {
         break;
       case 'playing':
         this.state = PlayState.PLAYING;
+        this.recordCurrentVideoInHistory();
         try {
           this.player.setSpeed(VideoPlayerViewModel.toPlaybackSpeed(this.speed));
         } catch (e) {
@@ -254,6 +257,7 @@ class VideoPlayerViewModel {
     this.index = i;
     this.uri = this.list[i].uri;
     this.title = this.list[i].title;
+    this.recordedHistoryUri = '';
     this.position = 0;
     this.duration = 0;
     this.state = PlayState.IDLE;
@@ -265,6 +269,14 @@ class VideoPlayerViewModel {
     }
     this.closeFd();
     this.applySource();
+  }
+
+  private recordCurrentVideoInHistory(): void {
+    if (this.recordedHistoryUri === this.uri) {
+      return;
+    }
+    this.recordedHistoryUri = this.uri;
+    PlaybackHistory.record(this.uri, this.title, this.duration);
   }
 
   next(): void {
