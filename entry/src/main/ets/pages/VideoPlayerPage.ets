@@ -6,6 +6,7 @@ import { NavController } from '../common/data/NavController';
 import { AppContext } from '../common/data/AppContext';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
 import { PlaybackService, PlaybackListener } from '../common/data/PlaybackService';
+import { MediaLibrary } from '../common/data/MediaLibrary';
 import { Settings } from '../common/data/Settings';
 import { MediaWrapper, PlayState } from '../common/models/MediaModels';
 import { shouldRecordPlaybackStart } from '../common/models/PlaybackHistoryModels';
@@ -449,9 +450,10 @@ export struct VideoPlayerPage {
   @Local sheetKind: string = ''; // '' | 'jump' | 'sleep' | 'chapter' | 'tracks' | 'renderer' | 'speed' | 'controls' | 'equalizer' | 'videoInfo' | 'savePlaylist'
   /** 书签弹框独立走 Stack 覆盖层(不走 bindSheet)以保持半透效果,不遮挡背后视频。 */
   @Local bookmarkOpen: boolean = false;
-  /** 当前视频的书签列表(内存,本期不持久化到磁盘)。 */
+  /** 当前视频的书签列表（每次变更自动持久化）。 */
   @Local bookmarks: BookMark[] = [];
   private bookmarkIdSeq: number = 1;
+  private bookmarkUri: string = '';
   @Local advancedOptionsOpen: boolean = false;
   /**
    * 高级选项菜单选中项的暂存。
@@ -646,23 +648,59 @@ export struct VideoPlayerPage {
     this.closeSheet();
   }
 
-  /** 「保存到播放列表」确认回调:本期不持久化,弹窗关掉前提示用户。 */
-  onSavePlaylistConfirm(_action: AddToPlaylistAction): void {
-    promptAction.showToast({ message: '播放列表保存功能开发中' });
+  /** 「保存到播放列表」确认回调:将当前视频 URI 写入选中歌单并持久化。 */
+  async onSavePlaylistConfirm(action: AddToPlaylistAction): Promise<void> {
+    const uri: string = this.vm.uri;
+    if (uri.length === 0) {
+      promptAction.showToast({ message: '当前没有可保存的视频' });
+      this.closeSheet();
+      return;
+    }
+    await MediaLibrary.initPlaylistCache();
+    for (const playlistId of action.selectedIds) {
+      if (action.replace) {
+        await MediaLibrary.replacePlaylist(playlistId, [uri]);
+      } else {
+        await MediaLibrary.addToPlaylist(playlistId, uri);
+      }
+    }
+    const count: number = action.selectedIds.length;
+    promptAction.showToast({ message: count === 1 ? '已保存到播放列表' : `已保存到 ${count} 个播放列表` });
     this.closeSheet();
   }
 
-  /** 在当前播放位置新增一条书签。 */
+  /** 加载当前视频的持久化书签（URI 变化时重新加载）。 */
+  async loadBookmarksForCurrentUri(): Promise<void> {
+    const uri: string = this.vm.uri;
+    if (uri.length === 0 || uri === this.bookmarkUri) {
+      return;
+    }
+    this.bookmarkUri = uri;
+    const loaded: BookMark[] = await MediaLibrary.loadBookmarks(uri);
+    this.bookmarks = loaded.sort((a: BookMark, b: BookMark) => a.timeMs - b.timeMs);
+    this.bookmarkIdSeq = loaded.length > 0 ? Math.max(...loaded.map((b: BookMark) => b.id)) + 1 : 1;
+  }
+
+  /** 持久化当前书签列表。 */
+  private async persistBookmarks(): Promise<void> {
+    if (this.bookmarkUri.length > 0) {
+      await MediaLibrary.saveBookmarks(this.bookmarkUri, this.bookmarks);
+    }
+  }
+
+  /** 在当前播放位置新增一条书签（自动持久化）。 */
   addBookmarkAtCurrent(): void {
     const timeMs: number = Math.max(0, Math.floor(this.vm.position));
     const bm: BookMark = new BookMark(this.bookmarkIdSeq++, -1, timeMs, '');
     this.bookmarks = [...this.bookmarks, bm].sort((a: BookMark, b: BookMark) => a.timeMs - b.timeMs);
+    void this.persistBookmarks();
     promptAction.showToast({ message: '已保存书签' });
   }
 
-  /** 删除指定 id 的书签。 */
+  /** 删除指定 id 的书签（自动持久化）。 */
   deleteBookmark(id: number): void {
     this.bookmarks = this.bookmarks.filter((b: BookMark) => b.id !== id);
+    void this.persistBookmarks();
   }
 
   /** 重命名书签:本期直接在 toBoolean 提示里给出占位 toast。 */
@@ -785,6 +823,9 @@ export struct VideoPlayerPage {
     this.touchBound = true;
     this.touch.bind({
       doPlayPause: (): void => {
+        if (this.vm.locked) {
+          return;
+        }
         this.vm.toggle();
         this.resetHudTimer();
       },
@@ -792,6 +833,9 @@ export struct VideoPlayerPage {
         this.toggleHud();
       },
       seekDelta: (deltaMs: number): void => {
+        if (this.vm.locked) {
+          return;
+        }
         const next: number = this.vm.position + deltaMs;
         const clamped: number = this.vm.duration > 0
           ? Math.max(0, Math.min(this.vm.duration, next))
@@ -815,6 +859,9 @@ export struct VideoPlayerPage {
         return this.vm.hudVisible;
       },
       onPanBegan: (): void => {
+        if (this.vm.locked) {
+          return;
+        }
         if (this.hudTimer !== -1) {
           clearTimeout(this.hudTimer);
           this.hudTimer = -1;
@@ -823,6 +870,9 @@ export struct VideoPlayerPage {
         this.volumeAcc = this.volumeLevel;
       },
       onVolumePan: (deltaNorm: number): void => {
+        if (this.vm.locked) {
+          return;
+        }
         const span: number = Math.max(1, this.volumeMax - this.volumeMin);
         this.volumeAcc = Math.max(this.volumeMin, Math.min(this.volumeMax, this.volumeAcc + deltaNorm * span));
         const next: number = Math.round(this.volumeAcc);
@@ -836,6 +886,9 @@ export struct VideoPlayerPage {
         this.armVolumeHudTimer();
       },
       onBrightnessPan: (deltaNorm: number): void => {
+        if (this.vm.locked) {
+          return;
+        }
         this.brightnessLevel = Math.max(0, Math.min(1, this.brightnessLevel + deltaNorm));
         this.brightnessHudVisible = true;
         this.volumeHudVisible = false;
@@ -846,6 +899,9 @@ export struct VideoPlayerPage {
         this.armBrightnessHudTimer();
       },
       onSeekPan: (jumpMs: number, targetMs: number): void => {
+        if (this.vm.locked) {
+          return;
+        }
         this.pendingSeekTarget = targetMs;
         const sign: string = jumpMs >= 0 ? '+' : '';
         this.seekHudText = `${sign}${fmtTime(Math.abs(jumpMs))} (${fmtTime(targetMs)})`;
@@ -858,6 +914,9 @@ export struct VideoPlayerPage {
         }
       },
       onPanEnded: (mode: VideoPanMode): void => {
+        if (this.vm.locked) {
+          return;
+        }
         if (mode === VideoPanMode.Brightness && this.saveBrightness) {
           void Settings.put(Settings.BRIGHTNESS_VALUE, this.brightnessLevel);
         }
@@ -962,8 +1021,11 @@ export struct VideoPlayerPage {
     }, 1200);
   }
 
-  /** 显示 HUD 并重置 4s 自动隐藏计时。任何一次交互都应调用。 */
+  /** 显示 HUD 并重置 4s 自动隐藏计时。锁定态下禁止显示 HUD。 */
   resetHudTimer(): void {
+    if (this.vm.locked) {
+      return;
+    }
     // 「有任何交互时重置」勾选后,每次交互顺带把睡眠倒计时重新起算。
     if (this.sleepResetOnInteraction && this.sleepArmed) {
       this.armSleepTimer();
@@ -985,10 +1047,9 @@ export struct VideoPlayerPage {
     }, 4000);
   }
 
-  /** 点击画面:HUD 可见则隐藏,不可见则显示。锁定态下仅弹出提示。 */
+  /** 点击画面:HUD 可见则隐藏,不可见则显示。锁定态下无响应(锁图标已提供视觉反馈)。 */
   toggleHud(): void {
     if (this.vm.locked) {
-      promptAction.showToast({ message: '播放器已锁定' });
       return;
     }
     if (this.vm.hudVisible) {
@@ -1020,6 +1081,9 @@ export struct VideoPlayerPage {
   }
 
   onBottomAction(id: VideoPlayerBottomActionId): void {
+    if (this.vm.locked) {
+      return;
+    }
     if (id === 'tracks') {
       this.openSub('tracks');
     } else if (id === 'play') {
@@ -1103,18 +1167,24 @@ export struct VideoPlayerPage {
           .hitTestBehavior(HitTestMode.Transparent)
         }
 
-        // 最顶手势层：竖/横滑 + 延迟单击；双击用 TapGesture
+        // 最顶手势层：竖/横滑 + 延迟单击；双击用 TapGesture。锁定时完全禁止触摸。
         Column()
           .width('100%')
           .height('100%')
           .backgroundColor('#01000000')
           .hitTestBehavior(HitTestMode.Transparent)
           .onTouch((event: TouchEvent) => {
+            if (this.vm.locked) {
+              return;
+            }
             this.touch.onTouchEvent(event);
           })
           .gesture(
             TapGesture({ count: 2 })
               .onAction((event: GestureEvent) => {
+                if (this.vm.locked) {
+                  return;
+                }
                 let x: number = 0;
                 if (event.fingerList.length > 0) {
                   x = event.fingerList[0].localX;
@@ -1122,6 +1192,30 @@ export struct VideoPlayerPage {
                 this.touch.onDoubleTap(x);
               })
           )
+
+        // 锁定图标：锁定后始终显示在最左侧，点击可解锁
+        if (this.vm.locked) {
+          Row() {
+            Image($r('app.media.ic_lock_player'))
+              .width(28).height(28)
+              .fillColor('#FFFFFF')
+          }
+          .width(52).height(52)
+          .borderRadius(26)
+          .backgroundColor('#66000000')
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Center)
+          .hitTestBehavior(HitTestMode.Default)
+          .position({ x: 16, y: '50%' })
+          .translate({ x: 0, y: -26 })
+          .onClick(() => {
+            this.vm.toggleLock();
+            // 解锁后显示 HUD 以便用户操作
+            if (!this.vm.locked) {
+              this.resetHudTimer();
+            }
+          })
+        }
 
         // 书签弹框:不走 bindSheet,直接以 Stack 子层叠在视频上方,保持半透看到背后画面。
         if (this.bookmarkOpen) {
@@ -1181,6 +1275,9 @@ export struct VideoPlayerPage {
       Image($r('app.media.ic_arrow_back'))
         .width(24).height(24).fillColor('#FFFFFF')
         .onClick(() => {
+          if (this.vm.locked) {
+            return;
+          }
           this.vm.leaveEarly();
           NavController.pop();
         })
@@ -1211,6 +1308,9 @@ export struct VideoPlayerPage {
       Image($r('app.media.ic_player_more'))
         .width(24).height(24).fillColor('#FFFFFF')
         .onClick(() => {
+          if (this.vm.locked) {
+            return;
+          }
           this.resetHudTimer();
           this.openOptions();
         })
@@ -1623,6 +1723,7 @@ export struct VideoPlayerPage {
       return;
     }
     if (id === 'bookmark') {
+      void this.loadBookmarksForCurrentUri();
       this.bookmarkOpen = true;
       return;
     }
