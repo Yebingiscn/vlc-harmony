@@ -120,7 +120,7 @@ export struct AddToPlaylistDialog {
     }
     .width('100%')
     .height(48)
-    .padding({ left: 12, right: 12, top: 20 })
+    .padding({ left: 12, right: 12 })
     .alignItems(VerticalAlign.Center)
     .backgroundColor(this.cHeaderBg)
   }

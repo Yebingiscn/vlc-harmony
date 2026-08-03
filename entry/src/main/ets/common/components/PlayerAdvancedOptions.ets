@@ -60,6 +60,7 @@ export function buildPlayerAdvancedOptions(mode: PlayerAdvancedMenuMode): Player
   }
 
   return [
+    new PlayerAdvancedOption('lock', '锁定', $r('app.media.ic_lock_player')),
     ...shared,
     new PlayerAdvancedOption('bookmark', '书签', $r('app.media.ic_bookmark')),
     new PlayerAdvancedOption('abRepeat', 'A-B 循环', $r('app.media.ic_abrepeat')),
