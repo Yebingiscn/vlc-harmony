@@ -134,6 +134,10 @@ class VideoPlayerViewModel implements PlaybackListener {
   @Trace locked: boolean = false;
   /** 当前循环模式:0=关闭,1=列表循环,2=单曲循环。 */
   @Trace repeatMode: number = 0;
+  /** A-B 循环状态。-1 表示未设。 */
+  @Trace abPointA: number = -1;
+  @Trace abPointB: number = -1;
+  @Trace abActive: boolean = false;
 
   uri: string = '';
   private list: VideoPlayItem[] = [];
@@ -212,6 +216,12 @@ class VideoPlayerViewModel implements PlaybackListener {
   onTimeUpdate(current: number, duration: number): void {
     this.position = current;
     this.duration = duration;
+    // A-B 循环:到达 B 时回到 A。200ms 余量防止越界。
+    if (this.abActive && this.abPointA >= 0 && this.abPointB > this.abPointA &&
+        current >= this.abPointB - 200) {
+      PlaybackService.getInstance().seek(this.abPointA);
+      this.position = this.abPointA;
+    }
   }
 
   onQueueChanged(): void {
@@ -336,6 +346,33 @@ class VideoPlayerViewModel implements PlaybackListener {
 
   setStopAfterCurrent(v: boolean): void {
     PlaybackService.getInstance().setStopAfterCurrent(v);
+  }
+
+  /** A-B 循环:标记起点 A(当前位置)。 */
+  setAbPointA(): void {
+    this.abPointA = Math.max(0, Math.floor(this.position));
+    this.abPointB = -1;
+    this.abActive = false;
+  }
+
+  /** A-B 循环:标记终点 B(当前位置)。B 必须在 A 之后,否则忽略。 */
+  setAbPointB(): void {
+    if (this.abPointA < 0) {
+      return;
+    }
+    const b: number = Math.max(0, Math.floor(this.position));
+    if (b <= this.abPointA) {
+      return;
+    }
+    this.abPointB = b;
+    this.abActive = true;
+  }
+
+  /** A-B 循环:关闭并重置。 */
+  resetAb(): void {
+    this.abPointA = -1;
+    this.abPointB = -1;
+    this.abActive = false;
   }
 
   /** 对齐 Android onPause(isFinishing):尽早 stop。 */
@@ -572,6 +609,18 @@ export struct VideoPlayerPage {
     promptAction.showToast({ message: '书签重命名功能开发中' });
   }
 
+  /** A-B 循环点时间显示:mm:ss / h:mm:ss。 */
+  fmtAbPoint(ms: number): string {
+    const safe: number = ms > 0 ? ms : 0;
+    const totalSec: number = Math.floor(safe / 1000);
+    const h: number = Math.floor(totalSec / 3600);
+    const m: number = Math.floor((totalSec % 3600) / 60);
+    const s: number = totalSec % 60;
+    const mm: string = m < 10 ? `0${m}` : `${m}`;
+    const ss: string = s < 10 ? `0${s}` : `${s}`;
+    return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+  }
+
   aboutToAppear(): void {
     this.bindTouch();
     void this.initVolumeAndBrightness();
@@ -800,7 +849,10 @@ export struct VideoPlayerPage {
       this.hudTimer = -1;
       // 仅在播放中自动隐藏;暂停/出错、拖动中、弹窗或高级选项菜单打开时保持可见
       // ——高级选项菜单锚在底栏图标上,底栏一藏菜单就悬空/关掉。
-      if (this.vm.state === PlayState.PLAYING && !this.seeking && !this.sheetOpen && !this.advancedOptionsOpen) {
+      // A-B 循环等待设 B 时也保持可见:用户需要看到「设置 B」按钮。
+      const waitingAbB: boolean = this.vm.abPointA >= 0 && !this.vm.abActive;
+      if (this.vm.state === PlayState.PLAYING && !this.seeking && !this.sheetOpen &&
+          !this.advancedOptionsOpen && !waitingAbB) {
         this.vm.hudVisible = false;
       }
     }, 4000);
@@ -1007,6 +1059,18 @@ export struct VideoPlayerPage {
       Text(this.vm.title)
         .fontSize(18).fontColor('#FFFFFF').layoutWeight(1).margin({ left: 12, right: 12 })
         .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+      // A-B 循环指示灯
+      if (this.vm.abPointA >= 0) {
+        Row() {
+          Text('A-B')
+            .fontSize(12).fontColor('#FFFFFF')
+            .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+            .borderRadius(10)
+            .backgroundColor('#FF8800')
+        }
+        .margin({ right: 12 })
+        .onClick(() => this.vm.resetAb())
+      }
       // 睡眠倒计时已设定的指示灯,点一下取消(否则设完毫无反馈,也无处撤销)。
       if (this.sleepArmed) {
         Image($r('app.media.ic_sleep'))
@@ -1034,38 +1098,117 @@ export struct VideoPlayerPage {
   @Builder
   bottomBar() {
     Column() {
+      // A-B 循环设置行(已设 A 后显示)
+      if (this.vm.abPointA >= 0) {
+        Row() {
+          Text(`A ${this.fmtAbPoint(this.vm.abPointA)} → B ${this.vm.abActive ? this.fmtAbPoint(this.vm.abPointB) : '???'}`)
+            .fontSize(12).fontColor('#FF8800')
+            .layoutWeight(1)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+          if (this.vm.abActive) {
+            Text('关闭')
+              .fontSize(12).fontColor('#FFFFFF')
+              .padding({ left: 12, right: 12, top: 4, bottom: 4 })
+              .borderRadius(12)
+              .backgroundColor('#33FFFFFF')
+              .onClick(() => this.vm.resetAb())
+          } else {
+            Text('设置 B')
+              .fontSize(12).fontColor('#FFFFFF')
+              .padding({ left: 12, right: 12, top: 4, bottom: 4 })
+              .borderRadius(12)
+              .backgroundColor('#FF8800')
+              .onClick(() => {
+                this.vm.setAbPointB();
+                promptAction.showToast({ message: this.vm.abActive ? 'A-B 循环已开启' : 'B 点需在 A 点之后' });
+              })
+          }
+        }
+        .width('100%')
+        .padding({ left: 12, right: 12, top: 4, bottom: 4 })
+      }
+
       // seek bar
       Row() {
         Text(fmtTime(this.displayPosition()))
           .fontSize(12).fontColor('#FFFFFF').width(52)
-        Slider({
-          value: this.seeking
-            ? this.seekPercent
-            : (this.vm.duration > 0 ? this.vm.position * 100 / this.vm.duration : 0),
-          min: 0,
-          max: 100,
-          step: 0.1,
-          style: SliderStyle.OutSet,
-        })
-          .layoutWeight(1)
-          .blockColor('#FF8800')
-          .selectedColor('#FF8800')
-          .trackColor('#61FFFFFF')
-          .enabled(this.vm.duration > 0)
-          .onChange((v: number, mode: SliderChangeMode) => {
-            if (mode === SliderChangeMode.Begin) {
-              this.seeking = true;
-              this.seekPercent = v;
-            } else if (mode === SliderChangeMode.Moving) {
-              this.seekPercent = v;
-            } else {
-              // End / Click → 落 seek
-              this.seekPercent = v;
-              this.seeking = false;
-              this.vm.seekTo(Math.floor(this.vm.duration * v / 100));
-            }
-            this.resetHudTimer();
+        // Slider 外面套 Stack:进度条上叠加 A 点竖线 + 顶部小三角。
+        Stack({ alignContent: Alignment.TopStart }) {
+          Slider({
+            value: this.seeking
+              ? this.seekPercent
+              : (this.vm.duration > 0 ? this.vm.position * 100 / this.vm.duration : 0),
+            min: 0,
+            max: 100,
+            step: 0.1,
+            style: SliderStyle.OutSet,
           })
+            .layoutWeight(1)
+            .blockColor('#FF8800')
+            .selectedColor('#FF8800')
+            .trackColor('#61FFFFFF')
+            .enabled(this.vm.duration > 0)
+            .onChange((v: number, mode: SliderChangeMode) => {
+              if (mode === SliderChangeMode.Begin) {
+                this.seeking = true;
+                this.seekPercent = v;
+              } else if (mode === SliderChangeMode.Moving) {
+                this.seekPercent = v;
+              } else {
+                // End / Click → 落 seek
+                this.seekPercent = v;
+                this.seeking = false;
+                this.vm.seekTo(Math.floor(this.vm.duration * v / 100));
+              }
+              this.resetHudTimer();
+            })
+
+          // A 点标记:竖线 + 顶部小三角 + 「A」徽标
+          if (this.vm.abPointA >= 0 && this.vm.duration > 0) {
+            Column() {
+              Text('A')
+                .fontSize(10).fontColor('#FFFFFF')
+                .padding({ left: 4, right: 4, top: 1, bottom: 1 })
+                .borderRadius(4)
+                .backgroundColor('#FF8800')
+              // 倒三角
+              Text('▼')
+                .fontSize(8).fontColor('#FF8800')
+                .margin({ top: -1 })
+            }
+            .alignItems(HorizontalAlign.Center)
+            .offset({
+              x: `${Math.min(100, Math.max(0, this.vm.abPointA * 100 / this.vm.duration))}%`,
+              y: 0,
+            })
+            // 让 Column 中心对到 offset 处
+            .translate({ x: -8 })
+
+          // B 点标记:竖线 + 顶部小三角 + 「B」徽标
+          if (this.vm.abActive) {
+            Column() {
+              Text('B')
+                .fontSize(10).fontColor('#FFFFFF')
+                .padding({ left: 4, right: 4, top: 1, bottom: 1 })
+                .borderRadius(4)
+                .backgroundColor('#FF3B30')
+              Text('▼')
+                .fontSize(8).fontColor('#FF3B30')
+                .margin({ top: -1 })
+            }
+            .alignItems(HorizontalAlign.Center)
+            .offset({
+              x: `${Math.min(100, Math.max(0, this.vm.abPointB * 100 / this.vm.duration))}%`,
+              y: 0,
+            })
+            .translate({ x: -8 })
+          }
+          }
+        }
+        .layoutWeight(1)
+        .height(40)
+
         Text(fmtTime(this.vm.duration - this.displayPosition()))
           .fontSize(12).fontColor('#FFFFFF').width(52).textAlign(TextAlign.End)
       }
@@ -1352,6 +1495,29 @@ export struct VideoPlayerPage {
     }
     if (id === 'savePlaylist') {
       this.openSub('savePlaylist');
+      return;
+    }
+    if (id === 'abRepeat') {
+      if (this.vm.abActive) {
+        this.vm.resetAb();
+        promptAction.showToast({ message: '已关闭 A-B 循环' });
+      } else if (this.vm.abPointA < 0) {
+        this.vm.setAbPointA();
+        // 强制 HUD 持续可见 —— 等待用户设 B 时不能自动隐藏。
+        this.vm.hudVisible = true;
+        if (this.hudTimer !== -1) {
+          clearTimeout(this.hudTimer);
+          this.hudTimer = -1;
+        }
+        promptAction.showToast({ message: '已设置 A 点,请拖动至结束位置后再次点击 A-B 循环' });
+      } else {
+        this.vm.setAbPointB();
+        if (this.vm.abActive) {
+          promptAction.showToast({ message: 'A-B 循环已开启' });
+        } else {
+          promptAction.showToast({ message: 'B 点需在 A 点之后' });
+        }
+      }
       return;
     }
     if (id === 'repeat') {
