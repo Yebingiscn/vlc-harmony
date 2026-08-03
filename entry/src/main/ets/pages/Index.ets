@@ -138,5 +138,6 @@ struct Index {
     .mode(NavigationMode.Stack)
     .hideTitleBar(true)
     .hideNavBar(true)
+    .id('app_navigation')
   }
 }

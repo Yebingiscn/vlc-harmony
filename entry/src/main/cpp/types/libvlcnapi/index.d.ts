@@ -41,6 +41,33 @@ export interface VlcMetaInfo {
   duration: number;
 }
 
+/** libvlc_media_track_t 解码后的元数据(对应 libvlc_track_type_t: 0=audio, 1=video, 2=text)。 */
+export interface VlcMediaTrackInfo {
+  id: number;
+  /** libvlc_track_type_t 枚举值 */
+  type: number;
+  /** FOURCC 编码标识 */
+  codecFourcc: number;
+  /** 编码描述(如 'H264 - MPEG-4 AVC (part 10) (avc1)') */
+  codecDesc: string;
+  /** 语言标签(BCP-47,如 'en', 'zh-Hans'),空表示无 */
+  language: string;
+  /** 平均码率(bits/s) */
+  bitrate: number;
+  /** 仅 audio:声道数(2=立体声, 6=5.1 等) */
+  channels?: number;
+  /** 仅 audio:采样率(Hz,如 48000) */
+  sampleRate?: number;
+  /** 仅 video:像素宽度(若为 0 则 libVLC 未填充,回落到 MediaPlayerGetVideoSize) */
+  videoWidth?: number;
+  /** 仅 video:像素高度 */
+  videoHeight?: number;
+  /** 仅 video:帧率分子 */
+  frameRateNum?: number;
+  /** 仅 video:帧率分母 */
+  frameRateDen?: number;
+}
+
 // —— LibVLC ——
 export const libvlcCreate: (options?: string[]) => number;
 export const libvlcRelease: (libHandle: number) => void;
@@ -52,6 +79,7 @@ export const mediaCreateFd: (libHandle: number, fd: number) => number;
 export const mediaRelease: (mediaHandle: number) => void;
 export const mediaParse: (mediaHandle: number, timeoutMs?: number) => boolean;
 export const mediaGetMeta: (mediaHandle: number) => VlcMetaInfo | null;
+export const mediaGetTracksInfo: (mediaHandle: number) => VlcMediaTrackInfo[];
 export const mediaAddSlave: (mediaHandle: number, type: number, uri: string, priority?: number) => boolean;
 
 // —— MediaPlayer ——

@@ -1,5 +1,6 @@
 import { AppColors } from '../common/constants/AppConstants';
 import { Playlist } from '../common/models/MediaModels';
+import { MediaLibrary } from '../common/data/MediaLibrary';
 import { inputMethod } from '@kit.IMEKit';
 
 /** 保存动作载荷 —— ArkTS 不允许内联对象字面量做类型,提取到命名 interface。 */
@@ -45,6 +46,11 @@ export struct AddToPlaylistDialog {
   @Local replace: boolean = false;
   private idSeq: number = 1;
 
+  async aboutToAppear(): Promise<void> {
+    await MediaLibrary.initPlaylistCache();
+    this.playlists = MediaLibrary.getPlaylists();
+  }
+
   private canCreate(): boolean {
     return this.newName.trim().length > 0;
   }
@@ -64,22 +70,20 @@ export struct AddToPlaylistDialog {
   }
 
   /**
-   * 新建:插到列表,自动勾选,清空输入框,隐藏输入法。
+   * 新建:持久化到 MediaLibrary,插到列表,自动勾选,清空输入框。
    * 不关闭弹框 —— 用户可能想连续新建。
    */
-  private createNew(): void {
+  private async createNew(): Promise<void> {
     const name: string = this.newName.trim();
     if (name.length === 0) {
       return;
     }
-    const id: number = this.idSeq++;
-    const p: Playlist = new Playlist(id, name);
-    p.trackCount = 0;
-    this.playlists = this.playlists.concat(p);
+    const p: Playlist = await MediaLibrary.createPlaylist(name);
+    this.playlists = [...this.playlists, p];
     // 单选:新建后只勾选这一条,旧的自动取消。
-    this.selected = new Set<number>([id]);
+    this.selected = new Set<number>([p.id]);
     this.newName = '';
-    // 隐藏软键盘 —— 不然新建完键盘还挡着列表,看不见刚新建的项。
+    // 隐藏软键盘
     this.hideKeyboard();
   }
 

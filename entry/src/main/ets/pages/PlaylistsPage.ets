@@ -1,11 +1,11 @@
 import { NavController } from '../common/data/NavController';
 import { MediaLibrary } from '../common/data/MediaLibrary';
-import { Track } from '../common/models/MediaModels';
+import { Track, MediaWrapper } from '../common/models/MediaModels';
 import { PlaylistDialog } from './PlaylistDialog';
 import { RenameDialog } from './RenameDialog';
-import { Settings } from '../common/data/Settings';
 import { promptAction } from '@kit.ArkUI';
 import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
+import { VideoParam, VideoPlayItem } from './VideoPlayerPage';
 
 // ---- 数据模型 ----
 
@@ -22,14 +22,6 @@ class PlaylistCard {
     this.artwork = artwork;
   }
 }
-
-interface StoredPlaylist {
-  id: number;
-  name: string;
-  uriList: string[];
-}
-
-const KEY_PLAYLISTS = 'vlc_playlists';
 
 /** 半模态类型:一个组件只能绑定一个 bindSheet,内部按模式切换内容。 */
 type SheetMode = 'none' | 'create' | 'ctxmenu' | 'rename';
@@ -49,70 +41,41 @@ class PlaylistsVM {
   }
 
   rebuildCards(): void {
-    const stored = PlaylistsVM.loadStored();
+    const stored = MediaLibrary.getStoredPlaylists();
     const audios = MediaLibrary.getAudios();
-    const uriSet = new Set(audios.map((t: Track) => t.uri));
+    const videos = MediaLibrary.getVideos();
+    // 同时匹配音频和视频 URI，避免视频播放器保存的 URI 被过滤掉。
+    const allUriSet = new Set([
+      ...audios.map((t: Track) => t.uri),
+      ...videos.map((v: MediaWrapper) => v.uri),
+    ]);
     this.playlists = stored.map((s: StoredPlaylist) => {
-      const availableUris = s.uriList.filter((u: string) => uriSet.has(u));
+      const availableUris = s.uriList.filter((u: string) => allUriSet.has(u));
       const count = availableUris.length;
-      const art = audios.find((t: Track) => s.uriList.includes(t.uri) && t.artworkPath.length > 0);
-      return new PlaylistCard(s.id, s.name, count, art ? art.artworkPath : '');
+      // 封面优先用音频专辑图，其次视频缩略图。
+      const audioArt = audios.find((t: Track) => s.uriList.includes(t.uri) && t.artworkPath.length > 0);
+      const videoArt = videos.find((v: MediaWrapper) => s.uriList.includes(v.uri) && v.artworkUrl.length > 0);
+      const art = audioArt ? audioArt.artworkPath : (videoArt ? videoArt.artworkUrl : '');
+      return new PlaylistCard(s.id, s.name, count, art);
     });
   }
 
   async rename(id: number, newName: string): Promise<void> {
-    const stored = PlaylistsVM.loadStored();
-    const pl = stored.find((s: StoredPlaylist) => s.id === id);
-    if (pl) {
-      pl.name = newName;
-      await PlaylistsVM.saveStored(stored);
-      this.rebuildCards();
-    }
-  }
-
-  async deletePlaylist(id: number): Promise<void> {
-    const stored = PlaylistsVM.loadStored().filter((s: StoredPlaylist) => s.id !== id);
-    await PlaylistsVM.saveStored(stored);
+    await MediaLibrary.renamePlaylist(id, newName);
     this.rebuildCards();
   }
 
-  static async create(name: string): Promise<void> {
-    const stored = PlaylistsVM.loadStored();
-    const id = Date.now();
-    stored.push({ id: id, name: name, uriList: [] });
-    await PlaylistsVM.saveStored(stored);
+  async deletePlaylist(id: number): Promise<void> {
+    await MediaLibrary.deletePlaylist(id);
+    this.rebuildCards();
   }
+}
 
-  static async addTrack(playlistId: number, uri: string): Promise<void> {
-    const stored = PlaylistsVM.loadStored();
-    const pl = stored.find((s: StoredPlaylist) => s.id === playlistId);
-    if (pl && !pl.uriList.includes(uri)) {
-      pl.uriList.push(uri);
-      await PlaylistsVM.saveStored(stored);
-    }
-  }
-
-  static getTrackUris(playlistId: number): string[] {
-    const stored = PlaylistsVM.loadStored();
-    const pl = stored.find((s: StoredPlaylist) => s.id === playlistId);
-    return pl ? pl.uriList : [];
-  }
-
-  private static loadStored(): StoredPlaylist[] {
-    return PlaylistsVM.cachedStored;
-  }
-
-  private static async saveStored(stored: StoredPlaylist[]): Promise<void> {
-    PlaylistsVM.cachedStored = stored;
-    await Settings.put(KEY_PLAYLISTS, JSON.stringify(stored));
-  }
-
-  private static cachedStored: StoredPlaylist[] = [];
-
-  static async initCache(): Promise<void> {
-    const raw = await Settings.getString(KEY_PLAYLISTS, '[]');
-    try { PlaylistsVM.cachedStored = JSON.parse(raw) as StoredPlaylist[]; } catch (e) { PlaylistsVM.cachedStored = []; }
-  }
+/** 持久化用的播放列表结构（与 MediaLibrary 保持一致）。 */
+interface StoredPlaylist {
+  id: number;
+  name: string;
+  uriList: string[];
 }
 
 // ---- 页面 ----
@@ -127,7 +90,7 @@ export struct PlaylistsPage {
   @Local ctxCard: PlaylistCard | null = null;
 
   async aboutToAppear(): Promise<void> {
-    await PlaylistsVM.initCache();
+    await MediaLibrary.initPlaylistCache();
     await this.vm.load();
   }
 
@@ -138,17 +101,34 @@ export struct PlaylistsPage {
   }
 
   playAll(card: PlaylistCard): void {
-    const uriList = PlaylistsVM.getTrackUris(card.id);
+    const uriList = MediaLibrary.getPlaylistUris(card.id);
     const audios = MediaLibrary.getAudios();
-    const tracks = audios.filter((t: Track) => uriList.includes(t.uri));
-    if (tracks.length > 0) {
-      const queue = tracks.map((t: Track) =>
+    const videos = MediaLibrary.getVideos();
+
+    // 优先匹配音频
+    const audioTracks: Track[] = audios.filter((t: Track) => uriList.includes(t.uri));
+    if (audioTracks.length > 0) {
+      const queue = audioTracks.map((t: Track) =>
         new QueueItem(t.id, t.title, t.uri, t.artistName, t.albumName, t.artworkPath));
       PlaybackService.playList(queue, 0, true);
       NavController.push('AudioPlayer');
-    } else {
-      promptAction.showToast({ message: '播放列表为空' });
+      return;
     }
+
+    // 无音频则尝试匹配视频
+    const videoTracks: MediaWrapper[] = videos.filter((v: MediaWrapper) => uriList.includes(v.uri));
+    if (videoTracks.length > 0) {
+      const list: VideoPlayItem[] = [];
+      for (const v of videoTracks) {
+        const item: VideoPlayItem = { uri: v.uri, title: v.title };
+        list.push(item);
+      }
+      const param: VideoParam = { uri: videoTracks[0].uri, title: videoTracks[0].title, list: list, index: 0 };
+      NavController.push('VideoPlayer', param);
+      return;
+    }
+
+    promptAction.showToast({ message: '播放列表为空' });
   }
 
   openCreate(): void { this.sheetMode = 'create'; this.showSheet = true; }
@@ -216,6 +196,10 @@ export struct PlaylistsPage {
     }
     .width('100%').height('100%')
     .backgroundColor($r('app.color.background_default'))
+    // Tab 切换时自动刷新数据（从视频播放器保存后回到此页可见最新歌单）。
+    .onAppear(() => {
+      void this.vm.load();
+    })
     // 唯一的 bindSheet,内部按 sheetMode 切换内容
     .bindSheet(this.showSheet, this.unifiedSheet(), {
       height: SheetSize.FIT_CONTENT, dragBar: true,
@@ -230,7 +214,7 @@ export struct PlaylistsPage {
       PlaylistDialog({
         onClose: () => { this.closeSheet(); this.vm.load(); },
         onCreate: async (name: string) => {
-          await PlaylistsVM.create(name);
+          await MediaLibrary.createPlaylist(name);
         },
       }).width('100%')
     } else if (this.sheetMode === 'ctxmenu') {
