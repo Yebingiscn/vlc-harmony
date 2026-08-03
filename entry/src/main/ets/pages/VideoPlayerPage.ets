@@ -1402,6 +1402,12 @@ export struct VideoPlayerPage {
           this.resetHudTimer();
           this.openOptions();
         })
+        .bindMenu(this.advancedOptionsOpen!!, this.advancedOptionsMenu(), {
+          placement: Placement.TopRight,
+          showInSubWindow: true,
+          backgroundColor: '#FFFFFF',
+          onDisappear: () => this.runPendingAdvancedAction(),
+        })
     }
     .width('100%')
     .padding({ left: 16, right: 16, top: 44, bottom: 16 })
@@ -1534,25 +1540,11 @@ export struct VideoPlayerPage {
       // 音轨和字幕、屏幕方向、播放、宽高比、高级选项。
       Row() {
         ForEach(buildVideoPlayerBottomActions(), (action: VideoPlayerBottomAction) => {
-          if (action.id === 'advanced') {
-            Image(action.icon)
-              .width(32)
-              .height(32)
-              .fillColor('#FFFFFF')
-              .onClick(() => this.openOptions())
-              .bindMenu(this.advancedOptionsOpen!!, this.advancedOptionsMenu(), {
-                placement: Placement.TopRight,
-                showInSubWindow: true,
-                backgroundColor: '#FFFFFF',
-                onDisappear: () => this.runPendingAdvancedAction(),
-              })
-          } else {
             Image(this.bottomActionIcon(action))
               .width(action.id === 'play' ? 56 : 32)
               .height(action.id === 'play' ? 56 : 32)
               .fillColor('#FFFFFF')
               .onClick(() => this.onBottomAction(action.id))
-          }
         }, (action: VideoPlayerBottomAction): string => action.id)
       }
       .width('100%')

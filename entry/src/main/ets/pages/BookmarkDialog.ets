@@ -18,7 +18,6 @@ import { BookMark } from '../common/models/BookmarkModels';
 export struct BookmarkDialog {
   @Event onClose: () => void = () => {};
   @Event onSeek: (timeMs: number) => void = () => {};
-  /** 通知宿主在当前位置生成一条新书签(id 由宿主回填)。 */
   @Event onAddAtCurrent: () => void = () => {};
   @Event onRename: (id: number) => void = () => {};
   @Event onDelete: (id: number) => void = () => {};
@@ -66,7 +65,7 @@ export struct BookmarkDialog {
         .layoutWeight(1)
         .textAlign(TextAlign.Center)
 
-      // 右侧保存书签:36×36 深灰圆形底,橙色 + 图标,样式与左侧对称。
+      // 右侧保存书签:36×36 深灰圆形底,橙色 + 图标。
       Row() {
         Image($r('app.media.ic_bookmark_add'))
           .width(22).height(22)
@@ -83,7 +82,6 @@ export struct BookmarkDialog {
     }
     .width('100%')
     .height(56)
-    // 左右各 16 与圆形按钮(36)对齐,标题垂直居中靠 alignItems(VerticalAlign.Center)。
     .padding({ left: 16, right: 16 })
     .alignItems(VerticalAlign.Center)
     .backgroundColor(this.cHeaderBg)
@@ -243,28 +241,32 @@ export struct BookmarkDialog {
     Column() {
       this.panelHeader()
       this.thinDivider()
-      if (this.bookmarks.length === 0) {
-        this.emptyState()
-      } else {
-        List({ space: 0 }) {
+      // 始终渲染 List(不再 if/else 切换 empty/list),保证 sheet 内容高度稳定,
+      // 避免 bindSheet FIT_CONTENT 模式下空态/列表切换触发 onDisappear → closeSheet。
+      List({ space: 0 }) {
+        if (this.bookmarks.length === 0) {
+          ListItem() {
+            this.emptyState()
+          }
+        } else {
           ForEach(this.bookmarks, (b: BookMark, index: number) => {
             ListItem() {
               this.listItem(b, index)
             }
           }, (b: BookMark): string => `${b.id}`)
-          // 列表底部留白,避免最后一项贴边
-          ListItem() { Row().width('100%').height(20) }
         }
-        .width('100%')
-        .layoutWeight(1)
-        .scrollBar(BarState.Off)
-        .divider({
-          strokeWidth: 0.5,
-          color: this.cDivider,
-          startMargin: 56,
-          endMargin: 12,
-        })
+        // 列表底部留白,避免最后一项贴边
+        ListItem() { Row().width('100%').height(20) }
       }
+      .width('100%')
+      .layoutWeight(1)
+      .scrollBar(BarState.Off)
+      .divider({
+        strokeWidth: 0.5,
+        color: this.cDivider,
+        startMargin: 56,
+        endMargin: 12,
+      })
       this.thinDivider()
       this.timeline()
     }

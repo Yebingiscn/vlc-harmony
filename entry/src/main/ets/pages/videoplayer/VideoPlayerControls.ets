@@ -25,6 +25,5 @@ export function buildVideoPlayerBottomActions(): VideoPlayerBottomAction[] {
     new VideoPlayerBottomAction('orientation', $r('app.media.ic_player_rotate')),
     new VideoPlayerBottomAction('play', $r('app.media.ic_play_player')),
     new VideoPlayerBottomAction('aspectRatio', $r('app.media.ic_player_ratio')),
-    new VideoPlayerBottomAction('advanced', $r('app.media.ic_player_more')),
   ];
 }

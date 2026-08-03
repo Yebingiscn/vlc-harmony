@@ -1,6 +1,6 @@
 import { NavController } from '../common/data/NavController';
 import { AppColors, AppDimens } from '../common/constants/AppConstants';
-import { MediaLibraryItem, MediaWrapper } from '../common/models/MediaModels';
+import { MediaWrapper, Track } from '../common/models/MediaModels';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { PlaybackService } from '../common/data/PlaybackService';
 import { promptAction } from '@kit.ArkUI';
@@ -24,7 +24,7 @@ export class HeaderMediaListVM {
   @Trace title: string = '';
   @Trace description: string = '';
   @Trace isPlaylist: boolean = false;
-  @Trace tracks: MediaLibraryItem[] = [];
+  @Trace tracks: Track[] = [];
   @Trace isFavorite: boolean = false;
   @Trace totalDuration: number = 0;
 
@@ -34,10 +34,10 @@ export class HeaderMediaListVM {
     this.isPlaylist = param.isPlaylist;
     // 曲目数据来自 MediaLibrary.getAudios()(非 mock,设备真实音频;无媒体时空列表)。
     const audios = MediaLibrary.getAudios();
-    const list: MediaLibraryItem[] = [];
+    const list: Track[] = [];
     let total = 0;
     for (const t of audios) {
-      list.push(t as MediaLibraryItem);
+      list.push(t);
       total += t.length;
     }
     this.tracks = list;
@@ -76,7 +76,7 @@ export struct HeaderMediaListActivityPage {
     // playAll(): MediaUtils.playTracks(this, tracksProvider, 0)
     const items: MediaWrapper[] = [];
     for (const t of this.vm.tracks) {
-      const mw = new MediaWrapper(t.id, t.title, '', 1);
+      const mw = new MediaWrapper(t.id, t.title, t.uri, 1);
       items.push(mw);
     }
     PlaybackService.playList(MediaLibrary.toQueueItems(items), 0, true);
@@ -86,7 +86,7 @@ export struct HeaderMediaListActivityPage {
     // shuffleAll(): 随机起始播放
     const items: MediaWrapper[] = [];
     for (const t of this.vm.tracks) {
-      items.push(new MediaWrapper(t.id, t.title, '', 1));
+      items.push(new MediaWrapper(t.id, t.title, t.uri, 1));
     }
     if (items.length === 0) {
       return;
@@ -106,7 +106,7 @@ export struct HeaderMediaListActivityPage {
   }
 
   @Builder
-  TrackItem(item: MediaLibraryItem, position: number) {
+  TrackItem(item: Track, position: number) {
     Row() {
       // 封面 40×40
       Stack() {
@@ -160,7 +160,7 @@ export struct HeaderMediaListActivityPage {
       // onItemClick → playTracks(position)
       const items: MediaWrapper[] = [];
       for (const t of this.vm.tracks) {
-        items.push(new MediaWrapper(t.id, t.title, '', 1));
+        items.push(new MediaWrapper(t.id, t.title, t.uri, 1));
       }
       PlaybackService.playList(MediaLibrary.toQueueItems(items), position, true);
     })
@@ -277,11 +277,11 @@ export struct HeaderMediaListActivityPage {
         // === 内容区:曲目 List ===
         Column() {
           List() {
-            ForEach(this.vm.tracks, (item: MediaLibraryItem, idx: number) => {
+            ForEach(this.vm.tracks, (item: Track, idx: number) => {
               ListItem() {
                 this.TrackItem(item, idx)
               }
-            }, (item: MediaLibraryItem) => `${item.id}`)
+            }, (item: Track) => `${item.id}`)
           }
           .width('100%')
           .layoutWeight(1)

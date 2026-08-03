@@ -528,8 +528,7 @@ export struct PreferencesPage {
       initialMillis: this.sleepMillis,
       initialWaitMediaEnd: this.sleepWaitMediaEnd,
       initialResetOnInteraction: this.sleepResetOnInteraction,
-      onClose: () => this.sleepSheetOpen = false,
-      onClear: () => this.onSleepClear(),
+      onClose: () => { this.sleepSheetOpen = false; },
       onConfirm: (millis: number, waitForMediaEnd: boolean, resetOnInteraction: boolean) =>
         this.onSleepConfirm(millis, waitForMediaEnd, resetOnInteraction),
     })

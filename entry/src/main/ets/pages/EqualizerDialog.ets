@@ -172,7 +172,7 @@ export struct EqualizerDialog {
         }).margin({ bottom: 24 })
     }
     .width('100%')
-    .backgroundColor($r('app.color.background_default'))
+    .backgroundColor('#1C1C1C')
     .borderRadius({ topLeft: 16, topRight: 16 })
     .alignItems(HorizontalAlign.Center)
   }

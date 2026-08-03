@@ -13,7 +13,9 @@ const LOG_DOMAIN: number = 0x0001;
 const LOG_TAG: string = 'VLC';
 
 function needsFdOpen(uri: string): boolean {
-  if (uri.startsWith('file://media/')) {
+  // HarmonyOS 沙箱 picker URI:非标准 file://,host 部分非空(如 file://docs/...、file://media/...),
+  // 走 VLC MRL 解析器会把 host 误识别,必须用 fs.openSync + Media.fromFd。
+  if (uri.startsWith('file://') && !uri.startsWith('file:///')) {
     return true;
   }
   if (uri.startsWith('datashare://')) {
