@@ -1,6 +1,7 @@
 import { NavController } from '../common/data/NavController';
 import { MediaLibrary } from '../common/data/MediaLibrary';
-import { Track, MediaWrapper } from '../common/models/MediaModels';
+import { Track, MediaWrapper, EmptyLoadingState } from '../common/models/MediaModels';
+import { EmptyStateView } from '../common/components/EmptyStateView';
 import { PlaylistDialog } from './PlaylistDialog';
 import { RenameDialog } from './RenameDialog';
 import { promptAction } from '@kit.ArkUI';
@@ -32,6 +33,7 @@ type SheetMode = 'none' | 'create' | 'ctxmenu' | 'rename';
 class PlaylistsVM {
   @Trace playlists: PlaylistCard[] = [];
   @Trace loading: boolean = true;
+  private searchQuery: string = '';
 
   async load(): Promise<void> {
     this.loading = true;
@@ -58,6 +60,11 @@ class PlaylistsVM {
       const art = audioArt ? audioArt.artworkPath : (videoArt ? videoArt.artworkUrl : '');
       return new PlaylistCard(s.id, s.name, count, art);
     });
+  }
+
+  applySearch(q: string): void {
+    this.searchQuery = q;
+    this.rebuildCards();
   }
 
   async rename(id: number, newName: string): Promise<void> {
@@ -88,11 +95,18 @@ export struct PlaylistsPage {
   @Local sheetMode: SheetMode = 'none';
   @Local showSheet: boolean = false;
   @Local ctxCard: PlaylistCard | null = null;
+  @Param searchMode: boolean = false;
+  @Param searchQuery: string = '';
+  @Event onSearchGlobal: () => void = () => {
+  };
 
   async aboutToAppear(): Promise<void> {
     await MediaLibrary.initPlaylistCache();
     await this.vm.load();
   }
+
+  @Monitor('searchQuery')
+  onSearchQueryChange(): void { this.vm.applySearch(this.searchQuery); }
 
   async doRefresh(): Promise<void> {
     this.refreshing = true;
@@ -138,51 +152,61 @@ export struct PlaylistsPage {
 
   build() {
     Stack() {
-      Refresh({ refreshing: $$this.refreshing }) {
-        if (this.vm.playlists.length === 0) {
-          Column() {
-            Image($r('app.media.ic_playlist_big')).width(96).height(96).fillColor($r('app.color.grey800'))
-            Text($r('app.string.noplaylist')).fontSize(15).fontColor($r('app.color.list_subtitle')).margin({ top: 12 })
-            Button($r('app.string.create_new_playlist'))
-              .type(ButtonType.Normal).borderRadius(4).backgroundColor('#FF8800').fontColor('#FFFFFF').fontSize(14)
-              .margin({ top: 16 })
-              .onClick(() => { this.openCreate(); })
-          }
-          .width('100%').height('100%').justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
-        } else {
-          Grid() {
-            ForEach(this.vm.playlists, (card: PlaylistCard) => {
-              GridItem() {
-                Column() {
-                  Stack({ alignContent: Alignment.TopEnd }) {
-                    Image(card.artwork.length > 0 ? card.artwork : $r('app.media.ic_playlist_big'))
-                      .width('100%').aspectRatio(1).objectFit(ImageFit.Cover).borderRadius({ topLeft: 6, topRight: 6 })
-                    Image($r('app.media.ic_more')).width(20).height(20).fillColor($r('app.color.list_title')).margin(4)
-                      .onClick(() => { this.openCtxMenu(card); })
+      Column() {
+        if (this.searchMode) {
+          this.searchGlobalButton()
+        }
+        Refresh({ refreshing: $$this.refreshing }) {
+          if (this.vm.playlists.length === 0) {
+            if (this.searchQuery.trim().length > 0) {
+              EmptyStateView({ state: EmptyLoadingState.EMPTY_SEARCH, filterQuery: this.searchQuery })
+            } else {
+              Column() {
+                Image($r('app.media.ic_playlist_big')).width(96).height(96).fillColor($r('app.color.grey800'))
+                Text($r('app.string.noplaylist')).fontSize(15).fontColor($r('app.color.list_subtitle')).margin({ top: 12 })
+                Button($r('app.string.create_new_playlist'))
+                  .type(ButtonType.Normal).borderRadius(4).backgroundColor('#FF8800').fontColor('#FFFFFF').fontSize(14)
+                  .margin({ top: 16 })
+                  .onClick(() => { this.openCreate(); })
+              }
+              .width('100%').height('100%').justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
+            }
+          } else {
+            Grid() {
+              ForEach(this.vm.playlists, (card: PlaylistCard) => {
+                GridItem() {
+                  Column() {
+                    Stack({ alignContent: Alignment.TopEnd }) {
+                      Image(card.artwork.length > 0 ? card.artwork : $r('app.media.ic_playlist_big'))
+                        .width('100%').aspectRatio(1).objectFit(ImageFit.Cover).borderRadius({ topLeft: 6, topRight: 6 })
+                      Image($r('app.media.ic_more')).width(20).height(20).fillColor($r('app.color.list_title')).margin(4)
+                        .onClick(() => { this.openCtxMenu(card); })
+                    }
+                    .width('100%')
+                    Text(card.name).fontSize(14).fontColor($r('app.color.list_title')).maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ top: 6, left: 8, right: 8 })
+                    Text(`${card.trackCount} 首`).fontSize(12).fontColor($r('app.color.list_subtitle'))
+                      .margin({ bottom: 6 })
                   }
                   .width('100%')
-                  Text(card.name).fontSize(14).fontColor($r('app.color.list_title')).maxLines(1)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ top: 6, left: 8, right: 8 })
-                  Text(`${card.trackCount} 首`).fontSize(12).fontColor($r('app.color.list_subtitle'))
-                    .margin({ bottom: 6 })
+                  .borderRadius(6)
+                  .backgroundColor($r('app.color.card_background'))
+                  .border({ width: 0.5, color: $r('app.color.card_border') })
+                  .shadow({ radius: 4, color: '#1A000000', offsetY: 2 })
+                  .onClick(() => { this.playAll(card); })
                 }
-                .width('100%')
-                .borderRadius(6)
-                .backgroundColor($r('app.color.card_background'))
-                .border({ width: 0.5, color: $r('app.color.card_border') })
-                .shadow({ radius: 4, color: '#1A000000', offsetY: 2 })
-                .onClick(() => { this.playAll(card); })
-              }
-            }, (card: PlaylistCard) => `pl${card.id}`)
+              }, (card: PlaylistCard) => `pl${card.id}`)
+            }
+            .columnsTemplate('1fr 1fr')
+            .columnsGap(10).rowsGap(12)
+            .padding({ left: 12, right: 12, top: 8, bottom: 80 })
+            .width('100%').height('100%')
           }
-          .columnsTemplate('1fr 1fr')
-          .columnsGap(10).rowsGap(12)
-          .padding({ left: 12, right: 12, top: 8, bottom: 80 })
-          .width('100%').height('100%')
         }
+        .onRefreshing(() => this.doRefresh()).refreshOffset(64)
+        .backgroundColor($r('app.color.background_default'))
+        .layoutWeight(1).width('100%')
       }
-      .onRefreshing(() => this.doRefresh()).refreshOffset(64)
-      .backgroundColor($r('app.color.background_default'))
       .width('100%').height('100%')
 
       // FAB
@@ -205,6 +229,25 @@ export struct PlaylistsPage {
       height: SheetSize.FIT_CONTENT, dragBar: true,
       onDisappear: () => { this.closeSheet(); },
     })
+  }
+
+  /** 搜索态:跳转全局搜索页的矩形按钮(橙字灰边居中)。 */
+  @Builder
+  searchGlobalButton() {
+    Row() {
+      Button($r('app.string.search_global'))
+        .type(ButtonType.Normal)
+        .borderRadius(4)
+        .backgroundColor($r('app.color.background_default'))
+        .fontColor('#FF8800')
+        .border({ width: 1, color: $r('app.color.card_border') })
+        .fontSize(14)
+        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+        .onClick(() => this.onSearchGlobal())
+    }
+    .width('100%')
+    .justifyContent(FlexAlign.Center)
+    .padding({ top: 8, bottom: 8 })
   }
 
   /** 统一半模态:根据 sheetMode 渲染不同内容。 */

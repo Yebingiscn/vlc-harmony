@@ -1037,6 +1037,81 @@ export class MediaLibrary {
     } as PersistedBookmark));
     await Settings.put(MediaLibrary.KEY_BOOKMARKS, JSON.stringify(all));
   }
+
+  // ---- 媒体收藏(专辑级,键为 "album|artist") ----
+
+  private static readonly KEY_MEDIA_FAVS: string = 'media_favorites';
+  private static mediaFavCache: Set<string> = new Set<string>();
+
+  /** 计算专辑收藏键:空专辑名/歌手名归一化为"未知专辑"/"未知艺术家"。 */
+  static albumFavKey(albumName: string, artistName: string): string {
+    const a = albumName.length > 0 ? albumName : '未知专辑';
+    const ar = artistName.length > 0 ? artistName : '未知艺术家';
+    return `${a}|${ar}`;
+  }
+
+  static async loadMediaFavs(): Promise<void> {
+    const raw: string = await Settings.getString(MediaLibrary.KEY_MEDIA_FAVS, '[]');
+    MediaLibrary.mediaFavCache = new Set<string>();
+    try {
+      const arr: string[] = JSON.parse(raw) as string[];
+      for (const k of arr) {
+        MediaLibrary.mediaFavCache.add(k);
+      }
+    } catch (e) {
+      // parse error -> empty
+    }
+  }
+
+  static isMediaFav(key: string): boolean {
+    return MediaLibrary.mediaFavCache.has(key);
+  }
+
+  /** 切换收藏状态,返回切换后是否已收藏。 */
+  static async toggleMediaFav(key: string): Promise<boolean> {
+    if (MediaLibrary.mediaFavCache.has(key)) {
+      MediaLibrary.mediaFavCache.delete(key);
+    } else {
+      MediaLibrary.mediaFavCache.add(key);
+    }
+    const arr: string[] = Array.from(MediaLibrary.mediaFavCache);
+    await Settings.put(MediaLibrary.KEY_MEDIA_FAVS, JSON.stringify(arr));
+    return MediaLibrary.mediaFavCache.has(key);
+  }
+
+  // ---- 视频收藏(按 uri) ----
+
+  private static readonly KEY_VIDEO_FAVS: string = 'video_favorites';
+  private static videoFavCache: Set<string> = new Set<string>();
+
+  static async loadVideoFavs(): Promise<void> {
+    const raw: string = await Settings.getString(MediaLibrary.KEY_VIDEO_FAVS, '[]');
+    MediaLibrary.videoFavCache = new Set<string>();
+    try {
+      const arr: string[] = JSON.parse(raw) as string[];
+      for (const k of arr) {
+        MediaLibrary.videoFavCache.add(k);
+      }
+    } catch (e) {
+      // parse error -> empty
+    }
+  }
+
+  static isVideoFav(uri: string): boolean {
+    return MediaLibrary.videoFavCache.has(uri);
+  }
+
+  /** 切换视频收藏状态,返回切换后是否已收藏。 */
+  static async toggleVideoFav(uri: string): Promise<boolean> {
+    if (MediaLibrary.videoFavCache.has(uri)) {
+      MediaLibrary.videoFavCache.delete(uri);
+    } else {
+      MediaLibrary.videoFavCache.add(uri);
+    }
+    const arr: string[] = Array.from(MediaLibrary.videoFavCache);
+    await Settings.put(MediaLibrary.KEY_VIDEO_FAVS, JSON.stringify(arr));
+    return MediaLibrary.videoFavCache.has(uri);
+  }
 }
 
 export interface StoredPlaylist {

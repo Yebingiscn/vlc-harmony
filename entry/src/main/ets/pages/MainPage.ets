@@ -34,6 +34,8 @@ export struct MainPage {
   @Local incognitoMode: boolean = false;
   @Local showAudioDisplaySettings: boolean = false;
   @Local audioSettingsVersion: number = 0;
+  @Local searchMode: boolean = false;
+  @Local searchQuery: string = '';
 
   async aboutToAppear(): Promise<void> {
     this.incognitoMode = Settings.incognitoMode;
@@ -51,6 +53,9 @@ export struct MainPage {
 
   onTabChange(id: string): void {
     this.currentTab = id;
+    // 切换 Tab 时退出当前 Tab 内搜索,避免在不支持搜索的 Tab 上残留搜索栏
+    this.searchMode = false;
+    this.searchQuery = '';
     Settings.put(Settings.KEY_FRAGMENT_ID, this.indexOfTab(id));
     // FAB 仅 Video Tab 显示(刷新媒体库)
     this.showFab = id === 'video';
@@ -139,11 +144,16 @@ export struct MainPage {
         VlcToolbar({
           title: $r('app.string.app_name'),
           showBack: false,
-          showSearch: this.currentTab === 'video' || this.currentTab === 'audio' || this.currentTab === 'playlists',
+          showSearch: !this.searchMode &&
+            (this.currentTab === 'video' || this.currentTab === 'audio' || this.currentTab === 'playlists'),
           showMore: true,
           currentTab: this.currentTab,
           incognitoMode: this.incognitoMode,
-          onSearch: () => NavController.push('Search'),
+          searchMode: this.searchMode,
+          searchQuery: this.searchQuery,
+          onSearch: () => { this.searchMode = true; this.searchQuery = ''; },
+          onSearchBack: () => { this.searchMode = false; this.searchQuery = ''; },
+          onSearchQueryChange: (q: string) => { this.searchQuery = q; },
           onMoreSettings: () => this.openDisplaySettings(),
           onMoreIncognito: () => this.toggleIncognito(),
           onMoreDisplayAsList: () => this.toggleDisplayAsList(),
@@ -166,12 +176,27 @@ export struct MainPage {
 
         // 内容区:Stack + visibility 保留各 Tab 状态
         Stack({ alignContent: Alignment.TopStart }) {
-          VideoGridPage({ settingsVersion: this.displaySettingsVersion })
+          VideoGridPage({
+            settingsVersion: this.displaySettingsVersion,
+            searchMode: this.searchMode,
+            searchQuery: this.searchQuery,
+            onSearchGlobal: () => { this.searchMode = false; this.searchQuery = ''; NavController.push('Search'); },
+          })
             .visibility(this.currentTab === 'video' ? Visibility.Visible : Visibility.None)
-          AudioBrowserPage({ settingsVersion: this.audioSettingsVersion })
+          AudioBrowserPage({
+            settingsVersion: this.audioSettingsVersion,
+            searchMode: this.searchMode,
+            searchQuery: this.searchQuery,
+            onSearchGlobal: () => { this.searchMode = false; this.searchQuery = ''; NavController.push('Search'); },
+          })
             .visibility(this.currentTab === 'audio' ? Visibility.Visible : Visibility.None)
           MainBrowserPage().visibility(this.currentTab === 'browse' ? Visibility.Visible : Visibility.None)
-          PlaylistsPage().visibility(this.currentTab === 'playlists' ? Visibility.Visible : Visibility.None)
+          PlaylistsPage({
+            searchMode: this.searchMode,
+            searchQuery: this.searchQuery,
+            onSearchGlobal: () => { this.searchMode = false; this.searchQuery = ''; NavController.push('Search'); },
+          })
+            .visibility(this.currentTab === 'playlists' ? Visibility.Visible : Visibility.None)
           MorePage().visibility(this.currentTab === 'more' ? Visibility.Visible : Visibility.None)
         }
         .layoutWeight(1)
@@ -208,6 +233,15 @@ export struct MainPage {
       })
     }
     .hideTitleBar(true)
+    .onBackPressed(() => {
+      // 搜索态下返回优先退出搜索,非搜索态返回交给系统(退出 APP)
+      if (this.searchMode) {
+        this.searchMode = false;
+        this.searchQuery = '';
+        return true;
+      }
+      return false;
+    })
     .bindSheet(this.showAudioDisplaySettings, this.audioDisplaySettingsSheet(), {
       detents: [SheetSize.MEDIUM, SheetSize.LARGE],
       dragBar: false,

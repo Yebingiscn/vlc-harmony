@@ -92,12 +92,8 @@ export struct SearchPage {
           .alignItems(VerticalAlign.Center)
         }
         .width('100%')
-        .padding({
-          top: 30,
-          left: 10,
-          right: 10,
-          bottom: 10
-        })
+        .height(94)
+        .padding({ left: 12, right: 12, top: 38 })
         .backgroundColor($r('app.color.background_actionbar'))
         .alignItems(VerticalAlign.Center)
 
