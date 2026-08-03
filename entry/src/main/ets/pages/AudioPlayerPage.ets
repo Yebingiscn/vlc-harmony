@@ -1,4 +1,5 @@
 import { PlaybackService, PlaybackState } from '../common/data/PlaybackService';
+import { PlaybackHistory } from '../common/data/PlaybackHistory';
 import { NavController } from '../common/data/NavController';
 import { PlayState, formatDuration } from '../common/models/MediaModels';
 import { AppColors } from '../common/constants/AppConstants';
@@ -24,10 +25,12 @@ class AudioPlayerViewModel {
   @Trace speed: number = 1.0;
 
   private listenerId: number = 0;
+  private lastRecordedUri: string = '';
 
   attach(): void {
     this.listenerId = setInterval(() => {
       const s: PlaybackState = PlaybackService.snapshot();
+      const prev = this.state;
       this.state = s.state;
       this.duration = s.duration;
       this.position = s.position;
@@ -37,6 +40,15 @@ class AudioPlayerViewModel {
       this.shuffle = s.shuffle;
       this.repeatMode = s.repeatMode;
       this.speed = s.speed;
+      // 记录播放历史:状态转为 PLAYING 且非重复记录同一曲目
+      if (s.state === PlayState.PLAYING && prev !== PlayState.PLAYING && this.title.length > 0) {
+        const cur = PlaybackService.getCurrent();
+        const uri = cur ? cur.uri : '';
+        if (uri.length > 0 && uri !== this.lastRecordedUri) {
+          this.lastRecordedUri = uri;
+          void PlaybackHistory.record(uri, this.title, s.duration, this.artworkPath);
+        }
+      }
     }, 300);
   }
 
@@ -75,7 +87,6 @@ export struct AudioPlayerPage {
   build() {
     NavDestination() {
       Column() {
-        // 头部:返回 + 标题
         Row() {
           Image($r('app.media.ic_arrow_back')).width(24).height(24).fillColor($r('app.color.list_title'))
             .onClick(() => NavController.pop())
@@ -84,7 +95,7 @@ export struct AudioPlayerPage {
           Image($r('app.media.ic_player_playqueue')).width(24).height(24).fillColor($r('app.color.list_title'))
             .onClick(() => promptAction.showToast({ message: $r('app.string.developing') }))
         }
-        .width('100%').padding(12).alignItems(VerticalAlign.Center)
+        .width('100%').padding({ left: 12, right: 12, top: 32, bottom: 8 }).alignItems(VerticalAlign.Center)
 
         // chip 行:倍速 / 均衡器
         Row() {

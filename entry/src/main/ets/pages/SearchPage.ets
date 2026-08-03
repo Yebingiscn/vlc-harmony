@@ -1,5 +1,6 @@
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { NavController } from '../common/data/NavController';
+import { BackTitleBar } from '../common/components/BackTitleBar';
 import { SearchItem } from '../common/components/SearchItem';
 import { EmptyStateView } from '../common/components/EmptyStateView';
 import {
@@ -60,33 +61,43 @@ export struct SearchPage {
           Image($r('app.media.ic_arrow_back')).width(24).height(24).fillColor($r('app.color.list_title'))
             .onClick(() => NavController.pop())
           Row() {
+            Image($r('app.media.ic_search'))
+              .width(20).height(20).fillColor($r('app.color.list_subtitle'))
+              .margin({ left: 12 })
             TextInput({ text: this.input, placeholder: $r('app.string.search_hint') })
               .fontSize(15)
               .fontColor($r('app.color.list_title'))
-              .backgroundColor($r('app.color.card_background'))
-              .borderRadius(4)
-              .border({ width: 0.5, color: $r('app.color.card_border') })
+              .backgroundColor(Color.Transparent)
               .layoutWeight(1)
+              .height(40)
+              .margin({ left: 8 })
               .onChange((v: string) => {
                 this.input = v;
                 this.vm.search(v);
               })
             if (this.input.length > 0) {
               Image($r('app.media.ic_close_small')).width(20).height(20).fillColor($r('app.color.list_subtitle'))
-                .margin({ left: 8 })
+                .margin({ right: 12 })
                 .onClick(() => {
                   this.input = '';
                   this.vm.search('');
                 })
             }
           }
-          .layoutWeight(1)
+          .layoutWeight(1).height(40)
+          .backgroundColor($r('app.color.card_background'))
+          .borderRadius(20)
+          .border({ width: 1, color: $r('app.color.card_border') })
           .margin({ left: 12, right: 12 })
           .alignItems(VerticalAlign.Center)
         }
         .width('100%')
-        .height(56)
-        .padding({ left: 12, right: 12 })
+        .padding({
+          top: 30,
+          left: 10,
+          right: 10,
+          bottom: 10
+        })
         .backgroundColor($r('app.color.background_actionbar'))
         .alignItems(VerticalAlign.Center)
 

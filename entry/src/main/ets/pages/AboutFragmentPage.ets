@@ -1,4 +1,5 @@
 import { NavController } from '../common/data/NavController';
+import { BackTitleBar } from '../common/components/BackTitleBar';
 import { OpenLink } from '../common/data/OpenLink';
 import { RawData } from '../common/data/RawData';
 import { AboutVersionDialog } from './AboutVersionDialog';
@@ -77,18 +78,7 @@ export struct AboutFragmentPage {
   build() {
     NavDestination() {
       Column() {
-        Row() {
-          Image($r('app.media.ic_arrow_back'))
-            .width(32)
-            .height(32)
-            .fillColor($r('app.color.list_subtitle'))
-            .margin({ left: 28 })
-            .onClick(() => NavController.pop())
-          Blank()
-        }
-        .width('100%')
-        .height(64)
-        .alignItems(VerticalAlign.Center)
+        BackTitleBar({ title: '' })
 
         Scroll() {
           Column() {

@@ -131,7 +131,7 @@ export struct VideoGridPage {
     hilog.info(0x0001, 'VLC', '[VLC] playVideo: idx=%{public}d uri=%{public}s', index, item.uri);
     // 队列由 VideoPlayer setup 内 prepareList+bindAndPlay;此处只传列表给详情页 UI(上一曲/下一曲)
     const list: VideoPlayItem[] = items.map((m: MediaWrapper) => {
-      const e: VideoPlayItem = { uri: m.uri, title: m.title };
+      const e: VideoPlayItem = { uri: m.uri, title: m.title, artworkUrl: m.artworkUrl };
       return e;
     });
     const param: VideoParam = {

@@ -172,9 +172,26 @@ export class MediaLibrary {
           mw.dateModified = Number(asset.get('date_modified') ?? 0);
           mw.displayName = title;
           mw.resolution = width > 0 && height > 0 ? `${width}x${height}` : '';
-          // 缩略图:photoAccessHelper 的 uri 可直接交给 Image 组件渲染(有读权限即可),
-          // 否则网格里每张卡都是同一张 ic_no_thumbnail_1610 占位图。
-          mw.artworkUrl = uri;
+          // 缩略图:用 PhotoAsset.getThumbnail 提取真实缩略图并缓存到本地文件。
+          mw.artworkUrl = '';
+          try {
+            const thumbPm = await asset.getThumbnail({ width: 256, height: 256 });
+            if (thumbPm) {
+              const cacheName = `video_thumb_${videoCount}_${Date.now()}.jpg`;
+              const cacheDir = AppContext.get().cacheDir;
+              const cachePath = `${cacheDir}/${cacheName}`;
+              const packer = image.createImagePacker();
+              const buffer = await packer.packing(thumbPm, { format: 'image/jpeg', quality: 80 });
+              const outFile = fs.openSync(cachePath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY);
+              fs.writeSync(outFile.fd, buffer);
+              fs.closeSync(outFile);
+              packer.release();
+              thumbPm.release();
+              mw.artworkUrl = `file://${cachePath}`;
+            }
+          } catch (thumbErr) {
+            // 缩略图提取失败,保留空 artworkUrl,UI 回落占位图。
+          }
           // filePath 供按目录分组(getVideoFolders)使用;media uri 无真实路径时退化为 uri。
           mw.filePath = uri;
           list.push(mw);

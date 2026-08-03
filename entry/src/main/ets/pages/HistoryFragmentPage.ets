@@ -2,6 +2,7 @@ import { NavController } from '../common/data/NavController';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
 import { Settings } from '../common/data/Settings';
 import { AppColors, AppDimens } from '../common/constants/AppConstants';
+import { BackTitleBar } from '../common/components/BackTitleBar';
 import { formatDuration, VideoNavParam } from '../common/models/MediaModels';
 import { HistoryClearPrompt, historyClearPrompt, PlaybackHistoryEntry } from '../common/models/PlaybackHistoryModels';
 import { promptAction } from '@kit.ArkUI';
@@ -178,50 +179,31 @@ export struct HistoryFragmentPage {
     NavDestination() {
       Stack({ alignContent: Alignment.TopStart }) {
         Column() {
-        // 返回导航栏(标题 = "History")
+        // 返回导航栏
         Row() {
           Image($r('app.media.ic_arrow_back'))
-            .width(24)
-            .height(24)
-            .objectFit(ImageFit.Contain)
-            .fillColor($r('app.color.list_title'))
-            .margin({ left: 12 })
+            .width(24).height(24).objectFit(ImageFit.Contain)
+            .fillColor($r('app.color.list_title')).margin({ left: 12 })
             .onClick(() => NavController.pop())
           Text($r('app.string.history'))
-            .fontSize(20)
-            .fontWeight(FontWeight.Bold)
-            .fontColor('#FF8800')
+            .fontSize(20).fontWeight(FontWeight.Bold).fontColor('#FF8800')
             .margin({ left: AppDimens.kl_half })
           Blank()
           Image($r('app.media.ic_search'))
-            .width(28)
-            .height(28)
-            .fillColor($r('app.color.list_title'))
-            .margin({ right: 24 })
+            .width(28).height(28).fillColor($r('app.color.list_title')).margin({ right: 24 })
           Button({ type: ButtonType.Normal, stateEffect: true }) {
-            Image($r('app.media.ic_delete'))
-              .width(28)
-              .height(28)
-              .fillColor($r('app.color.list_title'))
+            Image($r('app.media.ic_delete')).width(28).height(28).fillColor($r('app.color.list_title'))
           }
-          .width(56)
-          .height(56)
-          .backgroundColor(Color.Transparent)
+          .width(56).height(56).backgroundColor(Color.Transparent)
           .onClick(() => this.requestClearHistory())
           Button({ type: ButtonType.Normal, stateEffect: true }) {
-            Image($r('app.media.ic_more_w'))
-              .width(28)
-              .height(28)
+            Image($r('app.media.ic_more_w')).width(28).height(28)
           }
-          .width(52)
-          .height(56)
-          .backgroundColor(Color.Transparent)
-          .margin({ right: 4 })
+          .width(52).height(56).backgroundColor(Color.Transparent).margin({ right: 4 })
           .onClick(() => this.historyMenuOpen = !this.historyMenuOpen)
         }
-        .width('100%')
-        .height(56)
-        .alignItems(VerticalAlign.Center)
+        .width('100%').height(56).alignItems(VerticalAlign.Center)
+        .padding({ top: 32 })
         .backgroundColor($r('app.color.background_default'))
 
         if (this.vm.isEmpty) {
@@ -292,10 +274,6 @@ export struct HistoryFragmentPage {
           .width('100%')
           .onRefreshing(() => this.refreshHistory(true))
         }
-        }
-        .width('100%')
-        .height('100%')
-        .backgroundColor($r('app.color.background_default'))
         if (this.historyMenuOpen) {
           Column()
             .width('100%')
@@ -307,6 +285,10 @@ export struct HistoryFragmentPage {
         if (this.clearHistoryDialogOpen) {
           this.clearHistoryDialog()
         }
+        }
+        .width('100%')
+        .height('100%')
+        .backgroundColor($r('app.color.background_default'))
       }
       .width('100%')
       .height('100%')

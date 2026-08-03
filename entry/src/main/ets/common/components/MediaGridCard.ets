@@ -119,7 +119,7 @@ export struct MediaGridCard {
           .objectFit(ImageFit.Cover)
           .alt($r('app.media.ic_no_thumbnail_1610'))
           .draggable(false)
-          .backgroundColor('#1F1F1F')
+          .backgroundColor($r('app.color.card_background'))
         if (!this.selected && !this.isPresent) {
           Column().width('100%').height('100%').backgroundColor($r('app.color.disabled_overlay'))
         }

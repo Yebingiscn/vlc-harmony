@@ -85,7 +85,7 @@ export struct MainPage {
     const param: VideoParam = {
       uri: latest.uri,
       title: latest.title,
-      list: [{ uri: latest.uri, title: latest.title } as VideoPlayItem],
+      list: [{ uri: latest.uri, title: latest.title, artworkUrl: latest.artworkUrl } as VideoPlayItem],
       index: 0,
     };
     NavController.push('VideoPlayer', param);
