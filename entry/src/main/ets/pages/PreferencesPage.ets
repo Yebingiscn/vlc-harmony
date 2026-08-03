@@ -243,6 +243,13 @@ export struct PreferencesPage {
       this.confirmSheetOpen = true;
       return true; // 已接管,本行不自动 put。
     }
+    // PreferenceRow 会自行持久化普通开关；这里同步页面的依赖镜像，
+    // 让依赖 KEY_INCOGNITO 的“无痕模式持续开启”在本次点击后立即启用或置灰。
+    const states: Record<string, boolean> = this.toggleStates;
+    states[item.key] = newValue;
+    this.toggleStates = states;
+    // PreferenceRow 的依赖参数在重建时重新计算，确保置灰状态无需离页就能刷新。
+    this.rowVersion++;
     return false; // 未接管,PreferenceRow 直接 put。
   }
 
@@ -770,12 +777,10 @@ export struct PreferencesPage {
     ];
     const video: PreferenceItem[] = [
       new PreferenceItem({ key: Settings.KEY_MEDIA_SEEN, title: $r('app.string.media_seen'), type: 'checkbox', summary: $r('app.string.media_seen_summary'), defaultValue: true }),
-      new PreferenceItem({ key: 'playlist_mode_video', title: $r('app.string.force_play_all_title'), type: 'checkbox', summary: $r('app.string.force_play_all_summary'), defaultValue: false }),
       new PreferenceItem({ key: Settings.SHOW_VIDEO_THUMBNAILS, title: $r('app.string.show_video_thumbnails'), type: 'checkbox', summary: $r('app.string.show_video_thumbnails_summary'), defaultValue: true }),
     ];
     const audio: PreferenceItem[] = [
       new PreferenceItem({ key: 'audio_resume_card', title: $r('app.string.audio_resume_card_title'), type: 'checkbox', summary: $r('app.string.audio_resume_card_summary'), defaultValue: true }),
-      new PreferenceItem({ key: 'playlist_mode_audio', title: $r('app.string.force_play_all_audio_title'), type: 'checkbox', summary: $r('app.string.force_play_all_audio_summary'), defaultValue: false }),
       new PreferenceItem({ key: 'lockscreen_cover', title: $r('app.string.lockscreen_cover_title'), type: 'checkbox', summary: $r('app.string.lockscreen_cover_summary'), defaultValue: true }),
       new PreferenceItem({ key: 'show_seek_in_compact_notification', title: $r('app.string.show_seek_in_compact_notif_title'), type: 'checkbox', summary: $r('app.string.show_seek_in_compact_notif_summary'), defaultValue: false }),
     ];

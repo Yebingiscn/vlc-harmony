@@ -1,4 +1,6 @@
 import { Settings } from './Settings';
+import { MediaLibrary } from './MediaLibrary';
+import { MediaWrapper } from '../models/MediaModels';
 import {
   PlaybackHistoryEntry,
   prependPlaybackHistory,
@@ -27,12 +29,14 @@ export class PlaybackHistory {
 
   static async load(): Promise<PlaybackHistoryEntry[]> {
     await PlaybackHistory.ensureLoaded();
+    await PlaybackHistory.hydrateArtworkUrls();
     return PlaybackHistory.snapshot();
   }
 
   static async refresh(): Promise<PlaybackHistoryEntry[]> {
     PlaybackHistory.loaded = false;
     await PlaybackHistory.ensureLoaded();
+    await PlaybackHistory.hydrateArtworkUrls();
     PlaybackHistory.notify();
     return PlaybackHistory.snapshot();
   }
@@ -43,7 +47,8 @@ export class PlaybackHistory {
     if (!shouldRecordPlaybackHistory(incognito)) {
       return;
     }
-    const entry = new PlaybackHistoryEntry(uri, title, length, artworkUrl, Date.now());
+    const resolvedArtworkUrl: string = artworkUrl.length > 0 ? artworkUrl : PlaybackHistory.artworkForUri(uri);
+    const entry = new PlaybackHistoryEntry(uri, title, length, resolvedArtworkUrl, Date.now());
     PlaybackHistory.entries = prependPlaybackHistory(PlaybackHistory.entries, entry, PlaybackHistory.MAX_ENTRIES);
     await PlaybackHistory.persist();
     PlaybackHistory.notify();
@@ -115,6 +120,43 @@ export class PlaybackHistory {
 
   private static async persist(): Promise<void> {
     await Settings.put(Settings.PLAYBACK_HISTORY, JSON.stringify(PlaybackHistory.entries));
+  }
+
+  /**
+   * 早期历史记录没有保存封面时，按 URI 从当前视频媒体库补齐。
+   * 补齐后立即持久化，后续打开历史不必再依赖本次扫描的内存对象。
+   */
+  private static async hydrateArtworkUrls(): Promise<void> {
+    const hasMissingArtwork: boolean = PlaybackHistory.entries.some((entry: PlaybackHistoryEntry) =>
+      entry.artworkUrl.length === 0);
+    if (!hasMissingArtwork) {
+      return;
+    }
+    // 关闭缩略图时不会请求系统缩略图。之后重新开启时，媒体库虽已扫描过，
+    // 内存中的 artworkUrl 仍会是空，因此只看 hasScanned() 会永远无法补齐历史。
+    // scan() 会复用正在进行的扫描；已有封面的记录会在方法开头直接返回。
+    const thumbnailsEnabled: boolean = await Settings.getBoolean(Settings.SHOW_VIDEO_THUMBNAILS, true);
+    if (thumbnailsEnabled || !MediaLibrary.hasScanned() || MediaLibrary.getVideos().length === 0) {
+      await MediaLibrary.scan();
+    }
+    let changed: boolean = false;
+    for (const entry of PlaybackHistory.entries) {
+      if (entry.artworkUrl.length === 0) {
+        const artworkUrl: string = PlaybackHistory.artworkForUri(entry.uri);
+        if (artworkUrl.length > 0) {
+          entry.artworkUrl = artworkUrl;
+          changed = true;
+        }
+      }
+    }
+    if (changed) {
+      await PlaybackHistory.persist();
+    }
+  }
+
+  private static artworkForUri(uri: string): string {
+    const video = MediaLibrary.getVideos().find((item: MediaWrapper) => item.uri === uri);
+    return video && video.artworkUrl.length > 0 ? video.artworkUrl : '';
   }
 
   private static snapshot(): PlaybackHistoryEntry[] {

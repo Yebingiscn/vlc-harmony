@@ -15,6 +15,8 @@ export struct MediaListCard {
   @Param selected: boolean = false;
   @Param inSelection: boolean = false;
   @Param showProgress: boolean = false;
+  @Param showSeenMarker: boolean = true;
+  @Param showThumbnail: boolean = true;
   @Event onItemClick: () => void = () => {};
   @Event onItemLongClick: () => void = () => {};
   @Event onItemMoreClick: () => void = () => {};
@@ -23,11 +25,11 @@ export struct MediaListCard {
     Row() {
       // 左侧 80x50 缩略图卡
       Stack() {
-        Image(this.item.artworkUrl.length > 0 ? this.item.artworkUrl : $r('app.media.ic_no_thumbnail_1610'))
+        Image(this.showThumbnail && this.item.artworkUrl.length > 0 ? this.item.artworkUrl : $r('app.media.tv_channel_default'))
           .width(80)
           .height(50)
           .objectFit(ImageFit.Cover)
-          .alt($r('app.media.ic_no_thumbnail_1610'))
+          .alt($r('app.media.tv_channel_default'))
           .draggable(false)
           .borderRadius(4)
           .backgroundColor($r('app.color.card_background'))
@@ -46,6 +48,16 @@ export struct MediaListCard {
           }
         }
         .position({ x: 4, y: 4 })
+        if (this.showSeenMarker && this.item.seen !== 0) {
+          Image($r('app.media.ic_check'))
+            .width(16)
+            .height(16)
+            .fillColor('#FFFFFF')
+            .backgroundColor($r('app.color.rounded_corners_black_more_transparent'))
+            .borderRadius(3)
+            .padding(3)
+            .position({ x: 60, y: 4 })
+        }
         if (this.item.progress !== 0 && this.item.showItemProgress) {
           Progress({ value: this.item.progress,
             total: this.item.maxProgress > 0 ? this.item.maxProgress : 100, type: ProgressType.Linear })

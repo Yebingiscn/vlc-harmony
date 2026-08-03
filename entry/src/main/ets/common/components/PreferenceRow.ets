@@ -188,7 +188,8 @@ export struct PreferenceRow {
           })
             .selectedColor('#FF8800')
             .enabled(this.dependencyEnabled)
-            .onChange((on: boolean) => this.onToggle(on))
+          // Toggle 的点击会冒泡到整行；统一由 Row.onClick 调用 onToggle，
+          // 避免控件自身 onChange 与整行点击各切换一次而回到原值。
         } else if (this.item.type === 'seekbar') {
           Slider({
             value: this.numValue,

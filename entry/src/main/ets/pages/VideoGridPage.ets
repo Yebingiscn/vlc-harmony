@@ -1,5 +1,6 @@
 import { Settings } from '../common/data/Settings';
 import { MediaLibrary } from '../common/data/MediaLibrary';
+import { VideoSeenState } from '../common/data/VideoSeenState';
 import { PermissionCoordinator } from '../common/data/PermissionCoordinator';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { NavController } from '../common/data/NavController';
@@ -28,6 +29,8 @@ class VideoGridViewModel {
   @Trace cardMode: boolean = true; // KEY_VIDEOS_CARDS 默认 true(网格)
   @Trace grouping: VideoGroupingType = VideoGroupingType.NAME;
   @Trace emptyState: EmptyLoadingState = EmptyLoadingState.LOADING;
+  @Trace showSeenMarker: boolean = true;
+  @Trace showThumbnails: boolean = true;
   private sortField: number = 1;
   private sortDesc: boolean = false;
 
@@ -35,12 +38,15 @@ class VideoGridViewModel {
     this.loading = true;
     this.emptyState = EmptyLoadingState.LOADING;
     this.cardMode = await Settings.getBoolean(Settings.KEY_VIDEOS_CARDS, true);
+    this.showSeenMarker = await Settings.getBoolean(Settings.KEY_MEDIA_SEEN, true);
+    this.showThumbnails = await Settings.getBoolean(Settings.SHOW_VIDEO_THUMBNAILS, true);
     this.sortField = await Settings.getInt(Settings.KEY_VIDEO_SORT, 1);
     this.sortDesc = await Settings.getBoolean(Settings.KEY_VIDEO_SORT_DESC, false);
     // 先确保媒体读权限(首次弹授权框),再扫描 -- 否则扫描在授权完成前跑会返回空。
     await PermissionCoordinator.askStoragePermission(false, false, true);
     await MediaLibrary.scan();
     this.items = this.applySort(MediaLibrary.getVideos().slice());
+    await VideoSeenState.hydrate(this.items);
     this.updateEmpty();
     this.loading = false;
   }
@@ -48,15 +54,19 @@ class VideoGridViewModel {
   async refresh(): Promise<void> {
     await MediaLibrary.scan();
     this.items = this.applySort(MediaLibrary.getVideos().slice());
+    await VideoSeenState.hydrate(this.items);
     this.updateEmpty();
   }
 
   /** 仅重读设置(不重新扫描),用于半模态关闭后刷新显示模式和排序。 */
   async reloadSettings(): Promise<void> {
     this.cardMode = await Settings.getBoolean(Settings.KEY_VIDEOS_CARDS, true);
+    this.showSeenMarker = await Settings.getBoolean(Settings.KEY_MEDIA_SEEN, true);
+    this.showThumbnails = await Settings.getBoolean(Settings.SHOW_VIDEO_THUMBNAILS, true);
     this.sortField = await Settings.getInt(Settings.KEY_VIDEO_SORT, 1);
     this.sortDesc = await Settings.getBoolean(Settings.KEY_VIDEO_SORT_DESC, false);
     this.items = this.applySort(MediaLibrary.getVideos().slice());
+    await VideoSeenState.hydrate(this.items);
     this.updateEmpty();
   }
 
@@ -109,9 +119,27 @@ export struct VideoGridPage {
   @Local contextItem: MediaWrapper | null = null;
   @Local showContext: boolean = false;
   @Param settingsVersion: number = 0;
+  private removeSettingsListener: (() => void) | null = null;
 
   aboutToAppear(): void {
+    if (this.removeSettingsListener === null) {
+      this.removeSettingsListener = Settings.observe((key: string) => {
+        if (key === Settings.SHOW_VIDEO_THUMBNAILS) {
+          // 开启缩略图时重新扫描以生成缓存；关闭时也立即刷新渲染状态。
+          void this.vm.load();
+        } else if (key === Settings.KEY_MEDIA_SEEN) {
+          void this.vm.reloadSettings();
+        }
+      });
+    }
     this.vm.load();
+  }
+
+  aboutToDisappear(): void {
+    if (this.removeSettingsListener !== null) {
+      this.removeSettingsListener();
+      this.removeSettingsListener = null;
+    }
   }
 
   @Monitor('settingsVersion')
@@ -238,6 +266,8 @@ export struct VideoGridPage {
         GridItem() {
           MediaGridCard({
             item: item,
+            showSeenMarker: this.vm.showSeenMarker,
+            showThumbnail: this.vm.showThumbnails,
             onItemClick: () => this.playVideo(item),
             onItemLongClick: () => this.openContext(item),
             onItemMoreClick: () => this.openContext(item),
@@ -260,6 +290,8 @@ export struct VideoGridPage {
         ListItem() {
           MediaListCard({
             item: item,
+            showSeenMarker: this.vm.showSeenMarker,
+            showThumbnail: this.vm.showThumbnails,
             onItemClick: () => this.playVideo(item),
             onItemLongClick: () => this.openContext(item),
             onItemMoreClick: () => this.openContext(item),

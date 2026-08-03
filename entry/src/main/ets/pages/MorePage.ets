@@ -1,5 +1,6 @@
 import { NavController } from '../common/data/NavController';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
+import { Settings } from '../common/data/Settings';
 import { formatDuration, VideoNavParam } from '../common/models/MediaModels';
 import { PlaybackHistoryEntry } from '../common/models/PlaybackHistoryModels';
 import { historyPreview } from '../common/models/MoreHomeModels';
@@ -13,16 +14,28 @@ class MoreViewModel {
 @ComponentV2
 export struct MorePage {
   @Local vm: MoreViewModel = new MoreViewModel();
+  @Local showVideoThumbnails: boolean = true;
   private removeHistoryListener: (() => void) | null = null;
+  private removeSettingsListener: (() => void) | null = null;
 
   async aboutToAppear(): Promise<void> {
     if (this.removeHistoryListener) {
       this.removeHistoryListener();
       this.removeHistoryListener = null;
     }
+    if (this.removeSettingsListener) {
+      this.removeSettingsListener();
+      this.removeSettingsListener = null;
+    }
     this.vm.history = historyPreview(await PlaybackHistory.load());
+    this.showVideoThumbnails = await Settings.getBoolean(Settings.SHOW_VIDEO_THUMBNAILS, true);
     this.removeHistoryListener = PlaybackHistory.subscribe((entries: PlaybackHistoryEntry[]) => {
       this.vm.history = historyPreview(entries);
+    });
+    this.removeSettingsListener = Settings.observe((key: string) => {
+      if (key === Settings.SHOW_VIDEO_THUMBNAILS) {
+        this.showVideoThumbnails = Settings.showVideoThumbs;
+      }
     });
   }
 
@@ -31,6 +44,10 @@ export struct MorePage {
       this.removeHistoryListener();
       this.removeHistoryListener = null;
     }
+    if (this.removeSettingsListener) {
+      this.removeSettingsListener();
+      this.removeSettingsListener = null;
+    }
   }
 
   private openHistory(): void {
@@ -38,7 +55,7 @@ export struct MorePage {
   }
 
   private playHistoryItem(item: PlaybackHistoryEntry): void {
-    const param: VideoNavParam = { uri: item.uri, title: item.title };
+    const param: VideoNavParam = { uri: item.uri, title: item.title, artworkUrl: item.artworkUrl };
     NavController.push('VideoPlayer', param);
   }
 
@@ -88,10 +105,10 @@ export struct MorePage {
   @Builder
   HistoryCard(item: PlaybackHistoryEntry) {
     Column() {
-      Image(item.artworkUrl.length > 0 ? item.artworkUrl : $r('app.media.ic_no_thumbnail_1610'))
+      Image(this.showVideoThumbnails && item.artworkUrl.length > 0 ? item.artworkUrl : $r('app.media.tv_channel_default'))
         .width('100%').height(108)
         .objectFit(ImageFit.Cover)
-        .alt($r('app.media.ic_no_thumbnail_1610'))
+        .alt($r('app.media.tv_channel_default'))
         .borderRadius({ topLeft: 8, topRight: 8 })
         .backgroundColor($r('app.color.card_background'))
       Column() {

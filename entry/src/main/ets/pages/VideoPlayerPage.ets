@@ -9,6 +9,7 @@ import { PlaybackService, PlaybackListener } from '../common/data/PlaybackServic
 import { VlcChapterInfo } from 'libvlcnapi.so';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { Settings } from '../common/data/Settings';
+import { VideoSeenState } from '../common/data/VideoSeenState';
 import { MediaWrapper, PlayState } from '../common/models/MediaModels';
 import { shouldRecordPlaybackStart } from '../common/models/PlaybackHistoryModels';
 import { BookMark } from '../common/models/BookmarkModels';
@@ -246,6 +247,11 @@ class VideoPlayerViewModel implements PlaybackListener {
           this.currentArtworkUrl);
       }
     }
+  }
+
+  /** 仅在 LibVLC 的真实 ended 事件到来时标记，手动停止或半途退出不会算作已看。 */
+  onMediaEnded(): void {
+    void VideoSeenState.markSeen(this.uri);
   }
 
   onTimeUpdate(current: number, duration: number): void {

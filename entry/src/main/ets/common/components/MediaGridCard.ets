@@ -16,6 +16,9 @@ export struct MediaGridCard {
   @Param selected: boolean = false;
   @Param inSelection: boolean = false;
   @Param showProgress: boolean = false;
+  /** 设置-界面-视频中的两个展示开关。 */
+  @Param showSeenMarker: boolean = true;
+  @Param showThumbnail: boolean = true;
   @Event onItemClick: () => void = () => {};
   @Event onItemLongClick: () => void = () => {};
   @Event onItemMoreClick: () => void = () => {};
@@ -47,7 +50,7 @@ export struct MediaGridCard {
             .padding({ left: 4, top: 2, right: 4, bottom: 2 })
             .margin({ right: 4 })
         }
-        if (this.item.seen !== 0) {
+        if (this.showSeenMarker && this.item.seen !== 0) {
           Image($r('app.media.ic_check'))
             .width(16)
             .height(16)
@@ -113,11 +116,11 @@ export struct MediaGridCard {
     Column() {
       Stack() {
         // 缩略图:artworkUrl 为媒体库 uri 时 Image 可直接渲染;为空/加载失败回落占位图。
-        Image(this.item.artworkUrl.length > 0 ? this.item.artworkUrl : $r('app.media.ic_no_thumbnail_1610'))
+        Image(this.showThumbnail && this.item.artworkUrl.length > 0 ? this.item.artworkUrl : $r('app.media.tv_channel_default'))
           .width('100%')
           .height('100%')
           .objectFit(ImageFit.Cover)
-          .alt($r('app.media.ic_no_thumbnail_1610'))
+          .alt($r('app.media.tv_channel_default'))
           .draggable(false)
           .backgroundColor($r('app.color.card_background'))
         if (!this.selected && !this.isPresent) {

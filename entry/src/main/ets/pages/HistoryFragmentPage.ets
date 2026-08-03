@@ -44,7 +44,9 @@ export struct HistoryFragmentPage {
   @Local incognitoMode: boolean = false;
   @Local historyMenuOpen: boolean = false;
   @Local clearHistoryDialogOpen: boolean = false;
+  @Local showVideoThumbnails: boolean = true;
   private removeHistoryListener: (() => void) | null = null;
+  private removeSettingsListener: (() => void) | null = null;
   private readonly clearHistoryPrompt: HistoryClearPrompt = historyClearPrompt();
 
   async aboutToAppear(): Promise<void> {
@@ -52,9 +54,19 @@ export struct HistoryFragmentPage {
       this.removeHistoryListener();
       this.removeHistoryListener = null;
     }
+    if (this.removeSettingsListener) {
+      this.removeSettingsListener();
+      this.removeSettingsListener = null;
+    }
     await this.refreshHistory(false);
+    this.showVideoThumbnails = await Settings.getBoolean(Settings.SHOW_VIDEO_THUMBNAILS, true);
     this.removeHistoryListener = PlaybackHistory.subscribe((entries: PlaybackHistoryEntry[]) => {
       this.vm.apply(entries);
+    });
+    this.removeSettingsListener = Settings.observe((key: string) => {
+      if (key === Settings.SHOW_VIDEO_THUMBNAILS) {
+        this.showVideoThumbnails = Settings.showVideoThumbs;
+      }
     });
   }
 
@@ -62,6 +74,10 @@ export struct HistoryFragmentPage {
     if (this.removeHistoryListener) {
       this.removeHistoryListener();
       this.removeHistoryListener = null;
+    }
+    if (this.removeSettingsListener) {
+      this.removeSettingsListener();
+      this.removeSettingsListener = null;
     }
   }
 
@@ -90,7 +106,7 @@ export struct HistoryFragmentPage {
 
   private onItemClick(item: PlaybackHistoryEntry): void {
     // TODO(契约):MediaUtils 播放入口 —— 播放该 MediaWrapper(进入播放器)。
-    const p: VideoNavParam = { uri: item.uri, title: item.title };
+    const p: VideoNavParam = { uri: item.uri, title: item.title, artworkUrl: item.artworkUrl };
     NavController.push('VideoPlayer', p);
   }
 
@@ -227,11 +243,11 @@ export struct HistoryFragmentPage {
                   Row() {
                     // 缩略图区(16:10 比例占位,40vp 高)
                     Stack() {
-                      Image(item.artworkUrl.length > 0 ? item.artworkUrl : $r('app.media.ic_no_thumbnail_1610'))
+                      Image(this.showVideoThumbnails && item.artworkUrl.length > 0 ? item.artworkUrl : $r('app.media.tv_channel_default'))
                         .width('100%')
                         .height('100%')
                         .objectFit(ImageFit.Cover)
-                        .alt($r('app.media.ic_no_thumbnail_1610'))
+                        .alt($r('app.media.tv_channel_default'))
                     }
                     .width(96)
                     .height(60)

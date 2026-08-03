@@ -117,6 +117,8 @@ export class MediaLibrary {
   /** 扫描视频:photoAccessHelper PhotoType.VIDEO。 */
   private static async scanVideos(): Promise<void> {
     const list: MediaWrapper[] = [];
+    // 关闭缩略图时既不请求系统缩略图，也不写入缓存，避免无意义的扫描开销。
+    const loadThumbnails: boolean = await Settings.getBoolean(Settings.SHOW_VIDEO_THUMBNAILS, true);
     try {
       const ctx = AppContext.get();
       const helper = photoAccessHelper.getPhotoAccessHelper(ctx);
@@ -175,8 +177,9 @@ export class MediaLibrary {
           // 缩略图:用 PhotoAsset.getThumbnail 提取真实缩略图并缓存到本地文件。
           mw.artworkUrl = '';
           try {
-            const thumbPm = await asset.getThumbnail({ width: 256, height: 256 });
-            if (thumbPm) {
+            if (loadThumbnails) {
+              const thumbPm = await asset.getThumbnail({ width: 256, height: 256 });
+              if (thumbPm) {
               const cacheName = `video_thumb_${videoCount}_${Date.now()}.jpg`;
               const cacheDir = AppContext.get().cacheDir;
               const cachePath = `${cacheDir}/${cacheName}`;
@@ -188,6 +191,7 @@ export class MediaLibrary {
               packer.release();
               thumbPm.release();
               mw.artworkUrl = `file://${cachePath}`;
+              }
             }
           } catch (thumbErr) {
             // 缩略图提取失败,保留空 artworkUrl,UI 回落占位图。

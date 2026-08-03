@@ -74,6 +74,8 @@ export interface PlaybackState {
 
 export interface PlaybackListener {
   onStateChange?(state: PlayState): void;
+  /** LibVLC 发出 ended 时触发，早于队列切换，适合保存当前媒体的完成状态。 */
+  onMediaEnded?(): void;
   onTimeUpdate?(current: number, duration: number): void;
   onQueueChanged?(): void;
   onVideoSize?(width: number, height: number): void;
@@ -172,6 +174,7 @@ export class PlaybackService {
         this.emitState();
         break;
       case 'ended':
+        this.emitMediaEnded();
         this.onComplete();
         break;
       case 'error':
@@ -514,6 +517,14 @@ export class PlaybackService {
       }
     }
     this.notifyChange();
+  }
+
+  private emitMediaEnded(): void {
+    for (const l of this.listeners) {
+      if (l.onMediaEnded) {
+        l.onMediaEnded();
+      }
+    }
   }
 
   private emitTime(): void {
