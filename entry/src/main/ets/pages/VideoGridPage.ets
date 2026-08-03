@@ -185,7 +185,10 @@ export struct VideoGridPage {
 
   async playVideo(item: MediaWrapper): Promise<void> {
     const items = this.vm.items;
-    const index = items.indexOf(item);
+    // 设置页返回时可能触发列表重建，卡片事件里保留的 item 与当前
+    // vm.items 中的对象不一定还是同一个引用。用 URI 定位才能保证点击
+    // 的视频对应当前播放队列中的正确位置，而不是在 indexOf 失败后回退到 0。
+    const index = items.findIndex((candidate: MediaWrapper) => candidate.uri === item.uri);
     hilog.info(0x0001, 'VLC', '[VLC] playVideo: idx=%{public}d uri=%{public}s', index, item.uri);
     // 队列由 VideoPlayer setup 内 prepareList+bindAndPlay;此处只传列表给详情页 UI(上一曲/下一曲)
     const list: VideoPlayItem[] = items.map((m: MediaWrapper) => {

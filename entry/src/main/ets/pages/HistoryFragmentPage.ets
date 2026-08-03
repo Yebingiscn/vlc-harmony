@@ -4,7 +4,7 @@ import { Settings } from '../common/data/Settings';
 import { AppColors, AppDimens } from '../common/constants/AppConstants';
 import { BackTitleBar } from '../common/components/BackTitleBar';
 import { formatDuration, VideoNavParam } from '../common/models/MediaModels';
-import { HistoryClearPrompt, historyClearPrompt, PlaybackHistoryEntry } from '../common/models/PlaybackHistoryModels';
+import { PlaybackHistoryEntry } from '../common/models/PlaybackHistoryModels';
 import { promptAction } from '@kit.ArkUI';
 
 /**
@@ -43,11 +43,10 @@ export struct HistoryFragmentPage {
   @Local isRefreshing: boolean = false;
   @Local incognitoMode: boolean = false;
   @Local historyMenuOpen: boolean = false;
-  @Local clearHistoryDialogOpen: boolean = false;
   @Local showVideoThumbnails: boolean = true;
   private removeHistoryListener: (() => void) | null = null;
   private removeSettingsListener: (() => void) | null = null;
-  private readonly clearHistoryPrompt: HistoryClearPrompt = historyClearPrompt();
+  private clearHistoryDialogId: number = -1;
 
   async aboutToAppear(): Promise<void> {
     if (this.removeHistoryListener) {
@@ -89,19 +88,39 @@ export struct HistoryFragmentPage {
   }
 
   private requestClearHistory(): void {
-    this.clearHistoryDialogOpen = true;
+    this.getUIContext().getPromptAction().openCustomDialog({
+      builder: () => this.clearHistoryDialogContent(),
+      alignment: DialogAlignment.Center,
+      autoCancel: true,
+      maskColor: $r('app.color.dialog_mask'),
+      backgroundColor: Color.Transparent,
+    }).then((dialogId: number) => {
+      this.clearHistoryDialogId = dialogId;
+    });
+  }
+
+  private closeClearHistoryDialog(): void {
+    if (this.clearHistoryDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.clearHistoryDialogId);
+    }
+    this.clearHistoryDialogId = -1;
   }
 
   private async confirmClearHistory(): Promise<void> {
-    this.clearHistoryDialogOpen = false;
+    this.closeClearHistoryDialog();
     await PlaybackHistory.clear();
-    promptAction.showToast({ message: '播放历史已清空' });
+    promptAction.showToast({ message: $r('app.string.clear_history') });
   }
 
   private async setIncognito(enabled: boolean): Promise<void> {
     await PlaybackHistory.setIncognito(enabled);
     this.incognitoMode = enabled;
     promptAction.showToast({ message: enabled ? '无痕模式已开启' : '无痕模式已关闭' });
+  }
+
+  private async setHistoryMenuIncognito(enabled: boolean): Promise<void> {
+    await this.setIncognito(enabled);
+    this.historyMenuOpen = false;
   }
 
   private onItemClick(item: PlaybackHistoryEntry): void {
@@ -114,81 +133,71 @@ export struct HistoryFragmentPage {
   historyMenu() {
     Column() {
       Row() {
-        Text('无痕模式')
+        Text($r('app.string.incognito_mode'))
           .fontSize(16)
           .fontColor($r('app.color.list_title'))
           .layoutWeight(1)
+          .onClick(() => void this.setHistoryMenuIncognito(!this.incognitoMode))
         Toggle({ type: ToggleType.Checkbox, isOn: this.incognitoMode })
-          .selectedColor('#FF8800')
-          .onChange((enabled: boolean) => this.setIncognito(enabled))
+          .selectedColor($r('app.color.orange500'))
+          .onChange((enabled: boolean) => void this.setHistoryMenuIncognito(enabled))
       }
-        .width('100%')
-        .height(52)
-        .padding({ left: 16, right: 12 })
-        .alignItems(VerticalAlign.Center)
+      .width('100%')
+      .height(52)
+      .padding({ left: 16, right: 12 })
+      .alignItems(VerticalAlign.Center)
       Divider()
         .color($r('app.color.divider'))
         .strokeWidth(1)
-      Text('刷新')
+      Text($r('app.string.menu_refresh'))
         .fontSize(16)
         .fontColor($r('app.color.list_title'))
         .width('100%')
         .padding({ left: 16, right: 16, top: 16, bottom: 16 })
         .onClick(() => {
           this.historyMenuOpen = false;
-          this.refreshHistory(true);
+          void this.refreshHistory(true);
         })
     }
     .width(220)
-    .backgroundColor('#242424')
     .borderRadius(12)
-    .shadow({ radius: 16, color: '#66000000', offsetY: 6 })
-    .position({ right: 12, top: 64 })
   }
 
   @Builder
-  clearHistoryDialog() {
-    Stack({ alignContent: Alignment.Center }) {
-      Column()
+  clearHistoryDialogContent() {
+    Column() {
+      Text($r('app.string.clear_playback_history'))
+        .fontSize(22)
+        .fontWeight(FontWeight.Bold)
+        .fontColor($r('app.color.list_title'))
         .width('100%')
-        .height('100%')
-        .backgroundColor('#99000000')
-      Column() {
-        Text(this.clearHistoryPrompt.title)
-          .fontSize(22)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.list_title'))
-          .width('100%')
-        Text(this.clearHistoryPrompt.message)
-          .fontSize(16)
-          .fontColor('#D0D0D0')
-          .width('100%')
-          .margin({ top: 20 })
-        Row() {
-          Button(this.clearHistoryPrompt.cancelLabel)
-            .type(ButtonType.Normal)
-            .fontColor('#FF8800')
-            .backgroundColor(Color.Transparent)
-            .onClick(() => this.clearHistoryDialogOpen = false)
-          Button(this.clearHistoryPrompt.confirmLabel)
-            .type(ButtonType.Normal)
-            .fontColor('#FF8800')
-            .backgroundColor(Color.Transparent)
-            .margin({ left: 8 })
-            .onClick(() => this.confirmClearHistory())
-        }
+      Text($r('app.string.clear_history_message'))
+        .fontSize(16)
+        .fontColor($r('app.color.list_subtitle'))
         .width('100%')
-        .justifyContent(FlexAlign.End)
-        .margin({ top: 32 })
+        .margin({ top: 20 })
+      Row() {
+        Button($r('app.string.cancel'))
+          .type(ButtonType.Normal)
+          .fontColor($r('app.color.orange500'))
+          .backgroundColor(Color.Transparent)
+          .onClick(() => this.closeClearHistoryDialog())
+        Button($r('app.string.clear_history'))
+          .type(ButtonType.Normal)
+          .fontColor($r('app.color.orange500'))
+          .backgroundColor(Color.Transparent)
+          .margin({ left: 8 })
+          .onClick(() => this.confirmClearHistory())
       }
-      .width('84%')
-      .backgroundColor($r('app.color.card_background'))
-      .borderRadius(16)
-      .padding(24)
-      .alignItems(HorizontalAlign.Start)
+      .width('100%')
+      .justifyContent(FlexAlign.End)
+      .margin({ top: 32 })
     }
-    .width('100%')
-    .height('100%')
+    .width('84%')
+    // .backgroundColor($r('app.color.card_background'))
+    .borderRadius(16)
+    .padding(24)
+    .alignItems(HorizontalAlign.Start)
   }
 
   build() {
@@ -213,10 +222,16 @@ export struct HistoryFragmentPage {
           .width(56).height(56).backgroundColor(Color.Transparent)
           .onClick(() => this.requestClearHistory())
           Button({ type: ButtonType.Normal, stateEffect: true }) {
-            Image($r('app.media.ic_more_w')).width(28).height(28)
+            SymbolGlyph($r('sys.symbol.dot_grid_1x2'))
+              .fontSize(28).fontColor([$r('sys.color.icon_primary')])
           }
           .width(52).height(56).backgroundColor(Color.Transparent).margin({ right: 4 })
           .onClick(() => this.historyMenuOpen = !this.historyMenuOpen)
+          .bindMenu(this.historyMenuOpen, this.historyMenu(), {
+            placement: Placement.BottomRight,
+            showInSubWindow: true,
+            onDisappear: () => this.historyMenuOpen = false,
+          })
         }
         .width('100%').height(56).alignItems(VerticalAlign.Center)
         .padding({ top: 32 })
@@ -289,17 +304,6 @@ export struct HistoryFragmentPage {
           .layoutWeight(1)
           .width('100%')
           .onRefreshing(() => this.refreshHistory(true))
-        }
-        if (this.historyMenuOpen) {
-          Column()
-            .width('100%')
-            .height('100%')
-            .backgroundColor(Color.Transparent)
-            .onClick(() => this.historyMenuOpen = false)
-          this.historyMenu()
-        }
-        if (this.clearHistoryDialogOpen) {
-          this.clearHistoryDialog()
         }
         }
         .width('100%')
