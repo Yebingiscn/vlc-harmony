@@ -1021,6 +1021,10 @@
       "value": "搜索媒体"
     },
     {
+      "name": "search_in_current_list",
+      "value": "在当前列表中搜索"
+    },
+    {
       "name": "search_prefs",
       "value": "搜索设置"
     },

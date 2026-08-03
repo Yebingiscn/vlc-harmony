@@ -117,6 +117,7 @@ export struct DisplaySettingsDialog {
     this.displayInCards = !cards;
     this.currentSort = await Settings.getInt(Settings.KEY_VIDEO_SORT, 1);
     this.currentSortDesc = await Settings.getBoolean(Settings.KEY_VIDEO_SORT_DESC, false);
+    this.onlyFavs = await Settings.getBoolean(Settings.KEY_VIDEO_ONLY_FAVS, false);
   }
 
   toggleDisplayMode(): void {
@@ -184,6 +185,7 @@ export struct DisplaySettingsDialog {
             .margin({ right: 4 })
             .onChange((on: boolean) => {
               this.onlyFavs = on;
+              Settings.put(Settings.KEY_VIDEO_ONLY_FAVS, on);
             })
         }
         .width('100%')

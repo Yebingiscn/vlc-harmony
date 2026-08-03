@@ -30,16 +30,6 @@ export struct AudioDisplaySettingsDialog {
     Settings.put(Settings.KEY_DISPLAY_AS_LIST, this.displayAsList);
   }
 
-  toggleShowAllArtists(): void {
-    this.showAllArtists = !this.showAllArtists;
-    Settings.put(Settings.KEY_ARTISTS_SHOW_ALL, this.showAllArtists);
-  }
-
-  toggleOnlyFavs(): void {
-    this.onlyFavs = !this.onlyFavs;
-    Settings.put(Settings.KEY_AUDIO_ONLY_FAVS, this.onlyFavs);
-  }
-
   setSortDesc(desc: boolean): void {
     this.sortDesc = desc;
     Settings.put(Settings.KEY_AUDIO_SORT_DESC, desc);
@@ -89,7 +79,10 @@ export struct AudioDisplaySettingsDialog {
           Toggle({ type: ToggleType.Checkbox, isOn: this.showAllArtists })
             .selectedColor(AppColors.orange500)
             .margin({ right: 4 })
-            .onChange((on: boolean) => this.toggleShowAllArtists())
+            .onChange((on: boolean) => {
+              this.showAllArtists = on;
+              Settings.put(Settings.KEY_ARTISTS_SHOW_ALL, on);
+            })
         }
         .width('100%')
         .constraintSize({ minHeight: 48 })
@@ -110,7 +103,10 @@ export struct AudioDisplaySettingsDialog {
           Toggle({ type: ToggleType.Checkbox, isOn: this.onlyFavs })
             .selectedColor(AppColors.orange500)
             .margin({ right: 4 })
-            .onChange((on: boolean) => this.toggleOnlyFavs())
+            .onChange((on: boolean) => {
+              this.onlyFavs = on;
+              Settings.put(Settings.KEY_AUDIO_ONLY_FAVS, on);
+            })
         }
         .width('100%')
         .constraintSize({ minHeight: 48 })

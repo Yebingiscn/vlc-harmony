@@ -969,6 +969,10 @@
       "value": "Search media"
     },
     {
+      "name": "search_in_current_list",
+      "value": "Search in current list"
+    },
+    {
       "name": "search_prefs",
       "value": "Search settings"
     },
