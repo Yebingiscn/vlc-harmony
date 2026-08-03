@@ -8,6 +8,7 @@ import { PlaybackService, PlaybackListener } from '../common/data/PlaybackServic
 import { Settings } from '../common/data/Settings';
 import { MediaWrapper, PlayState } from '../common/models/MediaModels';
 import { shouldRecordPlaybackStart } from '../common/models/PlaybackHistoryModels';
+import { BookMark } from '../common/models/BookmarkModels';
 import { JumpToTimeDialog } from './JumpToTimeDialog';
 import { SleepTimerDialog } from './SleepTimerDialog';
 import { SelectChapterDialog } from './SelectChapterDialog';
@@ -18,6 +19,7 @@ import { VideoControlsSettingsDialog, ControlsState } from './VideoControlsSetti
 import { EqualizerDialog } from './EqualizerDialog';
 import { VideoInfoDialog } from './VideoInfoDialog';
 import { BookmarkDialog } from './BookmarkDialog';
+import { AddToPlaylistDialog, AddToPlaylistAction } from './AddToPlaylistDialog';
 import {
   buildPlayerAdvancedOptions,
   PlayerAdvancedOptionId,
@@ -224,6 +226,11 @@ class VideoPlayerViewModel implements PlaybackListener {
     }
     this.index = svc.getCurrentIndex();
     this.listLen = Math.max(this.list.length, svc.getQueue().length);
+    // cycleRepeat() 等内部操作通过 emitQueue() 通知 ViewModel,避免高级菜单需点击两次才看到激活态变化。
+    const nextMode = svc.getRepeatMode();
+    if (this.repeatMode !== nextMode) {
+      this.repeatMode = nextMode;
+    }
   }
 
   onVideoSize(width: number, height: number): void {
@@ -397,7 +404,12 @@ export struct VideoPlayerPage {
 
   /** 更多选项/二级弹窗的 sheet 状态。sheetKind 空串=主选项列表;否则=对应二级弹窗。 */
   @Local sheetOpen: boolean = false;
-  @Local sheetKind: string = ''; // '' | 'jump' | 'sleep' | 'chapter' | 'tracks' | 'renderer' | 'speed' | 'controls' | 'equalizer' | 'videoInfo' | 'bookmark'
+  @Local sheetKind: string = ''; // '' | 'jump' | 'sleep' | 'chapter' | 'tracks' | 'renderer' | 'speed' | 'controls' | 'equalizer' | 'videoInfo' | 'savePlaylist'
+  /** 书签弹框独立走 Stack 覆盖层(不走 bindSheet)以保持半透效果,不遮挡背后视频。 */
+  @Local bookmarkOpen: boolean = false;
+  /** 当前视频的书签列表(内存,本期不持久化到磁盘)。 */
+  @Local bookmarks: BookMark[] = [];
+  private bookmarkIdSeq: number = 1;
   @Local advancedOptionsOpen: boolean = false;
   /**
    * 高级选项菜单选中项的暂存。
@@ -533,6 +545,31 @@ export struct VideoPlayerPage {
     void this.touch.refreshPrefs();
     promptAction.showToast({ message: '控制设置已保存' });
     this.closeSheet();
+  }
+
+  /** 「保存到播放列表」确认回调:本期不持久化,弹窗关掉前提示用户。 */
+  onSavePlaylistConfirm(_action: AddToPlaylistAction): void {
+    promptAction.showToast({ message: '播放列表保存功能开发中' });
+    this.closeSheet();
+  }
+
+  /** 在当前播放位置新增一条书签。 */
+  addBookmarkAtCurrent(): void {
+    const timeMs: number = Math.max(0, Math.floor(this.vm.position));
+    const bm: BookMark = new BookMark(this.bookmarkIdSeq++, -1, timeMs, '');
+    this.bookmarks = [...this.bookmarks, bm].sort((a: BookMark, b: BookMark) => a.timeMs - b.timeMs);
+    promptAction.showToast({ message: '已保存书签' });
+  }
+
+  /** 删除指定 id 的书签。 */
+  deleteBookmark(id: number): void {
+    this.bookmarks = this.bookmarks.filter((b: BookMark) => b.id !== id);
+  }
+
+  /** 重命名书签:本期直接在 toBoolean 提示里给出占位 toast。 */
+  renameBookmark(id: number): void {
+    void id;
+    promptAction.showToast({ message: '书签重命名功能开发中' });
   }
 
   aboutToAppear(): void {
@@ -905,6 +942,30 @@ export struct VideoPlayerPage {
                 this.touch.onDoubleTap(x);
               })
           )
+
+        // 书签弹框:不走 bindSheet,直接以 Stack 子层叠在视频上方,保持半透看到背后画面。
+        if (this.bookmarkOpen) {
+          Column() {
+            Blank()
+            BookmarkDialog({
+              bookmarks: this.bookmarks,
+              currentTimeMs: this.vm.position,
+              durationMs: this.vm.duration,
+              onClose: () => {
+                this.bookmarkOpen = false;
+                this.resetHudTimer();
+              },
+              onSeek: (timeMs: number) => { this.vm.seekTo(timeMs); },
+              onAddAtCurrent: () => this.addBookmarkAtCurrent(),
+              onDelete: (id: number) => this.deleteBookmark(id),
+              onRename: (id: number) => this.renameBookmark(id),
+            })
+              .width('100%')
+              .height('66.66%')
+          }
+          .width('100%')
+          .height('100%')
+        }
       }
       .width('100%')
       .height('100%')
@@ -921,7 +982,9 @@ export struct VideoPlayerPage {
       return true;
     })
     .bindSheet(this.sheetOpen, this.playerSheet(), {
-      height: this.sheetKind === 'speed' ? SheetSize.MEDIUM : SheetSize.FIT_CONTENT,
+      height: (this.sheetKind === 'speed' || this.sheetKind === 'savePlaylist')
+        ? SheetSize.MEDIUM
+        : SheetSize.FIT_CONTENT,
       dragBar: true,
       backgroundColor: $r('app.color.background_default'),
       onDisappear: () => {
@@ -1165,15 +1228,11 @@ export struct VideoPlayerPage {
           videoHeight: this.vm.videoHeight,
           onClose: () => this.closeSheet(),
         }).width('100%')
-      } else if (this.sheetKind === 'bookmark') {
-        BookmarkDialog({
-          bookmarks: [],
-          currentTimeMs: this.vm.position,
-          durationMs: this.vm.duration,
+      } else if (this.sheetKind === 'savePlaylist') {
+        AddToPlaylistDialog({
+          mediaCount: this.vm.listLen,
           onClose: () => this.closeSheet(),
-          onSeek: (timeMs: number) => { this.vm.seekTo(timeMs); this.closeSheet(); },
-          onAddAtCurrent: () => promptAction.showToast({ message: '书签功能暂未实现' }),
-          onDelete: (_id: number) => promptAction.showToast({ message: '书签功能暂未实现' }),
+          onConfirm: (action: AddToPlaylistAction) => this.onSavePlaylistConfirm(action),
         }).width('100%')
       }
     }
@@ -1284,18 +1343,27 @@ export struct VideoPlayerPage {
       return;
     }
     if (id === 'bookmark') {
-      this.openSub('bookmark');
+      this.bookmarkOpen = true;
       return;
     }
     if (id === 'videoControls') {
       this.openSub('controls');
       return;
     }
+    if (id === 'savePlaylist') {
+      this.openSub('savePlaylist');
+      return;
+    }
     if (id === 'repeat') {
       const svc = PlaybackService.getInstance();
-      svc.cycleRepeat();
-      this.vm.repeatMode = svc.getRepeatMode();
-      promptAction.showToast({ message: '循环模式已切换' });
+      // 二态切换(0↔1):用户视角是「开关」式,避免三态循环让「关闭循环」需要两次点击。
+      const next: number = svc.getRepeatMode() === 0 ? 1 : 0;
+      // 走 cycleRepeat 三次等价于循环回原值;此处用 emitQueue 让 onQueueChanged 同步 vm 状态。
+      while (svc.getRepeatMode() !== next) {
+        svc.cycleRepeat();
+      }
+      this.vm.repeatMode = next;
+      promptAction.showToast({ message: next === 1 ? '已开启循环播放' : '已关闭循环播放' });
       return;
     }
     promptAction.showToast({ message: '该功能暂未实现' });
