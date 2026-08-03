@@ -87,11 +87,11 @@ export struct PlayerAdvancedOptions {
             Image(item.icon)
               .width(26)
               .height(26)
-              .fillColor(this.activeIds.includes(item.id) ? '#FF8800' : '#333333')
+              .fillColor(this.activeIds.includes(item.id) ? '#FF8800' : $r('app.color.list_title'))
               .margin({ left: 18, right: 18 })
             Text(item.title)
               .fontSize(17)
-              .fontColor(this.activeIds.includes(item.id) ? '#FF8800' : '#333333')
+              .fontColor(this.activeIds.includes(item.id) ? '#FF8800' : $r('app.color.list_title'))
               .layoutWeight(1)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -107,7 +107,7 @@ export struct PlayerAdvancedOptions {
     .width(268)
     .height(560)
     .scrollBar(BarState.Off)
-    .backgroundColor('#FFFFFF')
+    .backgroundColor($r('app.color.background_default'))
     .borderRadius(0)
   }
 }

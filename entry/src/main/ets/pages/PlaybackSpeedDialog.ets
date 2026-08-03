@@ -19,12 +19,13 @@ export struct PlaybackSpeedDialog {
 
   @Param currentSpeed: number = 1.0;
 
-  readonly cPanelBg: string = '#D91C1C1C';
-  readonly cHeaderBg: string = '#E61C1C1C';
+  // 主题感知:浅色=白底深字,深色=深底浅字。资源定义见 base/dark element/color.json。
+  readonly cPanelBg: Resource = $r('app.color.background_default');
+  readonly cHeaderBg: Resource = $r('app.color.background_default');
   readonly cAccent: string = '#FF8800';
-  readonly cDim: string = '#B3FFFFFF';
-  readonly cBorder: string = '#33FFFFFF';
-  readonly cIconBtn: string = '#2A2A2A';
+  readonly cDim: Resource = $r('app.color.list_subtitle');
+  readonly cBorder: Resource = $r('app.color.divider');
+  readonly cIconBtn: Resource = $r('app.color.background_default_darker');
 
   @Local scope: 'this' | 'all' = 'this';
   @Local speed: number = 1.0;
@@ -65,14 +66,14 @@ export struct PlaybackSpeedDialog {
     Column() {
       Row()
         .width(36).height(4)
-        .backgroundColor('#80FFFFFF')
+        .backgroundColor($r('app.color.font_light'))
         .borderRadius(2)
         .margin({ top: 8, bottom: 10 })
       Row() {
         Row() {
           Image($r('app.media.ic_arrow_back'))
             .width(28).height(28)
-            .fillColor('#FFFFFF')
+            .fillColor($r('app.color.list_title'))
             .padding(2)
             .onClick(() => this.onClose())
         }
@@ -81,7 +82,7 @@ export struct PlaybackSpeedDialog {
 
         Text('回放速度')
           .fontSize(18).fontWeight(FontWeight.Medium)
-          .fontColor('#FFFFFF')
+          .fontColor($r('app.color.list_title'))
           .layoutWeight(1)
           .textAlign(TextAlign.Center)
 
@@ -110,7 +111,7 @@ export struct PlaybackSpeedDialog {
     Row() {
       Text(label)
         .fontSize(12).fontWeight(FontWeight.Medium)
-        .fontColor(selected ? '#FFFFFF' : this.cDim)
+        .fontColor(selected ? $r('app.color.list_title') : this.cDim)
         .textAlign(TextAlign.Center)
     }
     .layoutWeight(1)
@@ -119,7 +120,7 @@ export struct PlaybackSpeedDialog {
     .justifyContent(FlexAlign.Center)
     .borderRadius(4)
     .border({ width: selected ? 0 : 1, color: this.cBorder })
-    .backgroundColor(selected ? '#FF8800' : '#2A2A2A')
+    .backgroundColor(selected ? '#FF8800' : this.cIconBtn)
     .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.97 })
     .onClick(() => {
       if (!selected) {
@@ -134,7 +135,7 @@ export struct PlaybackSpeedDialog {
     Row() {
       Row() {
         Text('−')
-          .fontSize(22).fontColor('#FFFFFF')
+          .fontSize(22).fontColor($r('app.color.list_title'))
           .textAlign(TextAlign.Center)
       }
       .width(44).height(44)
@@ -153,7 +154,7 @@ export struct PlaybackSpeedDialog {
 
       Row() {
         Text('+')
-          .fontSize(22).fontColor('#FFFFFF')
+          .fontSize(22).fontColor($r('app.color.list_title'))
           .textAlign(TextAlign.Center)
       }
       .width(44).height(44)
@@ -182,7 +183,7 @@ export struct PlaybackSpeedDialog {
       .width('100%')
       .blockColor(this.cAccent)
       .selectedColor(this.cAccent)
-      .trackColor('#3DFFFFFF')
+      .trackColor($r('app.color.background_default_darker'))
       .trackThickness(4)
       .blockSize({ width: 22, height: 22 })
       .onChange((v: number, mode: SliderChangeMode) => {
@@ -212,7 +213,7 @@ export struct PlaybackSpeedDialog {
         Column() {
           Text(`${p.toFixed(p % 1 === 0 ? 0 : 2)}x`)
             .fontSize(12).fontWeight(FontWeight.Medium)
-            .fontColor(Math.abs(this.speed - p) < 0.005 ? '#FFFFFF' : this.cDim)
+            .fontColor(Math.abs(this.speed - p) < 0.005 ? $r('app.color.list_title') : this.cDim)
         }
         .width(52).height(36)
         .borderRadius(18)
