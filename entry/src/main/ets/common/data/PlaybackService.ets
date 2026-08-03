@@ -7,7 +7,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { MediaWrapper, PlayState } from '../models/MediaModels';
 import { LibVLC, Media, MediaPlayer, Equalizer, RendererDiscoverer, MediaSlaveType } from '../../libvlc';
-import { VlcTrackInfo, VlcChapterInfo, VlcRendererInfo } from 'libvlcnapi.so';
+import { VlcTrackInfo, VlcChapterInfo, VlcRendererInfo, VlcMediaTrackInfo } from 'libvlcnapi.so';
 
 const LOG_DOMAIN: number = 0x0001;
 const LOG_TAG: string = 'VLC';
@@ -308,6 +308,52 @@ export class PlaybackService {
 
   getVideoTrack(): number {
     return this.player ? this.player.getVideoTrack() : -1;
+  }
+
+  /**
+   * 当前选中的音频轨道描述(name 即 libVLC 给的 codec 描述,如 'MPEG AAC Audio (mp4a)')。
+   * 返回 null 表示无音频轨道或未选中。
+   */
+  getCurrentAudioTrackInfo(): VlcTrackInfo | null {
+    if (!this.player) {
+      return null;
+    }
+    const id: number = this.player.getAudioTrack();
+    if (id < 0) {
+      return null;
+    }
+    const tracks: VlcTrackInfo[] = this.player.getAudioTracks();
+    return tracks.find((t: VlcTrackInfo) => t.id === id) ?? null;
+  }
+
+  /**
+   * 当前选中的视频轨道描述(name 即 codec 描述,如 'H264 - MPEG-4 AVC (part 10) (avc1)')。
+   */
+  getCurrentVideoTrackInfo(): VlcTrackInfo | null {
+    if (!this.player) {
+      return null;
+    }
+    const id: number = this.player.getVideoTrack();
+    if (id < 0) {
+      return null;
+    }
+    const tracks: VlcTrackInfo[] = this.player.getVideoTracks();
+    return tracks.find((t: VlcTrackInfo) => t.id === id) ?? null;
+  }
+
+  /**
+   * 获取当前媒体的轨道元数据(libvlc_media_get_tracks_info)。
+   * 返回原始数组,调用方自行筛选 audio/video/text。
+   */
+  getMediaTracksInfo(): VlcMediaTrackInfo[] {
+    if (!this.player) {
+      return [];
+    }
+    const media = this.player.getMedia();
+    if (!media || media.isReleased()) {
+      return [];
+    }
+    return media.getTracksInfo();
   }
 
   setAudioTrack(id: number): boolean {
@@ -641,17 +687,29 @@ export class PlaybackService {
   }
 
   private onComplete(): void {
+    hilog.info(LOG_DOMAIN, LOG_TAG,
+      '[VLC] onComplete stopAfterCurrent=%{public}s repeatMode=%{public}d currentIndex=%{public}d queueLen=%{public}d',
+      String(this.stopAfterCurrent), this.repeatMode, this.currentIndex, this.queue.length);
     if (this.stopAfterCurrent) {
       this.stopAfterCurrent = false;
       this.stop();
       return;
     }
     if (this.repeatMode === 2) {
+      // 单曲循环:重置到 0 后重新播放
       this.player?.setTime(0);
       this.player?.play();
       return;
     }
-    this.next(true);
+    if (this.repeatMode === 1) {
+      // 列表循环:从头重新加载并播放,确保 player 状态正确切换
+      this.currentIndex = 0;
+      this.emitQueue();
+      void this.loadCurrent();
+      return;
+    }
+    // repeatMode === 0:播完即停,触发停止状态
+    this.stop();
   }
 
   async play(): Promise<void> {

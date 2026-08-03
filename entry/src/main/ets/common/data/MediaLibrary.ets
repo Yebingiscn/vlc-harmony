@@ -5,7 +5,8 @@ import { image } from '@kit.ImageKit';
 import { dataSharePredicates } from '@kit.ArkData';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { AppContext } from './AppContext';
-import { MediaWrapper, Track, Artist, Album, Genre, Folder, VideoGroup, SheetItem } from '../models/MediaModels';
+import { MediaWrapper, Track, Artist, Album, Genre, Folder, VideoGroup, SheetItem, Playlist } from '../models/MediaModels';
+import { BookMark } from '../models/BookmarkModels';
 import { QueueItem } from './PlaybackService';
 import { Settings } from './Settings';
 
@@ -904,4 +905,145 @@ export class MediaLibrary {
   private static async saveFavRaw(items: FavItem[]): Promise<void> {
     await Settings.put(MediaLibrary.KEY_FAVORITES, JSON.stringify(items));
   }
+
+  // ---- 播放列表管理 ----
+
+  private static readonly KEY_PLAYLISTS: string = 'vlc_playlists';
+  private static playlistCache: StoredPlaylist[] = [];
+  private static playlistCacheInited: boolean = false;
+
+  /** 初始化播放列表缓存（从 Settings 加载，幂等）。 */
+  static async initPlaylistCache(): Promise<void> {
+    if (MediaLibrary.playlistCacheInited) {
+      return;
+    }
+    const raw: string = await Settings.getString(MediaLibrary.KEY_PLAYLISTS, '[]');
+    try {
+      MediaLibrary.playlistCache = JSON.parse(raw) as StoredPlaylist[];
+    } catch (e) {
+      MediaLibrary.playlistCache = [];
+    }
+    MediaLibrary.playlistCacheInited = true;
+  }
+
+  /** 获取所有已存储的播放列表（返回 Playlist 视图，供 UI 使用）。 */
+  static getPlaylists(): Playlist[] {
+    return MediaLibrary.playlistCache.map((s: StoredPlaylist) => {
+      const p: Playlist = new Playlist(s.id, s.name);
+      p.trackCount = s.uriList.length;
+      return p;
+    });
+  }
+
+  /** 获取原始存储的播放列表数据（含 uriList，供 PlaylistsPage 统计可用曲目数）。 */
+  static getStoredPlaylists(): StoredPlaylist[] {
+    return MediaLibrary.playlistCache;
+  }
+
+  /** 获取某播放列表中的 URI 列表。 */
+  static getPlaylistUris(playlistId: number): string[] {
+    const pl: StoredPlaylist | undefined = MediaLibrary.playlistCache.find((s: StoredPlaylist) => s.id === playlistId);
+    return pl ? pl.uriList : [];
+  }
+
+  /** 新建播放列表并持久化。返回新建的 Playlist。 */
+  static async createPlaylist(name: string): Promise<Playlist> {
+    await MediaLibrary.initPlaylistCache();
+    const id: number = Date.now();
+    const sp: StoredPlaylist = { id: id, name: name, uriList: [] };
+    MediaLibrary.playlistCache.push(sp);
+    await MediaLibrary.savePlaylists();
+    const p: Playlist = new Playlist(id, name);
+    p.trackCount = 0;
+    return p;
+  }
+
+  /** 向播放列表追加曲目 URI（去重）并持久化。 */
+  static async addToPlaylist(playlistId: number, uri: string): Promise<void> {
+    await MediaLibrary.initPlaylistCache();
+    const pl: StoredPlaylist | undefined = MediaLibrary.playlistCache.find((s: StoredPlaylist) => s.id === playlistId);
+    if (pl && !pl.uriList.includes(uri)) {
+      pl.uriList.push(uri);
+      await MediaLibrary.savePlaylists();
+    }
+  }
+
+  /** 替换播放列表的全部 URI 并持久化。 */
+  static async replacePlaylist(playlistId: number, uriList: string[]): Promise<void> {
+    await MediaLibrary.initPlaylistCache();
+    const pl: StoredPlaylist | undefined = MediaLibrary.playlistCache.find((s: StoredPlaylist) => s.id === playlistId);
+    if (pl) {
+      pl.uriList = uriList;
+      await MediaLibrary.savePlaylists();
+    }
+  }
+
+  /** 重命名播放列表并持久化。 */
+  static async renamePlaylist(id: number, newName: string): Promise<void> {
+    await MediaLibrary.initPlaylistCache();
+    const pl: StoredPlaylist | undefined = MediaLibrary.playlistCache.find((s: StoredPlaylist) => s.id === id);
+    if (pl) {
+      pl.name = newName;
+      await MediaLibrary.savePlaylists();
+    }
+  }
+
+  /** 删除播放列表并持久化。 */
+  static async deletePlaylist(id: number): Promise<void> {
+    await MediaLibrary.initPlaylistCache();
+    MediaLibrary.playlistCache = MediaLibrary.playlistCache.filter((s: StoredPlaylist) => s.id !== id);
+    await MediaLibrary.savePlaylists();
+  }
+
+  /** 将缓存写入 Settings。 */
+  private static async savePlaylists(): Promise<void> {
+    await Settings.put(MediaLibrary.KEY_PLAYLISTS, JSON.stringify(MediaLibrary.playlistCache));
+  }
+
+  // ---- 书签管理 ----
+
+  private static readonly KEY_BOOKMARKS: string = 'vlc_bookmarks';
+
+  /** 加载指定视频的所有书签（按时间排序）。 */
+  static async loadBookmarks(mediaUri: string): Promise<BookMark[]> {
+    const raw: string = await Settings.getString(MediaLibrary.KEY_BOOKMARKS, '{}');
+    try {
+      const all: Record<string, PersistedBookmark[]> = JSON.parse(raw) as Record<string, PersistedBookmark[]>;
+      const arr: PersistedBookmark[] = all[mediaUri] ?? [];
+      return arr.map((b: PersistedBookmark) => new BookMark(b.id, b.mediaId, b.timeMs, b.name));
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /** 保存指定视频的书签列表。 */
+  static async saveBookmarks(mediaUri: string, bookmarks: BookMark[]): Promise<void> {
+    const raw: string = await Settings.getString(MediaLibrary.KEY_BOOKMARKS, '{}');
+    let all: Record<string, PersistedBookmark[]> = {};
+    try {
+      all = JSON.parse(raw) as Record<string, PersistedBookmark[]>;
+    } catch (e) {
+      // ignore
+    }
+    all[mediaUri] = bookmarks.map((b: BookMark) => ({
+      id: b.id,
+      mediaId: b.mediaId,
+      timeMs: b.timeMs,
+      name: b.name,
+    } as PersistedBookmark));
+    await Settings.put(MediaLibrary.KEY_BOOKMARKS, JSON.stringify(all));
+  }
+}
+
+export interface StoredPlaylist {
+  id: number;
+  name: string;
+  uriList: string[];
+}
+
+interface PersistedBookmark {
+  id: number;
+  mediaId: number;
+  timeMs: number;
+  name: string;
 }

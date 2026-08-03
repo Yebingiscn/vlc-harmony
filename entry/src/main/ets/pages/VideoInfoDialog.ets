@@ -2,12 +2,10 @@ import { AppColors } from '../common/constants/AppConstants';
 
 /**
  * VideoInfoDialog —— 「视频信息」全屏弹窗。
- * 参照 photos/获取视频信息.png:顶栏(标题+X)+ 三段(视频/音频/视频信息)+ 码率折线图。
- *
  * 数据来源:
- *   - 标题、时长(真值,从 vm.title / vm.duration 传进来)
- *   - 视频/音频编/语/分/帧(占位 —— AVPlayer 不暴露轨道详情,需 libVLC 的 mediaTrackInfo 才能真)
- *   - 码率图(占位 —— AVPlayer 不直接暴露码率,这里画一组稳定的样例曲线)
+ *   - 标题、时长、分辨率:从 vm.title / vm.duration / vm.videoWidth|Height 传入。
+ *   - 视频/音频编码(language):从 libVLC 当前选中轨道描述(`getCurrentVideoTrackInfo/AudioTrackInfo`)传入。
+ *   - 码率 / 帧率 / 采样率 / 声道:libVLC 未在 d.ts 暴露,继续用占位('—')。
  *
  * 形态:与 BookmarkDialog 一样作为主 Stack 子节点渲染,不走 bindSheet。
  */
@@ -44,15 +42,22 @@ export struct VideoInfoDialog {
   @Param durationMs: number = 0;
   @Param videoWidth: number = 0;
   @Param videoHeight: number = 0;
-
-  // ── 轨道详情(本期占位 —— 后续接 libVLC 媒体探针再换真值) ──
-  readonly videoCodec: string = 'H264 – MPEG-4 AVC (part 10)';
-  readonly videoLang: string = '英文';
-  readonly videoFps: string = '25.000';
-  readonly audioCodec: string = 'MPEG AAC Audio';
-  readonly audioLang: string = '英文';
-  readonly audioChannels: string = '2';
-  readonly audioSampleRate: string = '48000 Hz';
+  /** libVLC 当前选中的视频轨道描述(name 即 codec 描述)。空表示无。 */
+  @Param videoCodec: string = '';
+  /** libVLC 当前选中的音频轨道描述(name 即 codec 描述)。空表示无。 */
+  @Param audioCodec: string = '';
+  /** 视频语言(BCP-47,如 'en')。空='—' */
+  @Param videoLang: string = '';
+  /** 视频帧率(如 '25.000')。空='—' */
+  @Param videoFps: string = '';
+  /** 音频语言(BCP-47,如 'en')。空='—' */
+  @Param audioLang: string = '';
+  /** 音频声道(如 '2'=立体声, '6'=5.1)。空='—' */
+  @Param audioChannels: string = '';
+  /** 音频采样率(Hz,如 '48000')。空='—' */
+  @Param audioSampleRate: string = '';
+  /** 总码率(bits/s),空='—' */
+  @Param bitrate: string = '';
 
   // 折线图相关字段(bitrateGraph)已删 —— 那部分是假数据,本轮不展示。
   // 等接 libVLC 真实 stats 后再加。
@@ -77,6 +82,21 @@ export struct VideoInfoDialog {
     const mm: string = m < 10 ? `0${m}` : `${m}`;
     const ss: string = s < 10 ? `0${s}` : `${s}`;
     return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+  }
+
+  /** 码率格式化:bits/s → kb/s / Mb/s;空串返回 '—'。 */
+  private fmtBitrate(raw: string): string {
+    if (raw.length === 0) {
+      return '—';
+    }
+    const bps: number = parseInt(raw);
+    if (isNaN(bps) || bps <= 0) {
+      return '—';
+    }
+    if (bps >= 1000000) {
+      return `${(bps / 1000000).toFixed(1)} Mb/s`;
+    }
+    return `${Math.round(bps / 1000)} kb/s`;
   }
 
   // ── 视觉子组件 ─────────────────────────────────────
@@ -146,15 +166,16 @@ export struct VideoInfoDialog {
         Column() {
           // ── 视频段 ─────────────────────────────────────
           this.sectionHeader('视频')
-          this.infoRow('编码', this.videoCodec)
+          this.infoRow('编码', this.videoCodec.length > 0 ? this.videoCodec : '—')
           this.infoRow('语言', this.videoLang)
           this.infoRow('分辨率', this.resolution)
           this.infoRow('帧率', this.videoFps)
+          this.infoRow('码率', this.fmtBitrate(this.bitrate))
           this.infoRow('时长', this.fmtDuration(this.durationMs))
 
           // ── 音频段 ─────────────────────────────────────
           this.sectionHeader('音频')
-          this.infoRow('编码', this.audioCodec)
+          this.infoRow('编码', this.audioCodec.length > 0 ? this.audioCodec : '—')
           this.infoRow('语言', this.audioLang)
           this.infoRow('声道', this.audioChannels)
           this.infoRow('采样率', this.audioSampleRate)

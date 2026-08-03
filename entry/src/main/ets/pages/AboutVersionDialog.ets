@@ -107,7 +107,7 @@ export struct AboutVersionDialog {
     }
     .width('100%')
     .layoutWeight(1)
-    .scrollBar(BarState.Auto)
+    .scrollBar(BarState.Off)
     .backgroundColor($r('app.color.background_default'))
     .borderRadius({ topLeft: 16, topRight: 16 })
   }

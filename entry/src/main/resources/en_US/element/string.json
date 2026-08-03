@@ -1073,6 +1073,74 @@
       "value": "Sleep timer"
     },
     {
+      "name": "setting_language",
+      "value": "Language"
+    },
+    {
+      "name": "follow_system_mode",
+      "value": "Follow system mode"
+    },
+    {
+      "name": "ellipsize_default",
+      "value": "Default"
+    },
+    {
+      "name": "ellipsize_left",
+      "value": "Left"
+    },
+    {
+      "name": "ellipsize_right",
+      "value": "Right"
+    },
+    {
+      "name": "ellipsize_middle",
+      "value": "Middle"
+    },
+    {
+      "name": "ellipsize_marquee",
+      "value": "Marquee"
+    },
+    {
+      "name": "locale_follow_system",
+      "value": "Device default"
+    },
+    {
+      "name": "locale_simplified_chinese",
+      "value": "Simplified Chinese"
+    },
+    {
+      "name": "locale_english",
+      "value": "English"
+    },
+    {
+      "name": "sleep_timer_minutes",
+      "value": "%d min"
+    },
+    {
+      "name": "sleep_timer_hours_minutes",
+      "value": "%d h %d min"
+    },
+    {
+      "name": "sleep_timer_disabled",
+      "value": "Disabled"
+    },
+    {
+      "name": "sleep_timer_summary",
+      "value": "%d:%s"
+    },
+    {
+      "name": "sleep_timer_summary_wait",
+      "value": "%d:%s, wait for media end"
+    },
+    {
+      "name": "sleep_timer_summary_reset",
+      "value": "%d:%s, reset on interaction"
+    },
+    {
+      "name": "sleep_timer_summary_wait_reset",
+      "value": "%d:%s, wait for media end, reset on interaction"
+    },
+    {
       "name": "stream_deleted",
       "value": "Stream deleted"
     },

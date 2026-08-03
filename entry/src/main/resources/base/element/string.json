@@ -1125,6 +1125,74 @@
       "value": "睡眠计时器"
     },
     {
+      "name": "setting_language",
+      "value": "设置语言"
+    },
+    {
+      "name": "follow_system_mode",
+      "value": "跟随系统模式"
+    },
+    {
+      "name": "ellipsize_default",
+      "value": "默认"
+    },
+    {
+      "name": "ellipsize_left",
+      "value": "左侧"
+    },
+    {
+      "name": "ellipsize_right",
+      "value": "右侧"
+    },
+    {
+      "name": "ellipsize_middle",
+      "value": "中间"
+    },
+    {
+      "name": "ellipsize_marquee",
+      "value": "跑马灯"
+    },
+    {
+      "name": "locale_follow_system",
+      "value": "设备默认"
+    },
+    {
+      "name": "locale_simplified_chinese",
+      "value": "简体中文"
+    },
+    {
+      "name": "locale_english",
+      "value": "English"
+    },
+    {
+      "name": "sleep_timer_minutes",
+      "value": "%d分钟"
+    },
+    {
+      "name": "sleep_timer_hours_minutes",
+      "value": "%d小时 %d分钟"
+    },
+    {
+      "name": "sleep_timer_disabled",
+      "value": "已禁用"
+    },
+    {
+      "name": "sleep_timer_summary",
+      "value": "%d:%s"
+    },
+    {
+      "name": "sleep_timer_summary_wait",
+      "value": "%d:%s，等待媒体结束"
+    },
+    {
+      "name": "sleep_timer_summary_reset",
+      "value": "%d:%s，交互时重置"
+    },
+    {
+      "name": "sleep_timer_summary_wait_reset",
+      "value": "%d:%s，等待媒体结束，交互时重置"
+    },
+    {
       "name": "stream_deleted",
       "value": "流已删除"
     },

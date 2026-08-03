@@ -31,10 +31,10 @@ export struct BookmarkDialog {
   @Param mediaId: number = -1;
 
   // ── 视觉常量 ─────────────────────────────────────────
-  // 面板 85% 透黑:接近实色,只留一丝视频透出作为氛围感。
-  readonly cPanelBg: string = '#D91C1C1C';
-  readonly cHeaderBg: string = '#E61C1C1C';
-  readonly cTimelineBg: string = '#E61C1C1C';
+  // 面板 80% 透黑:不通过 bindSheet 渲染,直接覆盖在视频上方,稍保留一点视频氛围。
+  readonly cPanelBg: string = '#CC1C1C1C';
+  readonly cHeaderBg: string = '#CC1C1C1C';
+  readonly cTimelineBg: string = '#CC1C1C1C';
   readonly cDivider: string = '#4DFFFFFF';
   readonly cSubtle: string = '#F2FFFFFF';
   readonly cDim: string = '#B3FFFFFF';
@@ -46,41 +46,45 @@ export struct BookmarkDialog {
   @Builder
   panelHeader() {
     Row() {
-      // 左侧:固定宽度容器(40)装 X,确保与右侧「添加」按钮等宽 → 标题视觉居中
+      // 左侧返回:36×36 深灰圆形底,白色 X 图标。
       Row() {
         Image($r('app.media.ic_arrow_back'))
-          .width(28).height(28).fillColor('#FFFFFF')
-          .padding(2)
-          .onClick(() => this.onClose())
+          .width(22).height(22)
+          .fillColor('#FFFFFF')
       }
-      .width(40)
-      .justifyContent(FlexAlign.Start)
+      .width(36)
+      .height(36)
+      .borderRadius(18)
+      .backgroundColor('#33FFFFFF')
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .onClick(() => this.onClose())
 
-      // 中间:标题 —— 在左右等宽容器之间自然居中
+      // 中间:标题
       Text('书签')
         .fontSize(18).fontWeight(600).fontColor('#FFFFFF')
         .layoutWeight(1)
         .textAlign(TextAlign.Center)
 
-      // 右侧:同宽度容器(40)装「+ 添加」
+      // 右侧保存书签:36×36 深灰圆形底,橙色 + 图标,样式与左侧对称。
       Row() {
-        Row() {
-          Image($r('app.media.ic_bookmark_add'))
-            .width(20).height(20).fillColor(AppColors.orange500)
-        }
-        .padding(6)
-        .borderRadius(14)
-        .backgroundColor('#33FF8800')
-        .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.92 })
-        .onClick(() => this.onAddAtCurrent())
+        Image($r('app.media.ic_bookmark_add'))
+          .width(22).height(22)
+          .fillColor(AppColors.orange500)
       }
-      .width(40)
-      .justifyContent(FlexAlign.End)
+      .width(36)
+      .height(36)
+      .borderRadius(18)
+      .backgroundColor('#33FF8800')
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.92 })
+      .onClick(() => this.onAddAtCurrent())
     }
     .width('100%')
     .height(56)
-    // 状态栏让位从 44 减到 20 —— 顶栏更靠上,标题与 X/+ 更接近屏幕顶部
-    .padding({ left: 12, right: 12, top: 20 })
+    // 左右各 16 与圆形按钮(36)对齐,标题垂直居中靠 alignItems(VerticalAlign.Center)。
+    .padding({ left: 16, right: 16 })
     .alignItems(VerticalAlign.Center)
     .backgroundColor(this.cHeaderBg)
   }
