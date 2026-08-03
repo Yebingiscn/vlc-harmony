@@ -139,8 +139,9 @@ export struct PreferencesPage {
         VlcToolbar({
           title: this.title,
           showBack: true,
-          showSearch: this.isInterfaceScreen(),
-          titleColor: this.isInterfaceScreen() ? $r('app.color.orange500') : '',
+          showSearch: true,
+          titleColor: (this.isInterfaceScreen() || this.screenKey === 'video_category') ? $r('app.color.orange500') : '',
+          currentTab: '',
           onBack: () => NavController.pop(),
           onSearch: () => promptAction.showToast({ message: '搜索功能暂未实现' }),
         })
@@ -148,7 +149,7 @@ export struct PreferencesPage {
           Column() {
             ForEach(this.groups, (group: PreferenceGroup) => {
               // 分组标题(靠左)
-              if (!this.isInterfaceScreen() || this.groupIndex(group) > 0) {
+              if (group.title && (!this.isInterfaceScreen() || this.groupIndex(group) > 0)) {
                 Text(group.title)
                   .fontSize(this.isInterfaceScreen() ? 18 : 14)
                 .fontWeight(FontWeight.Medium)
@@ -181,7 +182,7 @@ export struct PreferencesPage {
                     onToggleChange: (it: PreferenceItem, newVal: boolean) => this.onToggleChange(it, newVal),
                   })
                 }
-              }, (item: PreferenceItem) => `${item.key}-${this.rowVersion}`)
+              }, (item: PreferenceItem) => `${item.key}-${this.rowVersion}-${this.dependencyEnabledFor(item)}`)
               if (this.isInterfaceScreen() && this.groupIndex(group) < this.groups.length - 1) {
                 Divider()
                   .color($r('app.color.divider'))
@@ -196,18 +197,19 @@ export struct PreferencesPage {
         .width('100%')
         .layoutWeight(1)
         .scrollBar(BarState.Off)
+        .align(Alignment.Top)
+        .bindSheet(this.sheetOpen, this.preferenceSheet(), {
+          height: SheetSize.FIT_CONTENT,
+          dragBar: true,
+          onDisappear: () => {
+            this.sheetOpen = false;
+            this.sheetKind = '';
+          },
+        })
       }
       .width('100%')
       .height('100%')
       .backgroundColor($r('sys.color.background_primary'))
-      .bindSheet(this.sheetOpen, this.preferenceSheet(), {
-        height: SheetSize.FIT_CONTENT,
-        dragBar: true,
-        onDisappear: () => {
-          this.sheetOpen = false;
-          this.sheetKind = '';
-        },
-      })
       .bindSheet(this.confirmSheetOpen, this.confirmSheet(), {
         height: SheetSize.FIT_CONTENT,
         dragBar: true,
@@ -247,7 +249,7 @@ export struct PreferencesPage {
   /**
    * toggle/checkbox 切换拦截:当 key 属于「禁用需确认」集合(历史/续播)且即将置 false 时,
    * 先弹 PreferenceConfirmDialog 确认;确认后再 Settings.put(key,false);取消则不改。
-   * 其它情况返回 false 交由 PreferenceRow 直接 put。
+   * 其它情况返回 false 交由 PreferenceRow 直接 put,但需同步 toggleStates 镜像使 dependency 即时生效。
    */
   onToggleChange(item: PreferenceItem, newValue: boolean): boolean {
     const confirmKeys: string[] = [Settings.PLAYBACK_HISTORY, 'audio_resume_playback', 'video_resume_playback'];
@@ -264,6 +266,8 @@ export struct PreferencesPage {
     if (item.key === Settings.KEY_INCOGNITO) {
       this.incognitoEnabled = newValue;
     }
+    // 新建对象触发 @Local 重渲染(同引用赋值不会触发),dependency 置灰即时生效。
+    this.toggleStates = this.updateToggleState(item.key, newValue);
     return false; // 未接管,PreferenceRow 直接 put。
   }
 
@@ -309,11 +313,23 @@ export struct PreferencesPage {
   /** 确认禁用 → Settings.put(key, false) + 关闭确认弹窗。 */
   confirmDisable(): void {
     Settings.put(this.confirmItem.key, false);
-    // 同步镜像(dependency 置灰即时生效)。
-    const map: Record<string, boolean> = this.toggleStates;
-    map[this.confirmItem.key] = false;
-    this.toggleStates = map;
+    // 新建对象触发 @Local 重渲染,dependency 置灰即时生效。
+    this.toggleStates = this.updateToggleState(this.confirmItem.key, false);
     this.confirmSheetOpen = false;
+  }
+
+  /** 复制当前 toggleStates 并更新单个 key,返回新对象引用以触发 @Local 观察回调。 */
+  private updateToggleState(key: string, value: boolean): Record<string, boolean> {
+    const map: Record<string, boolean> = {};
+    for (const g of this.groups) {
+      for (const it of g.items) {
+        if (it.type === 'toggle' || it.type === 'checkbox') {
+          map[it.key] = this.toggleStates[it.key] === true;
+        }
+      }
+    }
+    map[key] = value;
+    return map;
   }
 
   /** 取消禁用 → 不改 Settings,仅关闭弹窗。 */
@@ -461,8 +477,7 @@ export struct PreferencesPage {
 
   onMultiselect(item: PreferenceItem): void {
     this.sheetItem = item;
-    this.sheetKind = 'multi';
-    this.sheetOpen = true;
+    this.openPreferenceDialog('multi');
   }
 
   onTextEdit(item: PreferenceItem): void {
@@ -493,8 +508,7 @@ export struct PreferencesPage {
   /** 多选确认 → 把 stringSet 存成「逗号拼接」串(无原生 stringSet,落 Settings string)。 */
   onMultiConfirm(values: string[]): void {
     Settings.put(this.sheetItem.key, values.join(','));
-    this.sheetOpen = false;
-    this.sheetKind = '';
+    this.closePreferenceDialog();
   }
 
   /** 文本输入确认 → Settings.put(key, string)。 */
@@ -583,6 +597,13 @@ export struct PreferencesPage {
         onCancel: () => this.closePreferenceDialog(),
       })
       .width('100%')
+    } else if (this.dialogKind === 'multi') {
+      PreferenceMultiSelectDialog({
+        title: this.sheetItem.title,
+        item: this.sheetItem,
+        onConfirm: (vs: string[]) => this.onMultiConfirm(vs),
+        onDismiss: () => this.closePreferenceDialog(),
+      }).width('100%')
     }
   }
 
@@ -846,25 +867,25 @@ export struct PreferencesPage {
   // ---- PreferencesVideo ----
   static videoScreen(): PreferenceScreen {
     const top: PreferenceItem[] = [
-      new PreferenceItem({ key: 'always_fast_seek', title: 'Always use fast seek', type: 'toggle', summary: 'Seek is faster but may be less precise', defaultValue: false }),
-      new PreferenceItem({ key: 'popup_force_legacy', title: 'Use custom Picture-in-Picture popup', type: 'toggle', summary: 'Use custom Picture-in-Picture resizable popup', defaultValue: false }),
-      new PreferenceItem({ key: 'restore_background_video', title: 'Restore video from background', type: 'toggle', summary: 'Restore video from background when reopening VLC for Android', defaultValue: false }),
-      new PreferenceItem({ key: 'video_match_frame_rate', title: 'Match Display Frame Rate', type: 'toggle', summary: 'Match display refresh rate to media frame rate. For example, a 24p film should play at 24p', defaultValue: false }),
+      new PreferenceItem({ key: 'always_fast_seek', title: '总是使用快速定位', type: 'checkbox', summary: '定位速度更快，但可能不够精确', defaultValue: false }),
+      new PreferenceItem({ key: 'popup_force_legacy', title: '使用自定义画中画弹窗', type: 'checkbox', summary: '使用大小可调整的自定义画中画弹出窗口', defaultValue: false }),
+      new PreferenceItem({ key: 'restore_background_video', title: '恢复后台播放的视频', type: 'checkbox', summary: '重新打开 VLC for Android 时恢复后台播放的视频', defaultValue: false }),
+      new PreferenceItem({ key: 'video_match_frame_rate', title: '匹配显示器帧率', type: 'checkbox', summary: '使显示刷新率与媒体帧率相匹配。例如，24p (每秒24帧、逐行扫描) 的影片会以 24p 刷新率播放', defaultValue: false }),
       new PreferenceItem({
-        key: 'preferred_resolution', title: 'Maximum video quality for streams', type: 'list',
-        summary: 'Maximum video quality for streams, when applicable, will be: %s',
+        key: 'preferred_resolution', title: '首选视频分辨率', type: 'list',
+        summary: '流媒体有多种格式可选时，自动选择的视频质量上限为:',
         defaultValue: '-1',
         optionValues: ['-1', '1080', '720', '480', '360', '240'],
-        options: ['Best available', 'Full HD (1080p)', 'HD (720p)', 'SD (480p)', 'LD (360p)', 'Very low definition (240p)'],
+        options: ['可用的最高画质', '全高清 (1080p)', '高清 (720p)', '标清 (480p)', '低清 (360p)', '极低画质 (240p)'],
       }),
     ];
     const secondary: PreferenceItem[] = [
-      new PreferenceItem({ key: 'secondary_display_category_summary', title: '', type: 'info', summary: 'Settings when secondary displays are connected (HDMI/Chromecast)' }),
-      new PreferenceItem({ key: 'enable_clone_mode', title: 'Prefer clone', type: 'toggle', summary: 'Clone the device screen without remote control', defaultValue: false }),
+      new PreferenceItem({ key: 'secondary_display_category_summary', title: '', type: 'info', summary: '连接外部显示器时的设置 (HDMI/Chromecast)' }),
+      new PreferenceItem({ key: 'enable_clone_mode', title: '克隆优先', type: 'checkbox', summary: '克隆设备屏幕，不使用遥控功能', defaultValue: false }),
     ];
-    return new PreferenceScreen('video_category', 'Video', [
+    return new PreferenceScreen('video_category', '视频', [
       new PreferenceGroup('', top),
-      new PreferenceGroup('Secondary display', secondary),
+      new PreferenceGroup('外置显示器', secondary),
     ]);
   }
 
@@ -942,12 +963,12 @@ export struct PreferencesPage {
   // ---- PreferencesCasting ----
   static castingScreen(): PreferenceScreen {
     const items: PreferenceItem[] = [
-      new PreferenceItem({ key: 'enable_casting', title: 'Wireless casting', type: 'toggle', defaultValue: true }),
-      new PreferenceItem({ key: 'casting_audio_only', title: 'Audio only', type: 'toggle', summary: 'Cast only audio, no video', defaultValue: false, dependency: 'enable_casting' }),
-      new PreferenceItem({ key: 'casting_passthrough', title: 'Audio Passthrough', type: 'toggle', summary: 'Let your TV manage audio rendering', defaultValue: false, dependency: 'enable_casting' }),
-      new PreferenceItem({ key: 'casting_quality', title: 'Conversion quality', type: 'list', summary: 'Select the conversion quality when casting on remote screen', defaultValue: '2', optionValues: ['0', '1', '2', '3'], options: ['High', 'Medium', 'Low', 'Lowest'], dependency: 'enable_casting' }),
+      new PreferenceItem({ key: 'enable_casting', title: '启用无线投屏', type: 'toggle', defaultValue: true }),
+      new PreferenceItem({ key: 'casting_audio_only', title: '仅音频', type: 'toggle', summary: '仅投音频，不投视频', defaultValue: false, dependency: 'enable_casting' }),
+      new PreferenceItem({ key: 'casting_passthrough', title: '音频透传', type: 'toggle', summary: '让电视处理音频渲染', defaultValue: false, dependency: 'enable_casting' }),
+      new PreferenceItem({ key: 'casting_quality', title: '转换质量', type: 'list', summary: '投屏到远程屏幕时的转换质量', defaultValue: '2', optionValues: ['0', '1', '2', '3'], options: ['高', '中', '低', '最低'], dependency: 'enable_casting' }),
     ];
-    return new PreferenceScreen('casting_category', 'Casting', [new PreferenceGroup('Casting', items)]);
+    return new PreferenceScreen('casting_category', '投屏', [new PreferenceGroup('', items)]);
   }
 
   // ---- PreferencesParentalControl ----
@@ -963,25 +984,25 @@ export struct PreferencesPage {
   // ---- PreferencesRemoteAccess ----
   static remoteAccessScreen(): PreferenceScreen {
     const top: PreferenceItem[] = [
-      new PreferenceItem({ key: 'enable_remote_access', title: 'Enable remote access', type: 'toggle', defaultValue: false }),
-      new PreferenceItem({ key: 'remote_access_status', title: 'Server status', type: 'nav', summary: 'Tap to see the server status', dependency: 'enable_remote_access' }),
+      new PreferenceItem({ key: 'enable_remote_access', title: $r('app.string.enable_remote_access'), type: 'checkbox', defaultValue: false }),
+      new PreferenceItem({ key: 'remote_access_status', title: $r('app.string.remote_access_status'), type: 'nav', summary: $r('app.string.remote_access_status_summary'), dependency: 'enable_remote_access' }),
     ];
     const content: PreferenceItem[] = [
       new PreferenceItem({
-        key: 'remote_access_medialibrary_content', title: 'Media library content', type: 'multiselect',
+        key: 'remote_access_medialibrary_content', title: $r('app.string.remote_access_medialibrary_content'), type: 'multiselect',
         defaultValue: '', defaultSelected: ['0', '1', '2', '3'],
-        optionValues: ['0', '1', '2', '3'], options: ['Video', 'Audio', 'Playlists', 'Search'],
+        optionValues: ['0', '1', '2', '3'], options: [$r('app.string.video'), $r('app.string.audio'), $r('app.string.playlists'), $r('app.string.search')],
         dependency: 'enable_remote_access',
       }),
-      new PreferenceItem({ key: 'remote_access_file_browser_content', title: 'File browser', type: 'toggle', defaultValue: false, dependency: 'enable_remote_access' }),
-      new PreferenceItem({ key: 'remote_access_network_browser_content', title: 'Network browser', type: 'toggle', defaultValue: false, dependency: 'enable_remote_access' }),
-      new PreferenceItem({ key: 'remote_access_history_content', title: $r('app.string.history'), type: 'toggle', defaultValue: false, dependency: 'enable_remote_access' }),
-      new PreferenceItem({ key: 'remote_access_playback_control', title: 'Control playback', type: 'toggle', defaultValue: true, dependency: 'enable_remote_access' }),
-      new PreferenceItem({ key: 'remote_access_logs', title: 'Share log files', type: 'toggle', defaultValue: false, dependency: 'enable_remote_access' }),
+      new PreferenceItem({ key: 'remote_access_file_browser_content', title: $r('app.string.remote_access_file_browser_content'), type: 'checkbox', defaultValue: false, dependency: 'enable_remote_access' }),
+      new PreferenceItem({ key: 'remote_access_network_browser_content', title: $r('app.string.remote_access_network_browser_content'), type: 'checkbox', defaultValue: false, dependency: 'enable_remote_access' }),
+      new PreferenceItem({ key: 'remote_access_history_content', title: $r('app.string.history'), type: 'checkbox', defaultValue: false, dependency: 'enable_remote_access' }),
+      new PreferenceItem({ key: 'remote_access_playback_control', title: $r('app.string.remote_access_playback_control'), type: 'checkbox', defaultValue: true, dependency: 'enable_remote_access' }),
+      new PreferenceItem({ key: 'remote_access_logs', title: $r('app.string.remote_access_logs'), type: 'checkbox', defaultValue: false, dependency: 'enable_remote_access' }),
     ];
-    return new PreferenceScreen('remote_access_category', 'Remote access', [
+    return new PreferenceScreen('remote_access_category', $r('app.string.remote_access'), [
       new PreferenceGroup('', top),
-      new PreferenceGroup('Content', content),
+      new PreferenceGroup($r('app.string.remote_access_content'), content),
     ]);
   }
 

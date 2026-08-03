@@ -349,6 +349,10 @@
       "value": "加速解码但可能降低画质"
     },
     {
+      "name": "enable_remote_access",
+      "value": "启用远程访问"
+    },
+    {
       "name": "enable_time_stretching_audio",
       "value": "启用音频的时间伸缩"
     },
@@ -933,8 +937,52 @@
       "value": "阅读文档"
     },
     {
+      "name": "remote_access",
+      "value": "远程访问"
+    },
+    {
+      "name": "remote_access_content",
+      "value": "内容"
+    },
+    {
+      "name": "remote_access_file_browser_content",
+      "value": "文件浏览器"
+    },
+    {
       "name": "remote_access_hash_title",
       "value": "远程访问 hash"
+    },
+    {
+      "name": "remote_access_info",
+      "value": "远程访问信息"
+    },
+    {
+      "name": "remote_access_logs",
+      "value": "共享日志文件"
+    },
+    {
+      "name": "remote_access_medialibrary_content",
+      "value": "媒体库内容"
+    },
+    {
+      "name": "remote_access_medialibrary_content_summary",
+      "value": "已启用: %1$s\n已禁用: %2$s"
+    },
+    {
+      "name": "remote_access_network_browser_content",
+      "value": "网络浏览器"
+    },
+    {
+      "name": "remote_access_playback_control",
+      "value": "控制播放"
+    },
+    {
+      "name": "remote_access_status",
+      "value": "服务器状态"
+    },
+    {
+      "name": "remote_access_status_summary",
+      "value": "点击查看服务器状态"
     },
     {
       "name": "remote_access_version",
@@ -1011,6 +1059,10 @@
     {
       "name": "safe_mode_re_pin",
       "value": "请重新输入密码"
+    },
+    {
+      "name": "search",
+      "value": "搜索"
     },
     {
       "name": "search_global",

@@ -349,6 +349,10 @@
       "value": "Speed up decoding but could lower video quality"
     },
     {
+      "name": "enable_remote_access",
+      "value": "Enable remote access"
+    },
+    {
       "name": "enable_time_stretching_audio",
       "value": "Time-stretching audio"
     },
@@ -881,8 +885,52 @@
       "value": "Read the documentation"
     },
     {
+      "name": "remote_access",
+      "value": "Remote access"
+    },
+    {
+      "name": "remote_access_content",
+      "value": "Content"
+    },
+    {
+      "name": "remote_access_file_browser_content",
+      "value": "File browser"
+    },
+    {
       "name": "remote_access_hash_title",
       "value": "Remote access hash"
+    },
+    {
+      "name": "remote_access_info",
+      "value": "Remote access info"
+    },
+    {
+      "name": "remote_access_logs",
+      "value": "Share log files"
+    },
+    {
+      "name": "remote_access_medialibrary_content",
+      "value": "Media library content"
+    },
+    {
+      "name": "remote_access_medialibrary_content_summary",
+      "value": "Enabled: %1$s\nDisabled: %2$s"
+    },
+    {
+      "name": "remote_access_network_browser_content",
+      "value": "Network browser"
+    },
+    {
+      "name": "remote_access_playback_control",
+      "value": "Control playback"
+    },
+    {
+      "name": "remote_access_status",
+      "value": "Server status"
+    },
+    {
+      "name": "remote_access_status_summary",
+      "value": "Tap to see the server status"
     },
     {
       "name": "remote_access_version",
@@ -959,6 +1007,10 @@
     {
       "name": "safe_mode_re_pin",
       "value": "Re-enter your PIN"
+    },
+    {
+      "name": "search",
+      "value": "Search"
     },
     {
       "name": "search_global",

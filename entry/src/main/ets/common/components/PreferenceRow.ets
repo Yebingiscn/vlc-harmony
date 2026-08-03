@@ -97,7 +97,7 @@ export struct PreferenceRow {
     const enabled: string[] = [];
     const disabled: string[] = [];
     for (let i = 0; i < it.optionValues.length; i++) {
-      const label = it.options[i] as string;
+      const label = this.resourceStrToString(it.options[i]);
       if (this.multiselectValues.indexOf(it.optionValues[i]) >= 0) {
         enabled.push(label);
       } else {
@@ -107,6 +107,14 @@ export struct PreferenceRow {
     const e = enabled.length > 0 ? enabled.join(', ') : '-';
     const d = disabled.length > 0 ? disabled.join(', ') : '-';
     return `Enabled: ${e}\nDisabled: ${d}`;
+  }
+
+  /** 将 ResourceStr(可能为 string 或 $r() Resource)转为可拼接的纯字符串。 */
+  private resourceStrToString(s: ResourceStr): string {
+    if (typeof s === 'string') {
+      return s;
+    }
+    return getContext(this).resourceManager.getStringSync(s.id);
   }
 
   onToggle(on: boolean): void {

@@ -170,6 +170,7 @@ export struct PreferencesActivityPage {
           title: $r('app.string.preferences'),
           showBack: true,
           showSearch: true,
+          currentTab: '',
           onBack: () => NavController.pop(),
           onSearch: () => this.onSearch(),
         })
