@@ -1,5 +1,6 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { NavController } from '../common/data/NavController';
+import { BackTitleBar } from '../common/components/BackTitleBar';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { BundledMedia } from '../common/data/BundledMedia';
 import { EmptyStateView } from '../common/components/EmptyStateView';
@@ -70,26 +71,9 @@ export struct FileBrowserPage {
   build() {
     NavDestination() {
       Column() {
-        // 标题栏
-        Row() {
-          Image($r('app.media.ic_arrow_back')).width(24).height(24).fillColor($r('app.color.list_title'))
-            .margin({ left: 12 })
-            .onClick(() => NavController.pop())
-          if (this.mode === 'bundled') {
-            Text($r('app.string.browser_app_videos'))
-              .fontSize(20)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(AppColors.white)
-              .margin({ left: AppDimens.kl_half })
-          } else {
-            Text(this.mode === 'network' ? '网络' : '存储设备')
-            .fontSize(20).fontWeight(FontWeight.Bold).fontColor($r('app.color.list_title'))
-              .margin({ left: 8 })
-          }
-          Blank()
-        }
-        .width('100%').height(56).alignItems(VerticalAlign.Center)
-        .backgroundColor($r('app.color.background_actionbar'))
+        BackTitleBar({
+          title: this.mode === 'bundled' ? '应用视频' : (this.mode === 'network' ? '网络' : '存储设备'),
+        })
 
         if (this.vm.emptyState !== EmptyLoadingState.NONE) {
           EmptyStateView({ state: this.vm.emptyState }).layoutWeight(1)

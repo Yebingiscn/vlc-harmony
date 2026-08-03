@@ -5,6 +5,7 @@ import { NavController } from '../common/data/NavController';
 import { AppContext } from '../common/data/AppContext';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
 import { PlaybackService, PlaybackListener } from '../common/data/PlaybackService';
+import { VlcChapterInfo } from 'libvlcnapi.so';
 import { Settings } from '../common/data/Settings';
 import { MediaWrapper, PlayState } from '../common/models/MediaModels';
 import { shouldRecordPlaybackStart } from '../common/models/PlaybackHistoryModels';
@@ -38,11 +39,13 @@ export const VLC_NAPI_LIBRARY: string = 'libvlcnapi';
 export interface VideoPlayItem {
   uri: string;
   title: string;
+  artworkUrl?: string;
 }
 
 export interface VideoParam {
   uri: string;
   title: string;
+  artworkUrl?: string;
   /** 可选:所在列表,用于上一个/下一个。 */
   list?: VideoPlayItem[];
   /** 可选:uri 在 list 中的下标。 */
@@ -133,7 +136,13 @@ class VideoPlayerViewModel implements PlaybackListener {
   /** 当前循环模式:0=关闭,1=列表循环,2=单曲循环。 */
   @Trace repeatMode: number = 0;
 
+  /** ISO 光盘镜像:使用章节导航替代时间 seek。 */
+  isIsoFile: boolean = false;
+  isoChapters: VlcChapterInfo[] = [];
+  @Trace isoChapterIdx: number = 0;
+
   uri: string = '';
+  currentArtworkUrl: string = '';
   private list: VideoPlayItem[] = [];
   private listening: boolean = false;
   private leaving: boolean = false;
@@ -157,15 +166,21 @@ class VideoPlayerViewModel implements PlaybackListener {
     if (incoming.length > 0) {
       this.list = incoming;
     } else {
-      const single: VideoPlayItem = { uri: param.uri, title: param.title };
+      const single: VideoPlayItem = { uri: param.uri, title: param.title, artworkUrl: param.artworkUrl };
       this.list = [single];
     }
     this.index = param.index !== undefined && param.index >= 0 && param.index < this.list.length ? param.index : 0;
     this.listLen = this.list.length;
     this.uri = this.list[this.index].uri;
     this.title = this.list[this.index].title;
+    this.currentArtworkUrl = this.list[this.index].artworkUrl ?? '';
 
     this.speed = await Settings.getFloat(Settings.VIDEO_SPEED, 1.0);
+
+    // 检测 ISO 光盘镜像,加载章节用于虚拟时间轴导航。
+    this.isIsoFile = param.uri.toLowerCase().endsWith('.iso');
+    this.isoChapters = [];
+    this.isoChapterIdx = 0;
 
     const svc = PlaybackService.getInstance();
     this.repeatMode = svc.getRepeatMode();
@@ -190,6 +205,23 @@ class VideoPlayerViewModel implements PlaybackListener {
       this.state = PlayState.ERROR;
       this.errorMsg = 'bind video surface failed';
     }
+
+    // ISO 文件:延迟加载章节(媒体解析需要时间),构建虚拟时间轴。
+    if (this.isIsoFile) {
+      await new Promise<void>((r: () => void) => setTimeout(r, 500));
+      this.isoChapters = svc.getChapters();
+      hilog.info(0x0001, 'VLC', '[VLC] ISO chapters count=%{public}d', this.isoChapters.length);
+      if (this.isoChapters.length > 0) {
+        // 总时长 = 各章节时长之和。
+        let total = 0;
+        for (const ch of this.isoChapters) {
+          total += ch.duration;
+        }
+        this.duration = total;
+        this.isoChapterIdx = svc.getChapterIdx();
+        hilog.info(0x0001, 'VLC', '[VLC] ISO chapters=%{public}d totalDuration=%{public}d', this.isoChapters.length, total);
+      }
+    }
   }
 
   onStateChange(state: PlayState): void {
@@ -202,14 +234,26 @@ class VideoPlayerViewModel implements PlaybackListener {
       svc.refreshVideoSize();
       if (shouldRecordPlaybackStart('playing', this.lastHistoryUri, this.uri)) {
         this.lastHistoryUri = this.uri;
-        void PlaybackHistory.record(this.uri, this.title, svc.getDuration());
+        void PlaybackHistory.record(this.uri, this.title, svc.getDuration(),
+          this.currentArtworkUrl);
       }
     }
   }
 
   onTimeUpdate(current: number, duration: number): void {
-    this.position = current;
-    this.duration = duration;
+    if (this.isIsoFile && this.isoChapters.length > 0) {
+      // DVD/BD:get_time 返回的是当前标题内的绝对时间,直接用,不累加章节偏移。
+      const svc = PlaybackService.getInstance();
+      const chIdx = svc.getChapterIdx();
+      if (chIdx >= 0) {
+        this.isoChapterIdx = chIdx;
+      }
+      this.position = current;
+      this.duration = duration > 0 ? duration : this.duration;
+    } else {
+      this.position = current;
+      this.duration = duration;
+    }
   }
 
   onQueueChanged(): void {
@@ -272,12 +316,28 @@ class VideoPlayerViewModel implements PlaybackListener {
     this.videoWidth = 0;
     this.videoHeight = 0;
     this.state = PlayState.IDLE;
+    this.isoChapters = [];
+    this.isoChapterIdx = 0;
+    this.isIsoFile = this.uri.toLowerCase().endsWith('.iso');
     const svc = PlaybackService.getInstance();
     const mws: MediaWrapper[] = this.list.map((it: VideoPlayItem, idx: number) =>
     new MediaWrapper(idx + 1, it.title, it.uri, 0));
     await svc.prepareList(mws, i, true);
     if (this.xcomponentId.length > 0) {
       await svc.bindAndPlay(this.xcomponentId, this.uri, this.title);
+    }
+    // ISO:延迟重新加载章节
+    if (this.isIsoFile) {
+      await new Promise<void>((r: () => void) => setTimeout(r, 500));
+      this.isoChapters = svc.getChapters();
+      if (this.isoChapters.length > 0) {
+        let total = 0;
+        for (const ch of this.isoChapters) {
+          total += ch.duration;
+        }
+        this.duration = total;
+        this.isoChapterIdx = svc.getChapterIdx();
+      }
     }
   }
 
@@ -317,7 +377,24 @@ class VideoPlayerViewModel implements PlaybackListener {
   }
 
   seekTo(ms: number): void {
-    PlaybackService.getInstance().seek(ms);
+    const svc = PlaybackService.getInstance();
+    if (this.isIsoFile && this.isoChapters.length > 0) {
+      // DVD/BD:按虚拟时间轴定位到对应章节(setTime 会被 navigator 覆盖弹回)。
+      let elapsed = 0;
+      for (let i = 0; i < this.isoChapters.length; i++) {
+        const chEnd = elapsed + this.isoChapters[i].duration;
+        if (ms < chEnd || i === this.isoChapters.length - 1) {
+          // 先用章节时间偏移估算位置,等 onTimeUpdate 用真实 chapterIdx 修正。
+          this.isoChapterIdx = i;
+          this.position = elapsed;
+          svc.setChapter(i);
+          return;
+        }
+        elapsed = chEnd;
+      }
+    }
+    // 常规文件 / VCD(无章节):时间 seek
+    svc.seek(ms);
     this.position = ms;
   }
 
@@ -492,6 +569,15 @@ export struct VideoPlayerPage {
 
   onChapterSelect(index: number): void {
     PlaybackService.getInstance().setChapter(index);
+    this.vm.isoChapterIdx = index;
+    // 更新虚拟位置到选中章节的起始位置。
+    if (this.vm.isIsoFile && this.vm.isoChapters.length > 0 && index < this.vm.isoChapters.length) {
+      let base = 0;
+      for (let i = 0; i < index; i++) {
+        base += this.vm.isoChapters[i].duration;
+      }
+      this.vm.position = base;
+    }
     this.closeSheet();
   }
 
@@ -988,7 +1074,7 @@ export struct VideoPlayerPage {
           .blockColor('#FF8800')
           .selectedColor('#FF8800')
           .trackColor('#61FFFFFF')
-          .enabled(this.vm.duration > 0)
+          .enabled(true)
           .onChange((v: number, mode: SliderChangeMode) => {
             if (mode === SliderChangeMode.Begin) {
               this.seeking = true;

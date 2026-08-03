@@ -30,7 +30,7 @@ export struct MediaListCard {
           .alt($r('app.media.ic_no_thumbnail_1610'))
           .draggable(false)
           .borderRadius(4)
-          .backgroundColor('#1F1F1F')
+          .backgroundColor($r('app.color.card_background'))
         Row() {
           if (this.isNetwork && this.isPresent) {
             Image($r('app.media.ic_emoji_network')).width(16).height(16).fillColor('#FFFFFF')

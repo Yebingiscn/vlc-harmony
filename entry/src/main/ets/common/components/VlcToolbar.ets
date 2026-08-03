@@ -37,8 +37,8 @@ export struct VlcToolbar {
     Row() {
       if (this.showBack) {
         Image($r('app.media.ic_arrow_back'))
-          .width(24)
-          .height(24)
+          .width(28)
+          .height(28)
           .objectFit(ImageFit.Contain)
           .fillColor($r('app.color.list_title'))
           .margin({ left: 4 })
@@ -47,8 +47,8 @@ export struct VlcToolbar {
       if (!this.showBack) {
         // 主屏工具栏:无痕模式开启时显示 ic_incognito,否则显示 VLC 交通锥 logo。
         Image(this.incognitoMode ? $r('app.media.ic_incognito') : $r('app.media.ic_default_cone'))
-          .width(28)
-          .height(28)
+          .width(30)
+          .height(30)
           .objectFit(ImageFit.Contain)
           .margin({ left: 12 })
       }
@@ -68,8 +68,8 @@ export struct VlcToolbar {
       }
       if (this.showSearch) {
         Image($r('app.media.ic_search'))
-          .width(24)
-          .height(24)
+          .width(28)
+          .height(28)
           .objectFit(ImageFit.Contain)
           .fillColor($r('app.color.list_title'))
           .margin({ right: 8 })
@@ -78,8 +78,8 @@ export struct VlcToolbar {
       // 视频 tab:继续播放按钮
       if (this.currentTab === 'video') {
         Image($r('app.media.ic_resume_playback'))
-          .width(24)
-          .height(24)
+          .width(28)
+          .height(28)
           .objectFit(ImageFit.Contain)
           .fillColor($r('app.color.list_title'))
           .margin({ right: 8 })
@@ -88,8 +88,8 @@ export struct VlcToolbar {
       // 音频 tab:显示设置按钮
       if (this.currentTab === 'audio') {
         Image($r('app.media.ic_display_settings'))
-          .width(24)
-          .height(24)
+          .width(28)
+          .height(28)
           .objectFit(ImageFit.Contain)
           .fillColor($r('app.color.list_title'))
           .margin({ right: 8 })
@@ -97,8 +97,8 @@ export struct VlcToolbar {
       }
       if (this.showMore) {
         Image($r('app.media.ic_more'))
-          .width(24)
-          .height(24)
+          .width(28)
+          .height(28)
           .objectFit(ImageFit.Contain)
           .margin({ right: 4 })
           .onClick(() => this.moreOpen = true)
