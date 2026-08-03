@@ -179,6 +179,9 @@ export struct PreferenceRow {
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
+        // 文字区域承担整行语义点击；右侧 Toggle 自己处理 onChange，
+        // 两者是兄弟节点，避免一次点击同时触发两次取反。
+        .onClick(() => this.onRowClick())
 
         // 末尾控件:按 type
         if (this.item.type === 'toggle' || this.item.type === 'checkbox') {
@@ -188,8 +191,8 @@ export struct PreferenceRow {
           })
             .selectedColor('#FF8800')
             .enabled(this.dependencyEnabled)
-          // Toggle 的点击会冒泡到整行；统一由 Row.onClick 调用 onToggle，
-          // 避免控件自身 onChange 与整行点击各切换一次而回到原值。
+            // 复选框本体负责写入 Settings；文字点击则由左侧 Column 处理。
+            .onChange((on: boolean) => this.onToggle(on))
         } else if (this.item.type === 'seekbar') {
           Slider({
             value: this.numValue,
@@ -238,7 +241,6 @@ export struct PreferenceRow {
       .padding({ left: 16, right: 16, top: this.verticalPadding, bottom: this.verticalPadding })
       .alignItems(VerticalAlign.Center)
       .opacity(this.dependencyEnabled ? 1.0 : 0.4)
-      .onClick(() => this.onRowClick())
       if (this.showDivider) {
         Divider()
           .color($r('app.color.divider'))

@@ -25,9 +25,6 @@ export struct MediaGridCard {
   /** 设置-界面-视频中的两个展示开关。 */
   @Param showSeenMarker: boolean = true;
   @Param showThumbnail: boolean = true;
-  @Event onItemClick: () => void = () => {};
-  @Event onItemLongClick: () => void = () => {};
-  @Event onItemMoreClick: () => void = () => {};
 
   @Builder
   emojiBadge(icon: Resource) {

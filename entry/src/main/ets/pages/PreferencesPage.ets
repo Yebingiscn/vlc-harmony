@@ -37,6 +37,10 @@ export struct PreferencesPage {
   @Local groups: PreferenceGroup[] = [];
   /** key→当前 toggle 值镜像(供 dependency 置灰)。 */
   @Local toggleStates: Record<string, boolean> = {};
+  /** 无痕模式是“持续开启”唯一的父开关，单独用响应式状态驱动其可用性。 */
+  @Local incognitoEnabled: boolean = false;
+  /** “无痕模式持续开启”的持久化值。 */
+  @Local persistentIncognitoEnabled: boolean = true;
   /** 弹窗状态:number/multi/text/color 选择器(由 onListSelect/onNumberPicker/...触发)。 */
   @Local sheetOpen: boolean = false;
   @Local sheetKind: string = ''; // '' | 'number' | 'multi' | 'text' | 'color'
@@ -107,11 +111,16 @@ export struct PreferencesPage {
       }
     }
     this.toggleStates = map;
+    this.incognitoEnabled = map[Settings.KEY_INCOGNITO] === true;
+    this.persistentIncognitoEnabled = map['persistent_incognito'] === true;
   }
 
   dependencyEnabledFor(item: PreferenceItem): boolean {
     if (!item.dependency) {
       return true;
+    }
+    if (item.dependency === Settings.KEY_INCOGNITO) {
+      return this.incognitoEnabled;
     }
     return this.toggleStates[item.dependency] === true;
   }
@@ -154,20 +163,24 @@ export struct PreferencesPage {
                   })
               }
               ForEach(group.items, (item: PreferenceItem) => {
-                PreferenceRow({
-                  item: item,
-                  dependencyEnabled: this.dependencyEnabledFor(item),
-                  showTrailingIndicator: !this.isInterfaceScreen(),
-                  verticalPadding: this.isInterfaceScreen() ? 18 : 14,
-                  showDivider: !this.isInterfaceScreen(),
-                  onNav: (it: PreferenceItem) => this.onNav(it),
-                  onListSelect: (it: PreferenceItem) => this.onListSelect(it),
-                  onNumberPicker: (it: PreferenceItem) => this.onNumberPicker(it),
-                  onMultiselect: (it: PreferenceItem) => this.onMultiselect(it),
-                  onTextEdit: (it: PreferenceItem) => this.onTextEdit(it),
-                  onColorPick: (it: PreferenceItem) => this.onColorPick(it),
-                  onToggleChange: (it: PreferenceItem, newVal: boolean) => this.onToggleChange(it, newVal),
-                })
+                if (item.key === 'persistent_incognito') {
+                  this.persistentIncognitoRow(item)
+                } else {
+                  PreferenceRow({
+                    item: item,
+                    dependencyEnabled: this.dependencyEnabledFor(item),
+                    showTrailingIndicator: !this.isInterfaceScreen(),
+                    verticalPadding: this.isInterfaceScreen() ? 18 : 14,
+                    showDivider: !this.isInterfaceScreen(),
+                    onNav: (it: PreferenceItem) => this.onNav(it),
+                    onListSelect: (it: PreferenceItem) => this.onListSelect(it),
+                    onNumberPicker: (it: PreferenceItem) => this.onNumberPicker(it),
+                    onMultiselect: (it: PreferenceItem) => this.onMultiselect(it),
+                    onTextEdit: (it: PreferenceItem) => this.onTextEdit(it),
+                    onColorPick: (it: PreferenceItem) => this.onColorPick(it),
+                    onToggleChange: (it: PreferenceItem, newVal: boolean) => this.onToggleChange(it, newVal),
+                  })
+                }
               }, (item: PreferenceItem) => `${item.key}-${this.rowVersion}`)
               if (this.isInterfaceScreen() && this.groupIndex(group) < this.groups.length - 1) {
                 Divider()
@@ -248,9 +261,49 @@ export struct PreferencesPage {
     const states: Record<string, boolean> = this.toggleStates;
     states[item.key] = newValue;
     this.toggleStates = states;
-    // PreferenceRow 的依赖参数在重建时重新计算，确保置灰状态无需离页就能刷新。
-    this.rowVersion++;
+    if (item.key === Settings.KEY_INCOGNITO) {
+      this.incognitoEnabled = newValue;
+    }
     return false; // 未接管,PreferenceRow 直接 put。
+  }
+
+  private setPersistentIncognito(enabled: boolean): void {
+    if (!this.incognitoEnabled) {
+      return;
+    }
+    this.persistentIncognitoEnabled = enabled;
+    Settings.put('persistent_incognito', enabled);
+  }
+
+  @Builder
+  persistentIncognitoRow(item: PreferenceItem) {
+    Row() {
+      Column() {
+        Text(item.title)
+          .fontSize(15)
+          .fontColor(this.incognitoEnabled ? $r('app.color.list_title') : $r('app.color.grey700'))
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        if (item.summary) {
+          Text(item.summary)
+            .fontSize(12)
+            .fontColor($r('app.color.list_subtitle'))
+            .margin({ top: 2 })
+        }
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+      .onClick(() => this.setPersistentIncognito(!this.persistentIncognitoEnabled))
+
+      Toggle({ type: ToggleType.Checkbox, isOn: this.persistentIncognitoEnabled })
+        .selectedColor($r('app.color.orange500'))
+        .enabled(this.incognitoEnabled)
+        .onChange((enabled: boolean) => this.setPersistentIncognito(enabled))
+    }
+    .width('100%')
+    .padding({ left: 16, right: 16, top: 18, bottom: 18 })
+    .alignItems(VerticalAlign.Center)
+    .opacity(this.incognitoEnabled ? 1.0 : 0.4)
   }
 
   /** 确认禁用 → Settings.put(key, false) + 关闭确认弹窗。 */
