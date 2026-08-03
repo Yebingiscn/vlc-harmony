@@ -1,6 +1,7 @@
 import { promptAction, window } from '@kit.ArkUI';
 import { audio, AVVolumePanel } from '@kit.AudioKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import PiPWindow from '@ohos.PiPWindow';
 import { NavController } from '../common/data/NavController';
 import { AppContext } from '../common/data/AppContext';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
@@ -408,6 +409,10 @@ export struct VideoPlayerPage {
   @Param param: VideoParam = { uri: '', title: '' };
   private hudTimer: number = -1;
   private surfaceStarted: boolean = false;
+  /** 画中画所需的 XComponent 控制器(创建 XComponent 时传入,与 native surface 共享同一实例)。 */
+  private pipXc: XComponentController = new XComponentController();
+  /** 画中画控制器(enterPopupPlayer 启动后持有,stopPiP 时清理)。 */
+  private pipController: PiPWindow.PiPController | null = null;
   private touch: VideoTouchDelegate = new VideoTouchDelegate();
   private touchBound: boolean = false;
   private mainWindow: window.Window | null = null;
@@ -648,7 +653,72 @@ export struct VideoPlayerPage {
     void this.restoreSystemBrightnessIfNeeded();
     this.touch.clearTouchAction();
     this.clearSleepTimer();
+    void this.stopPopupPlayer();
     this.vm.release();
+  }
+
+  /** 进入画中画模式:用 XComponent 控制器创建 PiPController 并启动。 */
+  async enterPopupPlayer(): Promise<void> {
+    if (!PiPWindow.isPiPEnabled()) {
+      promptAction.showToast({ message: '当前设备不支持画中画' });
+      return;
+    }
+    if (!this.pipXc) {
+      promptAction.showToast({ message: '视频尚未就绪' });
+      return;
+    }
+    try {
+      const ctx = AppContext.get();
+      const config: PiPWindow.PiPConfiguration = {
+        context: ctx,
+        componentController: this.pipXc,
+        templateType: PiPWindow.PiPTemplateType.VIDEO_PLAY,
+        contentWidth: this.vm.videoWidth > 0 ? this.vm.videoWidth : 1920,
+        contentHeight: this.vm.videoHeight > 0 ? this.vm.videoHeight : 1080,
+        controlGroups: [PiPWindow.VideoPlayControlGroup.VIDEO_PREVIOUS_NEXT],
+      };
+      const controller = await PiPWindow.create(config);
+      controller.on('stateChange', (state: PiPWindow.PiPState, reason: string) => {
+        hilog.info(0x0001, 'VLC', '[PiP] state=%{public}d reason=%{public}s', state, reason);
+        if (state === PiPWindow.PiPState.STOPPED || state === PiPWindow.PiPState.ABOUT_TO_STOP) {
+          controller.off('stateChange');
+          controller.off('controlPanelActionEvent');
+          this.pipController = null;
+        }
+      });
+      // 视频模板的控制事件:nextVideo / previousVideo 转发到 ViewModel
+      controller.on('controlPanelActionEvent', (event: PiPWindow.PiPActionEventType) => {
+        if (event === 'nextVideo') {
+          this.vm.next();
+        } else if (event === 'previousVideo') {
+          this.vm.prev();
+        } else if (event === 'playbackStateChanged') {
+          this.vm.toggle();
+        }
+      });
+      await controller.startPiP();
+      this.pipController = controller;
+      promptAction.showToast({ message: '已进入画中画' });
+    } catch (e) {
+      hilog.error(0x0001, 'VLC', '[PiP] failed: %{public}s', (e as Error).message ?? String(e));
+      promptAction.showToast({ message: '画中画启动失败' });
+    }
+  }
+
+  /** 停止画中画并清理回调。 */
+  async stopPopupPlayer(): Promise<void> {
+    if (!this.pipController) {
+      return;
+    }
+    const c = this.pipController;
+    this.pipController = null;
+    try {
+      c.off('stateChange');
+      c.off('controlPanelActionEvent');
+      await c.stopPiP();
+    } catch (e) {
+      hilog.warn(0x0001, 'VLC', '[PiP] stop failed: %{public}s', (e as Error).message ?? String(e));
+    }
   }
 
   private bindTouch(): void {
@@ -914,6 +984,7 @@ export struct VideoPlayerPage {
           id: VLC_VIDEO_XCOMPONENT_ID,
           type: XComponentType.SURFACE,
           libraryname: VLC_NAPI_LIBRARY,
+          controller: this.pipXc,
         })
           .onLoad(() => {
             if (this.surfaceStarted) {
@@ -1495,6 +1566,10 @@ export struct VideoPlayerPage {
     }
     if (id === 'savePlaylist') {
       this.openSub('savePlaylist');
+      return;
+    }
+    if (id === 'popupPlayer') {
+      void this.enterPopupPlayer();
       return;
     }
     if (id === 'abRepeat') {
