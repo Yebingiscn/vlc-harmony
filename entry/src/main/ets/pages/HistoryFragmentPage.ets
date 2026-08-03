@@ -1,4 +1,5 @@
 import { NavController } from '../common/data/NavController';
+import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
 import { Settings } from '../common/data/Settings';
 import { AppColors, AppDimens } from '../common/constants/AppConstants';
@@ -124,9 +125,17 @@ export struct HistoryFragmentPage {
   }
 
   private onItemClick(item: PlaybackHistoryEntry): void {
-    // TODO(契约):MediaUtils 播放入口 —— 播放该 MediaWrapper(进入播放器)。
-    const p: VideoNavParam = { uri: item.uri, title: item.title, artworkUrl: item.artworkUrl };
-    NavController.push('VideoPlayer', p);
+    const lower = item.uri.toLowerCase();
+    const audioExts = ['.mp3', '.flac', '.ogg', '.wav', '.aac', '.m4a', '.wma', '.opus'];
+    const isAudio = audioExts.some(e => lower.endsWith(e));
+    if (isAudio) {
+      const qi = new QueueItem(0, item.title, item.uri, '', '', item.artworkUrl);
+      PlaybackService.playList([qi], 0, true);
+      NavController.push('AudioPlayer');
+    } else {
+      const p: VideoNavParam = { uri: item.uri, title: item.title, artworkUrl: item.artworkUrl };
+      NavController.push('VideoPlayer', p);
+    }
   }
 
   @Builder

@@ -2,6 +2,7 @@ import { NavController } from '../common/data/NavController';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
 import { Settings } from '../common/data/Settings';
 import { formatDuration, VideoNavParam } from '../common/models/MediaModels';
+import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
 import { PlaybackHistoryEntry } from '../common/models/PlaybackHistoryModels';
 import { historyPreview } from '../common/models/MoreHomeModels';
 
@@ -55,8 +56,17 @@ export struct MorePage {
   }
 
   private playHistoryItem(item: PlaybackHistoryEntry): void {
-    const param: VideoNavParam = { uri: item.uri, title: item.title, artworkUrl: item.artworkUrl };
-    NavController.push('VideoPlayer', param);
+    const lower = item.uri.toLowerCase();
+    const audioExts = ['.mp3', '.flac', '.ogg', '.wav', '.aac', '.m4a', '.wma', '.opus'];
+    const isAudio = audioExts.some(e => lower.endsWith(e));
+    if (isAudio) {
+      const qi = new QueueItem(0, item.title, item.uri, '', '', item.artworkUrl);
+      PlaybackService.playList([qi], 0, true);
+      NavController.push('AudioPlayer');
+    } else {
+      const param: VideoNavParam = { uri: item.uri, title: item.title, artworkUrl: item.artworkUrl };
+      NavController.push('VideoPlayer', param);
+    }
   }
 
   @Builder
