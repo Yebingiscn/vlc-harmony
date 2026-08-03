@@ -26,12 +26,13 @@ export struct VideoInfoDialog {
   @Event onClose: () => void = () => {};
 
   // ── 视觉常量(与 BookmarkDialog 对齐) ───────────────
-  readonly cPanelBg: string = '#D91C1C1C';
-  readonly cHeaderBg: string = '#E61C1C1C';
-  readonly cTimelineBg: string = '#CC1C1C1C';
-  readonly cDivider: string = '#33FFFFFF';
-  readonly cSubtle: string = '#F2FFFFFF';
-  readonly cDim: string = '#B3FFFFFF';
+  // 主题感知:浅色=白底深字,深色=深底浅字。资源定义见 base/dark element/color.json。
+  readonly cPanelBg: Resource = $r('app.color.background_default');
+  readonly cHeaderBg: Resource = $r('app.color.background_default');
+  readonly cTimelineBg: Resource = $r('app.color.card_background');
+  readonly cDivider: Resource = $r('app.color.divider');
+  readonly cSubtle: Resource = $r('app.color.font_light');
+  readonly cDim: Resource = $r('app.color.list_subtitle');
   readonly cAccent: string = '#FF8800';
   readonly cBlue: string = '#3FA9F5';
   readonly cRed: string = '#FF3B30';
@@ -116,7 +117,7 @@ export struct VideoInfoDialog {
         .fontSize(14).fontColor(this.cDim)
         .width(72)
       Text(value)
-        .fontSize(14).fontColor('#FFFFFF')
+        .fontSize(14).fontColor($r('app.color.list_title'))
         .layoutWeight(1)
     }
     .width('100%')
@@ -133,7 +134,7 @@ export struct VideoInfoDialog {
       // 左 40 容器(对称,让标题视觉居中)
       Row() {
         Image($r('app.media.ic_arrow_back'))
-          .width(28).height(28).fillColor('#FFFFFF')
+          .width(28).height(28).fillColor($r('app.color.list_title'))
           .padding(2)
           .onClick(() => this.onClose())
       }
@@ -141,7 +142,7 @@ export struct VideoInfoDialog {
       .justifyContent(FlexAlign.Start)
 
       Text(this.title.length > 0 ? this.title : '视频信息')
-        .fontSize(17).fontWeight(600).fontColor('#FFFFFF')
+        .fontSize(17).fontWeight(600).fontColor($r('app.color.list_title'))
         .layoutWeight(1)
         .textAlign(TextAlign.Center)
         .maxLines(1)

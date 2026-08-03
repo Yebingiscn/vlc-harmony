@@ -27,9 +27,10 @@ export struct VideoControlsSettingsDialog {
   @Event onConfirm: (s: ControlsState) => void = () => {};
 
   // ── 视觉常量 ───────────────────────────────────────────
-  readonly cSubtle: string = '#9E9E9E';
-  readonly cDivider: string = '#2A2A2A';
-  readonly cCancelBg: string = '#2A2A2A';
+  // 主题感知:浅色=白底深字,深色=深底浅字。资源定义见 base/dark element/color.json。
+  readonly cSubtle: Resource = $r('app.color.font_light');
+  readonly cDivider: Resource = $r('app.color.divider');
+  readonly cCancelBg: Resource = $r('app.color.background_default_darker');
 
   // 默认值:与参考图一致 —— 手势类全开,音频增强和快放默认关。
   @Local state: ControlsState = {
@@ -58,7 +59,7 @@ export struct VideoControlsSettingsDialog {
     Row() {
       Column() {
         Text(title)
-          .fontSize(16).fontWeight(FontWeight.Medium).fontColor('#FFFFFF')
+          .fontSize(16).fontWeight(FontWeight.Medium).fontColor($r('app.color.list_title'))
         if (summary.length > 0) {
           Text(summary)
             .fontSize(12).fontColor(this.cSubtle)
@@ -99,7 +100,7 @@ export struct VideoControlsSettingsDialog {
     Row() {
       Column() {
         Text(title)
-          .fontSize(16).fontWeight(FontWeight.Medium).fontColor('#61FFFFFF')
+          .fontSize(16).fontWeight(FontWeight.Medium).fontColor($r('app.color.font_light'))
         Text(summary)
           .fontSize(12).fontColor(this.cSubtle)
           .margin({ top: 4 })
@@ -111,7 +112,7 @@ export struct VideoControlsSettingsDialog {
         Row()
           .width(20).height(20)
           .borderRadius(4)
-          .border({ width: 1.5, color: '#33FFFFFF' })
+          .border({ width: 1.5, color: $r('app.color.divider') })
       }
       .width(20).height(20)
     }
@@ -126,7 +127,7 @@ export struct VideoControlsSettingsDialog {
     Row() {
       Column() {
         Text('轻按两下可进退')
-          .fontSize(16).fontWeight(FontWeight.Medium).fontColor('#FFFFFF')
+          .fontSize(16).fontWeight(FontWeight.Medium).fontColor($r('app.color.list_title'))
         Text('在屏幕边缘轻按两下,可快进/快退 10 秒')
           .fontSize(12).fontColor(this.cSubtle)
           .margin({ top: 4 })
@@ -158,7 +159,7 @@ export struct VideoControlsSettingsDialog {
     Column() {
       // ── 标题 ──────────────────────────────────────────
       Text('控制设置')
-        .fontSize(19).fontWeight(600).fontColor('#FFFFFF')
+        .fontSize(19).fontWeight(600).fontColor($r('app.color.list_title'))
         .width('100%')
         .padding({ left: 20, right: 20, top: 16, bottom: 12 })
         .textAlign(TextAlign.Start)
@@ -213,7 +214,7 @@ export struct VideoControlsSettingsDialog {
           .type(ButtonType.Capsule)
           .fontSize(16).fontWeight(FontWeight.Medium)
           .backgroundColor(this.cCancelBg)
-          .fontColor('#E0E0E0')
+          .fontColor($r('app.color.list_title'))
           .height(46)
           .layoutWeight(1)
           .onClick(() => this.onClose())

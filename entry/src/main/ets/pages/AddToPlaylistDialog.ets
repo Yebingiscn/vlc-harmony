@@ -31,14 +31,15 @@ export struct AddToPlaylistDialog {
   @Param mediaCount: number = 1;
 
   // ── 视觉常量 ─────────────────────────────────────
-  readonly cPanelBg: string = '#D91C1C1C';
-  readonly cHeaderBg: string = '#E61C1C1C';
-  readonly cInputBg: string = '#1F1F1F';
+  // 主题感知:浅色=白底深字,深色=深底浅字。资源定义见 base/dark element/color.json。
+  readonly cPanelBg: Resource = $r('app.color.background_default');
+  readonly cHeaderBg: Resource = $r('app.color.background_default');
+  readonly cInputBg: Resource = $r('app.color.card_background');
   readonly cInputBorder: string = '#FF8800';
-  readonly cSubtle: string = '#F2FFFFFF';
-  readonly cDim: string = '#B3FFFFFF';
+  readonly cSubtle: Resource = $r('app.color.font_light');
+  readonly cDim: Resource = $r('app.color.list_subtitle');
   readonly cAccent: string = '#FF8800';
-  readonly cDivider: string = '#33FFFFFF';
+  readonly cDivider: Resource = $r('app.color.divider');
 
   @Local newName: string = '';
   @Local playlists: Playlist[] = [];
@@ -102,7 +103,7 @@ export struct AddToPlaylistDialog {
     Row() {
       Row() {
         Image($r('app.media.ic_arrow_back'))
-          .width(28).height(28).fillColor('#FFFFFF')
+          .width(28).height(28).fillColor($r('app.color.list_title'))
           .padding(2)
           .onClick(() => this.onClose())
       }
@@ -110,7 +111,7 @@ export struct AddToPlaylistDialog {
       .justifyContent(FlexAlign.Start)
 
       Text('保存到播放列表')
-        .fontSize(17).fontWeight(600).fontColor('#FFFFFF')
+        .fontSize(17).fontWeight(600).fontColor($r('app.color.list_title'))
         .layoutWeight(1)
         .textAlign(TextAlign.Center)
         .maxLines(1)
@@ -139,8 +140,8 @@ export struct AddToPlaylistDialog {
           .layoutWeight(1)
           .height(40)
           .fontSize(15)
-          .fontColor('#FFFFFF')
-          .placeholderColor('#80FFFFFF')
+          .fontColor($r('app.color.list_title'))
+          .placeholderColor($r('app.color.font_light'))
           .backgroundColor(this.cInputBg)
           .borderRadius(2)
           .border({ width: 1.5, color: this.cInputBorder })
@@ -171,7 +172,7 @@ export struct AddToPlaylistDialog {
     Row() {
       Column() {
         Text(p.title)
-          .fontSize(15).fontColor('#FFFFFF')
+          .fontSize(15).fontColor($r('app.color.list_title'))
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text($r('app.string.media_count_suffix', p.trackCount))
@@ -210,7 +211,7 @@ export struct AddToPlaylistDialog {
   replaceRow() {
     Row() {
       Text($r('app.string.replace_playlist'))
-        .fontSize(14).fontColor('#FFFFFF')
+        .fontSize(14).fontColor($r('app.color.list_title'))
         .layoutWeight(1)
       Toggle({ type: ToggleType.Switch, isOn: this.replace })
         .selectedColor(this.cAccent)
@@ -226,7 +227,7 @@ export struct AddToPlaylistDialog {
   sectionHeader(text: ResourceStr) {
     Text(text)
       .fontSize(15).fontWeight(FontWeight.Bold)
-      .fontColor('#FFFFFF')
+      .fontColor($r('app.color.list_title'))
       .width('100%')
       .padding({ left: 20, right: 20, top: 12, bottom: 4 })
   }

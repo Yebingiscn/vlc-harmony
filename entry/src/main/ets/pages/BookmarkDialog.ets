@@ -30,13 +30,14 @@ export struct BookmarkDialog {
   @Param mediaId: number = -1;
 
   // ── 视觉常量 ─────────────────────────────────────────
-  // 面板 80% 透黑:不通过 bindSheet 渲染,直接覆盖在视频上方,稍保留一点视频氛围。
-  readonly cPanelBg: string = '#CC1C1C1C';
-  readonly cHeaderBg: string = '#CC1C1C1C';
-  readonly cTimelineBg: string = '#CC1C1C1C';
-  readonly cDivider: string = '#4DFFFFFF';
-  readonly cSubtle: string = '#F2FFFFFF';
-  readonly cDim: string = '#B3FFFFFF';
+  // 主题感知:浅色=白底深字,深色=深底浅字。资源定义见 base/dark element/color.json。
+  // 面板用实色 background_default(原 #CC1C1C1C 半透黑在浅色下改为实白,更清晰)。
+  readonly cPanelBg: Resource = $r('app.color.background_default');
+  readonly cHeaderBg: Resource = $r('app.color.background_default');
+  readonly cTimelineBg: Resource = $r('app.color.background_default');
+  readonly cDivider: Resource = $r('app.color.divider');
+  readonly cSubtle: Resource = $r('app.color.font_light');
+  readonly cDim: Resource = $r('app.color.list_subtitle');
   readonly cAccent: string = '#FF3B30';
   // 全屏:不再使用固定高度,内容用 layoutWeight(1) 撑开,时间线固定在底。
   // 保留 panelHeight 仅给时间线计算 / 旧引用兜底(实际未使用)。
@@ -49,19 +50,19 @@ export struct BookmarkDialog {
       Row() {
         Image($r('app.media.ic_arrow_back'))
           .width(22).height(22)
-          .fillColor('#FFFFFF')
+          .fillColor($r('app.color.list_title'))
       }
       .width(36)
       .height(36)
       .borderRadius(18)
-      .backgroundColor('#33FFFFFF')
+      .backgroundColor($r('app.color.divider'))
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
       .onClick(() => this.onClose())
 
       // 中间:标题
       Text('书签')
-        .fontSize(18).fontWeight(600).fontColor('#FFFFFF')
+        .fontSize(18).fontWeight(600).fontColor($r('app.color.list_title'))
         .layoutWeight(1)
         .textAlign(TextAlign.Center)
 
@@ -153,7 +154,7 @@ export struct BookmarkDialog {
       // 时间文字行
       Row() {
         Text(this.fmtTime(this.currentTimeMs))
-          .fontSize(11).fontColor('#FFFFFF')
+          .fontSize(11).fontColor($r('app.color.list_title'))
         Blank()
         Text(this.durationMs > 0 ? this.fmtTime(this.durationMs) : '--:--')
           .fontSize(11).fontColor(this.cSubtle)
@@ -175,7 +176,7 @@ export struct BookmarkDialog {
         .fillColor(this.cAccent)
       Column() {
         Text(b.name.length > 0 ? b.name : `书签 ${index + 1}`)
-          .fontSize(15).fontColor('#FFFFFF')
+          .fontSize(15).fontColor($r('app.color.list_title'))
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(this.fmtTime(b.timeMs))
@@ -211,7 +212,7 @@ export struct BookmarkDialog {
         .objectFit(ImageFit.Contain)
         .fillColor(this.cDim)
       Text('暂无书签')
-        .fontSize(16).fontColor('#FFFFFF')
+        .fontSize(16).fontColor($r('app.color.list_title'))
         .margin({ top: 16 })
       Text('但那些真正喜欢的')
         .fontSize(12).fontColor(this.cSubtle)

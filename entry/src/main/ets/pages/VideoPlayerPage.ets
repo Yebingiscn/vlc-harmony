@@ -1411,7 +1411,7 @@ export struct VideoPlayerPage {
         .bindMenu(this.advancedOptionsOpen!!, this.advancedOptionsMenu(), {
           placement: Placement.TopRight,
           showInSubWindow: true,
-          backgroundColor: '#FFFFFF',
+          backgroundColor: $r('app.color.background_default'),
           onDisappear: () => this.runPendingAdvancedAction(),
         })
     }
@@ -1711,7 +1711,7 @@ export struct VideoPlayerPage {
       Text($r('app.string.more'))
         .fontSize(18)
         .fontWeight(FontWeight.Medium)
-        .fontColor('#FFFFFF')
+        .fontColor($r('app.color.list_title'))
         .width('100%')
         .padding({ left: 16, right: 16 })
         .height(56)
@@ -1737,11 +1737,11 @@ export struct VideoPlayerPage {
     Row() {
       Text(title)
         .fontSize(16)
-        .fontColor('#FFFFFF')
+        .fontColor($r('app.color.list_title'))
         .layoutWeight(1)
       Image($r('app.media.ic_arrow_right'))
         .width(20).height(20)
-        .fillColor('#9E9E9E')
+        .fillColor($r('app.color.font_light'))
     }
     .width('100%')
     .height(52)

@@ -74,7 +74,7 @@ export struct EqualizerDialog {
     Column() {
       // 标题 + 启用开关
       Row() {
-        Text($r('app.string.equalizer')).fontSize(18).fontColor('#FFFFFF').fontWeight(FontWeight.Medium)
+        Text($r('app.string.equalizer')).fontSize(18).fontColor($r('app.color.list_title')).fontWeight(FontWeight.Medium)
           .layoutWeight(1)
         Toggle({ type: ToggleType.Switch, isOn: this.eqEnabled })
           .selectedColor(AppColors.orange500)
@@ -92,7 +92,7 @@ export struct EqualizerDialog {
           ForEach(this.presets, (p: EqualizerPreset) => {
             Text(p.name)
               .fontSize(16)
-              .fontColor(this.presetIndex === p.id ? '#FFFFFF' : '#9E9E9E')
+              .fontColor(this.presetIndex === p.id ? $r('app.color.list_title') : $r('app.color.font_light'))
               .backgroundColor(this.presetIndex === p.id ? AppColors.orange800 : '#1AFF610A')
               .borderRadius(16)
               .padding({ left: 16, right: 16, top: 8, bottom: 8 })
@@ -112,16 +112,16 @@ export struct EqualizerDialog {
       Row() {
         // 前置放大
         Column() {
-          Text($r('app.string.preamp')).fontSize(12).fontColor('#9E9E9E').margin({ bottom: 8 })
+          Text($r('app.string.preamp')).fontSize(12).fontColor($r('app.color.font_light')).margin({ bottom: 8 })
           Slider({ value: this.preamp, min: -20, max: 20, step: 1, direction: Axis.Vertical,
             style: SliderStyle.OutSet })
             .width(40).height(150).blockColor(AppColors.orange500).selectedColor(AppColors.orange500)
-            .trackColor('#424242')
+            .trackColor($r('app.color.background_default_darker'))
             .onChange((v: number) => {
               this.preamp = Math.round(v);
               this.pushToPlayer();
             })
-          Text(`${this.preamp}`).fontSize(10).fontColor('#9E9E9E').margin({ top: 6 })
+          Text(`${this.preamp}`).fontSize(10).fontColor($r('app.color.font_light')).margin({ top: 6 })
         }
         .alignItems(HorizontalAlign.Center)
         .margin({ left: 8, right: 8 })
@@ -152,14 +152,14 @@ export struct EqualizerDialog {
             .onChange((on: boolean) => {
               this.snap = on;
             })
-          Text($r('app.string.eq_snap_bands')).fontSize(12).fontColor('#9E9E9E').margin({ left: 8 })
+          Text($r('app.string.eq_snap_bands')).fontSize(12).fontColor($r('app.color.font_light')).margin({ left: 8 })
         }
         .layoutWeight(1)
-        Image($r('app.media.ic_add')).width(24).height(24).fillColor('#FFFFFF').margin({ right: 16 })
+        Image($r('app.media.ic_add')).width(24).height(24).fillColor($r('app.color.list_title')).margin({ right: 16 })
           .onClick(() => {})
-        Image($r('app.media.ic_undo')).width(24).height(24).fillColor('#FFFFFF').margin({ right: 16 })
+        Image($r('app.media.ic_undo')).width(24).height(24).fillColor($r('app.color.list_title')).margin({ right: 16 })
           .onClick(() => {})
-        Image($r('app.media.ic_delete')).width(24).height(24).fillColor('#FFFFFF').margin({ right: 16 })
+        Image($r('app.media.ic_delete')).width(24).height(24).fillColor($r('app.color.list_title')).margin({ right: 16 })
           .onClick(() => {})
       }
       .width('100%').padding(16).alignItems(VerticalAlign.Center)
@@ -172,7 +172,7 @@ export struct EqualizerDialog {
         }).margin({ bottom: 24 })
     }
     .width('100%')
-    .backgroundColor('#1C1C1C')
+    .backgroundColor($r('app.color.background_default'))
     .borderRadius({ topLeft: 16, topRight: 16 })
     .alignItems(HorizontalAlign.Center)
   }
