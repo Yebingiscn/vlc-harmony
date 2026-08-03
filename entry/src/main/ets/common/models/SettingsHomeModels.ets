@@ -10,6 +10,7 @@ export class SettingsHomeItem {
   defaultOn: boolean;
   dependsOnHistory: boolean;
   iconKey: string;
+  screenKey: string;
 
   constructor(
     key: string,
@@ -19,6 +20,7 @@ export class SettingsHomeItem {
     defaultOn: boolean = false,
     dependsOnHistory: boolean = false,
     iconKey: string = '',
+    screenKey: string = '',
   ) {
     this.key = key;
     this.title = title;
@@ -27,6 +29,7 @@ export class SettingsHomeItem {
     this.defaultOn = defaultOn;
     this.dependsOnHistory = dependsOnHistory;
     this.iconKey = iconKey;
+    this.screenKey = screenKey;
   }
 }
 
@@ -69,7 +72,7 @@ export class SettingsHomeCatalog {
         new SettingsHomeItem('audio_resume_playback', '音频播放队列历史', '允许储存音频播放队列内容，以便稍后继续播放', 'toggle', true, true),
       ]),
       new SettingsHomeSection('additional', '附加设置', [
-        new SettingsHomeItem('ui_category', '界面', '', 'navigation', false, false, 'ui'),
+        new SettingsHomeItem('ui_category', '界面', '', 'navigation', false, false, 'ui', 'ui_category'),
         new SettingsHomeItem('video_category', '视频', '', 'navigation', false, false, 'video'),
         new SettingsHomeItem('subtitles_category', '字幕', '', 'navigation', false, false, 'subtitles'),
         new SettingsHomeItem('audio_category', '音频', '', 'navigation', false, false, 'audio'),

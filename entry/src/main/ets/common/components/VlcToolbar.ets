@@ -5,6 +5,8 @@
 @ComponentV2
 export struct VlcToolbar {
   @Param title: Resource | string = $r('app.string.app_name');
+  /** 偏好设置二级页在 Android 中使用橙色标题，其余工具栏沿用默认颜色。 */
+  @Param titleColor: ResourceColor | string = '';
   @Param showBack: boolean = false;
   @Param showIncognito: boolean = false;
   @Event onBack: () => void = () => {
@@ -54,7 +56,7 @@ export struct VlcToolbar {
       }
       Text(this.title)
         .fontSize(20)
-        .fontColor($r('app.color.list_title'))
+        .fontColor(this.titleColor !== '' ? this.titleColor : $r('app.color.list_title'))
         .fontWeight(FontWeight.Bold)
         .layoutWeight(1)
         .margin({ left: 8 })
@@ -76,7 +78,7 @@ export struct VlcToolbar {
           .onClick(() => this.onSearch())
       }
       // 视频 tab:继续播放按钮
-      if (this.currentTab === 'video') {
+      if (!this.showBack && this.currentTab === 'video') {
         Image($r('app.media.ic_resume_playback'))
           .width(24)
           .height(24)
@@ -86,7 +88,7 @@ export struct VlcToolbar {
           .onClick(() => this.onResumePlayback())
       }
       // 音频 tab:显示设置按钮
-      if (this.currentTab === 'audio') {
+      if (!this.showBack && this.currentTab === 'audio') {
         Image($r('app.media.ic_display_settings'))
           .width(24)
           .height(24)

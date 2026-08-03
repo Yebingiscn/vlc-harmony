@@ -1,13 +1,16 @@
 import { VlcToolbar } from '../common/components/VlcToolbar';
 import { PreferenceRow } from '../common/components/PreferenceRow';
+import { PreferenceChoiceDialog } from '../common/components/PreferenceChoiceDialog';
 import { PreferenceNumberPickerDialog } from './PreferenceNumberPickerDialog';
 import { PreferenceMultiSelectDialog } from './PreferenceMultiSelectDialog';
 import { PreferenceConfirmDialog } from './PreferenceConfirmDialog';
+import { SleepTimerDialog } from './SleepTimerDialog';
 import { NavController } from '../common/data/NavController';
 import { Settings } from '../common/data/Settings';
 import { PreferenceScreen, PreferenceGroup, PreferenceItem } from '../common/models/PreferenceModels';
 import { PreferencesScreenParam } from '../common/models/MediaModels';
 import { promptAction } from '@kit.ArkUI';
+import { i18n } from '@kit.LocalizationKit';
 
 /** 字幕/控件颜色调色板(对应 VLC ColorPreferenceCompat 预设)。 */
 const COLOR_PALETTE: number[] = [
@@ -39,6 +42,16 @@ export struct PreferencesPage {
   @Local sheetItem: PreferenceItem = new PreferenceItem({});
   @Local textDraft: string = '';
   @Local colorDraft: number = 0;
+  /** 当前 list 弹窗的真实选中值，不能再用静态 defaultValue 代替。 */
+  @Local listValue: string = '';
+  /** 选项确认后重建条目，使摘要立即读取持久化后的值。 */
+  @Local rowVersion: number = 0;
+  @Local sleepMillis: number = 0;
+  @Local sleepWaitMediaEnd: boolean = false;
+  @Local sleepResetOnInteraction: boolean = false;
+  @Local sleepSheetOpen: boolean = false;
+  @Local dialogKind: string = '';
+  @Local preferenceDialogId: number = -1;
   /** 禁用确认弹窗:置 false 历史/续播类开关前先确认。独立于 sheetOpen(选择器 sheet)。 */
   @Local confirmSheetOpen: boolean = false;
   @Local confirmItem: PreferenceItem = new PreferenceItem({});
@@ -58,6 +71,28 @@ export struct PreferencesPage {
       }
     }
     this.loadToggleStates();
+    this.loadSleepTimerSummary();
+  }
+
+  loadSleepTimerSummary(): void {
+    if (!this.isInterfaceScreen()) {
+      return;
+    }
+    Settings.getInt(Settings.SLEEP_TIMER_MILLIS, 0).then((millis: number) => {
+      Settings.getBoolean(Settings.SLEEP_TIMER_WAIT_MEDIA_END, false).then((waitForMediaEnd: boolean) => {
+        Settings.getBoolean(Settings.SLEEP_TIMER_RESET_ON_INTERACTION, false).then((resetOnInteraction: boolean) => {
+          for (const group of this.groups) {
+            for (const item of group.items) {
+              if (item.key === 'default_sleep_timer') {
+                item.summary = this.sleepSummary(millis, waitForMediaEnd, resetOnInteraction);
+                this.rowVersion++;
+                return;
+              }
+            }
+          }
+        });
+      });
+    });
   }
 
   async loadToggleStates(): Promise<void> {
@@ -80,30 +115,50 @@ export struct PreferencesPage {
     return this.toggleStates[item.dependency] === true;
   }
 
+  isInterfaceScreen(): boolean {
+    return this.screenKey === 'ui_category';
+  }
+
+  groupIndex(group: PreferenceGroup): number {
+    return this.groups.indexOf(group);
+  }
+
   build() {
     NavDestination() {
       Column() {
         VlcToolbar({
           title: this.title,
           showBack: true,
-          showSearch: false,
+          showSearch: this.isInterfaceScreen(),
+          titleColor: this.isInterfaceScreen() ? $r('app.color.orange500') : '',
           onBack: () => NavController.pop(),
+          onSearch: () => promptAction.showToast({ message: '搜索功能暂未实现' }),
         })
         Scroll() {
           Column() {
             ForEach(this.groups, (group: PreferenceGroup) => {
               // 分组标题(靠左)
-              Text(group.title)
-                .fontSize(14)
+              if (!this.isInterfaceScreen() || this.groupIndex(group) > 0) {
+                Text(group.title)
+                  .fontSize(this.isInterfaceScreen() ? 18 : 14)
                 .fontWeight(FontWeight.Medium)
-                .fontColor('#FF8800')
+                .fontColor($r('app.color.orange500'))
                 .width('100%')
                 .textAlign(TextAlign.Start)
-                .padding({ left: 16, right: 16, top: 16, bottom: 8 })
+                  .padding({
+                    left: 16,
+                    right: 16,
+                    top: this.isInterfaceScreen() ? 26 : 16,
+                    bottom: this.isInterfaceScreen() ? 12 : 8,
+                  })
+              }
               ForEach(group.items, (item: PreferenceItem) => {
                 PreferenceRow({
                   item: item,
                   dependencyEnabled: this.dependencyEnabledFor(item),
+                  showTrailingIndicator: !this.isInterfaceScreen(),
+                  verticalPadding: this.isInterfaceScreen() ? 18 : 14,
+                  showDivider: !this.isInterfaceScreen(),
                   onNav: (it: PreferenceItem) => this.onNav(it),
                   onListSelect: (it: PreferenceItem) => this.onListSelect(it),
                   onNumberPicker: (it: PreferenceItem) => this.onNumberPicker(it),
@@ -112,7 +167,12 @@ export struct PreferencesPage {
                   onColorPick: (it: PreferenceItem) => this.onColorPick(it),
                   onToggleChange: (it: PreferenceItem, newVal: boolean) => this.onToggleChange(it, newVal),
                 })
-              }, (item: PreferenceItem) => item.key)
+              }, (item: PreferenceItem) => `${item.key}-${this.rowVersion}`)
+              if (this.isInterfaceScreen() && this.groupIndex(group) < this.groups.length - 1) {
+                Divider()
+                  .color($r('app.color.divider'))
+                  .strokeWidth(1)
+              }
             }, (group: PreferenceGroup, idx: number) => `${idx}`)
           }
           .width('100%')
@@ -121,11 +181,11 @@ export struct PreferencesPage {
         }
         .width('100%')
         .layoutWeight(1)
-        .scrollBar(BarState.Auto)
+        .scrollBar(BarState.Off)
       }
       .width('100%')
       .height('100%')
-      .backgroundColor($r('app.color.background_default'))
+      .backgroundColor($r('sys.color.background_primary'))
       .bindSheet(this.sheetOpen, this.preferenceSheet(), {
         height: SheetSize.FIT_CONTENT,
         dragBar: true,
@@ -143,6 +203,12 @@ export struct PreferencesPage {
       })
     }
     .hideTitleBar(true)
+    .bindSheet(this.sleepSheetOpen, this.sleepTimerSheet(), {
+      height: SheetSize.FIT_CONTENT,
+      dragBar: true,
+      backgroundColor: $r('app.color.background_default'),
+      onDisappear: () => this.sleepSheetOpen = false,
+    })
     .onBackPressed(() => {
       NavController.pop();
       return true;
@@ -151,6 +217,10 @@ export struct PreferencesPage {
 
   /** nav/click 跳转:有 targetScreen → push PreferencesPage(targetScreen);否则 toast。 */
   onNav(item: PreferenceItem): void {
+    if (item.key === 'default_sleep_timer') {
+      this.openSleepTimer(item);
+      return;
+    }
     if (item.targetScreen && item.targetScreen.length > 0) {
       const p: PreferencesScreenParam = { screenKey: item.targetScreen };
       NavController.push('Preferences', p);
@@ -195,16 +265,128 @@ export struct PreferencesPage {
     if (!item.options || !item.optionValues || item.options.length === 0) {
       return;
     }
+    this.listValue = typeof item.defaultValue === 'string' ? item.defaultValue : '';
     this.sheetItem = item;
-    this.sheetKind = 'list';
-    this.sheetOpen = true;
+    this.openPreferenceDialog('list');
+    Settings.getString(item.key, typeof item.defaultValue === 'string' ? item.defaultValue : '')
+      .then((value: string) => {
+        this.listValue = value;
+      });
   }
 
   /** list 单选确认 → Settings.put(key, 选中 optionValue)。 */
   onListConfirm(value: string): void {
+    if (this.sheetItem.key === 'set_locale') {
+      // HarmonyOS 会向当前进程分发语言配置更新，无需主动重启应用。
+      try {
+        i18n.System.setAppPreferredLanguage(this.appPreferredLanguage(value));
+      } catch (err) {
+        return;
+      }
+      this.listValue = value;
+      Settings.put(this.sheetItem.key, value);
+      this.rowVersion++;
+      this.closePreferenceDialog();
+      return;
+    }
     Settings.put(this.sheetItem.key, value);
-    this.sheetOpen = false;
-    this.sheetKind = '';
+    this.listValue = value;
+    this.rowVersion++;
+    this.closePreferenceDialog();
+  }
+
+  /** 将旧版空字符串兼容为 HarmonyOS 的系统语言标识 default。 */
+  private appPreferredLanguage(value: string): string {
+    if (value.length === 0 || value === 'default') {
+      return 'default';
+    }
+    return value;
+  }
+
+  openSleepTimer(item: PreferenceItem): void {
+    Settings.getInt(Settings.SLEEP_TIMER_MILLIS, 0).then((millis: number) => {
+      Settings.getBoolean(Settings.SLEEP_TIMER_WAIT_MEDIA_END, false).then((waitForMediaEnd: boolean) => {
+        Settings.getBoolean(Settings.SLEEP_TIMER_RESET_ON_INTERACTION, false).then((resetOnInteraction: boolean) => {
+          this.sleepMillis = millis;
+          this.sleepWaitMediaEnd = waitForMediaEnd;
+          this.sleepResetOnInteraction = resetOnInteraction;
+          this.sheetItem = item;
+          this.sleepSheetOpen = true;
+        });
+      });
+    });
+  }
+
+  onSleepConfirm(millis: number, waitForMediaEnd: boolean, resetOnInteraction: boolean): void {
+    this.sleepMillis = millis;
+    this.sleepWaitMediaEnd = waitForMediaEnd;
+    this.sleepResetOnInteraction = resetOnInteraction;
+    Settings.put(Settings.SLEEP_TIMER_MILLIS, millis);
+    Settings.put(Settings.SLEEP_TIMER_WAIT_MEDIA_END, waitForMediaEnd);
+    Settings.put(Settings.SLEEP_TIMER_RESET_ON_INTERACTION, resetOnInteraction);
+    this.sheetItem.summary = this.sleepSummary(millis, waitForMediaEnd, resetOnInteraction);
+    this.rowVersion++;
+    this.sleepSheetOpen = false;
+  }
+
+  /** 对齐 Android 的“移除当前项”：清除默认倒计时和关联选项。 */
+  onSleepClear(): void {
+    this.sleepMillis = 0;
+    this.sleepWaitMediaEnd = false;
+    this.sleepResetOnInteraction = false;
+    Settings.put(Settings.SLEEP_TIMER_MILLIS, 0);
+    Settings.put(Settings.SLEEP_TIMER_WAIT_MEDIA_END, false);
+    Settings.put(Settings.SLEEP_TIMER_RESET_ON_INTERACTION, false);
+    this.sheetItem.summary = this.sleepSummary(0, false, false);
+    this.rowVersion++;
+    this.sleepSheetOpen = false;
+  }
+
+  openPreferenceDialog(kind: string): void {
+    this.dialogKind = kind;
+    this.getUIContext().getPromptAction().openCustomDialog({
+      builder: () => {
+        this.preferenceCustomDialog();
+      },
+      alignment: kind === 'sleep' ? DialogAlignment.Bottom : DialogAlignment.Center,
+      autoCancel: true,
+      maskColor: $r('app.color.dialog_mask'),
+      backgroundColor: Color.Transparent,
+    }).then((dialogId: number) => {
+      this.preferenceDialogId = dialogId;
+    });
+  }
+
+  closePreferenceDialog(): void {
+    if (this.preferenceDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.preferenceDialogId);
+    }
+    this.preferenceDialogId = -1;
+    this.dialogKind = '';
+  }
+
+  clearSleepTimer(): void {
+    this.onSleepConfirm(0, false, false);
+  }
+
+  sleepSummary(millis: number, waitForMediaEnd: boolean, resetOnInteraction: boolean): ResourceStr {
+    if (millis <= 0) {
+      return $r('app.string.sleep_timer_disabled');
+    }
+    const totalMinutes: number = Math.floor(millis / 60000);
+    const hours: number = Math.floor(totalMinutes / 60);
+    const minutes: number = totalMinutes % 60;
+    const minuteText: string = minutes < 10 ? `0${minutes}` : `${minutes}`;
+    if (waitForMediaEnd && resetOnInteraction) {
+      return $r('app.string.sleep_timer_summary_wait_reset', hours, minuteText);
+    }
+    if (waitForMediaEnd) {
+      return $r('app.string.sleep_timer_summary_wait', hours, minuteText);
+    }
+    if (resetOnInteraction) {
+      return $r('app.string.sleep_timer_summary_reset', hours, minuteText);
+    }
+    return $r('app.string.sleep_timer_summary', hours, minuteText);
   }
 
   onNumberPicker(item: PreferenceItem): void {
@@ -326,6 +508,35 @@ export struct PreferencesPage {
   }
 
   @Builder
+  preferenceCustomDialog() {
+    if (this.dialogKind === 'list') {
+      PreferenceChoiceDialog({
+        title: this.sheetItem.title,
+        labels: this.sheetItem.options ?? [],
+        values: this.sheetItem.optionValues ?? [],
+        selectedValue: this.listValue,
+        onSelect: (value: string) => this.onListConfirm(value),
+        onCancel: () => this.closePreferenceDialog(),
+      })
+      .width('100%')
+    }
+  }
+
+  @Builder
+  sleepTimerSheet() {
+    SleepTimerDialog({
+      initialMillis: this.sleepMillis,
+      initialWaitMediaEnd: this.sleepWaitMediaEnd,
+      initialResetOnInteraction: this.sleepResetOnInteraction,
+      onClose: () => this.sleepSheetOpen = false,
+      onClear: () => this.onSleepClear(),
+      onConfirm: (millis: number, waitForMediaEnd: boolean, resetOnInteraction: boolean) =>
+        this.onSleepConfirm(millis, waitForMediaEnd, resetOnInteraction),
+    })
+    .width('100%')
+  }
+
+  @Builder
   listSheet() {
     Column() {
       Text(this.sheetItem.title).fontSize(16).fontColor($r('app.color.list_title')).fontWeight(FontWeight.Medium)
@@ -336,8 +547,8 @@ export struct PreferencesPage {
             Row() {
               Text(label).fontSize(14).fontColor($r('app.color.list_title')).layoutWeight(1)
               Image($r('app.media.ic_check'))
-                .width(20).height(20).fillColor('#FF8800')
-                .visibility(this.optionValueAt(idx) === this.currentDefaultStr() ?
+                .width(20).height(20).fillColor($r('app.color.orange500'))
+                .visibility(this.optionValueAt(idx) === this.listValue ?
                   Visibility.Visible : Visibility.Hidden)
             }
             .width('100%').padding({ left: 16, right: 16, top: 14, bottom: 14 })
@@ -347,6 +558,7 @@ export struct PreferencesPage {
       }
       .divider({ strokeWidth: 0.5, color: $r('app.color.card_background') })
       .width('100%')
+      .height(360)
     }
     .width('100%')
     .backgroundColor($r('app.color.background_default'))
@@ -357,11 +569,6 @@ export struct PreferencesPage {
   optionValueAt(idx: number): string {
     const vals: string[] = this.sheetItem.optionValues ?? [];
     return idx >= 0 && idx < vals.length ? vals[idx] : '';
-  }
-
-  /** sheetItem 当前默认值(字符串形态,用于 list 单选初始高亮)。 */
-  currentDefaultStr(): string {
-    return typeof this.sheetItem.defaultValue === 'string' ? this.sheetItem.defaultValue : '';
   }
 
   @Builder
@@ -381,7 +588,7 @@ export struct PreferencesPage {
       Button($r('app.string.ok'))
         .type(ButtonType.Normal)
         .borderRadius(4)
-        .backgroundColor('#FF8800')
+        .backgroundColor($r('app.color.orange500'))
         .fontColor($r('app.color.list_title'))
         .margin({ top: 16, bottom: 24 })
         .onClick(() => this.onTextConfirm())
@@ -404,7 +611,7 @@ export struct PreferencesPage {
             .borderRadius(20)
             .backgroundColor(c)
             .margin(8)
-            .border({ width: this.colorDraft === c ? 3 : 0, color: '#FF8800' })
+            .border({ width: this.colorDraft === c ? 3 : 0, color: $r('app.color.orange500') })
             .onClick(() => this.onColorConfirm(c))
         }, (c: number) => `${c}`)
       }
@@ -528,35 +735,45 @@ export struct PreferencesPage {
   static uiScreen(): PreferenceScreen {
     const root: PreferenceItem[] = [
       new PreferenceItem({
-        key: Settings.KEY_APP_THEME, title: 'DayNight mode', type: 'list',
+        key: Settings.KEY_APP_THEME, title: $r('app.string.daynight_title'), type: 'list',
         defaultValue: '-1',
         optionValues: ['-1', '1', '2'],
-        options: ['Follow system mode', 'Light theme', 'Black theme'],
+        options: [$r('app.string.follow_system_mode'), $r('app.string.light_theme'), $r('app.string.enable_black_theme')],
       }),
-      new PreferenceItem({ key: 'tv_ui', title: 'Android TV interface', type: 'toggle', summary: 'Change UI to TV adapted theme', defaultValue: false }),
-      new PreferenceItem({ key: 'set_locale', title: 'Set locale', type: 'list', defaultValue: '' }),
+      new PreferenceItem({ key: 'tv_ui', title: $r('app.string.tv_ui_title'), type: 'checkbox', summary: $r('app.string.tv_ui_summary'), defaultValue: false }),
+      new PreferenceItem({
+        key: 'set_locale', title: $r('app.string.setting_language'), type: 'list', defaultValue: 'default',
+        optionValues: ['default', 'zh-CN', 'en-US'],
+        options: [$r('app.string.locale_follow_system'), $r('app.string.locale_simplified_chinese'), $r('app.string.locale_english')],
+      }),
       new PreferenceItem({
         key: Settings.LIST_TITLE_ELLIPSIZE, title: $r('app.string.list_title_ellipsize'), type: 'list',
         defaultValue: '0',
         optionValues: ['0', '1', '2', '3', '4'],
-        options: ['Default', 'Left', 'Right', 'Middle', 'Marquee'],
+        options: [
+          $r('app.string.ellipsize_default'),
+          $r('app.string.ellipsize_left'),
+          $r('app.string.ellipsize_right'),
+          $r('app.string.ellipsize_middle'),
+          $r('app.string.ellipsize_marquee'),
+        ],
       }),
-      new PreferenceItem({ key: Settings.KEY_SHOW_HEADERS, title: 'Show headers', type: 'toggle', summary: 'Split lists by headers depending on the sort type', defaultValue: true }),
-      new PreferenceItem({ key: Settings.KEY_INCLUDE_MISSING, title: 'Show missing media', type: 'toggle', summary: 'Show distant media even if they are not present', defaultValue: true }),
-      new PreferenceItem({ key: 'default_sleep_timer', title: $r('app.string.sleep_title'), type: 'click', summary: 'Disabled' }),
-      new PreferenceItem({ key: Settings.KEY_INCOGNITO, title: $r('app.string.incognito_mode'), type: 'toggle', defaultValue: false }),
-      new PreferenceItem({ key: 'persistent_incognito', title: $r('app.string.persistent_incognito_mode'), type: 'toggle', summary: $r('app.string.persistent_incognito_mode_summary'), defaultValue: true, dependency: Settings.KEY_INCOGNITO }),
+      new PreferenceItem({ key: Settings.KEY_SHOW_HEADERS, title: $r('app.string.show_headers'), type: 'checkbox', summary: $r('app.string.show_headers_summary'), defaultValue: true }),
+      new PreferenceItem({ key: Settings.KEY_INCLUDE_MISSING, title: $r('app.string.browser_show_missing_media'), type: 'checkbox', summary: $r('app.string.browser_show_missing_media_summary'), defaultValue: true }),
+      new PreferenceItem({ key: 'default_sleep_timer', title: $r('app.string.sleep_title'), type: 'click', summary: $r('app.string.sleep_timer_disabled') }),
+      new PreferenceItem({ key: Settings.KEY_INCOGNITO, title: $r('app.string.incognito_mode'), type: 'checkbox', defaultValue: false }),
+      new PreferenceItem({ key: 'persistent_incognito', title: $r('app.string.persistent_incognito_mode'), type: 'checkbox', summary: $r('app.string.persistent_incognito_mode_summary'), defaultValue: true, dependency: Settings.KEY_INCOGNITO }),
     ];
     const video: PreferenceItem[] = [
-      new PreferenceItem({ key: Settings.KEY_MEDIA_SEEN, title: 'Show seen video marker', type: 'toggle', summary: 'Mark a video as seen when you play it until the end', defaultValue: true }),
-      new PreferenceItem({ key: 'playlist_mode_video', title: $r('app.string.force_play_all_title'), type: 'toggle', summary: $r('app.string.force_play_all_summary'), defaultValue: false }),
-      new PreferenceItem({ key: Settings.SHOW_VIDEO_THUMBNAILS, title: $r('app.string.show_video_thumbnails'), type: 'toggle', summary: $r('app.string.show_video_thumbnails_summary'), defaultValue: true }),
+      new PreferenceItem({ key: Settings.KEY_MEDIA_SEEN, title: $r('app.string.media_seen'), type: 'checkbox', summary: $r('app.string.media_seen_summary'), defaultValue: true }),
+      new PreferenceItem({ key: 'playlist_mode_video', title: $r('app.string.force_play_all_title'), type: 'checkbox', summary: $r('app.string.force_play_all_summary'), defaultValue: false }),
+      new PreferenceItem({ key: Settings.SHOW_VIDEO_THUMBNAILS, title: $r('app.string.show_video_thumbnails'), type: 'checkbox', summary: $r('app.string.show_video_thumbnails_summary'), defaultValue: true }),
     ];
     const audio: PreferenceItem[] = [
-      new PreferenceItem({ key: 'audio_resume_card', title: $r('app.string.audio_resume_card_title'), type: 'toggle', summary: $r('app.string.audio_resume_card_summary'), defaultValue: true }),
-      new PreferenceItem({ key: 'playlist_mode_audio', title: $r('app.string.force_play_all_audio_title'), type: 'toggle', summary: $r('app.string.force_play_all_audio_summary'), defaultValue: false }),
-      new PreferenceItem({ key: 'lockscreen_cover', title: $r('app.string.lockscreen_cover_title'), type: 'toggle', summary: $r('app.string.lockscreen_cover_summary'), defaultValue: true }),
-      new PreferenceItem({ key: 'show_seek_in_compact_notification', title: $r('app.string.show_seek_in_compact_notif_title'), type: 'toggle', summary: $r('app.string.show_seek_in_compact_notif_summary'), defaultValue: false }),
+      new PreferenceItem({ key: 'audio_resume_card', title: $r('app.string.audio_resume_card_title'), type: 'checkbox', summary: $r('app.string.audio_resume_card_summary'), defaultValue: true }),
+      new PreferenceItem({ key: 'playlist_mode_audio', title: $r('app.string.force_play_all_audio_title'), type: 'checkbox', summary: $r('app.string.force_play_all_audio_summary'), defaultValue: false }),
+      new PreferenceItem({ key: 'lockscreen_cover', title: $r('app.string.lockscreen_cover_title'), type: 'checkbox', summary: $r('app.string.lockscreen_cover_summary'), defaultValue: true }),
+      new PreferenceItem({ key: 'show_seek_in_compact_notification', title: $r('app.string.show_seek_in_compact_notif_title'), type: 'checkbox', summary: $r('app.string.show_seek_in_compact_notif_summary'), defaultValue: false }),
     ];
     return new PreferenceScreen('ui_category', $r('app.string.interface_prefs_screen'), [
       new PreferenceGroup('', root),
