@@ -571,6 +571,63 @@ export struct VideoPlayerPage {
     this.closeSheet();
   }
 
+  /** VideoInfo 用的轨道元数据(由 refreshVideoInfoTracks 刷新)。 */
+  @Local videoCodecName: string = '';
+  @Local audioCodecName: string = '';
+  @Local videoLang: string = '';
+  @Local videoFps: string = '';
+  @Local audioLang: string = '';
+  @Local audioChannels: string = '';
+  @Local audioSampleRate: string = '';
+  @Local bitrate: string = '';
+
+  /** 刷新视频信息弹框要展示的全部字段:从 libVLC 真实轨道数据填入。 */
+  refreshVideoInfoTracks(): void {
+    const svc = PlaybackService.getInstance();
+    this.videoCodecName = svc.getCurrentVideoTrackInfo()?.name ?? '';
+    this.audioCodecName = svc.getCurrentAudioTrackInfo()?.name ?? '';
+
+    // 从 media tracks info 取当前选中轨道的 fps / lang / channels / sampleRate / bitrate
+    const allTracks = svc.getMediaTracksInfo();
+    const curVideoId = svc.getVideoTrack();
+    const curAudioId = svc.getAudioTrack();
+
+    const videoTrack = allTracks.find((t) => t.type === 1 && t.id === curVideoId);
+    if (videoTrack) {
+      this.videoLang = videoTrack.language.length > 0 ? videoTrack.language : '';
+      if (videoTrack.frameRateNum !== undefined && videoTrack.frameRateDen !== undefined &&
+          videoTrack.frameRateDen > 0) {
+        this.videoFps = (videoTrack.frameRateNum / videoTrack.frameRateDen).toFixed(3);
+      } else {
+        this.videoFps = '';
+      }
+      if (videoTrack.bitrate > 0) {
+        this.bitrate = String(videoTrack.bitrate);
+      } else {
+        this.bitrate = '';
+      }
+    } else {
+      this.videoLang = '';
+      this.videoFps = '';
+      this.bitrate = '';
+    }
+
+    const audioTrack = allTracks.find((t) => t.type === 0 && t.id === curAudioId);
+    if (audioTrack) {
+      this.audioLang = audioTrack.language.length > 0 ? audioTrack.language : '';
+      this.audioChannels = audioTrack.channels !== undefined && audioTrack.channels > 0 ? String(audioTrack.channels) : '';
+      this.audioSampleRate = audioTrack.sampleRate !== undefined && audioTrack.sampleRate > 0 ? String(audioTrack.sampleRate) : '';
+      // 如果视频轨道没给码率但音频有,兜底用音频的
+      if (this.bitrate.length === 0 && audioTrack.bitrate > 0) {
+        this.bitrate = String(audioTrack.bitrate);
+      }
+    } else {
+      this.audioLang = '';
+      this.audioChannels = '';
+      this.audioSampleRate = '';
+    }
+  }
+
   onSpeedConfirm(action: PlaybackSpeedAction): void {
     this.vm.setSpeed(action.speed);
     promptAction.showToast({ message: `播放速度已设为 ${action.speed.toFixed(2)}x` });
@@ -1440,6 +1497,14 @@ export struct VideoPlayerPage {
           durationMs: this.vm.duration,
           videoWidth: this.vm.videoWidth,
           videoHeight: this.vm.videoHeight,
+          videoCodec: this.videoCodecName,
+          audioCodec: this.audioCodecName,
+          videoLang: this.videoLang,
+          videoFps: this.videoFps,
+          audioLang: this.audioLang,
+          audioChannels: this.audioChannels,
+          audioSampleRate: this.audioSampleRate,
+          bitrate: this.bitrate,
           onClose: () => this.closeSheet(),
         }).width('100%')
       } else if (this.sheetKind === 'savePlaylist') {
@@ -1553,6 +1618,7 @@ export struct VideoPlayerPage {
       return;
     }
     if (id === 'videoInfo') {
+      this.refreshVideoInfoTracks();
       this.openSub('videoInfo');
       return;
     }
