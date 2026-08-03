@@ -7,6 +7,7 @@ import { PreferenceConfirmDialog } from './PreferenceConfirmDialog';
 import { SleepTimerDialog } from './SleepTimerDialog';
 import { NavController } from '../common/data/NavController';
 import { Settings } from '../common/data/Settings';
+import { AppTheme } from '../common/data/AppTheme';
 import { PreferenceScreen, PreferenceGroup, PreferenceItem } from '../common/models/PreferenceModels';
 import { PreferencesScreenParam } from '../common/models/MediaModels';
 import { promptAction } from '@kit.ArkUI';
@@ -288,6 +289,9 @@ export struct PreferencesPage {
       this.rowVersion++;
       this.closePreferenceDialog();
       return;
+    }
+    if (this.sheetItem.key === Settings.KEY_APP_THEME) {
+      AppTheme.apply(value);
     }
     Settings.put(this.sheetItem.key, value);
     this.listValue = value;

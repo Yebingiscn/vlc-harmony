@@ -1114,11 +1114,11 @@
     },
     {
       "name": "sleep_timer_minutes",
-      "value": "%d min"
+      "value": "%dm"
     },
     {
       "name": "sleep_timer_hours_minutes",
-      "value": "%d h %d min"
+      "value": "%dh %dm"
     },
     {
       "name": "sleep_timer_disabled",

@@ -7,6 +7,7 @@ import { SecondaryPage } from './SecondaryPage';
 import { SearchPage } from './SearchPage';
 import { SecondaryParam } from '../common/models/MediaModels';
 import { Settings } from '../common/data/Settings';
+import { AppTheme } from '../common/data/AppTheme';
 import { NavController } from '../common/data/NavController';
 import { RouteName } from '../common/constants/AppConstants';
 // Phase B 新增可导航页面。
@@ -48,6 +49,9 @@ struct Index {
 
   async bootstrap(): Promise<void> {
     await Settings.init();
+    // Settings 已就绪后立即应用保存的主题；同名 base/dark 资源由系统自动匹配。
+    const appTheme: string = await Settings.getString(Settings.KEY_APP_THEME, AppTheme.FOLLOW_SYSTEM);
+    AppTheme.apply(appTheme);
     const onboardingDone = await Settings.getBoolean(Settings.NOTIFICATION_PERMISSION_ASKED, false) &&
       await Settings.getBoolean(Settings.INITIAL_PERMISSION_ASKED, false);
     if (onboardingDone) {

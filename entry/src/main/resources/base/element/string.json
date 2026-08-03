@@ -1166,11 +1166,11 @@
     },
     {
       "name": "sleep_timer_minutes",
-      "value": "%d分钟"
+      "value": "%dm"
     },
     {
       "name": "sleep_timer_hours_minutes",
-      "value": "%d小时 %d分钟"
+      "value": "%dh %dm"
     },
     {
       "name": "sleep_timer_disabled",

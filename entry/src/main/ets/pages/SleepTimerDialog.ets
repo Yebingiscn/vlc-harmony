@@ -75,7 +75,10 @@ export struct SleepTimerDialog {
     this.recompute();
   }
 
-  /** 使用资源模板输出时间，单位文本随应用语言切换。 */
+  /**
+   * 使用资源模板输出时间；VLC 的计时器单位固定采用 h/m 缩写，
+   * 不随应用语言写成“小时/分钟”或“hour/minute”。
+   */
   private displayTime(): ResourceStr {
     const parts = sleepDigitsToParts(this.digits);
     if (parts.hours === 0) {
