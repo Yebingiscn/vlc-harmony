@@ -4,6 +4,7 @@ import { media } from '@kit.MediaKit';
 import { image } from '@kit.ImageKit';
 import { dataSharePredicates } from '@kit.ArkData';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { emitter } from '@kit.BasicServicesKit';
 import { AppContext } from './AppContext';
 import { MediaWrapper, Track, Artist, Album, Genre, Folder, VideoGroup, SheetItem, Playlist } from '../models/MediaModels';
 import { BookMark } from '../models/BookmarkModels';
@@ -916,6 +917,18 @@ export class MediaLibrary {
   private static playlistCache: StoredPlaylist[] = [];
   private static playlistCacheInited: boolean = false;
 
+  /** 播放列表变更事件 ID（emitter 全局广播，订阅方应 reload 自身 UI）。 */
+  public static readonly EVENT_PLAYLISTS_CHANGED: string = 'vlc_playlists_changed';
+
+  /** 触发播放列表变更广播（私有辅助:每次持久化后调用）。 */
+  private static emitPlaylistsChanged(): void {
+    try {
+      emitter.emit(MediaLibrary.EVENT_PLAYLISTS_CHANGED);
+    } catch (e) {
+      hilog.warn(0x0001, 'VLC', `[VLC] emitPlaylistsChanged failed: ${JSON.stringify(e)}`);
+    }
+  }
+
   /** 初始化播放列表缓存（从 Settings 加载，幂等）。 */
   static async initPlaylistCache(): Promise<void> {
     if (MediaLibrary.playlistCacheInited) {
@@ -1004,9 +1017,10 @@ export class MediaLibrary {
     await MediaLibrary.savePlaylists();
   }
 
-  /** 将缓存写入 Settings。 */
+  /** 将缓存写入 Settings,并广播变更事件。 */
   private static async savePlaylists(): Promise<void> {
     await Settings.put(MediaLibrary.KEY_PLAYLISTS, JSON.stringify(MediaLibrary.playlistCache));
+    MediaLibrary.emitPlaylistsChanged();
   }
 
   // ---- 书签管理 ----

@@ -36,6 +36,8 @@ export struct MainPage {
   @Local audioSettingsVersion: number = 0;
   @Local searchMode: boolean = false;
   @Local searchQuery: string = '';
+  /** 自增用于通知 PlaylistsPage 重新拉取数据(NavDestination 重新可见时 +1)。 */
+  @Local playlistsVersion: number = 0;
 
   async aboutToAppear(): Promise<void> {
     this.incognitoMode = Settings.incognitoMode;
@@ -195,6 +197,7 @@ export struct MainPage {
             searchMode: this.searchMode,
             searchQuery: this.searchQuery,
             currentTab: this.currentTab,
+            playlistsVersion: this.playlistsVersion,
             onSearchGlobal: () => { this.searchMode = false; this.searchQuery = ''; NavController.push('Search'); },
           })
             .visibility(this.currentTab === 'playlists' ? Visibility.Visible : Visibility.None)
@@ -234,6 +237,11 @@ export struct MainPage {
       })
     }
     .hideTitleBar(true)
+    .onShown(() => {
+      // 从 VideoPlayer/AudioPlayer 等子页面返回时触发,
+      // 自增版本号让 PlaylistsPage 通过 @Monitor('playlistsVersion') 重新拉数据。
+      this.playlistsVersion++;
+    })
     .onBackPressed(() => {
       // 搜索态下返回优先退出搜索,非搜索态返回交给系统(退出 APP)
       if (this.searchMode) {

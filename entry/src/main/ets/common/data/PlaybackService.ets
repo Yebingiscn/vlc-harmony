@@ -818,6 +818,12 @@ export class PlaybackService {
     this.emitQueue();
   }
 
+  setShuffle(value: boolean): void {
+    if (this.shuffle === value) { return; }
+    this.shuffle = value;
+    this.emitQueue();
+  }
+
   cycleRepeat(): void {
     this.repeatMode = (this.repeatMode + 1) % 3;
     this.emitQueue();
@@ -921,6 +927,14 @@ export class PlaybackService {
 
   static toggleShuffle(): void {
     PlaybackService.getInstance().toggleShuffle();
+  }
+
+  static isShuffle(): boolean {
+    return PlaybackService.getInstance().getShuffle();
+  }
+
+  static setShuffle(value: boolean): void {
+    PlaybackService.getInstance().setShuffle(value);
   }
 
   static cycleRepeat(): void {

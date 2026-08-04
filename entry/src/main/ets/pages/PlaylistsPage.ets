@@ -5,6 +5,7 @@ import { EmptyStateView } from '../common/components/EmptyStateView';
 import { PlaylistDialog } from './PlaylistDialog';
 import { RenameDialog } from './RenameDialog';
 import { promptAction } from '@kit.ArkUI';
+import { emitter } from '@kit.BasicServicesKit';
 import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
 import { VideoParam, VideoPlayItem } from './VideoPlayerPage';
 import { HeaderMediaListParam } from './HeaderMediaListActivityPage';
@@ -12,11 +13,12 @@ import { RouteName } from '../common/constants/AppConstants';
 
 // ---- 数据模型 ----
 
+@ObservedV2
 class PlaylistCard {
-  id: number;
-  name: string;
-  trackCount: number;
-  artwork: string;
+  @Trace id: number;
+  @Trace name: string;
+  @Trace trackCount: number;
+  @Trace artwork: string;
 
   constructor(id: number, name: string, trackCount: number, artwork: string) {
     this.id = id;
@@ -50,7 +52,6 @@ class PlaylistsVM {
     const stored = MediaLibrary.getStoredPlaylists();
     const audios = MediaLibrary.getAudios();
     const videos = MediaLibrary.getVideos();
-    // 用新数组 + 新对象触发 @Trace 重渲染,避免引用复用导致 UI 缓存旧值。
     const next: PlaylistCard[] = stored.map((s: StoredPlaylist) => {
       // 直接用存储的 URI 数量,不依赖媒体库扫描结果。
       const count = s.uriList.length;
@@ -60,8 +61,25 @@ class PlaylistsVM {
       const art = audioArt ? audioArt.artworkPath : (videoArt ? videoArt.artworkUrl : '');
       return new PlaylistCard(s.id, s.name, count, art);
     });
-    // 整体替换数组并复制一遍,确保 @Trace 必能感知引用变化。
-    this.playlists = next.slice();
+    // 用现有 card 实例 + 字段级 @Trace 更新(而不是整体替换数组),
+    // 确保 ForEach 即使 key(id) 相同也能感知 trackCount/name/artwork 字段变化。
+    const oldById = new Map<number, PlaylistCard>(this.playlists.map((c) => [c.id, c]));
+    const merged: PlaylistCard[] = next.map((c) => {
+      const existing = oldById.get(c.id);
+      if (existing) {
+        existing.name = c.name;
+        existing.trackCount = c.trackCount;
+        existing.artwork = c.artwork;
+        return existing;
+      }
+      return c;
+    });
+    // 任何 id 缺失(被删除)时整体替换一次以清掉,新增的也通过 next 带入。
+    const sameIds = merged.length === this.playlists.length
+      && merged.every((c, i) => c.id === this.playlists[i].id);
+    if (!sameIds) {
+      this.playlists = merged;
+    }
   }
 
   applySearch(q: string): void {
@@ -100,12 +118,24 @@ export struct PlaylistsPage {
   @Param searchMode: boolean = false;
   @Param searchQuery: string = '';
   @Param currentTab: string = '';
+  @Param playlistsVersion: number = 0;
   @Event onSearchGlobal: () => void = () => {
+  };
+  /** 持有 emitter 回调引用,aboutToDisappear 时按引用解绑。 */
+  private playlistsChangedHandler: (data: emitter.EventData) => void = () => {
   };
 
   async aboutToAppear(): Promise<void> {
     await MediaLibrary.initPlaylistCache();
     await this.vm.load();
+    this.playlistsChangedHandler = (data: emitter.EventData): void => {
+      void this.vm.load();
+    };
+    emitter.on(MediaLibrary.EVENT_PLAYLISTS_CHANGED, this.playlistsChangedHandler);
+  }
+
+  aboutToDisappear(): void {
+    emitter.off(MediaLibrary.EVENT_PLAYLISTS_CHANGED, this.playlistsChangedHandler);
   }
 
   @Monitor('currentTab')
@@ -113,6 +143,11 @@ export struct PlaylistsPage {
     if (this.currentTab === 'playlists') {
       void this.vm.load();
     }
+  }
+
+  @Monitor('playlistsVersion')
+  onPlaylistsVersionChange(): void {
+    void this.vm.load();
   }
 
   @Monitor('searchQuery')
