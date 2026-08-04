@@ -1,0 +1,38 @@
+From: vlc-harmony maintainers
+Subject: [PATCH] avcodec: fall back to software decoder when OHOS HW decoder fails to start
+
+The 0001 patch only skips h264_ohosavcodec/hevc_ohosavcodec when
+avcodec-hw=none/disabled.  When hardware decoding is left enabled, the
+OHOS MediaCodec-backed decoders can *exist* but still fail avcodec_open2()
+(e.g. unsupported profile/level or buffer geometry), producing
+"cannot start codec" and a black screen with no retry.
+
+Retry once with FFmpeg's software decoder in that case instead of giving up.
+
+diff --git a/modules/codec/avcodec/avcodec.c b/modules/codec/avcodec/avcodec.c
+--- a/modules/codec/avcodec/avcodec.c
++++ b/modules/codec/avcodec/avcodec.c
+@@ -557,8 +557,23 @@ static int OpenDecoder( vlc_object_t *p_this )
+     if( avcodec_open2( p_context, p_codec, &opts ) < 0 )
+     {
+         msg_Err( p_dec, "cannot start codec" );
++#ifdef HAVE_OHOS
++        /* The preferred h264_ohosavcodec/hevc_ohosavcodec may exist yet fail
++         * to start (unsupported profile/level/buffer geometry). Fall back to
++         * FFmpeg's software decoder instead of failing hard. */
++        if( p_codec != NULL && p_codec->name != NULL &&
++            strstr( p_codec->name, "ohosavcodec" ) != NULL )
++        {
++            msg_Warn( p_dec, "OHOS hardware decoder %s failed to start, "
++                      "falling back to software decoder", p_codec->name );
++            p_codec = avcodec_find_decoder( i_codec_id );
++            if( p_codec != NULL && avcodec_open2( p_context, p_codec, &opts ) == 0 )
++                goto codec_started;
++        }
++#endif
+         goto error;
+     }
++codec_started:
+ 
+     p_sys->p_context = p_context;
+     p_sys->p_codec = p_codec;

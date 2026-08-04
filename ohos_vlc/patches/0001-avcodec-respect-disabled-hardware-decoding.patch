@@ -1,0 +1,41 @@
+From: vlc-harmony maintainers
+Subject: [PATCH] avcodec: respect disabled hardware decoding on OHOS
+
+The OHOS decoder preference bypassed the avcodec-hw option and selected
+MediaCodec-backed H.264/HEVC decoders even when callers requested software
+decoding with avcodec-hw=none. Keep the OHOS preference for hardware/auto
+passes, but fall through to FFmpeg's software decoder when hardware decoding
+is disabled.
+
+diff --git a/modules/codec/avcodec/avcodec.c b/modules/codec/avcodec/avcodec.c
+--- a/modules/codec/avcodec/avcodec.c
++++ b/modules/codec/avcodec/avcodec.c
+@@ -286,9 +286,13 @@ AVCodecContext *ffmpeg_AllocContext( decoder_t *p_dec,
+     }
+     if( !p_codec ) {
+ #ifdef HAVE_OHOS
+- 	         /* On OpenHarmony, prefer hardware decoders */
+- 	         const char *ohos_hw_name = NULL;
+- 	         switch( i_codec_id )
++	         char *psz_hw = var_InheritString( p_dec, "avcodec-hw" );
++	         const bool use_ohos_hw = psz_hw == NULL ||
++	                                  (strcmp( psz_hw, "none" ) != 0 &&
++	                                   strcmp( psz_hw, "disabled" ) != 0);
++	         /* On OpenHarmony, prefer hardware decoders unless explicitly disabled. */
++	         const char *ohos_hw_name = NULL;
++	         if( use_ohos_hw ) switch( i_codec_id )
+  	         {
+  	             case AV_CODEC_ID_H264:
+  	                 ohos_hw_name = "h264_ohosavcodec";
+@@ -305,8 +309,9 @@ AVCodecContext *ffmpeg_AllocContext( decoder_t *p_dec,
+  	             if( p_codec )
+  	                 msg_Dbg( p_dec, "using OHOS hardware decoder: %s", ohos_hw_name );
+  	             else
+- 	                 msg_Dbg( p_dec, "OHOS hardware decoder %s not available, falling back", ohos_hw_name );
+- 	         }
++	                 msg_Dbg( p_dec, "OHOS hardware decoder %s not available, falling back", ohos_hw_name );
++	         }
++	         free( psz_hw );
+ #endif
+         if (!p_codec) {
+             p_codec = avcodec_find_decoder( i_codec_id );
