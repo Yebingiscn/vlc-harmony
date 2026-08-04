@@ -349,6 +349,10 @@
       "value": "Speed up decoding but could lower video quality"
     },
     {
+      "name": "enable_remote_access",
+      "value": "Enable remote access"
+    },
+    {
       "name": "enable_time_stretching_audio",
       "value": "Time-stretching audio"
     },
@@ -881,8 +885,52 @@
       "value": "Read the documentation"
     },
     {
+      "name": "remote_access",
+      "value": "Remote access"
+    },
+    {
+      "name": "remote_access_content",
+      "value": "Content"
+    },
+    {
+      "name": "remote_access_file_browser_content",
+      "value": "File browser"
+    },
+    {
       "name": "remote_access_hash_title",
       "value": "Remote access hash"
+    },
+    {
+      "name": "remote_access_info",
+      "value": "Remote access info"
+    },
+    {
+      "name": "remote_access_logs",
+      "value": "Share log files"
+    },
+    {
+      "name": "remote_access_medialibrary_content",
+      "value": "Media library content"
+    },
+    {
+      "name": "remote_access_medialibrary_content_summary",
+      "value": "Enabled: %1$s\nDisabled: %2$s"
+    },
+    {
+      "name": "remote_access_network_browser_content",
+      "value": "Network browser"
+    },
+    {
+      "name": "remote_access_playback_control",
+      "value": "Control playback"
+    },
+    {
+      "name": "remote_access_status",
+      "value": "Server status"
+    },
+    {
+      "name": "remote_access_status_summary",
+      "value": "Tap to see the server status"
     },
     {
       "name": "remote_access_version",
@@ -961,12 +1009,20 @@
       "value": "Re-enter your PIN"
     },
     {
+      "name": "search",
+      "value": "Search"
+    },
+    {
       "name": "search_global",
       "value": "Search in all media library"
     },
     {
       "name": "search_hint",
       "value": "Search media"
+    },
+    {
+      "name": "search_in_current_list",
+      "value": "Search in current list"
     },
     {
       "name": "search_prefs",
@@ -1071,6 +1127,74 @@
     {
       "name": "sleep_title",
       "value": "Sleep timer"
+    },
+    {
+      "name": "setting_language",
+      "value": "Language"
+    },
+    {
+      "name": "follow_system_mode",
+      "value": "Follow system mode"
+    },
+    {
+      "name": "ellipsize_default",
+      "value": "Default"
+    },
+    {
+      "name": "ellipsize_left",
+      "value": "Left"
+    },
+    {
+      "name": "ellipsize_right",
+      "value": "Right"
+    },
+    {
+      "name": "ellipsize_middle",
+      "value": "Middle"
+    },
+    {
+      "name": "ellipsize_marquee",
+      "value": "Marquee"
+    },
+    {
+      "name": "locale_follow_system",
+      "value": "Device default"
+    },
+    {
+      "name": "locale_simplified_chinese",
+      "value": "Simplified Chinese"
+    },
+    {
+      "name": "locale_english",
+      "value": "English"
+    },
+    {
+      "name": "sleep_timer_minutes",
+      "value": "%dm"
+    },
+    {
+      "name": "sleep_timer_hours_minutes",
+      "value": "%dh %dm"
+    },
+    {
+      "name": "sleep_timer_disabled",
+      "value": "Disabled"
+    },
+    {
+      "name": "sleep_timer_summary",
+      "value": "%d:%s"
+    },
+    {
+      "name": "sleep_timer_summary_wait",
+      "value": "%d:%s, wait for media end"
+    },
+    {
+      "name": "sleep_timer_summary_reset",
+      "value": "%d:%s, reset on interaction"
+    },
+    {
+      "name": "sleep_timer_summary_wait_reset",
+      "value": "%d:%s, wait for media end, reset on interaction"
     },
     {
       "name": "stream_deleted",

@@ -1,5 +1,6 @@
 import { promptAction } from '@kit.ArkUI';
 import { NavController } from '../common/data/NavController';
+import { BackTitleBar } from '../common/components/BackTitleBar';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
 import { Settings } from '../common/data/Settings';
 import { streamSubmissionMessage } from '../common/models/StreamInputModels';
@@ -62,8 +63,7 @@ export struct MrlPanelPage {
           Row() {
             Image($r('app.media.ic_arrow_back'))
               .width(24).height(24).fillColor($r('app.color.list_title'))
-              .margin({ left: 16 })
-              .onClick(() => NavController.pop())
+              .margin({ left: 16 }).onClick(() => NavController.pop())
             Text('串流')
               .fontSize(16).fontWeight(FontWeight.Bold).fontColor($r('app.color.orange500'))
               .margin({ left: 16 })
@@ -75,6 +75,7 @@ export struct MrlPanelPage {
             .onClick(() => this.menuOpen = !this.menuOpen)
           }
           .width('100%').height(56).alignItems(VerticalAlign.Center)
+          .padding({ top: 32 })
           .backgroundColor($r('app.color.background_actionbar'))
 
           Column() {

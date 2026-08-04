@@ -18,7 +18,6 @@ import { BookMark } from '../common/models/BookmarkModels';
 export struct BookmarkDialog {
   @Event onClose: () => void = () => {};
   @Event onSeek: (timeMs: number) => void = () => {};
-  /** 通知宿主在当前位置生成一条新书签(id 由宿主回填)。 */
   @Event onAddAtCurrent: () => void = () => {};
   @Event onRename: (id: number) => void = () => {};
   @Event onDelete: (id: number) => void = () => {};
@@ -31,13 +30,14 @@ export struct BookmarkDialog {
   @Param mediaId: number = -1;
 
   // ── 视觉常量 ─────────────────────────────────────────
-  // 面板 85% 透黑:接近实色,只留一丝视频透出作为氛围感。
-  readonly cPanelBg: string = '#D91C1C1C';
-  readonly cHeaderBg: string = '#E61C1C1C';
-  readonly cTimelineBg: string = '#E61C1C1C';
-  readonly cDivider: string = '#4DFFFFFF';
-  readonly cSubtle: string = '#F2FFFFFF';
-  readonly cDim: string = '#B3FFFFFF';
+  // 主题感知:浅色=白底深字,深色=深底浅字。资源定义见 base/dark element/color.json。
+  // 面板用实色 background_default(原 #CC1C1C1C 半透黑在浅色下改为实白,更清晰)。
+  readonly cPanelBg: Resource = $r('app.color.background_default');
+  readonly cHeaderBg: Resource = $r('app.color.background_default');
+  readonly cTimelineBg: Resource = $r('app.color.background_default');
+  readonly cDivider: Resource = $r('app.color.divider');
+  readonly cSubtle: Resource = $r('app.color.font_light');
+  readonly cDim: Resource = $r('app.color.list_subtitle');
   readonly cAccent: string = '#FF3B30';
   // 全屏:不再使用固定高度,内容用 layoutWeight(1) 撑开,时间线固定在底。
   // 保留 panelHeight 仅给时间线计算 / 旧引用兜底(实际未使用)。
@@ -46,41 +46,44 @@ export struct BookmarkDialog {
   @Builder
   panelHeader() {
     Row() {
-      // 左侧:固定宽度容器(40)装 X,确保与右侧「添加」按钮等宽 → 标题视觉居中
+      // 左侧返回:36×36 深灰圆形底,白色 X 图标。
       Row() {
         Image($r('app.media.ic_arrow_back'))
-          .width(28).height(28).fillColor('#FFFFFF')
-          .padding(2)
-          .onClick(() => this.onClose())
+          .width(22).height(22)
+          .fillColor($r('app.color.list_title'))
       }
-      .width(40)
-      .justifyContent(FlexAlign.Start)
+      .width(36)
+      .height(36)
+      .borderRadius(18)
+      .backgroundColor($r('app.color.divider'))
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .onClick(() => this.onClose())
 
-      // 中间:标题 —— 在左右等宽容器之间自然居中
+      // 中间:标题
       Text('书签')
-        .fontSize(18).fontWeight(600).fontColor('#FFFFFF')
+        .fontSize(18).fontWeight(600).fontColor($r('app.color.list_title'))
         .layoutWeight(1)
         .textAlign(TextAlign.Center)
 
-      // 右侧:同宽度容器(40)装「+ 添加」
+      // 右侧保存书签:36×36 深灰圆形底,橙色 + 图标。
       Row() {
-        Row() {
-          Image($r('app.media.ic_bookmark_add'))
-            .width(20).height(20).fillColor(AppColors.orange500)
-        }
-        .padding(6)
-        .borderRadius(14)
-        .backgroundColor('#33FF8800')
-        .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.92 })
-        .onClick(() => this.onAddAtCurrent())
+        Image($r('app.media.ic_bookmark_add'))
+          .width(22).height(22)
+          .fillColor(AppColors.orange500)
       }
-      .width(40)
-      .justifyContent(FlexAlign.End)
+      .width(36)
+      .height(36)
+      .borderRadius(18)
+      .backgroundColor('#33FF8800')
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.92 })
+      .onClick(() => this.onAddAtCurrent())
     }
     .width('100%')
     .height(56)
-    // 状态栏让位从 44 减到 20 —— 顶栏更靠上,标题与 X/+ 更接近屏幕顶部
-    .padding({ left: 12, right: 12, top: 20 })
+    .padding({ left: 16, right: 16 })
     .alignItems(VerticalAlign.Center)
     .backgroundColor(this.cHeaderBg)
   }
@@ -151,7 +154,7 @@ export struct BookmarkDialog {
       // 时间文字行
       Row() {
         Text(this.fmtTime(this.currentTimeMs))
-          .fontSize(11).fontColor('#FFFFFF')
+          .fontSize(11).fontColor($r('app.color.list_title'))
         Blank()
         Text(this.durationMs > 0 ? this.fmtTime(this.durationMs) : '--:--')
           .fontSize(11).fontColor(this.cSubtle)
@@ -173,7 +176,7 @@ export struct BookmarkDialog {
         .fillColor(this.cAccent)
       Column() {
         Text(b.name.length > 0 ? b.name : `书签 ${index + 1}`)
-          .fontSize(15).fontColor('#FFFFFF')
+          .fontSize(15).fontColor($r('app.color.list_title'))
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(this.fmtTime(b.timeMs))
@@ -209,7 +212,7 @@ export struct BookmarkDialog {
         .objectFit(ImageFit.Contain)
         .fillColor(this.cDim)
       Text('暂无书签')
-        .fontSize(16).fontColor('#FFFFFF')
+        .fontSize(16).fontColor($r('app.color.list_title'))
         .margin({ top: 16 })
       Text('但那些真正喜欢的')
         .fontSize(12).fontColor(this.cSubtle)
@@ -239,28 +242,32 @@ export struct BookmarkDialog {
     Column() {
       this.panelHeader()
       this.thinDivider()
-      if (this.bookmarks.length === 0) {
-        this.emptyState()
-      } else {
-        List({ space: 0 }) {
+      // 始终渲染 List(不再 if/else 切换 empty/list),保证 sheet 内容高度稳定,
+      // 避免 bindSheet FIT_CONTENT 模式下空态/列表切换触发 onDisappear → closeSheet。
+      List({ space: 0 }) {
+        if (this.bookmarks.length === 0) {
+          ListItem() {
+            this.emptyState()
+          }
+        } else {
           ForEach(this.bookmarks, (b: BookMark, index: number) => {
             ListItem() {
               this.listItem(b, index)
             }
           }, (b: BookMark): string => `${b.id}`)
-          // 列表底部留白,避免最后一项贴边
-          ListItem() { Row().width('100%').height(20) }
         }
-        .width('100%')
-        .layoutWeight(1)
-        .scrollBar(BarState.Off)
-        .divider({
-          strokeWidth: 0.5,
-          color: this.cDivider,
-          startMargin: 56,
-          endMargin: 12,
-        })
+        // 列表底部留白,避免最后一项贴边
+        ListItem() { Row().width('100%').height(20) }
       }
+      .width('100%')
+      .layoutWeight(1)
+      .scrollBar(BarState.Off)
+      .divider({
+        strokeWidth: 0.5,
+        color: this.cDivider,
+        startMargin: 56,
+        endMargin: 12,
+      })
       this.thinDivider()
       this.timeline()
     }

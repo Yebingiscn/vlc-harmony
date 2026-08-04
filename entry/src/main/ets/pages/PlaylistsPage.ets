@@ -1,19 +1,24 @@
 import { NavController } from '../common/data/NavController';
 import { MediaLibrary } from '../common/data/MediaLibrary';
-import { Track } from '../common/models/MediaModels';
+import { Track, MediaWrapper, EmptyLoadingState } from '../common/models/MediaModels';
+import { EmptyStateView } from '../common/components/EmptyStateView';
 import { PlaylistDialog } from './PlaylistDialog';
 import { RenameDialog } from './RenameDialog';
-import { Settings } from '../common/data/Settings';
 import { promptAction } from '@kit.ArkUI';
+import { emitter } from '@kit.BasicServicesKit';
 import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
+import { VideoParam, VideoPlayItem } from './VideoPlayerPage';
+import { HeaderMediaListParam } from './HeaderMediaListActivityPage';
+import { RouteName } from '../common/constants/AppConstants';
 
 // ---- 数据模型 ----
 
+@ObservedV2
 class PlaylistCard {
-  id: number;
-  name: string;
-  trackCount: number;
-  artwork: string;
+  @Trace id: number;
+  @Trace name: string;
+  @Trace trackCount: number;
+  @Trace artwork: string;
 
   constructor(id: number, name: string, trackCount: number, artwork: string) {
     this.id = id;
@@ -22,14 +27,6 @@ class PlaylistCard {
     this.artwork = artwork;
   }
 }
-
-interface StoredPlaylist {
-  id: number;
-  name: string;
-  uriList: string[];
-}
-
-const KEY_PLAYLISTS = 'vlc_playlists';
 
 /** 半模态类型:一个组件只能绑定一个 bindSheet,内部按模式切换内容。 */
 type SheetMode = 'none' | 'create' | 'ctxmenu' | 'rename';
@@ -40,79 +37,72 @@ type SheetMode = 'none' | 'create' | 'ctxmenu' | 'rename';
 class PlaylistsVM {
   @Trace playlists: PlaylistCard[] = [];
   @Trace loading: boolean = true;
+  private searchQuery: string = '';
 
   async load(): Promise<void> {
     this.loading = true;
+    // 每次加载都强制从 Settings 刷新播放列表数据
+    await MediaLibrary.reloadPlaylistCache();
     await MediaLibrary.scan();
     this.rebuildCards();
     this.loading = false;
   }
 
   rebuildCards(): void {
-    const stored = PlaylistsVM.loadStored();
+    const stored = MediaLibrary.getStoredPlaylists();
     const audios = MediaLibrary.getAudios();
-    const uriSet = new Set(audios.map((t: Track) => t.uri));
-    this.playlists = stored.map((s: StoredPlaylist) => {
-      const availableUris = s.uriList.filter((u: string) => uriSet.has(u));
-      const count = availableUris.length;
-      const art = audios.find((t: Track) => s.uriList.includes(t.uri) && t.artworkPath.length > 0);
-      return new PlaylistCard(s.id, s.name, count, art ? art.artworkPath : '');
+    const videos = MediaLibrary.getVideos();
+    const next: PlaylistCard[] = stored.map((s: StoredPlaylist) => {
+      // 直接用存储的 URI 数量,不依赖媒体库扫描结果。
+      const count = s.uriList.length;
+      // 封面优先用音频专辑图,其次视频缩略图。
+      const audioArt = audios.find((t: Track) => s.uriList.includes(t.uri) && t.artworkPath.length > 0);
+      const videoArt = videos.find((v: MediaWrapper) => s.uriList.includes(v.uri) && v.artworkUrl.length > 0);
+      const art = audioArt ? audioArt.artworkPath : (videoArt ? videoArt.artworkUrl : '');
+      return new PlaylistCard(s.id, s.name, count, art);
     });
-  }
-
-  async rename(id: number, newName: string): Promise<void> {
-    const stored = PlaylistsVM.loadStored();
-    const pl = stored.find((s: StoredPlaylist) => s.id === id);
-    if (pl) {
-      pl.name = newName;
-      await PlaylistsVM.saveStored(stored);
-      this.rebuildCards();
+    // 用现有 card 实例 + 字段级 @Trace 更新(而不是整体替换数组),
+    // 确保 ForEach 即使 key(id) 相同也能感知 trackCount/name/artwork 字段变化。
+    const oldById = new Map<number, PlaylistCard>(this.playlists.map((c) => [c.id, c]));
+    const merged: PlaylistCard[] = next.map((c) => {
+      const existing = oldById.get(c.id);
+      if (existing) {
+        existing.name = c.name;
+        existing.trackCount = c.trackCount;
+        existing.artwork = c.artwork;
+        return existing;
+      }
+      return c;
+    });
+    // 任何 id 缺失(被删除)时整体替换一次以清掉,新增的也通过 next 带入。
+    const sameIds = merged.length === this.playlists.length
+      && merged.every((c, i) => c.id === this.playlists[i].id);
+    if (!sameIds) {
+      this.playlists = merged;
     }
   }
 
-  async deletePlaylist(id: number): Promise<void> {
-    const stored = PlaylistsVM.loadStored().filter((s: StoredPlaylist) => s.id !== id);
-    await PlaylistsVM.saveStored(stored);
+  applySearch(q: string): void {
+    this.searchQuery = q;
     this.rebuildCards();
   }
 
-  static async create(name: string): Promise<void> {
-    const stored = PlaylistsVM.loadStored();
-    const id = Date.now();
-    stored.push({ id: id, name: name, uriList: [] });
-    await PlaylistsVM.saveStored(stored);
+  async rename(id: number, newName: string): Promise<void> {
+    await MediaLibrary.renamePlaylist(id, newName);
+    this.rebuildCards();
   }
 
-  static async addTrack(playlistId: number, uri: string): Promise<void> {
-    const stored = PlaylistsVM.loadStored();
-    const pl = stored.find((s: StoredPlaylist) => s.id === playlistId);
-    if (pl && !pl.uriList.includes(uri)) {
-      pl.uriList.push(uri);
-      await PlaylistsVM.saveStored(stored);
-    }
+  async deletePlaylist(id: number): Promise<void> {
+    await MediaLibrary.deletePlaylist(id);
+    this.rebuildCards();
   }
+}
 
-  static getTrackUris(playlistId: number): string[] {
-    const stored = PlaylistsVM.loadStored();
-    const pl = stored.find((s: StoredPlaylist) => s.id === playlistId);
-    return pl ? pl.uriList : [];
-  }
-
-  private static loadStored(): StoredPlaylist[] {
-    return PlaylistsVM.cachedStored;
-  }
-
-  private static async saveStored(stored: StoredPlaylist[]): Promise<void> {
-    PlaylistsVM.cachedStored = stored;
-    await Settings.put(KEY_PLAYLISTS, JSON.stringify(stored));
-  }
-
-  private static cachedStored: StoredPlaylist[] = [];
-
-  static async initCache(): Promise<void> {
-    const raw = await Settings.getString(KEY_PLAYLISTS, '[]');
-    try { PlaylistsVM.cachedStored = JSON.parse(raw) as StoredPlaylist[]; } catch (e) { PlaylistsVM.cachedStored = []; }
-  }
+/** 持久化用的播放列表结构（与 MediaLibrary 保持一致）。 */
+interface StoredPlaylist {
+  id: number;
+  name: string;
+  uriList: string[];
 }
 
 // ---- 页面 ----
@@ -125,11 +115,43 @@ export struct PlaylistsPage {
   @Local sheetMode: SheetMode = 'none';
   @Local showSheet: boolean = false;
   @Local ctxCard: PlaylistCard | null = null;
+  @Param searchMode: boolean = false;
+  @Param searchQuery: string = '';
+  @Param currentTab: string = '';
+  @Param playlistsVersion: number = 0;
+  @Event onSearchGlobal: () => void = () => {
+  };
+  /** 持有 emitter 回调引用,aboutToDisappear 时按引用解绑。 */
+  private playlistsChangedHandler: (data: emitter.EventData) => void = () => {
+  };
 
   async aboutToAppear(): Promise<void> {
-    await PlaylistsVM.initCache();
+    await MediaLibrary.initPlaylistCache();
     await this.vm.load();
+    this.playlistsChangedHandler = (data: emitter.EventData): void => {
+      void this.vm.load();
+    };
+    emitter.on(MediaLibrary.EVENT_PLAYLISTS_CHANGED, this.playlistsChangedHandler);
   }
+
+  aboutToDisappear(): void {
+    emitter.off(MediaLibrary.EVENT_PLAYLISTS_CHANGED, this.playlistsChangedHandler);
+  }
+
+  @Monitor('currentTab')
+  onTabChange(): void {
+    if (this.currentTab === 'playlists') {
+      void this.vm.load();
+    }
+  }
+
+  @Monitor('playlistsVersion')
+  onPlaylistsVersionChange(): void {
+    void this.vm.load();
+  }
+
+  @Monitor('searchQuery')
+  onSearchQueryChange(): void { this.vm.applySearch(this.searchQuery); }
 
   async doRefresh(): Promise<void> {
     this.refreshing = true;
@@ -137,18 +159,45 @@ export struct PlaylistsPage {
     this.refreshing = false;
   }
 
+  /** 点击播放列表卡片 → 进入曲目详情页(HeaderMediaListActivityPage)。 */
+  openPlaylist(card: PlaylistCard): void {
+    const plParam = new HeaderMediaListParam();
+    plParam.title = card.name;
+    plParam.description = `${card.trackCount} 首`;
+    plParam.isPlaylist = true;
+    plParam.playlistId = card.id;
+    NavController.push(RouteName.HeaderMediaList, plParam);
+  }
+
   playAll(card: PlaylistCard): void {
-    const uriList = PlaylistsVM.getTrackUris(card.id);
+    const uriList = MediaLibrary.getPlaylistUris(card.id);
     const audios = MediaLibrary.getAudios();
-    const tracks = audios.filter((t: Track) => uriList.includes(t.uri));
-    if (tracks.length > 0) {
-      const queue = tracks.map((t: Track) =>
+    const videos = MediaLibrary.getVideos();
+
+    // 优先匹配音频
+    const audioTracks: Track[] = audios.filter((t: Track) => uriList.includes(t.uri));
+    if (audioTracks.length > 0) {
+      const queue = audioTracks.map((t: Track) =>
         new QueueItem(t.id, t.title, t.uri, t.artistName, t.albumName, t.artworkPath));
       PlaybackService.playList(queue, 0, true);
       NavController.push('AudioPlayer');
-    } else {
-      promptAction.showToast({ message: '播放列表为空' });
+      return;
     }
+
+    // 无音频则尝试匹配视频
+    const videoTracks: MediaWrapper[] = videos.filter((v: MediaWrapper) => uriList.includes(v.uri));
+    if (videoTracks.length > 0) {
+      const list: VideoPlayItem[] = [];
+      for (const v of videoTracks) {
+        const item: VideoPlayItem = { uri: v.uri, title: v.title };
+        list.push(item);
+      }
+      const param: VideoParam = { uri: videoTracks[0].uri, title: videoTracks[0].title, list: list, index: 0 };
+      NavController.push('VideoPlayer', param);
+      return;
+    }
+
+    promptAction.showToast({ message: '播放列表为空' });
   }
 
   openCreate(): void { this.sheetMode = 'create'; this.showSheet = true; }
@@ -158,51 +207,61 @@ export struct PlaylistsPage {
 
   build() {
     Stack() {
-      Refresh({ refreshing: $$this.refreshing }) {
-        if (this.vm.playlists.length === 0) {
-          Column() {
-            Image($r('app.media.ic_playlist_big')).width(96).height(96).fillColor($r('app.color.grey800'))
-            Text($r('app.string.noplaylist')).fontSize(15).fontColor($r('app.color.list_subtitle')).margin({ top: 12 })
-            Button($r('app.string.create_new_playlist'))
-              .type(ButtonType.Normal).borderRadius(4).backgroundColor('#FF8800').fontColor('#FFFFFF').fontSize(14)
-              .margin({ top: 16 })
-              .onClick(() => { this.openCreate(); })
-          }
-          .width('100%').height('100%').justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
-        } else {
-          Grid() {
-            ForEach(this.vm.playlists, (card: PlaylistCard) => {
-              GridItem() {
-                Column() {
-                  Stack({ alignContent: Alignment.TopEnd }) {
-                    Image(card.artwork.length > 0 ? card.artwork : $r('app.media.ic_playlist_big'))
-                      .width('100%').aspectRatio(1).objectFit(ImageFit.Cover).borderRadius({ topLeft: 6, topRight: 6 })
-                    Image($r('app.media.ic_more')).width(20).height(20).fillColor($r('app.color.list_title')).margin(4)
-                      .onClick(() => { this.openCtxMenu(card); })
+      Column() {
+        if (this.searchMode) {
+          this.searchGlobalButton()
+        }
+        Refresh({ refreshing: $$this.refreshing }) {
+          if (this.vm.playlists.length === 0) {
+            if (this.searchQuery.trim().length > 0) {
+              EmptyStateView({ state: EmptyLoadingState.EMPTY_SEARCH, filterQuery: this.searchQuery })
+            } else {
+              Column() {
+                Image($r('app.media.ic_playlist_big')).width(96).height(96).fillColor($r('app.color.grey800'))
+                Text($r('app.string.noplaylist')).fontSize(15).fontColor($r('app.color.list_subtitle')).margin({ top: 12 })
+                Button($r('app.string.create_new_playlist'))
+                  .type(ButtonType.Normal).borderRadius(4).backgroundColor('#FF8800').fontColor('#FFFFFF').fontSize(14)
+                  .margin({ top: 16 })
+                  .onClick(() => { this.openCreate(); })
+              }
+              .width('100%').height('100%').justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
+            }
+          } else {
+            Grid() {
+              ForEach(this.vm.playlists, (card: PlaylistCard) => {
+                GridItem() {
+                  Column() {
+                    Stack({ alignContent: Alignment.TopEnd }) {
+                      Image(card.artwork.length > 0 ? card.artwork : $r('app.media.ic_playlist_big'))
+                        .width('100%').aspectRatio(1).objectFit(ImageFit.Cover).borderRadius({ topLeft: 6, topRight: 6 })
+                      Image($r('app.media.ic_more')).width(20).height(20).fillColor($r('app.color.list_title')).margin(4)
+                        .onClick(() => { this.openCtxMenu(card); })
+                    }
+                    .width('100%')
+                    Text(card.name).fontSize(14).fontColor($r('app.color.list_title')).maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ top: 6, left: 8, right: 8 })
+                    Text(`${card.trackCount} 首`).fontSize(12).fontColor($r('app.color.list_subtitle'))
+                      .margin({ bottom: 6 })
                   }
                   .width('100%')
-                  Text(card.name).fontSize(14).fontColor($r('app.color.list_title')).maxLines(1)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ top: 6, left: 8, right: 8 })
-                  Text(`${card.trackCount} 首`).fontSize(12).fontColor($r('app.color.list_subtitle'))
-                    .margin({ bottom: 6 })
+                  .borderRadius(6)
+                  .backgroundColor($r('app.color.card_background'))
+                  .border({ width: 0.5, color: $r('app.color.card_border') })
+                  .shadow({ radius: 4, color: '#1A000000', offsetY: 2 })
+                  .onClick(() => { this.openPlaylist(card); })
                 }
-                .width('100%')
-                .borderRadius(6)
-                .backgroundColor($r('app.color.card_background'))
-                .border({ width: 0.5, color: $r('app.color.card_border') })
-                .shadow({ radius: 4, color: '#1A000000', offsetY: 2 })
-                .onClick(() => { this.playAll(card); })
-              }
-            }, (card: PlaylistCard) => `pl${card.id}`)
+              }, (card: PlaylistCard) => `pl${card.id}`)
+            }
+            .columnsTemplate('1fr 1fr')
+            .columnsGap(10).rowsGap(12)
+            .padding({ left: 12, right: 12, top: 8, bottom: 80 })
+            .width('100%').height('100%')
           }
-          .columnsTemplate('1fr 1fr')
-          .columnsGap(10).rowsGap(12)
-          .padding({ left: 12, right: 12, top: 8, bottom: 80 })
-          .width('100%').height('100%')
         }
+        .onRefreshing(() => this.doRefresh()).refreshOffset(64)
+        .backgroundColor($r('app.color.background_default'))
+        .layoutWeight(1).width('100%')
       }
-      .onRefreshing(() => this.doRefresh()).refreshOffset(64)
-      .backgroundColor($r('app.color.background_default'))
       .width('100%').height('100%')
 
       // FAB
@@ -223,6 +282,25 @@ export struct PlaylistsPage {
     })
   }
 
+  /** 搜索态:跳转全局搜索页的矩形按钮(橙字灰边居中)。 */
+  @Builder
+  searchGlobalButton() {
+    Row() {
+      Button($r('app.string.search_global'))
+        .type(ButtonType.Normal)
+        .borderRadius(4)
+        .backgroundColor($r('app.color.background_default'))
+        .fontColor('#FF8800')
+        .border({ width: 1, color: $r('app.color.card_border') })
+        .fontSize(14)
+        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+        .onClick(() => this.onSearchGlobal())
+    }
+    .width('100%')
+    .justifyContent(FlexAlign.Center)
+    .padding({ top: 8, bottom: 8 })
+  }
+
   /** 统一半模态:根据 sheetMode 渲染不同内容。 */
   @Builder
   unifiedSheet() {
@@ -230,7 +308,7 @@ export struct PlaylistsPage {
       PlaylistDialog({
         onClose: () => { this.closeSheet(); this.vm.load(); },
         onCreate: async (name: string) => {
-          await PlaylistsVM.create(name);
+          await MediaLibrary.createPlaylist(name);
         },
       }).width('100%')
     } else if (this.sheetMode === 'ctxmenu') {
@@ -265,7 +343,7 @@ export struct PlaylistsPage {
 
       // 播放全部
       Row() {
-        Image($r('app.media.ic_play_player')).width(24).height(24).fillColor('#FFFFFF').margin({ right: 12 })
+        Image($r('app.media.ic_play_player')).width(24).height(24).fillColor($r('app.color.list_title')).margin({ right: 12 })
         Text('播放全部').fontSize(15).fontColor($r('app.color.list_title'))
       }
       .width('100%').padding({ left: 16, right: 16, top: 14, bottom: 14 })
@@ -276,7 +354,7 @@ export struct PlaylistsPage {
 
       // 重命名
       Row() {
-        Image($r('app.media.ic_edit')).width(24).height(24).fillColor('#FFFFFF').margin({ right: 12 })
+        Image($r('app.media.ic_edit')).width(24).height(24).fillColor($r('app.color.list_title')).margin({ right: 12 })
         Text($r('app.string.rename')).fontSize(15).fontColor($r('app.color.list_title'))
       }
       .width('100%').padding({ left: 16, right: 16, top: 14, bottom: 14 })

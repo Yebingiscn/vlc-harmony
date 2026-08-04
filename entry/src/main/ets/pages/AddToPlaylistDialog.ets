@@ -1,5 +1,6 @@
 import { AppColors } from '../common/constants/AppConstants';
 import { Playlist } from '../common/models/MediaModels';
+import { MediaLibrary } from '../common/data/MediaLibrary';
 import { inputMethod } from '@kit.IMEKit';
 
 /** 保存动作载荷 —— ArkTS 不允许内联对象字面量做类型,提取到命名 interface。 */
@@ -30,20 +31,26 @@ export struct AddToPlaylistDialog {
   @Param mediaCount: number = 1;
 
   // ── 视觉常量 ─────────────────────────────────────
-  readonly cPanelBg: string = '#D91C1C1C';
-  readonly cHeaderBg: string = '#E61C1C1C';
-  readonly cInputBg: string = '#1F1F1F';
+  // 主题感知:浅色=白底深字,深色=深底浅字。资源定义见 base/dark element/color.json。
+  readonly cPanelBg: Resource = $r('app.color.background_default');
+  readonly cHeaderBg: Resource = $r('app.color.background_default');
+  readonly cInputBg: Resource = $r('app.color.card_background');
   readonly cInputBorder: string = '#FF8800';
-  readonly cSubtle: string = '#F2FFFFFF';
-  readonly cDim: string = '#B3FFFFFF';
+  readonly cSubtle: Resource = $r('app.color.font_light');
+  readonly cDim: Resource = $r('app.color.list_subtitle');
   readonly cAccent: string = '#FF8800';
-  readonly cDivider: string = '#33FFFFFF';
+  readonly cDivider: Resource = $r('app.color.divider');
 
   @Local newName: string = '';
   @Local playlists: Playlist[] = [];
   @Local selected: Set<number> = new Set<number>();
   @Local replace: boolean = false;
   private idSeq: number = 1;
+
+  async aboutToAppear(): Promise<void> {
+    await MediaLibrary.initPlaylistCache();
+    this.playlists = MediaLibrary.getPlaylists();
+  }
 
   private canCreate(): boolean {
     return this.newName.trim().length > 0;
@@ -64,22 +71,20 @@ export struct AddToPlaylistDialog {
   }
 
   /**
-   * 新建:插到列表,自动勾选,清空输入框,隐藏输入法。
+   * 新建:持久化到 MediaLibrary,插到列表,自动勾选,清空输入框。
    * 不关闭弹框 —— 用户可能想连续新建。
    */
-  private createNew(): void {
+  private async createNew(): Promise<void> {
     const name: string = this.newName.trim();
     if (name.length === 0) {
       return;
     }
-    const id: number = this.idSeq++;
-    const p: Playlist = new Playlist(id, name);
-    p.trackCount = 0;
-    this.playlists = this.playlists.concat(p);
+    const p: Playlist = await MediaLibrary.createPlaylist(name);
+    this.playlists = [...this.playlists, p];
     // 单选:新建后只勾选这一条,旧的自动取消。
-    this.selected = new Set<number>([id]);
+    this.selected = new Set<number>([p.id]);
     this.newName = '';
-    // 隐藏软键盘 —— 不然新建完键盘还挡着列表,看不见刚新建的项。
+    // 隐藏软键盘
     this.hideKeyboard();
   }
 
@@ -98,7 +103,7 @@ export struct AddToPlaylistDialog {
     Row() {
       Row() {
         Image($r('app.media.ic_arrow_back'))
-          .width(28).height(28).fillColor('#FFFFFF')
+          .width(28).height(28).fillColor($r('app.color.list_title'))
           .padding(2)
           .onClick(() => this.onClose())
       }
@@ -106,7 +111,7 @@ export struct AddToPlaylistDialog {
       .justifyContent(FlexAlign.Start)
 
       Text('保存到播放列表')
-        .fontSize(17).fontWeight(600).fontColor('#FFFFFF')
+        .fontSize(17).fontWeight(600).fontColor($r('app.color.list_title'))
         .layoutWeight(1)
         .textAlign(TextAlign.Center)
         .maxLines(1)
@@ -116,7 +121,7 @@ export struct AddToPlaylistDialog {
     }
     .width('100%')
     .height(48)
-    .padding({ left: 12, right: 12, top: 20 })
+    .padding({ left: 12, right: 12 })
     .alignItems(VerticalAlign.Center)
     .backgroundColor(this.cHeaderBg)
   }
@@ -135,8 +140,8 @@ export struct AddToPlaylistDialog {
           .layoutWeight(1)
           .height(40)
           .fontSize(15)
-          .fontColor('#FFFFFF')
-          .placeholderColor('#80FFFFFF')
+          .fontColor($r('app.color.list_title'))
+          .placeholderColor($r('app.color.font_light'))
           .backgroundColor(this.cInputBg)
           .borderRadius(2)
           .border({ width: 1.5, color: this.cInputBorder })
@@ -167,7 +172,7 @@ export struct AddToPlaylistDialog {
     Row() {
       Column() {
         Text(p.title)
-          .fontSize(15).fontColor('#FFFFFF')
+          .fontSize(15).fontColor($r('app.color.list_title'))
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text($r('app.string.media_count_suffix', p.trackCount))
@@ -206,7 +211,7 @@ export struct AddToPlaylistDialog {
   replaceRow() {
     Row() {
       Text($r('app.string.replace_playlist'))
-        .fontSize(14).fontColor('#FFFFFF')
+        .fontSize(14).fontColor($r('app.color.list_title'))
         .layoutWeight(1)
       Toggle({ type: ToggleType.Switch, isOn: this.replace })
         .selectedColor(this.cAccent)
@@ -222,7 +227,7 @@ export struct AddToPlaylistDialog {
   sectionHeader(text: ResourceStr) {
     Text(text)
       .fontSize(15).fontWeight(FontWeight.Bold)
-      .fontColor('#FFFFFF')
+      .fontColor($r('app.color.list_title'))
       .width('100%')
       .padding({ left: 20, right: 20, top: 12, bottom: 4 })
   }

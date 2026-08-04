@@ -1,13 +1,18 @@
 import { promptAction, window } from '@kit.ArkUI';
 import { audio, AVVolumePanel } from '@kit.AudioKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import PiPWindow from '@ohos.PiPWindow';
 import { NavController } from '../common/data/NavController';
 import { AppContext } from '../common/data/AppContext';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
-import { PlaybackService, PlaybackListener } from '../common/data/PlaybackService';
+import { PlaybackService, PlaybackListener, QueueItem } from '../common/data/PlaybackService';
+import { VlcChapterInfo } from 'libvlcnapi.so';
+import { MediaLibrary } from '../common/data/MediaLibrary';
 import { Settings } from '../common/data/Settings';
+import { VideoSeenState } from '../common/data/VideoSeenState';
 import { MediaWrapper, PlayState } from '../common/models/MediaModels';
 import { shouldRecordPlaybackStart } from '../common/models/PlaybackHistoryModels';
+import { BookMark } from '../common/models/BookmarkModels';
 import { JumpToTimeDialog } from './JumpToTimeDialog';
 import { SleepTimerDialog } from './SleepTimerDialog';
 import { SelectChapterDialog } from './SelectChapterDialog';
@@ -18,6 +23,7 @@ import { VideoControlsSettingsDialog, ControlsState } from './VideoControlsSetti
 import { EqualizerDialog } from './EqualizerDialog';
 import { VideoInfoDialog } from './VideoInfoDialog';
 import { BookmarkDialog } from './BookmarkDialog';
+import { AddToPlaylistDialog, AddToPlaylistAction } from './AddToPlaylistDialog';
 import {
   buildPlayerAdvancedOptions,
   PlayerAdvancedOptionId,
@@ -38,11 +44,13 @@ export const VLC_NAPI_LIBRARY: string = 'libvlcnapi';
 export interface VideoPlayItem {
   uri: string;
   title: string;
+  artworkUrl?: string;
 }
 
 export interface VideoParam {
   uri: string;
   title: string;
+  artworkUrl?: string;
   /** 可选:所在列表,用于上一个/下一个。 */
   list?: VideoPlayItem[];
   /** 可选:uri 在 list 中的下标。 */
@@ -132,8 +140,18 @@ class VideoPlayerViewModel implements PlaybackListener {
   @Trace locked: boolean = false;
   /** 当前循环模式:0=关闭,1=列表循环,2=单曲循环。 */
   @Trace repeatMode: number = 0;
+  /** A-B 循环状态。-1 表示未设。 */
+  @Trace abPointA: number = -1;
+  @Trace abPointB: number = -1;
+  @Trace abActive: boolean = false;
+
+  /** ISO 光盘镜像:使用章节导航替代时间 seek。 */
+  isIsoFile: boolean = false;
+  isoChapters: VlcChapterInfo[] = [];
+  @Trace isoChapterIdx: number = 0;
 
   uri: string = '';
+  currentArtworkUrl: string = '';
   private list: VideoPlayItem[] = [];
   private listening: boolean = false;
   private leaving: boolean = false;
@@ -151,21 +169,39 @@ class VideoPlayerViewModel implements PlaybackListener {
   /** XComponent onLoad 后调用:准备队列并 bindAndPlay。 */
   async setup(param: VideoParam, xcomponentId: string): Promise<void> {
     hilog.info(0x0001, 'VLC', '[VLC] VideoPlayer setup: uri=%{public}s xc=%{public}s', param.uri, xcomponentId);
+
+    // 如果从"仅播放音频"模式(单元素队列、无 XComponent、player 仍 PLAYING)
+    // 切到新的视频,先把 player 彻底 reset,否则 attachViews 会失败导致
+    // 30 次重试 + 1.5s 卡死 + native crash。
+    // 这次 reset 三步:stop → detachViews(清 videoOutId)→ 清标记,并 await 给 native 100ms 收尾。
+    if (PlaybackService.isPlayAsAudio()) {
+      const svc = PlaybackService.getInstance();
+      svc.stop();
+      svc.detachViews();
+      svc.setPlayAsAudio(false);
+    }
+
     this.leaving = false;
     this.xcomponentId = xcomponentId;
     const incoming: VideoPlayItem[] = param.list !== undefined ? param.list : [];
     if (incoming.length > 0) {
       this.list = incoming;
     } else {
-      const single: VideoPlayItem = { uri: param.uri, title: param.title };
+      const single: VideoPlayItem = { uri: param.uri, title: param.title, artworkUrl: param.artworkUrl };
       this.list = [single];
     }
     this.index = param.index !== undefined && param.index >= 0 && param.index < this.list.length ? param.index : 0;
     this.listLen = this.list.length;
     this.uri = this.list[this.index].uri;
     this.title = this.list[this.index].title;
+    this.currentArtworkUrl = this.list[this.index].artworkUrl ?? '';
 
     this.speed = await Settings.getFloat(Settings.VIDEO_SPEED, 1.0);
+
+    // 检测 ISO 光盘镜像,加载章节用于虚拟时间轴导航。
+    this.isIsoFile = param.uri.toLowerCase().endsWith('.iso');
+    this.isoChapters = [];
+    this.isoChapterIdx = 0;
 
     const svc = PlaybackService.getInstance();
     this.repeatMode = svc.getRepeatMode();
@@ -190,6 +226,23 @@ class VideoPlayerViewModel implements PlaybackListener {
       this.state = PlayState.ERROR;
       this.errorMsg = 'bind video surface failed';
     }
+
+    // ISO 文件:延迟加载章节(媒体解析需要时间),构建虚拟时间轴。
+    if (this.isIsoFile) {
+      await new Promise<void>((r: () => void) => setTimeout(r, 500));
+      this.isoChapters = svc.getChapters();
+      hilog.info(0x0001, 'VLC', '[VLC] ISO chapters count=%{public}d', this.isoChapters.length);
+      if (this.isoChapters.length > 0) {
+        // 总时长 = 各章节时长之和。
+        let total = 0;
+        for (const ch of this.isoChapters) {
+          total += ch.duration;
+        }
+        this.duration = total;
+        this.isoChapterIdx = svc.getChapterIdx();
+        hilog.info(0x0001, 'VLC', '[VLC] ISO chapters=%{public}d totalDuration=%{public}d', this.isoChapters.length, total);
+      }
+    }
   }
 
   onStateChange(state: PlayState): void {
@@ -202,14 +255,39 @@ class VideoPlayerViewModel implements PlaybackListener {
       svc.refreshVideoSize();
       if (shouldRecordPlaybackStart('playing', this.lastHistoryUri, this.uri)) {
         this.lastHistoryUri = this.uri;
-        void PlaybackHistory.record(this.uri, this.title, svc.getDuration());
+        void PlaybackHistory.record(this.uri, this.title, svc.getDuration(),
+          this.currentArtworkUrl);
       }
     }
+  }
+
+  /** 仅在 LibVLC 的真实 ended 事件到来时标记，手动停止或半途退出不会算作已看。 */
+  onMediaEnded(): void {
+    void VideoSeenState.markSeen(this.uri);
   }
 
   onTimeUpdate(current: number, duration: number): void {
     this.position = current;
     this.duration = duration;
+    // A-B 循环:到达 B 时回到 A。200ms 余量防止越界。
+    if (this.abActive && this.abPointA >= 0 && this.abPointB > this.abPointA &&
+        current >= this.abPointB - 200) {
+      PlaybackService.getInstance().seek(this.abPointA);
+      this.position = this.abPointA;
+    }
+    if (this.isIsoFile && this.isoChapters.length > 0) {
+      // DVD/BD:get_time 返回的是当前标题内的绝对时间,直接用,不累加章节偏移。
+      const svc = PlaybackService.getInstance();
+      const chIdx = svc.getChapterIdx();
+      if (chIdx >= 0) {
+        this.isoChapterIdx = chIdx;
+      }
+      this.position = current;
+      this.duration = duration > 0 ? duration : this.duration;
+    } else {
+      this.position = current;
+      this.duration = duration;
+    }
   }
 
   onQueueChanged(): void {
@@ -224,6 +302,11 @@ class VideoPlayerViewModel implements PlaybackListener {
     }
     this.index = svc.getCurrentIndex();
     this.listLen = Math.max(this.list.length, svc.getQueue().length);
+    // cycleRepeat() 等内部操作通过 emitQueue() 通知 ViewModel,避免高级菜单需点击两次才看到激活态变化。
+    const nextMode = svc.getRepeatMode();
+    if (this.repeatMode !== nextMode) {
+      this.repeatMode = nextMode;
+    }
   }
 
   onVideoSize(width: number, height: number): void {
@@ -272,12 +355,28 @@ class VideoPlayerViewModel implements PlaybackListener {
     this.videoWidth = 0;
     this.videoHeight = 0;
     this.state = PlayState.IDLE;
+    this.isoChapters = [];
+    this.isoChapterIdx = 0;
+    this.isIsoFile = this.uri.toLowerCase().endsWith('.iso');
     const svc = PlaybackService.getInstance();
     const mws: MediaWrapper[] = this.list.map((it: VideoPlayItem, idx: number) =>
     new MediaWrapper(idx + 1, it.title, it.uri, 0));
     await svc.prepareList(mws, i, true);
     if (this.xcomponentId.length > 0) {
       await svc.bindAndPlay(this.xcomponentId, this.uri, this.title);
+    }
+    // ISO:延迟重新加载章节
+    if (this.isIsoFile) {
+      await new Promise<void>((r: () => void) => setTimeout(r, 500));
+      this.isoChapters = svc.getChapters();
+      if (this.isoChapters.length > 0) {
+        let total = 0;
+        for (const ch of this.isoChapters) {
+          total += ch.duration;
+        }
+        this.duration = total;
+        this.isoChapterIdx = svc.getChapterIdx();
+      }
     }
   }
 
@@ -317,7 +416,24 @@ class VideoPlayerViewModel implements PlaybackListener {
   }
 
   seekTo(ms: number): void {
-    PlaybackService.getInstance().seek(ms);
+    const svc = PlaybackService.getInstance();
+    if (this.isIsoFile && this.isoChapters.length > 0) {
+      // DVD/BD:按虚拟时间轴定位到对应章节(setTime 会被 navigator 覆盖弹回)。
+      let elapsed = 0;
+      for (let i = 0; i < this.isoChapters.length; i++) {
+        const chEnd = elapsed + this.isoChapters[i].duration;
+        if (ms < chEnd || i === this.isoChapters.length - 1) {
+          // 先用章节时间偏移估算位置,等 onTimeUpdate 用真实 chapterIdx 修正。
+          this.isoChapterIdx = i;
+          this.position = elapsed;
+          svc.setChapter(i);
+          return;
+        }
+        elapsed = chEnd;
+      }
+    }
+    // 常规文件 / VCD(无章节):时间 seek
+    svc.seek(ms);
     this.position = ms;
   }
 
@@ -331,7 +447,40 @@ class VideoPlayerViewModel implements PlaybackListener {
     PlaybackService.getInstance().setStopAfterCurrent(v);
   }
 
-  /** 对齐 Android onPause(isFinishing):尽早 stop。 */
+  /** A-B 循环:标记起点 A(当前位置)。 */
+  setAbPointA(): void {
+    this.abPointA = Math.max(0, Math.floor(this.position));
+    this.abPointB = -1;
+    this.abActive = false;
+  }
+
+  /** A-B 循环:标记终点 B(当前位置)。B 必须在 A 之后,否则忽略。 */
+  setAbPointB(): void {
+    if (this.abPointA < 0) {
+      return;
+    }
+    const b: number = Math.max(0, Math.floor(this.position));
+    if (b <= this.abPointA) {
+      return;
+    }
+    this.abPointB = b;
+    this.abActive = true;
+  }
+
+  /** A-B 循环:关闭并重置。 */
+  resetAb(): void {
+    this.abPointA = -1;
+    this.abPointB = -1;
+    this.abActive = false;
+  }
+
+  /**
+   * 对齐 Android onPause(isFinishing):尽早 stop。
+   * 顺序很关键:先 detach 视频面(对 audio 输出无影响),再决定是否 stop。
+   * 如果先 stop 再 detach,player 已经停了再调 detachViews 在某些 libVLC 版本上会
+   * 把 audio track 一起释放,导致后续 audio playback 失败。
+   * "仅播放音频"模式:detach 后跳过 stop,音频继续在 MiniPlayer 播。
+   */
   leaveEarly(): void {
     if (this.leaving) {
       return;
@@ -341,12 +490,18 @@ class VideoPlayerViewModel implements PlaybackListener {
       PlaybackService.getInstance().removeListener(this);
       this.listening = false;
     }
-    PlaybackService.getInstance().setStopAfterCurrent(false);
-    PlaybackService.getInstance().stop();
-    hilog.info(0x0001, 'VLC', '[VLC] VideoPlayer.leaveEarly/stop');
+    // 先 detach 视频面(总是安全,不影响 audio)
+    PlaybackService.getInstance().detachViews();
+    // 仅播放音频模式下跳过 stop,让音频继续
+    if (!PlaybackService.isPlayAsAudio()) {
+      PlaybackService.getInstance().setStopAfterCurrent(false);
+      PlaybackService.getInstance().stop();
+    }
+    hilog.info(0x0001, 'VLC', '[VLC] VideoPlayer.leaveEarly/detach+stop');
   }
 
   cleanUI(): void {
+    // detachViews 已在 leaveEarly 中调用,这里保持幂等(重复 detach 在 libVLC 是 no-op)
     PlaybackService.getInstance().detachViews();
   }
 
@@ -364,6 +519,10 @@ export struct VideoPlayerPage {
   @Param param: VideoParam = { uri: '', title: '' };
   private hudTimer: number = -1;
   private surfaceStarted: boolean = false;
+  /** 画中画所需的 XComponent 控制器(创建 XComponent 时传入,与 native surface 共享同一实例)。 */
+  private pipXc: XComponentController = new XComponentController();
+  /** 画中画控制器(enterPopupPlayer 启动后持有,stopPiP 时清理)。 */
+  private pipController: PiPWindow.PiPController | null = null;
   private touch: VideoTouchDelegate = new VideoTouchDelegate();
   private touchBound: boolean = false;
   private mainWindow: window.Window | null = null;
@@ -397,7 +556,13 @@ export struct VideoPlayerPage {
 
   /** 更多选项/二级弹窗的 sheet 状态。sheetKind 空串=主选项列表;否则=对应二级弹窗。 */
   @Local sheetOpen: boolean = false;
-  @Local sheetKind: string = ''; // '' | 'jump' | 'sleep' | 'chapter' | 'tracks' | 'renderer' | 'speed' | 'controls' | 'equalizer' | 'videoInfo' | 'bookmark'
+  @Local sheetKind: string = ''; // '' | 'jump' | 'sleep' | 'chapter' | 'tracks' | 'renderer' | 'speed' | 'controls' | 'equalizer' | 'videoInfo' | 'savePlaylist'
+  /** 书签弹框独立走 Stack 覆盖层(不走 bindSheet)以保持半透效果,不遮挡背后视频。 */
+  @Local bookmarkOpen: boolean = false;
+  /** 当前视频的书签列表（每次变更自动持久化）。 */
+  @Local bookmarks: BookMark[] = [];
+  private bookmarkIdSeq: number = 1;
+  private bookmarkUri: string = '';
   @Local advancedOptionsOpen: boolean = false;
   /**
    * 高级选项菜单选中项的暂存。
@@ -492,6 +657,15 @@ export struct VideoPlayerPage {
 
   onChapterSelect(index: number): void {
     PlaybackService.getInstance().setChapter(index);
+    this.vm.isoChapterIdx = index;
+    // 更新虚拟位置到选中章节的起始位置。
+    if (this.vm.isIsoFile && this.vm.isoChapters.length > 0 && index < this.vm.isoChapters.length) {
+      let base = 0;
+      for (let i = 0; i < index; i++) {
+        base += this.vm.isoChapters[i].duration;
+      }
+      this.vm.position = base;
+    }
     this.closeSheet();
   }
 
@@ -517,6 +691,63 @@ export struct VideoPlayerPage {
     this.closeSheet();
   }
 
+  /** VideoInfo 用的轨道元数据(由 refreshVideoInfoTracks 刷新)。 */
+  @Local videoCodecName: string = '';
+  @Local audioCodecName: string = '';
+  @Local videoLang: string = '';
+  @Local videoFps: string = '';
+  @Local audioLang: string = '';
+  @Local audioChannels: string = '';
+  @Local audioSampleRate: string = '';
+  @Local bitrate: string = '';
+
+  /** 刷新视频信息弹框要展示的全部字段:从 libVLC 真实轨道数据填入。 */
+  refreshVideoInfoTracks(): void {
+    const svc = PlaybackService.getInstance();
+    this.videoCodecName = svc.getCurrentVideoTrackInfo()?.name ?? '';
+    this.audioCodecName = svc.getCurrentAudioTrackInfo()?.name ?? '';
+
+    // 从 media tracks info 取当前选中轨道的 fps / lang / channels / sampleRate / bitrate
+    const allTracks = svc.getMediaTracksInfo();
+    const curVideoId = svc.getVideoTrack();
+    const curAudioId = svc.getAudioTrack();
+
+    const videoTrack = allTracks.find((t) => t.type === 1 && t.id === curVideoId);
+    if (videoTrack) {
+      this.videoLang = videoTrack.language.length > 0 ? videoTrack.language : '';
+      if (videoTrack.frameRateNum !== undefined && videoTrack.frameRateDen !== undefined &&
+          videoTrack.frameRateDen > 0) {
+        this.videoFps = (videoTrack.frameRateNum / videoTrack.frameRateDen).toFixed(3);
+      } else {
+        this.videoFps = '';
+      }
+      if (videoTrack.bitrate > 0) {
+        this.bitrate = String(videoTrack.bitrate);
+      } else {
+        this.bitrate = '';
+      }
+    } else {
+      this.videoLang = '';
+      this.videoFps = '';
+      this.bitrate = '';
+    }
+
+    const audioTrack = allTracks.find((t) => t.type === 0 && t.id === curAudioId);
+    if (audioTrack) {
+      this.audioLang = audioTrack.language.length > 0 ? audioTrack.language : '';
+      this.audioChannels = audioTrack.channels !== undefined && audioTrack.channels > 0 ? String(audioTrack.channels) : '';
+      this.audioSampleRate = audioTrack.sampleRate !== undefined && audioTrack.sampleRate > 0 ? String(audioTrack.sampleRate) : '';
+      // 如果视频轨道没给码率但音频有,兜底用音频的
+      if (this.bitrate.length === 0 && audioTrack.bitrate > 0) {
+        this.bitrate = String(audioTrack.bitrate);
+      }
+    } else {
+      this.audioLang = '';
+      this.audioChannels = '';
+      this.audioSampleRate = '';
+    }
+  }
+
   onSpeedConfirm(action: PlaybackSpeedAction): void {
     this.vm.setSpeed(action.speed);
     promptAction.showToast({ message: `播放速度已设为 ${action.speed.toFixed(2)}x` });
@@ -533,6 +764,79 @@ export struct VideoPlayerPage {
     void this.touch.refreshPrefs();
     promptAction.showToast({ message: '控制设置已保存' });
     this.closeSheet();
+  }
+
+  /** 「保存到播放列表」确认回调:将当前视频 URI 写入选中歌单并持久化。 */
+  async onSavePlaylistConfirm(action: AddToPlaylistAction): Promise<void> {
+    const uri: string = this.vm.uri;
+    if (uri.length === 0) {
+      promptAction.showToast({ message: '当前没有可保存的视频' });
+      this.closeSheet();
+      return;
+    }
+    await MediaLibrary.initPlaylistCache();
+    for (const playlistId of action.selectedIds) {
+      if (action.replace) {
+        await MediaLibrary.replacePlaylist(playlistId, [uri]);
+      } else {
+        await MediaLibrary.addToPlaylist(playlistId, uri);
+      }
+    }
+    const count: number = action.selectedIds.length;
+    promptAction.showToast({ message: count === 1 ? '已保存到播放列表' : `已保存到 ${count} 个播放列表` });
+    this.closeSheet();
+  }
+
+  /** 加载当前视频的持久化书签（URI 变化时重新加载）。 */
+  async loadBookmarksForCurrentUri(): Promise<void> {
+    const uri: string = this.vm.uri;
+    if (uri.length === 0 || uri === this.bookmarkUri) {
+      return;
+    }
+    this.bookmarkUri = uri;
+    const loaded: BookMark[] = await MediaLibrary.loadBookmarks(uri);
+    this.bookmarks = loaded.sort((a: BookMark, b: BookMark) => a.timeMs - b.timeMs);
+    this.bookmarkIdSeq = loaded.length > 0 ? Math.max(...loaded.map((b: BookMark) => b.id)) + 1 : 1;
+  }
+
+  /** 持久化当前书签列表。 */
+  private async persistBookmarks(): Promise<void> {
+    if (this.bookmarkUri.length > 0) {
+      await MediaLibrary.saveBookmarks(this.bookmarkUri, this.bookmarks);
+    }
+  }
+
+  /** 在当前播放位置新增一条书签（自动持久化）。 */
+  addBookmarkAtCurrent(): void {
+    const timeMs: number = Math.max(0, Math.floor(this.vm.position));
+    const bm: BookMark = new BookMark(this.bookmarkIdSeq++, -1, timeMs, '');
+    this.bookmarks = [...this.bookmarks, bm].sort((a: BookMark, b: BookMark) => a.timeMs - b.timeMs);
+    void this.persistBookmarks();
+    promptAction.showToast({ message: '已保存书签' });
+  }
+
+  /** 删除指定 id 的书签（自动持久化）。 */
+  deleteBookmark(id: number): void {
+    this.bookmarks = this.bookmarks.filter((b: BookMark) => b.id !== id);
+    void this.persistBookmarks();
+  }
+
+  /** 重命名书签:本期直接在 toBoolean 提示里给出占位 toast。 */
+  renameBookmark(id: number): void {
+    void id;
+    promptAction.showToast({ message: '书签重命名功能开发中' });
+  }
+
+  /** A-B 循环点时间显示:mm:ss / h:mm:ss。 */
+  fmtAbPoint(ms: number): string {
+    const safe: number = ms > 0 ? ms : 0;
+    const totalSec: number = Math.floor(safe / 1000);
+    const h: number = Math.floor(totalSec / 3600);
+    const m: number = Math.floor((totalSec % 3600) / 60);
+    const s: number = totalSec % 60;
+    const mm: string = m < 10 ? `0${m}` : `${m}`;
+    const ss: string = s < 10 ? `0${s}` : `${s}`;
+    return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
   }
 
   aboutToAppear(): void {
@@ -562,7 +866,118 @@ export struct VideoPlayerPage {
     void this.restoreSystemBrightnessIfNeeded();
     this.touch.clearTouchAction();
     this.clearSleepTimer();
+    void this.stopPopupPlayer();
     this.vm.release();
+  }
+
+  /**
+   * "仅播放音频"模式:把当前视频以音频形式播放,关闭视频渲染,弹回主页让 MiniPlayer 显示。
+   *
+   * 关键:不要在这里手动 stop/leaveEarly —— aboutToDisappear 会按 stop → detachViews 的
+   * 正常顺序清理,中途插入 stop 会让 native 层进入混乱状态(切到下一首时 attachViews 失败导致
+   * 30 次重试 + 卡死 + 闪退)。让 aboutToDisappear 一并处理。
+   */
+  async playAsAudio(): Promise<void> {
+    const cur: QueueItem | null = PlaybackService.getCurrent();
+    const uri: string = cur?.uri ?? this.vm.uri;
+    if (uri.length === 0) {
+      promptAction.showToast({ message: '没有可播放的视频' });
+      return;
+    }
+    const svc = PlaybackService.getInstance();
+    // 保存当前播放进度(stop 之后 position 会清零)
+    const savedPosition: number = svc.getPosition();
+
+    // 1. 先 stop + detach,让 player 进入干净状态(stopped + 无 videoOut)
+    //    这样 leaveEarly 里的 detachViews 就是 no-op,不会"播放中 detach"
+    svc.stop();
+    svc.detachViews();
+
+    // 2. 构建单元素队列并加载(prepareList replace=true 会重置 playAsAudio=false)
+    const qi: QueueItem = new QueueItem(
+      cur?.id ?? 0,
+      cur?.title ?? this.vm.title,
+      uri,
+      cur?.artistName ?? '',
+      cur?.albumName ?? '',
+      cur?.artworkPath ?? ''
+    );
+    await PlaybackService.playList([qi], 0, true);
+    // 把保存的进度 seek 回去(>0 才有意义,且要在 play 之前让 libVLC 准备时间)
+    if (savedPosition > 0) {
+      PlaybackService.seek(savedPosition);
+    }
+    // 重新打开"仅播放音频"标记
+    PlaybackService.setPlayAsAudio(true);
+    // 触发播放(若 loadCurrent 已经启动,这步会保持 PLAYING)
+    await PlaybackService.play();
+    // 现在安全 pop —— aboutToDisappear 会调 vm.release() → leaveEarly(stop) + cleanUI(detachViews)
+    NavController.pop();
+    promptAction.showToast({ message: '已切换为仅播放音频' });
+  }
+
+  /** 进入画中画模式:用 XComponent 控制器创建 PiPController 并启动。 */
+  async enterPopupPlayer(): Promise<void> {
+    if (!PiPWindow.isPiPEnabled()) {
+      promptAction.showToast({ message: '当前设备不支持画中画' });
+      return;
+    }
+    if (!this.pipXc) {
+      promptAction.showToast({ message: '视频尚未就绪' });
+      return;
+    }
+    try {
+      const ctx = AppContext.get();
+      const config: PiPWindow.PiPConfiguration = {
+        context: ctx,
+        componentController: this.pipXc,
+        templateType: PiPWindow.PiPTemplateType.VIDEO_PLAY,
+        contentWidth: this.vm.videoWidth > 0 ? this.vm.videoWidth : 1920,
+        contentHeight: this.vm.videoHeight > 0 ? this.vm.videoHeight : 1080,
+        controlGroups: [PiPWindow.VideoPlayControlGroup.VIDEO_PREVIOUS_NEXT],
+      };
+      const controller = await PiPWindow.create(config);
+      controller.on('stateChange', (state: PiPWindow.PiPState, reason: string) => {
+        hilog.info(0x0001, 'VLC', '[PiP] state=%{public}d reason=%{public}s', state, reason);
+        if (state === PiPWindow.PiPState.STOPPED || state === PiPWindow.PiPState.ABOUT_TO_STOP) {
+          controller.off('stateChange');
+          controller.off('controlPanelActionEvent');
+          this.pipController = null;
+        }
+      });
+      // 视频模板的控制事件:nextVideo / previousVideo 转发到 ViewModel
+      controller.on('controlPanelActionEvent', (event: PiPWindow.PiPActionEventType) => {
+        if (event === 'nextVideo') {
+          this.vm.next();
+        } else if (event === 'previousVideo') {
+          this.vm.prev();
+        } else if (event === 'playbackStateChanged') {
+          this.vm.toggle();
+        }
+      });
+      await controller.startPiP();
+      this.pipController = controller;
+      promptAction.showToast({ message: '已进入画中画' });
+    } catch (e) {
+      hilog.error(0x0001, 'VLC', '[PiP] failed: %{public}s', (e as Error).message ?? String(e));
+      promptAction.showToast({ message: '画中画启动失败' });
+    }
+  }
+
+  /** 停止画中画并清理回调。 */
+  async stopPopupPlayer(): Promise<void> {
+    if (!this.pipController) {
+      return;
+    }
+    const c = this.pipController;
+    this.pipController = null;
+    try {
+      c.off('stateChange');
+      c.off('controlPanelActionEvent');
+      await c.stopPiP();
+    } catch (e) {
+      hilog.warn(0x0001, 'VLC', '[PiP] stop failed: %{public}s', (e as Error).message ?? String(e));
+    }
   }
 
   private bindTouch(): void {
@@ -572,6 +987,9 @@ export struct VideoPlayerPage {
     this.touchBound = true;
     this.touch.bind({
       doPlayPause: (): void => {
+        if (this.vm.locked) {
+          return;
+        }
         this.vm.toggle();
         this.resetHudTimer();
       },
@@ -579,6 +997,9 @@ export struct VideoPlayerPage {
         this.toggleHud();
       },
       seekDelta: (deltaMs: number): void => {
+        if (this.vm.locked) {
+          return;
+        }
         const next: number = this.vm.position + deltaMs;
         const clamped: number = this.vm.duration > 0
           ? Math.max(0, Math.min(this.vm.duration, next))
@@ -602,6 +1023,9 @@ export struct VideoPlayerPage {
         return this.vm.hudVisible;
       },
       onPanBegan: (): void => {
+        if (this.vm.locked) {
+          return;
+        }
         if (this.hudTimer !== -1) {
           clearTimeout(this.hudTimer);
           this.hudTimer = -1;
@@ -610,6 +1034,9 @@ export struct VideoPlayerPage {
         this.volumeAcc = this.volumeLevel;
       },
       onVolumePan: (deltaNorm: number): void => {
+        if (this.vm.locked) {
+          return;
+        }
         const span: number = Math.max(1, this.volumeMax - this.volumeMin);
         this.volumeAcc = Math.max(this.volumeMin, Math.min(this.volumeMax, this.volumeAcc + deltaNorm * span));
         const next: number = Math.round(this.volumeAcc);
@@ -623,6 +1050,9 @@ export struct VideoPlayerPage {
         this.armVolumeHudTimer();
       },
       onBrightnessPan: (deltaNorm: number): void => {
+        if (this.vm.locked) {
+          return;
+        }
         this.brightnessLevel = Math.max(0, Math.min(1, this.brightnessLevel + deltaNorm));
         this.brightnessHudVisible = true;
         this.volumeHudVisible = false;
@@ -633,6 +1063,9 @@ export struct VideoPlayerPage {
         this.armBrightnessHudTimer();
       },
       onSeekPan: (jumpMs: number, targetMs: number): void => {
+        if (this.vm.locked) {
+          return;
+        }
         this.pendingSeekTarget = targetMs;
         const sign: string = jumpMs >= 0 ? '+' : '';
         this.seekHudText = `${sign}${fmtTime(Math.abs(jumpMs))} (${fmtTime(targetMs)})`;
@@ -645,6 +1078,9 @@ export struct VideoPlayerPage {
         }
       },
       onPanEnded: (mode: VideoPanMode): void => {
+        if (this.vm.locked) {
+          return;
+        }
         if (mode === VideoPanMode.Brightness && this.saveBrightness) {
           void Settings.put(Settings.BRIGHTNESS_VALUE, this.brightnessLevel);
         }
@@ -749,8 +1185,11 @@ export struct VideoPlayerPage {
     }, 1200);
   }
 
-  /** 显示 HUD 并重置 4s 自动隐藏计时。任何一次交互都应调用。 */
+  /** 显示 HUD 并重置 4s 自动隐藏计时。锁定态下禁止显示 HUD。 */
   resetHudTimer(): void {
+    if (this.vm.locked) {
+      return;
+    }
     // 「有任何交互时重置」勾选后,每次交互顺带把睡眠倒计时重新起算。
     if (this.sleepResetOnInteraction && this.sleepArmed) {
       this.armSleepTimer();
@@ -763,16 +1202,18 @@ export struct VideoPlayerPage {
       this.hudTimer = -1;
       // 仅在播放中自动隐藏;暂停/出错、拖动中、弹窗或高级选项菜单打开时保持可见
       // ——高级选项菜单锚在底栏图标上,底栏一藏菜单就悬空/关掉。
-      if (this.vm.state === PlayState.PLAYING && !this.seeking && !this.sheetOpen && !this.advancedOptionsOpen) {
+      // A-B 循环等待设 B 时也保持可见:用户需要看到「设置 B」按钮。
+      const waitingAbB: boolean = this.vm.abPointA >= 0 && !this.vm.abActive;
+      if (this.vm.state === PlayState.PLAYING && !this.seeking && !this.sheetOpen &&
+          !this.advancedOptionsOpen && !waitingAbB) {
         this.vm.hudVisible = false;
       }
     }, 4000);
   }
 
-  /** 点击画面:HUD 可见则隐藏,不可见则显示。锁定态下仅弹出提示。 */
+  /** 点击画面:HUD 可见则隐藏,不可见则显示。锁定态下无响应(锁图标已提供视觉反馈)。 */
   toggleHud(): void {
     if (this.vm.locked) {
-      promptAction.showToast({ message: '播放器已锁定' });
       return;
     }
     if (this.vm.hudVisible) {
@@ -804,6 +1245,9 @@ export struct VideoPlayerPage {
   }
 
   onBottomAction(id: VideoPlayerBottomActionId): void {
+    if (this.vm.locked) {
+      return;
+    }
     if (id === 'tracks') {
       this.openSub('tracks');
     } else if (id === 'play') {
@@ -825,6 +1269,7 @@ export struct VideoPlayerPage {
           id: VLC_VIDEO_XCOMPONENT_ID,
           type: XComponentType.SURFACE,
           libraryname: VLC_NAPI_LIBRARY,
+          controller: this.pipXc,
         })
           .onLoad(() => {
             if (this.surfaceStarted) {
@@ -886,18 +1331,24 @@ export struct VideoPlayerPage {
           .hitTestBehavior(HitTestMode.Transparent)
         }
 
-        // 最顶手势层：竖/横滑 + 延迟单击；双击用 TapGesture
+        // 最顶手势层：竖/横滑 + 延迟单击；双击用 TapGesture。锁定时完全禁止触摸。
         Column()
           .width('100%')
           .height('100%')
           .backgroundColor('#01000000')
           .hitTestBehavior(HitTestMode.Transparent)
           .onTouch((event: TouchEvent) => {
+            if (this.vm.locked) {
+              return;
+            }
             this.touch.onTouchEvent(event);
           })
           .gesture(
             TapGesture({ count: 2 })
               .onAction((event: GestureEvent) => {
+                if (this.vm.locked) {
+                  return;
+                }
                 let x: number = 0;
                 if (event.fingerList.length > 0) {
                   x = event.fingerList[0].localX;
@@ -905,6 +1356,54 @@ export struct VideoPlayerPage {
                 this.touch.onDoubleTap(x);
               })
           )
+
+        // 锁定图标：锁定后始终显示在最左侧，点击可解锁
+        if (this.vm.locked) {
+          Row() {
+            Image($r('app.media.ic_lock_player'))
+              .width(28).height(28)
+              .fillColor('#FFFFFF')
+          }
+          .width(52).height(52)
+          .borderRadius(26)
+          .backgroundColor('#66000000')
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Center)
+          .hitTestBehavior(HitTestMode.Default)
+          .position({ x: 16, y: '50%' })
+          .translate({ x: 0, y: -26 })
+          .onClick(() => {
+            this.vm.toggleLock();
+            // 解锁后显示 HUD 以便用户操作
+            if (!this.vm.locked) {
+              this.resetHudTimer();
+            }
+          })
+        }
+
+        // 书签弹框:不走 bindSheet,直接以 Stack 子层叠在视频上方,保持半透看到背后画面。
+        if (this.bookmarkOpen) {
+          Column() {
+            Blank()
+            BookmarkDialog({
+              bookmarks: this.bookmarks,
+              currentTimeMs: this.vm.position,
+              durationMs: this.vm.duration,
+              onClose: () => {
+                this.bookmarkOpen = false;
+                this.resetHudTimer();
+              },
+              onSeek: (timeMs: number) => { this.vm.seekTo(timeMs); },
+              onAddAtCurrent: () => this.addBookmarkAtCurrent(),
+              onDelete: (id: number) => this.deleteBookmark(id),
+              onRename: (id: number) => this.renameBookmark(id),
+            })
+              .width('100%')
+              .height('66.66%')
+          }
+          .width('100%')
+          .height('100%')
+        }
       }
       .width('100%')
       .height('100%')
@@ -921,7 +1420,9 @@ export struct VideoPlayerPage {
       return true;
     })
     .bindSheet(this.sheetOpen, this.playerSheet(), {
-      height: this.sheetKind === 'speed' ? SheetSize.MEDIUM : SheetSize.FIT_CONTENT,
+      height: (this.sheetKind === 'speed' || this.sheetKind === 'savePlaylist')
+        ? SheetSize.MEDIUM
+        : SheetSize.FIT_CONTENT,
       dragBar: true,
       backgroundColor: $r('app.color.background_default'),
       onDisappear: () => {
@@ -938,12 +1439,27 @@ export struct VideoPlayerPage {
       Image($r('app.media.ic_arrow_back'))
         .width(24).height(24).fillColor('#FFFFFF')
         .onClick(() => {
+          if (this.vm.locked) {
+            return;
+          }
           this.vm.leaveEarly();
           NavController.pop();
         })
       Text(this.vm.title)
         .fontSize(18).fontColor('#FFFFFF').layoutWeight(1).margin({ left: 12, right: 12 })
         .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+      // A-B 循环指示灯
+      if (this.vm.abPointA >= 0) {
+        Row() {
+          Text('A-B')
+            .fontSize(12).fontColor('#FFFFFF')
+            .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+            .borderRadius(10)
+            .backgroundColor('#FF8800')
+        }
+        .margin({ right: 12 })
+        .onClick(() => this.vm.resetAb())
+      }
       // 睡眠倒计时已设定的指示灯,点一下取消(否则设完毫无反馈,也无处撤销)。
       if (this.sleepArmed) {
         Image($r('app.media.ic_sleep'))
@@ -956,8 +1472,17 @@ export struct VideoPlayerPage {
       Image($r('app.media.ic_player_more'))
         .width(24).height(24).fillColor('#FFFFFF')
         .onClick(() => {
+          if (this.vm.locked) {
+            return;
+          }
           this.resetHudTimer();
           this.openOptions();
+        })
+        .bindMenu(this.advancedOptionsOpen!!, this.advancedOptionsMenu(), {
+          placement: Placement.BottomRight,
+          showInSubWindow: true,
+          backgroundColor: $r('app.color.background_default'),
+          onDisappear: () => this.runPendingAdvancedAction(),
         })
     }
     .width('100%')
@@ -971,39 +1496,117 @@ export struct VideoPlayerPage {
   @Builder
   bottomBar() {
     Column() {
+      // A-B 循环设置行(已设 A 后显示)
+      if (this.vm.abPointA >= 0) {
+        Row() {
+          Text(`A ${this.fmtAbPoint(this.vm.abPointA)} → B ${this.vm.abActive ? this.fmtAbPoint(this.vm.abPointB) : '???'}`)
+            .fontSize(12).fontColor('#FF8800')
+            .layoutWeight(1)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+          if (this.vm.abActive) {
+            Text('关闭')
+              .fontSize(12).fontColor('#FFFFFF')
+              .padding({ left: 12, right: 12, top: 4, bottom: 4 })
+              .borderRadius(12)
+              .backgroundColor('#33FFFFFF')
+              .onClick(() => this.vm.resetAb())
+          } else {
+            Text('设置 B')
+              .fontSize(12).fontColor('#FFFFFF')
+              .padding({ left: 12, right: 12, top: 4, bottom: 4 })
+              .borderRadius(12)
+              .backgroundColor('#FF8800')
+              .onClick(() => {
+                this.vm.setAbPointB();
+                promptAction.showToast({ message: this.vm.abActive ? 'A-B 循环已开启' : 'B 点需在 A 点之后' });
+              })
+          }
+        }
+        .width('100%')
+        .padding({ left: 12, right: 12, top: 4, bottom: 4 })
+      }
+
       // seek bar
       Row() {
         Text(fmtTime(this.displayPosition()))
           .fontSize(12).fontColor('#FFFFFF').width(52)
-        Slider({
-          value: this.seeking
-            ? this.seekPercent
-            : (this.vm.duration > 0 ? this.vm.position * 100 / this.vm.duration : 0),
-          min: 0,
-          max: 100,
-          step: 0.1,
-          style: SliderStyle.OutSet,
-        })
-          .layoutWeight(1)
-          .blockColor('#FF8800')
-          .selectedColor('#FF8800')
-          .trackColor('#61FFFFFF')
-          .enabled(this.vm.duration > 0)
-          .onChange((v: number, mode: SliderChangeMode) => {
-            if (mode === SliderChangeMode.Begin) {
-              this.seeking = true;
-              this.seekPercent = v;
-            } else if (mode === SliderChangeMode.Moving) {
-              this.seekPercent = v;
-            } else {
-              // End / Click → 落 seek
-              this.seekPercent = v;
-              this.seeking = false;
-              this.vm.seekTo(Math.floor(this.vm.duration * v / 100));
-            }
-            this.resetHudTimer();
+        // Slider 外面套 Stack:进度条上叠加 A 点竖线 + 顶部小三角。
+        Stack({ alignContent: Alignment.TopStart }) {
+          Slider({
+            value: this.seeking
+              ? this.seekPercent
+              : (this.vm.duration > 0 ? this.vm.position * 100 / this.vm.duration : 0),
+            min: 0,
+            max: 100,
+            step: 0.1,
+            style: SliderStyle.OutSet,
           })
-        Text(fmtTime(this.vm.duration))
+            .layoutWeight(1)
+            .blockColor('#FF8800')
+            .selectedColor('#FF8800')
+            .trackColor('#61FFFFFF')
+            .enabled(true)
+            .onChange((v: number, mode: SliderChangeMode) => {
+              if (mode === SliderChangeMode.Begin) {
+                this.seeking = true;
+                this.seekPercent = v;
+              } else if (mode === SliderChangeMode.Moving) {
+                this.seekPercent = v;
+              } else {
+                // End / Click → 落 seek
+                this.seekPercent = v;
+                this.seeking = false;
+                this.vm.seekTo(Math.floor(this.vm.duration * v / 100));
+              }
+              this.resetHudTimer();
+            })
+
+          // A 点标记:竖线 + 顶部小三角 + 「A」徽标
+          if (this.vm.abPointA >= 0 && this.vm.duration > 0) {
+            Column() {
+              Text('A')
+                .fontSize(10).fontColor('#FFFFFF')
+                .padding({ left: 4, right: 4, top: 1, bottom: 1 })
+                .borderRadius(4)
+                .backgroundColor('#FF8800')
+              // 倒三角
+              Text('▼')
+                .fontSize(8).fontColor('#FF8800')
+                .margin({ top: -1 })
+            }
+            .alignItems(HorizontalAlign.Center)
+            .offset({
+              x: `${Math.min(100, Math.max(0, this.vm.abPointA * 100 / this.vm.duration))}%`,
+              y: 0,
+            })
+            // 让 Column 中心对到 offset 处
+            .translate({ x: -8 })
+
+          // B 点标记:竖线 + 顶部小三角 + 「B」徽标
+          if (this.vm.abActive) {
+            Column() {
+              Text('B')
+                .fontSize(10).fontColor('#FFFFFF')
+                .padding({ left: 4, right: 4, top: 1, bottom: 1 })
+                .borderRadius(4)
+                .backgroundColor('#FF3B30')
+              Text('▼')
+                .fontSize(8).fontColor('#FF3B30')
+                .margin({ top: -1 })
+            }
+            .alignItems(HorizontalAlign.Center)
+            .offset({
+              x: `${Math.min(100, Math.max(0, this.vm.abPointB * 100 / this.vm.duration))}%`,
+              y: 0,
+            })
+            .translate({ x: -8 })
+          }
+          }
+        }
+        .layoutWeight(1)
+        .height(40)
+        Text(fmtTime(this.vm.duration - this.displayPosition()))
           .fontSize(12).fontColor('#FFFFFF').width(52).textAlign(TextAlign.End)
       }
       .width('100%')
@@ -1013,26 +1616,28 @@ export struct VideoPlayerPage {
       // 音轨和字幕、屏幕方向、播放、宽高比、高级选项。
       Row() {
         ForEach(buildVideoPlayerBottomActions(), (action: VideoPlayerBottomAction) => {
-          if (action.id === 'advanced') {
-            Image(action.icon)
-              .width(32)
-              .height(32)
-              .fillColor('#FFFFFF')
-              .onClick(() => this.openOptions())
-              .bindMenu(this.advancedOptionsOpen!!, this.advancedOptionsMenu(), {
-                placement: Placement.TopRight,
-                showInSubWindow: true,
-                backgroundColor: '#FFFFFF',
-                onDisappear: () => this.runPendingAdvancedAction(),
-              })
-          } else {
             Image(this.bottomActionIcon(action))
               .width(action.id === 'play' ? 56 : 32)
               .height(action.id === 'play' ? 56 : 32)
               .fillColor('#FFFFFF')
               .onClick(() => this.onBottomAction(action.id))
-          }
         }, (action: VideoPlayerBottomAction): string => action.id)
+        // 循环模式:0=关闭(白),1=列表循环(橙),2=单曲循环(橙 + 数字 1)
+        Image(this.vm.repeatMode === 2 ? $r('app.media.ic_repeat_one_audio') : $r('app.media.ic_repeat_audio'))
+          .width(32).height(32)
+          .fillColor(this.vm.repeatMode > 0 ? '#FF8800' : '#FFFFFF')
+          .onClick(() => {
+            const svc = PlaybackService.getInstance();
+            // 二态切换(0↔1)：与高级菜单中 'repeat' 项保持一致。
+            const next = svc.getRepeatMode() === 0 ? 1 : 0;
+            while (svc.getRepeatMode() !== next) {
+              svc.cycleRepeat();
+            }
+            this.vm.repeatMode = next;
+            promptAction.showToast({
+              message: next === 1 ? '已开启循环播放' : '已关闭循环播放'
+            });
+          })
       }
       .width('100%')
       .padding({ left: 18, right: 18, top: 12, bottom: 12 })
@@ -1163,17 +1768,21 @@ export struct VideoPlayerPage {
           durationMs: this.vm.duration,
           videoWidth: this.vm.videoWidth,
           videoHeight: this.vm.videoHeight,
+          videoCodec: this.videoCodecName,
+          audioCodec: this.audioCodecName,
+          videoLang: this.videoLang,
+          videoFps: this.videoFps,
+          audioLang: this.audioLang,
+          audioChannels: this.audioChannels,
+          audioSampleRate: this.audioSampleRate,
+          bitrate: this.bitrate,
           onClose: () => this.closeSheet(),
         }).width('100%')
-      } else if (this.sheetKind === 'bookmark') {
-        BookmarkDialog({
-          bookmarks: [],
-          currentTimeMs: this.vm.position,
-          durationMs: this.vm.duration,
+      } else if (this.sheetKind === 'savePlaylist') {
+        AddToPlaylistDialog({
+          mediaCount: this.vm.listLen,
           onClose: () => this.closeSheet(),
-          onSeek: (timeMs: number) => { this.vm.seekTo(timeMs); this.closeSheet(); },
-          onAddAtCurrent: () => promptAction.showToast({ message: '书签功能暂未实现' }),
-          onDelete: (_id: number) => promptAction.showToast({ message: '书签功能暂未实现' }),
+          onConfirm: (action: AddToPlaylistAction) => this.onSavePlaylistConfirm(action),
         }).width('100%')
       }
     }
@@ -1188,7 +1797,7 @@ export struct VideoPlayerPage {
       Text($r('app.string.more'))
         .fontSize(18)
         .fontWeight(FontWeight.Medium)
-        .fontColor('#FFFFFF')
+        .fontColor($r('app.color.list_title'))
         .width('100%')
         .padding({ left: 16, right: 16 })
         .height(56)
@@ -1214,11 +1823,11 @@ export struct VideoPlayerPage {
     Row() {
       Text(title)
         .fontSize(16)
-        .fontColor('#FFFFFF')
+        .fontColor($r('app.color.list_title'))
         .layoutWeight(1)
       Image($r('app.media.ic_arrow_right'))
         .width(20).height(20)
-        .fillColor('#9E9E9E')
+        .fillColor($r('app.color.font_light'))
     }
     .width('100%')
     .height(52)
@@ -1280,22 +1889,64 @@ export struct VideoPlayerPage {
       return;
     }
     if (id === 'videoInfo') {
+      this.refreshVideoInfoTracks();
       this.openSub('videoInfo');
       return;
     }
     if (id === 'bookmark') {
-      this.openSub('bookmark');
+      void this.loadBookmarksForCurrentUri();
+      this.bookmarkOpen = true;
       return;
     }
     if (id === 'videoControls') {
       this.openSub('controls');
       return;
     }
+    if (id === 'savePlaylist') {
+      this.openSub('savePlaylist');
+      return;
+    }
+    if (id === 'playAsAudio') {
+      void this.playAsAudio();
+      return;
+    }
+    if (id === 'popupPlayer') {
+      void this.enterPopupPlayer();
+      return;
+    }
+    if (id === 'abRepeat') {
+      if (this.vm.abActive) {
+        this.vm.resetAb();
+        promptAction.showToast({ message: '已关闭 A-B 循环' });
+      } else if (this.vm.abPointA < 0) {
+        this.vm.setAbPointA();
+        // 强制 HUD 持续可见 —— 等待用户设 B 时不能自动隐藏。
+        this.vm.hudVisible = true;
+        if (this.hudTimer !== -1) {
+          clearTimeout(this.hudTimer);
+          this.hudTimer = -1;
+        }
+        promptAction.showToast({ message: '已设置 A 点,请拖动至结束位置后再次点击 A-B 循环' });
+      } else {
+        this.vm.setAbPointB();
+        if (this.vm.abActive) {
+          promptAction.showToast({ message: 'A-B 循环已开启' });
+        } else {
+          promptAction.showToast({ message: 'B 点需在 A 点之后' });
+        }
+      }
+      return;
+    }
     if (id === 'repeat') {
       const svc = PlaybackService.getInstance();
-      svc.cycleRepeat();
-      this.vm.repeatMode = svc.getRepeatMode();
-      promptAction.showToast({ message: '循环模式已切换' });
+      // 二态切换(0↔1):用户视角是「开关」式,避免三态循环让「关闭循环」需要两次点击。
+      const next: number = svc.getRepeatMode() === 0 ? 1 : 0;
+      // 走 cycleRepeat 三次等价于循环回原值;此处用 emitQueue 让 onQueueChanged 同步 vm 状态。
+      while (svc.getRepeatMode() !== next) {
+        svc.cycleRepeat();
+      }
+      this.vm.repeatMode = next;
+      promptAction.showToast({ message: next === 1 ? '已开启循环播放' : '已关闭循环播放' });
       return;
     }
     promptAction.showToast({ message: '该功能暂未实现' });

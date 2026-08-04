@@ -15,13 +15,14 @@ export struct JumpToTimeDialog {
   @Event onClose: () => void = () => {};
   @Event onConfirm: (timeMs: number) => void = () => {};
 
-  readonly cPanelBg: string = '#D91C1C1C';
-  readonly cHeaderBg: string = '#E61C1C1C';
+  // 主题感知:浅色=白底深字,深色=深底浅字。资源定义见 base/dark element/color.json。
+  readonly cPanelBg: Resource = $r('app.color.background_default');
+  readonly cHeaderBg: Resource = $r('app.color.background_default');
   readonly cAccent: string = '#FF8800';
-  readonly cCardBg: string = '#1C1C1C';
-  readonly cKeyBg: string = '#232323';
-  readonly cDim: string = '#B3FFFFFF';
-  readonly cSubtle: string = '#F2FFFFFF';
+  readonly cCardBg: Resource = $r('app.color.card_background');
+  readonly cKeyBg: Resource = $r('app.color.background_default_darker');
+  readonly cDim: Resource = $r('app.color.list_subtitle');
+  readonly cSubtle: Resource = $r('app.color.font_light');
 
   @Local pickedRawTime: string = '';
   @Local formatTime: string = '';
@@ -75,7 +76,7 @@ export struct JumpToTimeDialog {
     Text(label)
       .fontSize(22)
       .fontWeight(FontWeight.Medium)
-      .fontColor('#FFFFFF')
+      .fontColor($r('app.color.list_title'))
       .textAlign(TextAlign.Center)
       .layoutWeight(1)
       .height(48)
@@ -91,12 +92,12 @@ export struct JumpToTimeDialog {
       Row() {
         Image($r('app.media.ic_arrow_back'))
           .width(28).height(28)
-          .fillColor('#FFFFFF')
+          .fillColor($r('app.color.list_title'))
           .padding(2)
           .onClick(() => this.onClose())
         Text('跳转至时间')
           .fontSize(18).fontWeight(600)
-          .fontColor('#FFFFFF')
+          .fontColor($r('app.color.list_title'))
           .layoutWeight(1)
           .textAlign(TextAlign.Center)
         Row().width(28)
@@ -112,10 +113,10 @@ export struct JumpToTimeDialog {
         Blank().layoutWeight(1)
         Text(this.formatTime.length > 0 ? this.formatTime : '0s')
           .fontSize(28).fontWeight(FontWeight.Bold)
-          .fontColor(this.formatTime.length > 0 ? '#FFFFFF' : this.cDim)
+          .fontColor(this.formatTime.length > 0 ? $r('app.color.list_title') : this.cDim)
         Image($r('app.media.ic_backspace'))
           .width(26).height(26)
-          .fillColor(this.pickedRawTime.length > 0 ? '#FFFFFF' : '#61FFFFFF')
+          .fillColor(this.pickedRawTime.length > 0 ? $r('app.color.list_title') : $r('app.color.font_light'))
           .margin({ left: 12 })
           .onClick(() => this.deleteLastNumber())
       }

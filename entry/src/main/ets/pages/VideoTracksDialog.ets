@@ -23,7 +23,7 @@ struct TrackRow {
     Row() {
       Text(this.name)
         .fontSize(14)
-        .fontColor(this.selected ? AppColors.orange500 : '#FFFFFF')
+        .fontColor(this.selected ? AppColors.orange500 : $r('app.color.list_title'))
         .layoutWeight(1)
         .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
       if (this.selected) {
@@ -49,9 +49,9 @@ struct TrackSection {
   build() {
     Column() {
       Row() {
-        Text(this.title).fontSize(16).fontColor('#FFFFFF').margin({ left: 16, top: 16, right: 8 }).layoutWeight(1)
+        Text(this.title).fontSize(16).fontColor($r('app.color.list_title')).margin({ left: 16, top: 16, right: 8 }).layoutWeight(1)
         if (this.showMore && this.tracks.length > 0) {
-          Image($r('app.media.ic_collapse_arrow')).width(24).height(24).fillColor('#FFFFFF')
+          Image($r('app.media.ic_collapse_arrow')).width(24).height(24).fillColor($r('app.color.list_title'))
             .padding(8).margin({ right: 8 })
             .rotate({ angle: this.collapsed ? 0 : 180 })
             .onClick(() => this.collapsed = !this.collapsed)
@@ -119,7 +119,7 @@ export struct VideoTracksDialog {
             this.onClose();
           },
         })
-        Divider().color(AppColors.white_transparent_20).strokeWidth(1).width('100%')
+        Divider().color($r('app.color.divider')).strokeWidth(1).width('100%')
           .margin({ top: 8, bottom: 8 })
         TrackSection({
           title: 'Subtitles',
@@ -133,7 +133,7 @@ export struct VideoTracksDialog {
             this.onClose();
           },
         })
-        Divider().color(AppColors.white_transparent_20).strokeWidth(1).width('100%')
+        Divider().color($r('app.color.divider')).strokeWidth(1).width('100%')
           .margin({ top: 8, bottom: 8 })
         TrackSection({
           title: 'Video',

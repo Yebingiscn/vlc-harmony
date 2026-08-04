@@ -651,6 +651,67 @@ napi_value MediaParse(napi_env env, napi_callback_info info)
     return Bool(env, ok);
 }
 
+napi_value MediaGetTracksInfo(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value argv[1];
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    uint32_t h = 0;
+    if (argc < 1 || !GetU32(env, argv[0], &h)) {
+        return nullptr;
+    }
+    libvlc_media_t *media = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(g_mtx);
+        MediaEntry *me = FindMediaLocked(h);
+        if (me == nullptr || me->media == nullptr) {
+            return nullptr;
+        }
+        media = me->media;
+    }
+    libvlc_media_track_t **tracks = nullptr;
+    unsigned count = libvlc_media_tracks_get(media, &tracks);
+    napi_value arr;
+    napi_create_array(env, &arr);
+    if (tracks == nullptr) {
+        return arr;
+    }
+    for (unsigned i = 0; i < count; i++) {
+        libvlc_media_track_t *t = tracks[i];
+        if (t == nullptr) {
+            continue;
+        }
+        napi_value obj;
+        napi_create_object(env, &obj);
+        // id
+        napi_set_named_property(env, obj, "id", I32(env, t->i_id));
+        // type: libvlc_track_type_t { 0=audio, 1=video, 2=text/spu }
+        napi_set_named_property(env, obj, "type", I32(env, (int32_t)t->i_type));
+        // codecFourcc
+        napi_set_named_property(env, obj, "codecFourcc", U32(env, t->i_codec));
+        napi_value descStr;
+        napi_create_string_utf8(env, t->psz_description ? t->psz_description : "", NAPI_AUTO_LENGTH, &descStr);
+        napi_set_named_property(env, obj, "codecDesc", descStr);
+        napi_value langStr;
+        napi_create_string_utf8(env, t->psz_language ? t->psz_language : "", NAPI_AUTO_LENGTH, &langStr);
+        napi_set_named_property(env, obj, "language", langStr);
+        napi_set_named_property(env, obj, "bitrate", U32(env, t->i_bitrate));
+        if (t->i_type == libvlc_track_audio && t->audio != nullptr) {
+            napi_set_named_property(env, obj, "channels", U32(env, t->audio->i_channels));
+            napi_set_named_property(env, obj, "sampleRate", U32(env, t->audio->i_rate));
+        }
+        if (t->i_type == libvlc_track_video && t->video != nullptr) {
+            napi_set_named_property(env, obj, "videoWidth", U32(env, t->video->i_width));
+            napi_set_named_property(env, obj, "videoHeight", U32(env, t->video->i_height));
+            napi_set_named_property(env, obj, "frameRateNum", U32(env, t->video->i_frame_rate_num));
+            napi_set_named_property(env, obj, "frameRateDen", U32(env, t->video->i_frame_rate_den));
+        }
+        napi_set_element(env, arr, i, obj);
+    }
+    libvlc_media_tracks_release(tracks, count);
+    return arr;
+}
+
 napi_value MediaGetMeta(napi_env env, napi_callback_info info)
 {
     size_t argc = 1;
@@ -2599,6 +2660,7 @@ napi_value VlcNapiInit(napi_env env, napi_value exports)
         {"mediaGetMeta", nullptr, MediaGetMeta, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaGetStats", nullptr, MediaGetStats, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaAddOption", nullptr, MediaAddOption, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"mediaGetTracksInfo", nullptr, MediaGetTracksInfo, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaAddSlave", nullptr, MediaAddSlave, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"getProcessUsage", nullptr, GetProcessUsage, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerCreate", nullptr, MediaPlayerCreate, nullptr, nullptr, nullptr, napi_default, nullptr},

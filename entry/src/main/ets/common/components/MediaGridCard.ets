@@ -1,4 +1,4 @@
-import { MediaWrapper, formatDuration } from '../models/MediaModels';
+import { formatDuration, MediaWrapper } from '../models/MediaModels';
 
 /**
  * MediaGridCard —— 网格卡片(video_grid_card.xml)。16:10 缩略图 + 角标(分辨率/已看/更多/选中)+
@@ -16,9 +16,15 @@ export struct MediaGridCard {
   @Param selected: boolean = false;
   @Param inSelection: boolean = false;
   @Param showProgress: boolean = false;
-  @Event onItemClick: () => void = () => {};
-  @Event onItemLongClick: () => void = () => {};
-  @Event onItemMoreClick: () => void = () => {};
+  @Event onItemClick: () => void = () => {
+  };
+  @Event onItemLongClick: () => void = () => {
+  };
+  @Event onItemMoreClick: () => void = () => {
+  };
+  /** 设置-界面-视频中的两个展示开关。 */
+  @Param showSeenMarker: boolean = true;
+  @Param showThumbnail: boolean = true;
 
   @Builder
   emojiBadge(icon: Resource) {
@@ -44,10 +50,15 @@ export struct MediaGridCard {
             .fontColor('#FFFFFF')
             .backgroundColor($r('app.color.rounded_corners_black_more_transparent'))
             .borderRadius(3)
-            .padding({ left: 4, top: 2, right: 4, bottom: 2 })
+            .padding({
+              left: 4,
+              top: 2,
+              right: 4,
+              bottom: 2
+            })
             .margin({ right: 4 })
         }
-        if (this.item.seen !== 0) {
+        if (this.showSeenMarker && this.item.seen !== 0) {
           Image($r('app.media.ic_check'))
             .width(16)
             .height(16)
@@ -57,16 +68,27 @@ export struct MediaGridCard {
             .padding(3)
         }
       }
+
       Blank()
-      // 右上:更多按钮 或 选中勾
+      // 右上:更多按钮(非选中态) 或 选中勾
       if (this.selected) {
         Image($r('app.media.ic_video_grid_check'))
-          .width(24)
-          .height(24)
+          .width(16)
+          .height(16)
           .fillColor('#FF8800')
+      } else {
+        // 更多按钮:直接 Image 定位在右上角,与分辨率同行,可点击拉起收藏半模态
+        Image($r('app.media.ic_more'))
+          .width(16)
+          .height(16)
+          .fillColor('#FFFFFF')
+          .backgroundColor($r('app.color.rounded_corners_black_more_transparent'))
+          .borderRadius(4)
+          .onClick(() => this.onItemMoreClick())
       }
     }
     .width('100%')
+    .hitTestBehavior(HitTestMode.None)
     .justifyContent(FlexAlign.SpaceBetween)
     .alignItems(VerticalAlign.Top)
     .padding({ left: 4, right: 4, top: 4 })
@@ -75,7 +97,6 @@ export struct MediaGridCard {
   @Builder
   bottomOverlay() {
     Column() {
-      Blank()
       Row() {
         if (this.isFavorite) {
           this.emojiBadge($r('app.media.ic_emoji_favorite_white'))
@@ -93,10 +114,15 @@ export struct MediaGridCard {
           this.emojiBadge($r('app.media.ic_emoji_absent'))
         }
       }
+      .width('100%')
+      .height(16)
       .padding({ left: 8, bottom: 4 })
+
       if (this.item.progress !== 0 && this.item.showItemProgress) {
-        Progress({ value: this.item.progress, total: this.item.maxProgress > 0 ? this.item.maxProgress : 100,
-          type: ProgressType.Linear })
+        Progress({
+          value: this.item.progress, total: this.item.maxProgress > 0 ? this.item.maxProgress : 100,
+          type: ProgressType.Linear
+        })
           .height(4)
           .width('100%')
           .color($r('app.color.orange'))
@@ -107,26 +133,32 @@ export struct MediaGridCard {
     .height('100%')
     .justifyContent(FlexAlign.End)
     .alignItems(HorizontalAlign.Start)
+    .hitTestBehavior(HitTestMode.None)
   }
 
   build() {
     Column() {
-      Stack() {
+      Stack({ alignContent: Alignment.Top }) {
         // 缩略图:artworkUrl 为媒体库 uri 时 Image 可直接渲染;为空/加载失败回落占位图。
-        Image(this.item.artworkUrl.length > 0 ? this.item.artworkUrl : $r('app.media.ic_no_thumbnail_1610'))
+        Image(this.showThumbnail && this.item.artworkUrl.length > 0 ? this.item.artworkUrl : $r('app.media.tv_channel_default'))
           .width('100%')
           .height('100%')
           .objectFit(ImageFit.Cover)
-          .alt($r('app.media.ic_no_thumbnail_1610'))
+          .alt($r('app.media.tv_channel_default'))
           .draggable(false)
-          .backgroundColor('#1F1F1F')
+          .backgroundColor($r('app.color.card_background'))
+          .onClick(() => this.onItemClick())
         if (!this.selected && !this.isPresent) {
-          Column().width('100%').height('100%').backgroundColor($r('app.color.disabled_overlay'))
+          Column()
+            .width('100%')
+            .height('100%')
+            .hitTestBehavior(HitTestMode.None)
+            .backgroundColor($r('app.color.disabled_overlay'))
         }
         this.topOverlay()
         this.bottomOverlay()
         if (this.showProgress) {
-          LoadingProgress().width(32).height(32).color('#FFFFFF')
+          LoadingProgress().width(32).height(32).hitTestBehavior(HitTestMode.None).color('#FFFFFF')
         }
       }
       .aspectRatio(1.6) // 16:10
@@ -142,8 +174,9 @@ export struct MediaGridCard {
         .margin({ top: 6 })
         .width('100%')
         .opacity(this.isPresent ? 1 : 0.4)
+        .onClick(() => this.onItemClick())
 
-      // 时长行恒定渲染(无时长时留空占位)—— 否则同一行两张卡高度不一致,网格参差不齐。
+      // 时长行恒定渲染(无时长时留空占位)-- 否则同一行两张卡高度不一致,网格参差不齐。
       Text(this.item.length > 0 ? formatDuration(this.item.length) : ' ')
         .fontSize(12)
         .fontColor($r('app.color.list_subtitle'))
@@ -152,13 +185,13 @@ export struct MediaGridCard {
         .margin({ top: 2 })
         .width('100%')
         .opacity(this.isPresent ? 1 : 0.4)
+        .onClick(() => this.onItemClick())
     }
     .width('100%')
     .padding(8)
     .backgroundColor($r('app.color.video_card_background'))
     .borderRadius(8)
     .clip(true)
-    .onClick(() => this.onItemClick())
     .gesture(LongPressGesture().onAction(() => this.onItemLongClick()))
   }
 }

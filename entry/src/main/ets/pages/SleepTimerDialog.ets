@@ -1,339 +1,215 @@
-import { AppColors } from '../common/constants/AppConstants';
+import {
+  appendSleepDigit,
+  appendSleepMinuteShortcut,
+  sleepDigitsToParts,
+  sleepDigitsToMillis,
+  sleepMillisToDigits,
+} from '../common/models/SleepTimerInputModels';
 
 /**
- * SleepTimerDialog —— 睡眠倒计时数字键盘 BottomSheet。
+ * 睡眠倒计时底部抽屉的内容组件；外层 PreferencesPage 负责 bindSheet 的展示与关闭。
  *
- * 【输入模型】数字键 = 小时,`:00` / `:30` = 分钟(0 或 30 两档)。
- *   5        → 5小时
- *   5 :30    → 5小时30分
- *   12       → 12小时
- *   90 :30   → 90小时30分(约 3.8 天)
- *   :30      → 0小时30分
- *   :00      → 0小时0分(无效 → 确定键置灰)
- * 小时最多 2 位(99 小时 ≈ 4 天),不换算成天,忠实显示输入值。
+ * 输入规则与 Android VLC 完全一致，关键是数字缓冲从右向左解析，而不是“先输入小时”：
  *
- * 按键以 token 序列记录(数字 token = '0'-'9',分钟 token = 'm0'/'m30'),
- * 退格严格按压入顺序弹出,分钟键重复按则替换旧值。
+ * - 1 或 2 位数字只代表分钟：`5` 显示为 `5m`，`30` 显示为 `30m`，并不是小时。
+ * - 从第 3 位起，最后两位固定代表分钟，前面的数字代表小时：
+ *   `123` → `1h 23m`，`1234` → `12h 34m`。
+ * - 普通数字最多输入 4 位；达到 4 位后继续点数字不会改变时间。
+ * - `:00` / `:30` 是“追加分钟”快捷键：数字不足 4 位时会直接向末尾追加两位，
+ *   已满 4 位时无效。Android 对三位数字的原始行为较特殊：`123` 后按 `:30`
+ *   会短暂形成 `12330`，解析时只取末四位，因此最终为 `23h 30m`。
+ * - 退格每次只删除缓冲末尾的一位；快捷键加入的两位也需要删除两次。
  *
- * 持久化:`initialMillis` 传入上次设定的值(可来自 PlayerService 内存或 Settings),
- * token 序列从该毫秒反推得到 —— 避免每次打开都从 0 开始。
+ * initialMillis 与两个 initial 选项来自已保存的默认睡眠计时器。打开抽屉时会还原它们，
+ * “确定”将当前缓冲转换成毫秒回传，“移除当前项”交给宿主清空保存值。
  */
 @ComponentV2
 export struct SleepTimerDialog {
   @Event onClose: () => void = () => {};
-  /** 确认设定:回调传入倒计时毫秒 + 两个选项;宿主据此起定时器并持久化。 */
+  @Event onClear: () => void = () => {};
   @Event onConfirm: (millis: number, waitForMediaEnd: boolean, resetOnInteraction: boolean) => void = () => {};
 
-  /** 上次已设的值(毫秒)。0 = 从未设过。 */
   @Param initialMillis: number = 0;
   @Param initialWaitMediaEnd: boolean = false;
   @Param initialResetOnInteraction: boolean = false;
 
-  /** 按键序列。private:UI 重绘由下面几个 @Local 派生值驱动。 */
-  private tokens: string[] = [];
-
-  @Local dispHours: number = 0;
-  @Local dispMinutes: number = 0;
+  /** 原始数字缓冲；显示值与总毫秒数均由它推导，避免两份状态不同步。 */
+  @Local digits: string = '';
   @Local totalMillis: number = 0;
   @Local hasInput: boolean = false;
   @Local waitChecked: boolean = false;
   @Local resetChecked: boolean = false;
 
-  readonly maxHourDigits: number = 2;
-
+  /** 每次打开均从设置页传入的保存值初始化，避免沿用上一次抽屉的临时输入。 */
   aboutToAppear(): void {
     this.waitChecked = this.initialWaitMediaEnd;
     this.resetChecked = this.initialResetOnInteraction;
-    this.tokens = millisToTokens(this.initialMillis);
+    this.digits = sleepMillisToDigits(this.initialMillis);
     this.recompute();
   }
 
-  /** 由 token 序列重算显示值与毫秒值。 */
+  /** 根据数字缓冲同步刷新格式化时间和供父组件持久化的毫秒值。 */
   private recompute(): void {
-    let digits: string = '';
-    let min: number = 0;
-    for (const t of this.tokens) {
-      if (t.charAt(0) === 'm') {
-        min = parseInt(t.substring(1), 10);
-      } else {
-        digits = digits + t;
-      }
-    }
-    this.dispHours = digits.length > 0 ? parseInt(digits, 10) : 0;
-    this.dispMinutes = min;
-    this.totalMillis = this.dispHours * 3600000 + min * 60000;
-    this.hasInput = this.tokens.length > 0;
+    this.totalMillis = sleepDigitsToMillis(this.digits);
+    this.hasInput = this.digits.length > 0;
   }
 
-  /** 已按下的小时位数(分钟 token 不计入)。 */
-  private digitCount(): number {
-    let n: number = 0;
-    for (const t of this.tokens) {
-      if (t.charAt(0) !== 'm') {
-        n++;
-      }
-    }
-    return n;
-  }
-
-  /** 数字键 → 追加一位小时。 */
-  private pressDigit(d: string): void {
-    if (this.digitCount() >= this.maxHourDigits) {
-      return;
-    }
-    if (this.digitCount() === 0 && d === '0') {
-      return;
-    }
-    this.tokens.push(d);
+  /** 追加一个普通数字；达到四位时 appendSleepDigit 会保留原输入。 */
+  private pressDigit(digit: string): void {
+    this.digits = appendSleepDigit(this.digits, digit);
     this.recompute();
   }
 
-  /** `:00` / `:30` → 设定分钟。重复按替换旧值。 */
-  private pressMinutes(min: string): void {
-    this.tokens = this.tokens.filter((t: string) => t.charAt(0) !== 'm');
-    this.tokens.push(`m${min}`);
+  /** 追加 `00` 或 `30` 分钟快捷键，不会替换已输入的分钟。 */
+  private pressMinutes(minute: string): void {
+    this.digits = appendSleepMinuteShortcut(this.digits, minute);
     this.recompute();
   }
 
-  /** 退格。 */
+  /** 与 Android 的退格键一致：一次只移除最后一个数字。 */
   private deleteLast(): void {
-    if (this.tokens.length === 0) {
+    if (!this.hasInput) {
       return;
     }
-    this.tokens.pop();
+    this.digits = this.digits.substring(0, this.digits.length - 1);
     this.recompute();
   }
 
-  canConfirm(): boolean {
-    return this.totalMillis > 0;
+  /**
+   * 使用资源模板输出时间；VLC 的计时器单位固定采用 h/m 缩写，
+   * 不随应用语言写成“小时/分钟”或“hour/minute”。
+   */
+  private displayTime(): ResourceStr {
+    const parts = sleepDigitsToParts(this.digits);
+    if (parts.hours === 0) {
+      return $r('app.string.sleep_timer_minutes', parts.minutes);
+    }
+    return $r('app.string.sleep_timer_hours_minutes', parts.hours, parts.minutes);
   }
 
-  // ── 视觉常量 ───────────────────────────────────────────────
-  readonly cKeyBg: string = '#232323';
-  readonly cMinKeyBg: string = '#2A2011';
-  readonly cCardBg: string = '#1C1C1C';
-  readonly cCancelBg: string = '#2A2A2A';
-  readonly cSubtle: string = '#9E9E9E';
-  readonly cDim: string = '#61FFFFFF';
-
-  /** 数字键(小时)。 */
-  @Builder
-  digitKey(label: string) {
-    Text(label)
-      .fontSize(22)
-      .fontWeight(FontWeight.Medium)
-      .fontColor('#FFFFFF')
-      .textAlign(TextAlign.Center)
-      .layoutWeight(1)
-      .height(48)
-      .backgroundColor(this.cKeyBg)
-      .borderRadius(10)
-      .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.92 })
-      .onClick(() => this.pressDigit(label))
+  /**
+   * Sheet 内部直接修改 @Local 状态。不要把闭包穿过 @Builder 再作为 onClick 回调，
+   * 否则部分 ArkUI 版本不会把这次点击绑定到当前组件实例。
+   */
+  private toggleOption(option: number): void {
+    if (option === 0) {
+      this.waitChecked = !this.waitChecked;
+      return;
+    }
+    this.resetChecked = !this.resetChecked;
   }
 
-  /** 分钟键(0 / 30)。 */
+  /** 数字和分钟快捷键共用的键盘单元；minute 非空时走快捷键逻辑。 */
   @Builder
-  minuteKey(label: string, min: string) {
+  digitKey(label: string, minute: string = '') {
     Text(label)
-      .fontSize(20)
+      .width('33.33%')
+      .height(60)
+      .fontSize(18)
       .fontWeight(FontWeight.Medium)
-      .fontColor(AppColors.orange500)
+      .fontColor(minute.length > 0 ? $r('app.color.orange500') : $r('app.color.sleep_timer_key'))
       .textAlign(TextAlign.Center)
-      .layoutWeight(1)
-      .height(48)
-      .backgroundColor(this.cMinKeyBg)
-      .borderRadius(10)
-      .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.92 })
-      .onClick(() => this.pressMinutes(min))
+      .padding({ top: 16, bottom: 16 })
+      .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.94 })
+      .onClick(() => {
+        if (minute.length > 0) {
+          this.pressMinutes(minute);
+        } else {
+          this.pressDigit(label);
+        }
+      })
+  }
+
+  /** Android 风格的 checkbox 行；使用 ArkUI 原生 Checkbox 处理选中状态与点击事件。 */
+  @Builder
+  checkOption(label: ResourceStr, checked: boolean, option: number) {
+    Row({ space: 18 }) {
+      Checkbox()
+        .select(checked)
+        .selectedColor($r('app.color.orange500'))
+        .shape(CheckBoxShape.ROUNDED_SQUARE)
+        .onChange((selected: boolean) => {
+          if (option === 0) {
+            this.waitChecked = selected;
+          } else {
+            this.resetChecked = selected;
+          }
+        })
+      Text(label)
+        .fontSize(15)
+        .layoutWeight(1)
+        .onClick(() => this.toggleOption(option))
+    }
+    .width('100%')
+    .height(68)
+    .alignItems(VerticalAlign.Center)
   }
 
   build() {
     Column() {
-      // ── 标题 ──────────────────────────────────────────────
+      // Android 原版为标题、居中的格式化时间和右侧退格键；没有额外的说明卡片。
+      Text($r('app.string.sleep_in'))
+        .width('100%')
+        .fontSize(20)
+        .fontWeight(FontWeight.Bold)
+        .margin({ top: 16, bottom: 28 })
+
       Row() {
-        Image($r('app.media.ic_sleep'))
-          .width(22).height(22).fillColor(AppColors.orange500)
-        Text($r('app.string.sleep_in'))
-          .fontSize(19).fontWeight(600).fontColor('#FFFFFF')
-          .margin({ left: 10 })
-      }
-      .width('100%').height(40).alignItems(VerticalAlign.Center)
-
-      Text($r('app.string.sleep_timer_input_hint'))
-        .fontSize(12).fontColor(this.cSubtle)
-        .width('100%').textAlign(TextAlign.Start).margin({ top: 2 })
-
-      // ── 时间预览卡 ────────────────────────────────────────
-      Row() {
-        Row() {
-          if (!this.hasInput || this.totalMillis === 0) {
-            Text('0')
-              .fontSize(34).fontWeight(FontWeight.Bold).fontColor(this.cDim)
-            Text('小时')
-              .fontSize(15).fontColor(this.cDim).margin({ left: 2, bottom: 5 })
-          } else {
-            if (this.dispHours > 0) {
-              Text(`${this.dispHours}`)
-                .fontSize(34).fontWeight(FontWeight.Bold).fontColor('#FFFFFF')
-              Text('小时')
-                .fontSize(15).fontColor(this.cSubtle).margin({ left: 2, bottom: 5 })
-            }
-            if (this.dispMinutes > 0) {
-              Text(`${this.dispMinutes}`)
-                .fontSize(34).fontWeight(FontWeight.Bold).fontColor('#FFFFFF')
-                .margin({ left: this.dispHours > 0 ? 8 : 0 })
-              Text('分')
-                .fontSize(15).fontColor(this.cSubtle).margin({ left: 2, bottom: 5 })
-            }
-          }
-        }
-        .alignItems(VerticalAlign.Bottom)
-
-        Blank()
+        Text(this.displayTime())
+          .layoutWeight(1)
+          .fontSize(20)
+          .fontWeight(FontWeight.Bold)
+          .textAlign(TextAlign.Center)
         Image($r('app.media.ic_backspace'))
-          .width(26).height(26)
-          .fillColor(this.hasInput ? '#FFFFFF' : this.cDim)
-          .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.85 })
+          .width(54)
+          .height(54)
+          .fillColor(this.hasInput ? $r('app.color.sleep_timer_key') : $r('app.color.sleep_timer_backspace_disabled'))
+          .opacity(this.hasInput ? 1 : 0.5)
+          .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.9 })
           .onClick(() => this.deleteLast())
       }
       .width('100%')
-      .height(72)
-      .padding({ left: 18, right: 18 })
-      .backgroundColor(this.cCardBg)
-      .borderRadius(12)
+      .padding({ left: 120, right: 20 })
+      .margin({ bottom: 20 })
       .alignItems(VerticalAlign.Center)
-      .margin({ top: 14 })
 
-      // ── 键盘 ──────────────────────────────────────────────
-      Column({ space: 8 }) {
-        Row({ space: 8 }) { this.digitKey('1'); this.digitKey('2'); this.digitKey('3'); }
-        .width('100%')
-        Row({ space: 8 }) { this.digitKey('4'); this.digitKey('5'); this.digitKey('6'); }
-        .width('100%')
-        Row({ space: 8 }) { this.digitKey('7'); this.digitKey('8'); this.digitKey('9'); }
-        .width('100%')
-        Row({ space: 8 }) { this.minuteKey(':00', '0'); this.digitKey('0'); this.minuteKey(':30', '30'); }
-        .width('100%')
+      // 四行三列的 Android 时间键盘；:00/:30 仍占用最后一行两侧的位置。
+      Column() {
+        Row() { this.digitKey('1'); this.digitKey('2'); this.digitKey('3'); }.width('100%')
+        Row() { this.digitKey('4'); this.digitKey('5'); this.digitKey('6'); }.width('100%')
+        Row() { this.digitKey('7'); this.digitKey('8'); this.digitKey('9'); }.width('100%')
+        Row() { this.digitKey(':00', '00'); this.digitKey('0'); this.digitKey(':30', '30'); }.width('100%')
       }
       .width('100%')
-      .margin({ top: 14 })
+      .margin({ bottom: 22 })
 
-      // ── 复选项(内联,响应式实时刷新) ──────────────────────
-      Divider()
-        .color($r('app.color.divider')).strokeWidth(0.5)
-        .margin({ top: 14 })
+      // 两项均为默认睡眠计时器的持久化选项，不改变上方的数字时间解释规则。
+      this.checkOption($r('app.string.wait_before_sleep'), this.waitChecked, 0)
+      this.checkOption($r('app.string.reset_on_interaction'), this.resetChecked, 1)
 
+      // “移除当前项”清除已保存的默认计时器；“确定”保存当前数字缓冲计算出的时长。
       Row() {
-        Stack() {
-          Row()
-            .width('100%').height('100%')
-            .borderRadius(4)
-            .backgroundColor(this.waitChecked ? AppColors.orange500 : Color.Transparent)
-            .border({
-              width: this.waitChecked ? 0 : 1.5,
-              color: this.waitChecked ? AppColors.orange500 : this.cSubtle,
-            })
-          if (this.waitChecked) {
-            Image($r('app.media.ic_check'))
-              .width(14).height(14).fillColor('#FFFFFF')
-          }
-        }
-        .width(20).height(20)
-        .onClick(() => this.waitChecked = !this.waitChecked)
-
-        Text($r('app.string.wait_before_sleep'))
-          .fontSize(15).fontColor('#E0E0E0')
-          .layoutWeight(1).margin({ left: 12 })
-          .onClick(() => this.waitChecked = !this.waitChecked)
-      }
-      .width('100%').height(48)
-      .alignItems(VerticalAlign.Center)
-
-      Row() {
-        Stack() {
-          Row()
-            .width('100%').height('100%')
-            .borderRadius(4)
-            .backgroundColor(this.resetChecked ? AppColors.orange500 : Color.Transparent)
-            .border({
-              width: this.resetChecked ? 0 : 1.5,
-              color: this.resetChecked ? AppColors.orange500 : this.cSubtle,
-            })
-          if (this.resetChecked) {
-            Image($r('app.media.ic_check'))
-              .width(14).height(14).fillColor('#FFFFFF')
-          }
-        }
-        .width(20).height(20)
-        .onClick(() => this.resetChecked = !this.resetChecked)
-
-        Text($r('app.string.reset_on_interaction'))
-          .fontSize(15).fontColor('#E0E0E0')
-          .layoutWeight(1).margin({ left: 12 })
-          .onClick(() => this.resetChecked = !this.resetChecked)
-      }
-      .width('100%').height(48)
-      .alignItems(VerticalAlign.Center)
-
-      // ── 操作按钮 ──────────────────────────────────────────
-      Row({ space: 10 }) {
-        Button($r('app.string.cancel'))
-          .type(ButtonType.Capsule)
-          .fontSize(16).fontWeight(FontWeight.Medium)
-          .backgroundColor(this.cCancelBg)
-          .fontColor('#E0E0E0')
-          .height(46)
-          .layoutWeight(1)
-          .onClick(() => this.onClose())
-        Button($r('app.string.ok'))
-          .type(ButtonType.Capsule)
-          .fontSize(16).fontWeight(FontWeight.Medium)
-          .backgroundColor(AppColors.orange500)
-          .fontColor('#FFFFFF')
-          .height(46)
-          .layoutWeight(1)
-          .enabled(this.canConfirm())
-          .opacity(this.canConfirm() ? 1 : 0.35)
-          .onClick(() => {
-            this.onConfirm(this.totalMillis, this.waitChecked, this.resetChecked);
-            this.onClose();
-          })
+        Text($r('app.string.remove_current'))
+          .fontSize(15)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.orange500'))
+          .padding({ top: 18, bottom: 18 })
+          .onClick(() => this.onClear())
+        Blank()
+        Text($r('app.string.ok'))
+          .fontSize(15)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.orange500'))
+          .padding({ left: 32, top: 18, bottom: 18 })
+          .onClick(() => this.onConfirm(this.totalMillis, this.waitChecked, this.resetChecked))
       }
       .width('100%')
-      .margin({ top: 18, bottom: 20 })
+      .margin({ top: 14, bottom: 12 })
     }
     .width('100%')
-    .padding({ left: 20, right: 20, top: 4 })
-    .backgroundColor($r('app.color.background_default'))
-    .borderRadius({ topLeft: 20, topRight: 20 })
+    .padding({ left: 40, right: 40 })
+    .backgroundColor($r('sys.color.background_primary'))
+    .borderRadius({ topLeft: 36, topRight: 36 })
     .alignItems(HorizontalAlign.Center)
   }
-}
-
-/**
- * 毫秒 → token 序列,用于 aboutToAppear 还原"上次设的值"。
- * 反推规则:总分钟数 % 60 得分钟(只能 0 或 30,其他数用 30 兜底);其余转小时字符串。
- */
-function millisToTokens(ms: number): string[] {
-  if (ms <= 0) {
-    return [];
-  }
-  const totalMin: number = Math.floor(ms / 60000);
-  const hours: number = Math.floor(totalMin / 60);
-  const min: number = totalMin % 60;
-  const tokens: string[] = [];
-  if (hours > 0) {
-    const h: string = `${hours}`;
-    for (let i: number = 0; i < h.length; i++) {
-      tokens.push(h.charAt(i));
-    }
-  }
-  if (min === 30) {
-    tokens.push('m30');
-  } else if (min !== 0) {
-    // 历史值不是 0/30 整倍数(早期版本或外部写入)→ 截到 30,避免显示错乱。
-    tokens.push('m30');
-  }
-  return tokens;
 }

@@ -15,6 +15,12 @@ export struct PreferenceRow {
   @Param item: PreferenceItem = new PreferenceItem({});
   /** 父依赖开关当前值(决定 disabled 置灰);未设 dependency 时恒 true。 */
   @Param dependencyEnabled: boolean = true;
+  /** 二级偏好页可隐藏右侧箭头，以匹配 Android 的 ListPreference 样式。 */
+  @Param showTrailingIndicator: boolean = true;
+  /** 条目上下内边距；界面设置页使用 Android 对应的较高条目。 */
+  @Param verticalPadding: number = 14;
+  /** Android 的界面设置页只在分组之间显示分隔线。 */
+  @Param showDivider: boolean = true;
   /** 行点击统一回调(用于 nav/click 等非值切换)。 */
   @Event onNav: (item: PreferenceItem) => void = () => {};
   /** list 类型点击回调(由父页弹单选,回写后刷新)。 */
@@ -91,7 +97,7 @@ export struct PreferenceRow {
     const enabled: string[] = [];
     const disabled: string[] = [];
     for (let i = 0; i < it.optionValues.length; i++) {
-      const label = it.options[i] as string;
+      const label = this.resourceStrToString(it.options[i]);
       if (this.multiselectValues.indexOf(it.optionValues[i]) >= 0) {
         enabled.push(label);
       } else {
@@ -101,6 +107,14 @@ export struct PreferenceRow {
     const e = enabled.length > 0 ? enabled.join(', ') : '-';
     const d = disabled.length > 0 ? disabled.join(', ') : '-';
     return `Enabled: ${e}\nDisabled: ${d}`;
+  }
+
+  /** 将 ResourceStr(可能为 string 或 $r() Resource)转为可拼接的纯字符串。 */
+  private resourceStrToString(s: ResourceStr): string {
+    if (typeof s === 'string') {
+      return s;
+    }
+    return getContext(this).resourceManager.getStringSync(s.id);
   }
 
   onToggle(on: boolean): void {
@@ -173,12 +187,19 @@ export struct PreferenceRow {
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
+        // 文字区域承担整行语义点击；右侧 Toggle 自己处理 onChange，
+        // 两者是兄弟节点，避免一次点击同时触发两次取反。
+        .onClick(() => this.onRowClick())
 
         // 末尾控件:按 type
         if (this.item.type === 'toggle' || this.item.type === 'checkbox') {
-          Toggle({ type: ToggleType.Switch, isOn: this.boolValue })
+          Toggle({
+            type: this.item.type === 'checkbox' ? ToggleType.Checkbox : ToggleType.Switch,
+            isOn: this.boolValue,
+          })
             .selectedColor('#FF8800')
             .enabled(this.dependencyEnabled)
+            // 复选框本体负责写入 Settings；文字点击则由左侧 Column 处理。
             .onChange((on: boolean) => this.onToggle(on))
         } else if (this.item.type === 'seekbar') {
           Slider({
@@ -210,14 +231,14 @@ export struct PreferenceRow {
               .height(20)
               .fillColor($r('app.color.list_subtitle'))
           }
-        } else if (
+        } else if ((
           this.item.type === 'list' ||
           this.item.type === 'nav' ||
           this.item.type === 'numberpicker' ||
           this.item.type === 'multiselect' ||
           this.item.type === 'text' ||
           this.item.type === 'click'
-        ) {
+        ) && this.showTrailingIndicator) {
           Image($r('app.media.ic_arrow_right'))
             .width(20)
             .height(20)
@@ -225,14 +246,15 @@ export struct PreferenceRow {
         }
       }
       .width('100%')
-      .padding({ left: 16, right: 16, top: 14, bottom: 14 })
+      .padding({ left: 16, right: 16, top: this.verticalPadding, bottom: this.verticalPadding })
       .alignItems(VerticalAlign.Center)
       .opacity(this.dependencyEnabled ? 1.0 : 0.4)
-      .onClick(() => this.onRowClick())
-      Divider()
-        .color($r('app.color.divider'))
-        .strokeWidth(0.5)
-        .margin({ left: 16, right: 16 })
+      if (this.showDivider) {
+        Divider()
+          .color($r('app.color.divider'))
+          .strokeWidth(0.5)
+          .margin({ left: 16, right: 16 })
+      }
     }
     .width('100%')
   }

@@ -1,5 +1,6 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { NavController } from '../common/data/NavController';
+import { BackTitleBar } from '../common/components/BackTitleBar';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { EmptyStateView } from '../common/components/EmptyStateView';
 import { Folder, SheetItem, EmptyLoadingState } from '../common/models/MediaModels';
@@ -56,24 +57,9 @@ export struct FileBrowserPage {
   build() {
     NavDestination() {
       Column() {
-        // 标题栏
-        Row() {
-          Image($r('app.media.ic_arrow_back')).width(24).height(24).fillColor($r('app.color.list_title'))
-            .margin({ left: 12 })
-            .onClick(() => NavController.pop())
-          if (this.mode === 'network') {
-            Text('网络')
-            .fontSize(20).fontWeight(FontWeight.Bold).fontColor($r('app.color.list_title'))
-              .margin({ left: 8 })
-          } else {
-            Text('存储设备')
-            .fontSize(20).fontWeight(FontWeight.Bold).fontColor($r('app.color.list_title'))
-              .margin({ left: 8 })
-          }
-          Blank()
-        }
-        .width('100%').height(56).alignItems(VerticalAlign.Center)
-        .backgroundColor($r('app.color.background_actionbar'))
+        BackTitleBar({
+          title: this.mode === 'network' ? '网络' : '存储设备',
+        })
 
         if (this.vm.emptyState !== EmptyLoadingState.NONE) {
           EmptyStateView({ state: this.vm.emptyState }).layoutWeight(1)

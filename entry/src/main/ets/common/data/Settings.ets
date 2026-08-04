@@ -1,6 +1,8 @@
 import { preferences } from '@kit.ArkData';
 import { AppContext } from './AppContext';
 
+export type SettingsChangeListener = (key: string) => void;
+
 /**
  * Settings —— Android `org.videolan.tools.Settings` 单例的鸿蒙等价物。
  * 全工程业务偏好统一写入【同一个】preferences(name=`vlc_preferences`,对应安卓默认 prefs 文件)。
@@ -49,6 +51,7 @@ export class Settings {
   static readonly KEY_VIDEOS_CARDS: string = 'video_display_in_cards';
   static readonly KEY_VIDEO_SORT: string = 'video_sort';
   static readonly KEY_VIDEO_SORT_DESC: string = 'video_sort_desc';
+  static readonly KEY_VIDEO_ONLY_FAVS: string = 'video_only_favs';
   static readonly KEY_AUDIO_SORT_DESC: string = 'audio_sort_desc';
   static readonly KEY_AUDIO_ONLY_FAVS: string = 'audio_only_favs';
   static readonly KEY_AUDIO_PLAY_ACTION: string = 'audio_play_action';
@@ -127,6 +130,7 @@ export class Settings {
   static incognitoMode: boolean = false;
   static fastplaySpeed: number = 2.0; // FASTPLAY_SPEED default 20 /10f
   static videoHudDelay: number = 4;
+  private static changeListeners: SettingsChangeListener[] = [];
 
   static async init(): Promise<void> {
     if (Settings.store) {
@@ -189,6 +193,23 @@ export class Settings {
     }
     if (key === Settings.SHOW_VIDEO_THUMBNAILS && typeof value === 'boolean') {
       Settings.showVideoThumbs = value;
+    }
+    Settings.notifyChanged(key);
+  }
+
+  /** 订阅已持久化设置的变化；返回值用于页面销毁时解除订阅。 */
+  static observe(listener: SettingsChangeListener): () => void {
+    if (!Settings.changeListeners.includes(listener)) {
+      Settings.changeListeners.push(listener);
+    }
+    return () => {
+      Settings.changeListeners = Settings.changeListeners.filter((item: SettingsChangeListener) => item !== listener);
+    };
+  }
+
+  private static notifyChanged(key: string): void {
+    for (const listener of Settings.changeListeners) {
+      listener(key);
     }
   }
 

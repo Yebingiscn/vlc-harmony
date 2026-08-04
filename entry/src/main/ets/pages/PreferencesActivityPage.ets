@@ -1,6 +1,8 @@
 import { promptAction } from '@kit.ArkUI';
 import { VlcToolbar } from '../common/components/VlcToolbar';
 import { NavController } from '../common/data/NavController';
+import { RouteName } from '../common/constants/AppConstants';
+import { PreferencesScreenParam } from '../common/models/MediaModels';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
 import { Settings } from '../common/data/Settings';
 import {
@@ -55,8 +57,13 @@ export struct PreferencesActivityPage {
   }
 
   /** 后续接入子页、单选弹窗、权限页或业务设置的统一入口。 */
-  onSettingAction(key: string): void {
-    promptAction.showToast({ message: `“${key}”功能暂未实现` });
+  onSettingAction(item: SettingsHomeItem): void {
+    if (item.screenKey.length > 0) {
+      const param: PreferencesScreenParam = { screenKey: item.screenKey };
+      NavController.push(RouteName.PreferencesScreen, param);
+      return;
+    }
+    promptAction.showToast({ message: `“${item.key}”功能暂未实现` });
   }
 
   /** 后续接入 PreferenceSearchActivityPage 的统一入口。 */
@@ -148,7 +155,7 @@ export struct PreferencesActivityPage {
     .opacity(this.isItemEnabled(item) ? 1 : 0.45)
     .onClick(() => {
       if (item.type === 'navigation' && this.isItemEnabled(item)) {
-        this.onSettingAction(item.key);
+        this.onSettingAction(item);
       }
       if (item.type === 'toggle') {
         this.onToggle(item, !this.isToggleOn(item));
@@ -163,6 +170,7 @@ export struct PreferencesActivityPage {
           title: $r('app.string.preferences'),
           showBack: true,
           showSearch: true,
+          currentTab: '',
           onBack: () => NavController.pop(),
           onSearch: () => this.onSearch(),
         })
@@ -185,7 +193,7 @@ export struct PreferencesActivityPage {
         }
         .width('100%')
         .layoutWeight(1)
-        .scrollBar(BarState.Auto)
+        .scrollBar(BarState.Off)
       }
       .width('100%')
       .height('100%')

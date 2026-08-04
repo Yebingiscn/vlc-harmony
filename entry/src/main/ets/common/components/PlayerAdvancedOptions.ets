@@ -55,21 +55,27 @@ export function buildPlayerAdvancedOptions(mode: PlayerAdvancedMenuMode): Player
       new PlayerAdvancedOption('abRepeat', 'A-B 循环', $r('app.media.ic_abrepeat')),
       new PlayerAdvancedOption('savePlaylist', '保存播放列表', $r('app.media.ic_addtoplaylist')),
       new PlayerAdvancedOption('videoControls', '控制设置', $r('app.media.ic_video_controls')),
-      new PlayerAdvancedOption('videoTips', '视频播放器提示', $r('app.media.ic_videotips')),
+      // new PlayerAdvancedOption('videoTips', '视频播放器提示', $r('app.media.ic_videotips')),
     ];
   }
 
   return [
+    new PlayerAdvancedOption('lock', '锁定', $r('app.media.ic_lock_player')),
     ...shared,
     new PlayerAdvancedOption('bookmark', '书签', $r('app.media.ic_bookmark')),
     new PlayerAdvancedOption('abRepeat', 'A-B 循环', $r('app.media.ic_abrepeat')),
     new PlayerAdvancedOption('savePlaylist', '保存播放列表', $r('app.media.ic_addtoplaylist')),
-    new PlayerAdvancedOption('shareTrack', '分享曲目信息', $r('app.media.ic_share')),
-    new PlayerAdvancedOption('audioControls', '控制设置', $r('app.media.ic_audio_controls')),
-    new PlayerAdvancedOption('audioTips', '音频播放器提示', $r('app.media.ic_audiotips')),
-    new PlayerAdvancedOption('playlistTips', '播放列表提示', $r('app.media.ic_playlisttips')),
+    // new PlayerAdvancedOption('shareTrack', '分享曲目信息', $r('app.media.ic_share')),
+    // new PlayerAdvancedOption('audioControls', '控制设置', $r('app.media.ic_audio_controls')),
+    // new PlayerAdvancedOption('audioTips', '音频播放器提示', $r('app.media.ic_audiotips')),
+    // new PlayerAdvancedOption('playlistTips', '播放列表提示', $r('app.media.ic_playlisttips')),
   ];
 }
+
+/** 单行选项高度，需与下方 Row 的 height 保持一致。 */
+const OPTION_ITEM_HEIGHT = 40;
+/** 菜单最大高度：项数过多时滚动，避免超出屏幕。 */
+const OPTION_MAX_HEIGHT = 560;
 
 @ComponentV2
 export struct PlayerAdvancedOptions {
@@ -86,27 +92,28 @@ export struct PlayerAdvancedOptions {
             Image(item.icon)
               .width(26)
               .height(26)
-              .fillColor(this.activeIds.includes(item.id) ? '#FF8800' : '#333333')
+              .fillColor(this.activeIds.includes(item.id) ? '#FF8800' : $r('app.color.list_title'))
               .margin({ left: 18, right: 18 })
             Text(item.title)
               .fontSize(17)
-              .fontColor(this.activeIds.includes(item.id) ? '#FF8800' : '#333333')
+              .fontColor(this.activeIds.includes(item.id) ? '#FF8800' : $r('app.color.list_title'))
               .layoutWeight(1)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .margin({ right: 18 })
           }
           .width('100%')
-          .height(40)
+          .height(OPTION_ITEM_HEIGHT)
           .alignItems(VerticalAlign.Center)
           .onClick((): void => this.onSelect(item.id))
         }
       }, (item: PlayerAdvancedOption): string => item.id)
     }
     .width(268)
-    .height(560)
+    // 高度随项数自适应：少则贴合内容，多则封顶滚动。
+    .height(Math.min(this.items.length * OPTION_ITEM_HEIGHT, OPTION_MAX_HEIGHT))
     .scrollBar(BarState.Off)
-    .backgroundColor('#FFFFFF')
+    .backgroundColor($r('app.color.background_default'))
     .borderRadius(0)
   }
 }

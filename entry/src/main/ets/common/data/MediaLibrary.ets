@@ -4,8 +4,10 @@ import { media } from '@kit.MediaKit';
 import { image } from '@kit.ImageKit';
 import { dataSharePredicates } from '@kit.ArkData';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { emitter } from '@kit.BasicServicesKit';
 import { AppContext } from './AppContext';
-import { MediaWrapper, Track, Artist, Album, Genre, Folder, VideoGroup, SheetItem } from '../models/MediaModels';
+import { MediaWrapper, Track, Artist, Album, Genre, Folder, VideoGroup, SheetItem, Playlist } from '../models/MediaModels';
+import { BookMark } from '../models/BookmarkModels';
 import { QueueItem } from './PlaybackService';
 import { Settings } from './Settings';
 
@@ -116,6 +118,8 @@ export class MediaLibrary {
   /** 扫描视频:photoAccessHelper PhotoType.VIDEO。 */
   private static async scanVideos(): Promise<void> {
     const list: MediaWrapper[] = [];
+    // 关闭缩略图时既不请求系统缩略图，也不写入缓存，避免无意义的扫描开销。
+    const loadThumbnails: boolean = await Settings.getBoolean(Settings.SHOW_VIDEO_THUMBNAILS, true);
     try {
       const ctx = AppContext.get();
       const helper = photoAccessHelper.getPhotoAccessHelper(ctx);
@@ -171,9 +175,28 @@ export class MediaLibrary {
           mw.dateModified = Number(asset.get('date_modified') ?? 0);
           mw.displayName = title;
           mw.resolution = width > 0 && height > 0 ? `${width}x${height}` : '';
-          // 缩略图:photoAccessHelper 的 uri 可直接交给 Image 组件渲染(有读权限即可),
-          // 否则网格里每张卡都是同一张 ic_no_thumbnail_1610 占位图。
-          mw.artworkUrl = uri;
+          // 缩略图:用 PhotoAsset.getThumbnail 提取真实缩略图并缓存到本地文件。
+          mw.artworkUrl = '';
+          try {
+            if (loadThumbnails) {
+              const thumbPm = await asset.getThumbnail({ width: 256, height: 256 });
+              if (thumbPm) {
+              const cacheName = `video_thumb_${videoCount}_${Date.now()}.jpg`;
+              const cacheDir = AppContext.get().cacheDir;
+              const cachePath = `${cacheDir}/${cacheName}`;
+              const packer = image.createImagePacker();
+              const buffer = await packer.packing(thumbPm, { format: 'image/jpeg', quality: 80 });
+              const outFile = fs.openSync(cachePath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY);
+              fs.writeSync(outFile.fd, buffer);
+              fs.closeSync(outFile);
+              packer.release();
+              thumbPm.release();
+              mw.artworkUrl = `file://${cachePath}`;
+              }
+            }
+          } catch (thumbErr) {
+            // 缩略图提取失败,保留空 artworkUrl,UI 回落占位图。
+          }
           // filePath 供按目录分组(getVideoFolders)使用;media uri 无真实路径时退化为 uri。
           mw.filePath = uri;
           list.push(mw);
@@ -887,4 +910,238 @@ export class MediaLibrary {
   private static async saveFavRaw(items: FavItem[]): Promise<void> {
     await Settings.put(MediaLibrary.KEY_FAVORITES, JSON.stringify(items));
   }
+
+  // ---- 播放列表管理 ----
+
+  private static readonly KEY_PLAYLISTS: string = 'vlc_playlists';
+  private static playlistCache: StoredPlaylist[] = [];
+  private static playlistCacheInited: boolean = false;
+
+  /** 播放列表变更事件 ID（emitter 全局广播，订阅方应 reload 自身 UI）。 */
+  public static readonly EVENT_PLAYLISTS_CHANGED: string = 'vlc_playlists_changed';
+
+  /** 触发播放列表变更广播（私有辅助:每次持久化后调用）。 */
+  private static emitPlaylistsChanged(): void {
+    try {
+      emitter.emit(MediaLibrary.EVENT_PLAYLISTS_CHANGED);
+    } catch (e) {
+      hilog.warn(0x0001, 'VLC', `[VLC] emitPlaylistsChanged failed: ${JSON.stringify(e)}`);
+    }
+  }
+
+  /** 初始化播放列表缓存（从 Settings 加载，幂等）。 */
+  static async initPlaylistCache(): Promise<void> {
+    if (MediaLibrary.playlistCacheInited) {
+      return;
+    }
+    await MediaLibrary.reloadPlaylistCache();
+    MediaLibrary.playlistCacheInited = true;
+  }
+
+  /** 强制从 Settings 重新加载播放列表缓存（无视 inited 标记，Tab 切换/下拉刷新时使用）。 */
+  static async reloadPlaylistCache(): Promise<void> {
+    const raw: string = await Settings.getString(MediaLibrary.KEY_PLAYLISTS, '[]');
+    try {
+      MediaLibrary.playlistCache = JSON.parse(raw) as StoredPlaylist[];
+    } catch (e) {
+      MediaLibrary.playlistCache = [];
+    }
+  }
+
+  /** 获取所有已存储的播放列表（返回 Playlist 视图，供 UI 使用）。 */
+  static getPlaylists(): Playlist[] {
+    return MediaLibrary.playlistCache.map((s: StoredPlaylist) => {
+      const p: Playlist = new Playlist(s.id, s.name);
+      p.trackCount = s.uriList.length;
+      return p;
+    });
+  }
+
+  /** 获取原始存储的播放列表数据（含 uriList，供 PlaylistsPage 统计可用曲目数）。 */
+  static getStoredPlaylists(): StoredPlaylist[] {
+    return MediaLibrary.playlistCache;
+  }
+
+  /** 获取某播放列表中的 URI 列表。 */
+  static getPlaylistUris(playlistId: number): string[] {
+    const pl: StoredPlaylist | undefined = MediaLibrary.playlistCache.find((s: StoredPlaylist) => s.id === playlistId);
+    return pl ? pl.uriList : [];
+  }
+
+  /** 新建播放列表并持久化。返回新建的 Playlist。 */
+  static async createPlaylist(name: string): Promise<Playlist> {
+    await MediaLibrary.initPlaylistCache();
+    const id: number = Date.now();
+    const sp: StoredPlaylist = { id: id, name: name, uriList: [] };
+    MediaLibrary.playlistCache.push(sp);
+    await MediaLibrary.savePlaylists();
+    const p: Playlist = new Playlist(id, name);
+    p.trackCount = 0;
+    return p;
+  }
+
+  /** 向播放列表追加曲目 URI（去重）并持久化。 */
+  static async addToPlaylist(playlistId: number, uri: string): Promise<void> {
+    await MediaLibrary.initPlaylistCache();
+    const pl: StoredPlaylist | undefined = MediaLibrary.playlistCache.find((s: StoredPlaylist) => s.id === playlistId);
+    if (pl && !pl.uriList.includes(uri)) {
+      pl.uriList.push(uri);
+      await MediaLibrary.savePlaylists();
+    }
+  }
+
+  /** 替换播放列表的全部 URI 并持久化。 */
+  static async replacePlaylist(playlistId: number, uriList: string[]): Promise<void> {
+    await MediaLibrary.initPlaylistCache();
+    const pl: StoredPlaylist | undefined = MediaLibrary.playlistCache.find((s: StoredPlaylist) => s.id === playlistId);
+    if (pl) {
+      pl.uriList = uriList;
+      await MediaLibrary.savePlaylists();
+    }
+  }
+
+  /** 重命名播放列表并持久化。 */
+  static async renamePlaylist(id: number, newName: string): Promise<void> {
+    await MediaLibrary.initPlaylistCache();
+    const pl: StoredPlaylist | undefined = MediaLibrary.playlistCache.find((s: StoredPlaylist) => s.id === id);
+    if (pl) {
+      pl.name = newName;
+      await MediaLibrary.savePlaylists();
+    }
+  }
+
+  /** 删除播放列表并持久化。 */
+  static async deletePlaylist(id: number): Promise<void> {
+    await MediaLibrary.initPlaylistCache();
+    MediaLibrary.playlistCache = MediaLibrary.playlistCache.filter((s: StoredPlaylist) => s.id !== id);
+    await MediaLibrary.savePlaylists();
+  }
+
+  /** 将缓存写入 Settings,并广播变更事件。 */
+  private static async savePlaylists(): Promise<void> {
+    await Settings.put(MediaLibrary.KEY_PLAYLISTS, JSON.stringify(MediaLibrary.playlistCache));
+    MediaLibrary.emitPlaylistsChanged();
+  }
+
+  // ---- 书签管理 ----
+
+  private static readonly KEY_BOOKMARKS: string = 'vlc_bookmarks';
+
+  /** 加载指定视频的所有书签（按时间排序）。 */
+  static async loadBookmarks(mediaUri: string): Promise<BookMark[]> {
+    const raw: string = await Settings.getString(MediaLibrary.KEY_BOOKMARKS, '{}');
+    try {
+      const all: Record<string, PersistedBookmark[]> = JSON.parse(raw) as Record<string, PersistedBookmark[]>;
+      const arr: PersistedBookmark[] = all[mediaUri] ?? [];
+      return arr.map((b: PersistedBookmark) => new BookMark(b.id, b.mediaId, b.timeMs, b.name));
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /** 保存指定视频的书签列表。 */
+  static async saveBookmarks(mediaUri: string, bookmarks: BookMark[]): Promise<void> {
+    const raw: string = await Settings.getString(MediaLibrary.KEY_BOOKMARKS, '{}');
+    let all: Record<string, PersistedBookmark[]> = {};
+    try {
+      all = JSON.parse(raw) as Record<string, PersistedBookmark[]>;
+    } catch (e) {
+      // ignore
+    }
+    all[mediaUri] = bookmarks.map((b: BookMark) => ({
+      id: b.id,
+      mediaId: b.mediaId,
+      timeMs: b.timeMs,
+      name: b.name,
+    } as PersistedBookmark));
+    await Settings.put(MediaLibrary.KEY_BOOKMARKS, JSON.stringify(all));
+  }
+
+  // ---- 媒体收藏(专辑级,键为 "album|artist") ----
+
+  private static readonly KEY_MEDIA_FAVS: string = 'media_favorites';
+  private static mediaFavCache: Set<string> = new Set<string>();
+
+  /** 计算专辑收藏键:空专辑名/歌手名归一化为"未知专辑"/"未知艺术家"。 */
+  static albumFavKey(albumName: string, artistName: string): string {
+    const a = albumName.length > 0 ? albumName : '未知专辑';
+    const ar = artistName.length > 0 ? artistName : '未知艺术家';
+    return `${a}|${ar}`;
+  }
+
+  static async loadMediaFavs(): Promise<void> {
+    const raw: string = await Settings.getString(MediaLibrary.KEY_MEDIA_FAVS, '[]');
+    MediaLibrary.mediaFavCache = new Set<string>();
+    try {
+      const arr: string[] = JSON.parse(raw) as string[];
+      for (const k of arr) {
+        MediaLibrary.mediaFavCache.add(k);
+      }
+    } catch (e) {
+      // parse error -> empty
+    }
+  }
+
+  static isMediaFav(key: string): boolean {
+    return MediaLibrary.mediaFavCache.has(key);
+  }
+
+  /** 切换收藏状态,返回切换后是否已收藏。 */
+  static async toggleMediaFav(key: string): Promise<boolean> {
+    if (MediaLibrary.mediaFavCache.has(key)) {
+      MediaLibrary.mediaFavCache.delete(key);
+    } else {
+      MediaLibrary.mediaFavCache.add(key);
+    }
+    const arr: string[] = Array.from(MediaLibrary.mediaFavCache);
+    await Settings.put(MediaLibrary.KEY_MEDIA_FAVS, JSON.stringify(arr));
+    return MediaLibrary.mediaFavCache.has(key);
+  }
+
+  // ---- 视频收藏(按 uri) ----
+
+  private static readonly KEY_VIDEO_FAVS: string = 'video_favorites';
+  private static videoFavCache: Set<string> = new Set<string>();
+
+  static async loadVideoFavs(): Promise<void> {
+    const raw: string = await Settings.getString(MediaLibrary.KEY_VIDEO_FAVS, '[]');
+    MediaLibrary.videoFavCache = new Set<string>();
+    try {
+      const arr: string[] = JSON.parse(raw) as string[];
+      for (const k of arr) {
+        MediaLibrary.videoFavCache.add(k);
+      }
+    } catch (e) {
+      // parse error -> empty
+    }
+  }
+
+  static isVideoFav(uri: string): boolean {
+    return MediaLibrary.videoFavCache.has(uri);
+  }
+
+  /** 切换视频收藏状态,返回切换后是否已收藏。 */
+  static async toggleVideoFav(uri: string): Promise<boolean> {
+    if (MediaLibrary.videoFavCache.has(uri)) {
+      MediaLibrary.videoFavCache.delete(uri);
+    } else {
+      MediaLibrary.videoFavCache.add(uri);
+    }
+    const arr: string[] = Array.from(MediaLibrary.videoFavCache);
+    await Settings.put(MediaLibrary.KEY_VIDEO_FAVS, JSON.stringify(arr));
+    return MediaLibrary.videoFavCache.has(uri);
+  }
+}
+
+export interface StoredPlaylist {
+  id: number;
+  name: string;
+  uriList: string[];
+}
+
+interface PersistedBookmark {
+  id: number;
+  mediaId: number;
+  timeMs: number;
+  name: string;
 }

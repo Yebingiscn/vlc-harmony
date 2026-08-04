@@ -349,6 +349,10 @@
       "value": "加速解码但可能降低画质"
     },
     {
+      "name": "enable_remote_access",
+      "value": "启用远程访问"
+    },
+    {
       "name": "enable_time_stretching_audio",
       "value": "启用音频的时间伸缩"
     },
@@ -933,8 +937,52 @@
       "value": "阅读文档"
     },
     {
+      "name": "remote_access",
+      "value": "远程访问"
+    },
+    {
+      "name": "remote_access_content",
+      "value": "内容"
+    },
+    {
+      "name": "remote_access_file_browser_content",
+      "value": "文件浏览器"
+    },
+    {
       "name": "remote_access_hash_title",
       "value": "远程访问 hash"
+    },
+    {
+      "name": "remote_access_info",
+      "value": "远程访问信息"
+    },
+    {
+      "name": "remote_access_logs",
+      "value": "共享日志文件"
+    },
+    {
+      "name": "remote_access_medialibrary_content",
+      "value": "媒体库内容"
+    },
+    {
+      "name": "remote_access_medialibrary_content_summary",
+      "value": "已启用: %1$s\n已禁用: %2$s"
+    },
+    {
+      "name": "remote_access_network_browser_content",
+      "value": "网络浏览器"
+    },
+    {
+      "name": "remote_access_playback_control",
+      "value": "控制播放"
+    },
+    {
+      "name": "remote_access_status",
+      "value": "服务器状态"
+    },
+    {
+      "name": "remote_access_status_summary",
+      "value": "点击查看服务器状态"
     },
     {
       "name": "remote_access_version",
@@ -1013,12 +1061,20 @@
       "value": "请重新输入密码"
     },
     {
+      "name": "search",
+      "value": "搜索"
+    },
+    {
       "name": "search_global",
       "value": "在所有媒体库中搜索媒体"
     },
     {
       "name": "search_hint",
       "value": "搜索媒体"
+    },
+    {
+      "name": "search_in_current_list",
+      "value": "在当前列表中搜索"
     },
     {
       "name": "search_prefs",
@@ -1123,6 +1179,74 @@
     {
       "name": "sleep_title",
       "value": "睡眠计时器"
+    },
+    {
+      "name": "setting_language",
+      "value": "设置语言"
+    },
+    {
+      "name": "follow_system_mode",
+      "value": "跟随系统模式"
+    },
+    {
+      "name": "ellipsize_default",
+      "value": "默认"
+    },
+    {
+      "name": "ellipsize_left",
+      "value": "左侧"
+    },
+    {
+      "name": "ellipsize_right",
+      "value": "右侧"
+    },
+    {
+      "name": "ellipsize_middle",
+      "value": "中间"
+    },
+    {
+      "name": "ellipsize_marquee",
+      "value": "跑马灯"
+    },
+    {
+      "name": "locale_follow_system",
+      "value": "设备默认"
+    },
+    {
+      "name": "locale_simplified_chinese",
+      "value": "简体中文"
+    },
+    {
+      "name": "locale_english",
+      "value": "English"
+    },
+    {
+      "name": "sleep_timer_minutes",
+      "value": "%dm"
+    },
+    {
+      "name": "sleep_timer_hours_minutes",
+      "value": "%dh %dm"
+    },
+    {
+      "name": "sleep_timer_disabled",
+      "value": "已禁用"
+    },
+    {
+      "name": "sleep_timer_summary",
+      "value": "%d:%s"
+    },
+    {
+      "name": "sleep_timer_summary_wait",
+      "value": "%d:%s，等待媒体结束"
+    },
+    {
+      "name": "sleep_timer_summary_reset",
+      "value": "%d:%s，交互时重置"
+    },
+    {
+      "name": "sleep_timer_summary_wait_reset",
+      "value": "%d:%s，等待媒体结束，交互时重置"
     },
     {
       "name": "stream_deleted",

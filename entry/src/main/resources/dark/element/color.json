@@ -26,6 +26,9 @@
     { "name": "white_transparent_75", "value": "#BFFFFFFF" },
     { "name": "white_transparent_80", "value": "#CCFFFFFF" },
     { "name": "disabled_overlay", "value": "#80000000" },
-    { "name": "colorControlNormal", "value": "#E0E0E0" }
+    { "name": "colorControlNormal", "value": "#E0E0E0" },
+    { "name": "dialog_mask", "value": "#99000000" },
+    { "name": "sleep_timer_key", "value": "#D6D6D6" },
+    { "name": "sleep_timer_backspace_disabled", "value": "#666666" }
   ]
 }

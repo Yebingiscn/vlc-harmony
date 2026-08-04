@@ -199,6 +199,8 @@ export interface FileBrowserParam {
 export interface VideoNavParam {
   uri: string;
   title: string;
+  /** 历史/更多入口带回的真实视频缩略图，播放器写入历史时继续复用。 */
+  artworkUrl?: string;
 }
 
 /** 存储设备(Browse tab 的本地存储卡片)。 */
