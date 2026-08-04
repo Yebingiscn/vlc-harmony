@@ -162,8 +162,23 @@ export class PlaybackService {
     }
   }
 
+  private lastTimeEmit: number = 0;
+
+  /** timeChanged 节流:libVLC 在 seek/定位时会爆发高频 timeChanged,逐条刷新
+   *  position 会触发 ArkUI 渲染风暴并积压 tsfn 队列;合并到 300ms 一刷。 */
+  private onTimeChangedThrottled(ms: number): void {
+    const now = Date.now();
+    if (now - this.lastTimeEmit < 300) {
+      return;
+    }
+    this.lastTimeEmit = now;
+    this.position = ms;
+    this.emitTime();
+  }
+
   private onNativeEvent(event: string, value: number): void {
-    hilog.debug(LOG_DOMAIN, LOG_TAG, '[VLC] event %{public}s value=%{public}s', event, String(value));
+    // 注意:这里不要对每个事件打 hilog —— seek 后 libVLC 会爆发大量 timeChanged,
+    // 逐条打日志会把 hilog socket 写满导致 writev 阻塞,JS 主线程卡死(AppFreeze)。
     switch (event) {
       case 'playing':
         this.state = PlayState.PLAYING;
@@ -188,8 +203,7 @@ export class PlaybackService {
         this.emitState();
         break;
       case 'timeChanged':
-        this.position = value;
-        this.emitTime();
+        this.onTimeChangedThrottled(value);
         break;
       case 'lengthChanged':
         this.duration = value;

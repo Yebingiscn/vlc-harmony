@@ -417,7 +417,9 @@ class VideoPlayerViewModel implements PlaybackListener {
 
   seekTo(ms: number): void {
     const svc = PlaybackService.getInstance();
-    if (this.isIsoFile && this.isoChapters.length > 0) {
+    // 仅当存在真实章节导航(>1 章)时走章节分支;单章节(如合成 BD 测试盘默认 1 章)的
+    // setChapter(0) 会把任何 seek 都拉回开头,此时改用 position seek。
+    if (this.isIsoFile && this.isoChapters.length > 1) {
       // DVD/BD:按虚拟时间轴定位到对应章节(setTime 会被 navigator 覆盖弹回)。
       let elapsed = 0;
       for (let i = 0; i < this.isoChapters.length; i++) {
@@ -432,9 +434,8 @@ class VideoPlayerViewModel implements PlaybackListener {
         elapsed = chEnd;
       }
     }
-    // 常规文件 / 无章节 ISO(BD/VCD):时间 seek
+    // 无章节/单章节 ISO(BD/VCD):setTime 会被 bluray/dvdnav navigator 覆盖弹回 0,改用 position seek。
     if (this.isIsoFile && this.duration > 0) {
-      // setTime 会被 bluray/dvdnav navigator 覆盖弹回 0,改用 position seek。
       hilog.info(0x0001, 'VLC',
         '[VLC] seekTo ISO(position) ms=%{public}d duration=%{public}d isoChapters=%{public}d',
         ms, this.duration, this.isoChapters.length);

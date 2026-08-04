@@ -1,7 +1,8 @@
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
 import { NavController } from '../common/data/NavController';
-import { SheetItem, VideoNavParam, Folder } from '../common/models/MediaModels';
+import { BundledMedia } from '../common/data/BundledMedia';
+import { SheetItem, VideoNavParam, Folder, FileBrowserParam } from '../common/models/MediaModels';
 import { picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
@@ -127,6 +128,22 @@ export struct MainBrowserPage {
             .padding({ left: 12, right: 12 })
             .margin({ top: 12 })
           }
+
+          // === 应用内视频(内置测试资源) ===
+          Row() {
+            Image($r('app.media.ic_folder')).width(40).height(40)
+              .fillColor($r('app.color.colorAccent')).margin({ left: 16, right: 12 })
+            Column() {
+              Text($r('app.string.browser_app_videos'))
+                .fontSize(16).fontColor($r('app.color.list_title'))
+              Text(`${BundledMedia.listEntries().length} ISO`)
+                .fontSize(12).fontColor($r('app.color.list_subtitle')).margin({ top: 2 })
+            }
+            .alignItems(HorizontalAlign.Start)
+            Blank()
+          }
+          .width('100%').height(64)
+          .onClick(() => NavController.push('FileBrowser', { mode: 'bundled' } as FileBrowserParam))
 
           // === 存储设备 ===
           this.sectionTitle($r('app.string.browser_storages'))
