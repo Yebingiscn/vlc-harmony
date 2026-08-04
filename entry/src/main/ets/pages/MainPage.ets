@@ -194,6 +194,7 @@ export struct MainPage {
           PlaylistsPage({
             searchMode: this.searchMode,
             searchQuery: this.searchQuery,
+            currentTab: this.currentTab,
             onSearchGlobal: () => { this.searchMode = false; this.searchQuery = ''; NavController.push('Search'); },
           })
             .visibility(this.currentTab === 'playlists' ? Visibility.Visible : Visibility.None)

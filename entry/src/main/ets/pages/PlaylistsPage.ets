@@ -7,6 +7,8 @@ import { RenameDialog } from './RenameDialog';
 import { promptAction } from '@kit.ArkUI';
 import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
 import { VideoParam, VideoPlayItem } from './VideoPlayerPage';
+import { HeaderMediaListParam } from './HeaderMediaListActivityPage';
+import { RouteName } from '../common/constants/AppConstants';
 
 // ---- 数据模型 ----
 
@@ -37,6 +39,8 @@ class PlaylistsVM {
 
   async load(): Promise<void> {
     this.loading = true;
+    // 每次加载都强制从 Settings 刷新播放列表数据
+    await MediaLibrary.reloadPlaylistCache();
     await MediaLibrary.scan();
     this.rebuildCards();
     this.loading = false;
@@ -46,20 +50,18 @@ class PlaylistsVM {
     const stored = MediaLibrary.getStoredPlaylists();
     const audios = MediaLibrary.getAudios();
     const videos = MediaLibrary.getVideos();
-    // 同时匹配音频和视频 URI，避免视频播放器保存的 URI 被过滤掉。
-    const allUriSet = new Set([
-      ...audios.map((t: Track) => t.uri),
-      ...videos.map((v: MediaWrapper) => v.uri),
-    ]);
-    this.playlists = stored.map((s: StoredPlaylist) => {
-      const availableUris = s.uriList.filter((u: string) => allUriSet.has(u));
-      const count = availableUris.length;
-      // 封面优先用音频专辑图，其次视频缩略图。
+    // 用新数组 + 新对象触发 @Trace 重渲染,避免引用复用导致 UI 缓存旧值。
+    const next: PlaylistCard[] = stored.map((s: StoredPlaylist) => {
+      // 直接用存储的 URI 数量,不依赖媒体库扫描结果。
+      const count = s.uriList.length;
+      // 封面优先用音频专辑图,其次视频缩略图。
       const audioArt = audios.find((t: Track) => s.uriList.includes(t.uri) && t.artworkPath.length > 0);
       const videoArt = videos.find((v: MediaWrapper) => s.uriList.includes(v.uri) && v.artworkUrl.length > 0);
       const art = audioArt ? audioArt.artworkPath : (videoArt ? videoArt.artworkUrl : '');
       return new PlaylistCard(s.id, s.name, count, art);
     });
+    // 整体替换数组并复制一遍,确保 @Trace 必能感知引用变化。
+    this.playlists = next.slice();
   }
 
   applySearch(q: string): void {
@@ -97,12 +99,20 @@ export struct PlaylistsPage {
   @Local ctxCard: PlaylistCard | null = null;
   @Param searchMode: boolean = false;
   @Param searchQuery: string = '';
+  @Param currentTab: string = '';
   @Event onSearchGlobal: () => void = () => {
   };
 
   async aboutToAppear(): Promise<void> {
     await MediaLibrary.initPlaylistCache();
     await this.vm.load();
+  }
+
+  @Monitor('currentTab')
+  onTabChange(): void {
+    if (this.currentTab === 'playlists') {
+      void this.vm.load();
+    }
   }
 
   @Monitor('searchQuery')
@@ -112,6 +122,16 @@ export struct PlaylistsPage {
     this.refreshing = true;
     await this.vm.load();
     this.refreshing = false;
+  }
+
+  /** 点击播放列表卡片 → 进入曲目详情页(HeaderMediaListActivityPage)。 */
+  openPlaylist(card: PlaylistCard): void {
+    const plParam = new HeaderMediaListParam();
+    plParam.title = card.name;
+    plParam.description = `${card.trackCount} 首`;
+    plParam.isPlaylist = true;
+    plParam.playlistId = card.id;
+    NavController.push(RouteName.HeaderMediaList, plParam);
   }
 
   playAll(card: PlaylistCard): void {
@@ -193,7 +213,7 @@ export struct PlaylistsPage {
                   .backgroundColor($r('app.color.card_background'))
                   .border({ width: 0.5, color: $r('app.color.card_border') })
                   .shadow({ radius: 4, color: '#1A000000', offsetY: 2 })
-                  .onClick(() => { this.playAll(card); })
+                  .onClick(() => { this.openPlaylist(card); })
                 }
               }, (card: PlaylistCard) => `pl${card.id}`)
             }
@@ -220,10 +240,6 @@ export struct PlaylistsPage {
     }
     .width('100%').height('100%')
     .backgroundColor($r('app.color.background_default'))
-    // Tab 切换时自动刷新数据（从视频播放器保存后回到此页可见最新歌单）。
-    .onAppear(() => {
-      void this.vm.load();
-    })
     // 唯一的 bindSheet,内部按 sheetMode 切换内容
     .bindSheet(this.showSheet, this.unifiedSheet(), {
       height: SheetSize.FIT_CONTENT, dragBar: true,
@@ -292,7 +308,7 @@ export struct PlaylistsPage {
 
       // 播放全部
       Row() {
-        Image($r('app.media.ic_play_player')).width(24).height(24).fillColor('#FFFFFF').margin({ right: 12 })
+        Image($r('app.media.ic_play_player')).width(24).height(24).fillColor($r('app.color.list_title')).margin({ right: 12 })
         Text('播放全部').fontSize(15).fontColor($r('app.color.list_title'))
       }
       .width('100%').padding({ left: 16, right: 16, top: 14, bottom: 14 })
@@ -303,7 +319,7 @@ export struct PlaylistsPage {
 
       // 重命名
       Row() {
-        Image($r('app.media.ic_edit')).width(24).height(24).fillColor('#FFFFFF').margin({ right: 12 })
+        Image($r('app.media.ic_edit')).width(24).height(24).fillColor($r('app.color.list_title')).margin({ right: 12 })
         Text($r('app.string.rename')).fontSize(15).fontColor($r('app.color.list_title'))
       }
       .width('100%').padding({ left: 16, right: 16, top: 14, bottom: 14 })

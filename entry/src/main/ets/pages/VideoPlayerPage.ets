@@ -1409,7 +1409,7 @@ export struct VideoPlayerPage {
           this.openOptions();
         })
         .bindMenu(this.advancedOptionsOpen!!, this.advancedOptionsMenu(), {
-          placement: Placement.TopRight,
+          placement: Placement.BottomRight,
           showInSubWindow: true,
           backgroundColor: $r('app.color.background_default'),
           onDisappear: () => this.runPendingAdvancedAction(),
@@ -1552,6 +1552,22 @@ export struct VideoPlayerPage {
               .fillColor('#FFFFFF')
               .onClick(() => this.onBottomAction(action.id))
         }, (action: VideoPlayerBottomAction): string => action.id)
+        // 循环模式:0=关闭(白),1=列表循环(橙),2=单曲循环(橙 + 数字 1)
+        Image(this.vm.repeatMode === 2 ? $r('app.media.ic_repeat_one_audio') : $r('app.media.ic_repeat_audio'))
+          .width(32).height(32)
+          .fillColor(this.vm.repeatMode > 0 ? '#FF8800' : '#FFFFFF')
+          .onClick(() => {
+            const svc = PlaybackService.getInstance();
+            // 二态切换(0↔1)：与高级菜单中 'repeat' 项保持一致。
+            const next = svc.getRepeatMode() === 0 ? 1 : 0;
+            while (svc.getRepeatMode() !== next) {
+              svc.cycleRepeat();
+            }
+            this.vm.repeatMode = next;
+            promptAction.showToast({
+              message: next === 1 ? '已开启循环播放' : '已关闭循环播放'
+            });
+          })
       }
       .width('100%')
       .padding({ left: 18, right: 18, top: 12, bottom: 12 })

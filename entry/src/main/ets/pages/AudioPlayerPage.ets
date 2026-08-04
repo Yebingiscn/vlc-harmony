@@ -163,7 +163,7 @@ export struct AudioPlayerPage {
               .bindMenu(this.advancedOptionsOpen!!, this.advancedOptionsMenu(), {
                 placement: Placement.BottomLeft,
                 showInSubWindow: true,
-                backgroundColor: '#FFFFFF',
+                backgroundColor: $r('app.color.background_default'),
               })
           }
           .width('100%').padding({ left: 12, right: 12, top: 44, bottom: 8 }).alignItems(VerticalAlign.Center)

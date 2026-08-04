@@ -921,13 +921,18 @@ export class MediaLibrary {
     if (MediaLibrary.playlistCacheInited) {
       return;
     }
+    await MediaLibrary.reloadPlaylistCache();
+    MediaLibrary.playlistCacheInited = true;
+  }
+
+  /** 强制从 Settings 重新加载播放列表缓存（无视 inited 标记，Tab 切换/下拉刷新时使用）。 */
+  static async reloadPlaylistCache(): Promise<void> {
     const raw: string = await Settings.getString(MediaLibrary.KEY_PLAYLISTS, '[]');
     try {
       MediaLibrary.playlistCache = JSON.parse(raw) as StoredPlaylist[];
     } catch (e) {
       MediaLibrary.playlistCache = [];
     }
-    MediaLibrary.playlistCacheInited = true;
   }
 
   /** 获取所有已存储的播放列表（返回 Playlist 视图，供 UI 使用）。 */
