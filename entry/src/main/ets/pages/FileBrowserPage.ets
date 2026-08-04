@@ -2,13 +2,11 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { NavController } from '../common/data/NavController';
 import { BackTitleBar } from '../common/components/BackTitleBar';
 import { MediaLibrary } from '../common/data/MediaLibrary';
-import { BundledMedia } from '../common/data/BundledMedia';
 import { EmptyStateView } from '../common/components/EmptyStateView';
 import { Folder, SheetItem, EmptyLoadingState } from '../common/models/MediaModels';
-import { VideoParam } from './VideoPlayerPage';
 
 /** 浏览模式。 */
-export type BrowserMode = 'file' | 'network' | 'storage' | 'picker' | 'bundled';
+export type BrowserMode = 'file' | 'network' | 'storage' | 'picker';
 
 @ObservedV2
 class BrowserViewModel {
@@ -27,13 +25,6 @@ class BrowserViewModel {
     if (this.mode === 'network') {
       this.dataset = [];
       this.emptyState = EmptyLoadingState.EMPTY;
-      this.loading = false;
-      return;
-    }
-    if (this.mode === 'bundled') {
-      const folders: Folder[] = BundledMedia.asFolders();
-      this.dataset = folders.map(BrowserViewModel.folderToSheetItem);
-      this.emptyState = folders.length === 0 ? EmptyLoadingState.EMPTY : EmptyLoadingState.NONE;
       this.loading = false;
       return;
     }
@@ -67,8 +58,7 @@ export struct FileBrowserPage {
     NavDestination() {
       Column() {
         BackTitleBar({
-          title: this.mode === 'bundled' ? '应用视频' :
-            (this.mode === 'network' ? '网络' : '存储设备'),
+          title: this.mode === 'network' ? '网络' : '存储设备',
         })
 
         if (this.vm.emptyState !== EmptyLoadingState.NONE) {
@@ -117,15 +107,5 @@ export struct FileBrowserPage {
       .layoutWeight(1).alignItems(HorizontalAlign.Start).margin({ left: 12, right: 8 })
     }
     .width('100%').constraintSize({ minHeight: 56 }).alignItems(VerticalAlign.Center)
-    .onClick(async () => {
-      if (this.vm.mode === 'bundled') {
-        const rawName: string = BundledMedia.rawNameFromUri(item.uri);
-        const media = await BundledMedia.resolveMedia(rawName, item.title);
-        if (media !== null) {
-          const param: VideoParam = { uri: media.uri, title: media.title };
-          NavController.push('VideoPlayer', param);
-        }
-      }
-    })
   }
 }

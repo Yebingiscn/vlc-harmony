@@ -64,4 +64,3 @@ oh_modules
 # Signing material (private keys, certs) - never commit
 sign/
 sign/**
-entry/src/main/resources/rawfile/test_bd.iso
