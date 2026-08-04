@@ -72,6 +72,8 @@ export interface PlaybackState {
   repeatMode: number;
   queueSize: number;
   currentIndex: number;
+  /** 当前播放是否处于"仅播放音频"模式(视频文件当音频播),让 MiniPlayer 也能显示视频。 */
+  playAsAudio: boolean;
 }
 
 export interface PlaybackListener {
@@ -94,6 +96,7 @@ export class PlaybackService {
   private speed: number = 1.0;
   private shuffle: boolean = false;
   private repeatMode: number = 0;
+  private playAsAudio: boolean = false;
   private duration: number = 0;
   private position: number = 0;
   private listeners: PlaybackListener[] = [];
@@ -280,6 +283,16 @@ export class PlaybackService {
 
   getRepeatMode(): number {
     return this.repeatMode;
+  }
+
+  getPlayAsAudio(): boolean {
+    return this.playAsAudio;
+  }
+
+  setPlayAsAudio(value: boolean): void {
+    if (this.playAsAudio === value) { return; }
+    this.playAsAudio = value;
+    this.emitQueue();
   }
 
   getVolume(): number {
@@ -500,6 +513,7 @@ export class PlaybackService {
       repeatMode: this.repeatMode,
       queueSize: this.queue.length,
       currentIndex: this.currentIndex,
+      playAsAudio: this.playAsAudio,
     };
   }
 
@@ -584,6 +598,11 @@ export class PlaybackService {
     }
     this.queue = replace ? items.slice() : this.queue.concat(items);
     this.currentIndex = replace ? startIndex : this.queue.length - items.length + startIndex;
+    // 任何"换队列"动作(替换)都意味着重新进入正常播放流程,清掉"仅播放音频"标记,
+    // 避免之前打开的 playAsAudio 状态泄漏到下一首。
+    if (replace) {
+      this.playAsAudio = false;
+    }
     hilog.info(LOG_DOMAIN, LOG_TAG,
       '[VLC] prepareList size=%{public}d index=%{public}d uri=%{public}s',
       this.queue.length, this.currentIndex, this.getCurrent()?.uri ?? '');
@@ -935,6 +954,14 @@ export class PlaybackService {
 
   static setShuffle(value: boolean): void {
     PlaybackService.getInstance().setShuffle(value);
+  }
+
+  static isPlayAsAudio(): boolean {
+    return PlaybackService.getInstance().getPlayAsAudio();
+  }
+
+  static setPlayAsAudio(value: boolean): void {
+    PlaybackService.getInstance().setPlayAsAudio(value);
   }
 
   static cycleRepeat(): void {

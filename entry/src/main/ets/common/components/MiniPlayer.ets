@@ -21,8 +21,8 @@ class MiniPlayerVM implements PlaybackListener {
     this.duration = s.duration;
     this.position = s.position;
     this.state = s.state;
-    // 只有音频才显示 MiniPlayer,视频不显示。
-    this.hasCurrent = s.queueSize > 0 && s.currentIndex >= 0 && isAudio;
+    // 显示条件:原本就是音频文件,或当前处于"仅播放音频"模式(视频当音频播)。
+    this.hasCurrent = s.queueSize > 0 && s.currentIndex >= 0 && (isAudio || s.playAsAudio);
   }
 }
 
