@@ -432,7 +432,16 @@ class VideoPlayerViewModel implements PlaybackListener {
         elapsed = chEnd;
       }
     }
-    // 常规文件 / VCD(无章节):时间 seek
+    // 常规文件 / 无章节 ISO(BD/VCD):时间 seek
+    if (this.isIsoFile && this.duration > 0) {
+      // setTime 会被 bluray/dvdnav navigator 覆盖弹回 0,改用 position seek。
+      hilog.info(0x0001, 'VLC',
+        '[VLC] seekTo ISO(position) ms=%{public}d duration=%{public}d isoChapters=%{public}d',
+        ms, this.duration, this.isoChapters.length);
+      svc.seekPosition(Math.max(0, Math.min(1, ms / this.duration)));
+      this.position = ms;
+      return;
+    }
     svc.seek(ms);
     this.position = ms;
   }
@@ -1606,7 +1615,7 @@ export struct VideoPlayerPage {
         }
         .layoutWeight(1)
         .height(40)
-        Text(fmtTime(this.vm.duration - this.displayPosition()))
+        Text(fmtTime(this.vm.duration))
           .fontSize(12).fontColor('#FFFFFF').width(52).textAlign(TextAlign.End)
       }
       .width('100%')

@@ -12,6 +12,7 @@ import {
   mediaPlayerStop,
   mediaPlayerGetTime,
   mediaPlayerSetTime,
+  mediaPlayerSetPosition,
   mediaPlayerGetLength,
   mediaPlayerSetRate,
   mediaPlayerGetRate,
@@ -152,6 +153,13 @@ export class MediaPlayer extends VLCObject {
   setTime(ms: number): void {
     if (!this.isReleased()) {
       mediaPlayerSetTime(this.handle, ms);
+    }
+  }
+
+  /** 按 0.0-1.0 位置 seek(bluray/dvdnav 下比 setTime 可靠,避免 navigator 弹回)。 */
+  setPosition(pos: number): void {
+    if (!this.isReleased()) {
+      mediaPlayerSetPosition(this.handle, pos);
     }
   }
 

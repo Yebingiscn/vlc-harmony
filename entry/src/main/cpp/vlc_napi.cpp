@@ -1301,6 +1301,34 @@ napi_value MediaPlayerSetTime(napi_env env, napi_callback_info info)
     return nullptr;
 }
 
+napi_value MediaPlayerSetPosition(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value argv[2];
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    uint32_t h = 0;
+    double pos = 0.0;
+    if (argc < 2 || !GetU32(env, argv[0], &h) || !GetF64(env, argv[1], &pos)) {
+        return nullptr;
+    }
+    // Same async pattern as set_time: position seek on ISO/DVD can block and
+    // emits events that require g_mtx.
+    std::thread([h, pos]() {
+        libvlc_media_player_t *mp = nullptr;
+        {
+            std::lock_guard<std::mutex> lk(g_mtx);
+            PlayerEntry *pe = FindPlayerLocked(h);
+            if (pe && pe->mp) {
+                mp = pe->mp;
+            }
+        }
+        if (mp != nullptr) {
+            libvlc_media_player_set_position(mp, static_cast<float>(pos));
+        }
+    }).detach();
+    return nullptr;
+}
+
 napi_value MediaPlayerGetLength(napi_env env, napi_callback_info info)
 {
     size_t argc = 1;
@@ -2676,6 +2704,7 @@ napi_value VlcNapiInit(napi_env env, napi_value exports)
         {"mediaPlayerStop", nullptr, MediaPlayerStop, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerGetTime", nullptr, MediaPlayerGetTime, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerSetTime", nullptr, MediaPlayerSetTime, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"mediaPlayerSetPosition", nullptr, MediaPlayerSetPosition, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerGetLength", nullptr, MediaPlayerGetLength, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerSetRate", nullptr, MediaPlayerSetRate, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerGetRate", nullptr, MediaPlayerGetRate, nullptr, nullptr, nullptr, napi_default, nullptr},

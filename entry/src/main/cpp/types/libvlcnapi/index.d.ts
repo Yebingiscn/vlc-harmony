@@ -123,6 +123,7 @@ export const mediaPlayerPause: (playerHandle: number) => void;
 export const mediaPlayerStop: (playerHandle: number) => void;
 export const mediaPlayerGetTime: (playerHandle: number) => number;
 export const mediaPlayerSetTime: (playerHandle: number, ms: number) => void;
+export const mediaPlayerSetPosition: (playerHandle: number, pos: number) => void;
 export const mediaPlayerGetLength: (playerHandle: number) => number;
 export const mediaPlayerSetRate: (playerHandle: number, rate: number) => void;
 export const mediaPlayerGetRate: (playerHandle: number) => number;
