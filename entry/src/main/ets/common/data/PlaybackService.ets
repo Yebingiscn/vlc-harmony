@@ -611,6 +611,14 @@ export class PlaybackService {
       return;
     }
 
+    // Blu-ray 主视频为 H.264/HEVC。OHOS 补丁默认优先 h264_ohosavcodec 硬解,
+    // 但该硬解器对部分流(实测 H.264 m2ts)会 "cannot start codec" 导致黑屏且不回退。
+    // 按媒体注入软解选项(必须在 setMedia 前),对齐 Android Media.setHWDecoderEnabled 的 per-media 开关。
+    if (item.uri.startsWith('bluray://')) {
+      media.addOption(':avcodec-hw=none');
+      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] bluray MRL: force software decode (:avcodec-hw=none)');
+    }
+
     if (!this.player.setMedia(media)) {
       hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] setMedia FAILED uri=%{public}s', item.uri);
       media.release();

@@ -1387,14 +1387,6 @@
     {
       "name": "songs",
       "value": "歌曲"
-    },
-    {
-      "name": "browser_app_videos",
-      "value": "应用内视频"
-    },
-    {
-      "name": "browser_app_videos_empty",
-      "value": "暂无应用内视频"
     }
   ]
 }

@@ -1,6 +1,7 @@
 import {
   mediaPlayerCreate,
   mediaPlayerRelease,
+  mediaPlayerReleaseAsync,
   mediaPlayerSetEventListener,
   mediaPlayerSetMedia,
   mediaPlayerSetVideoOut,
@@ -19,6 +20,7 @@ import {
   mediaPlayerGetState,
   mediaPlayerGetPosition,
   mediaPlayerGetVideoSize,
+  mediaPlayerGetFps,
   mediaPlayerSetScale,
   mediaPlayerAddSlave,
   mediaPlayerGetAudioTracks,
@@ -189,6 +191,10 @@ export class MediaPlayer extends VLCObject {
     return this.isReleased() ? null : mediaPlayerGetVideoSize(this.handle);
   }
 
+  getFps(): number {
+    return this.isReleased() ? 0 : mediaPlayerGetFps(this.handle);
+  }
+
   setScale(factor: number): void {
     if (!this.isReleased()) {
       mediaPlayerSetScale(this.handle, factor);
@@ -276,6 +282,18 @@ export class MediaPlayer extends VLCObject {
 
   getLibVLC(): LibVLC {
     return this.lib;
+  }
+
+  /** Non-blocking release: libVLC stop+release runs on a detached native thread. */
+  releaseAsync(): void {
+    if (this.isReleased()) {
+      return;
+    }
+    if (this.handle !== 0) {
+      mediaPlayerReleaseAsync(this.handle);
+    }
+    this.currentMedia = null;
+    this.markReleased();
   }
 
   protected onNativeRelease(): void {

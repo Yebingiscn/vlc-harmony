@@ -1,8 +1,7 @@
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
-import { BundledMedia } from '../common/data/BundledMedia';
 import { NavController } from '../common/data/NavController';
-import { SheetItem, VideoNavParam, Folder, FileBrowserParam } from '../common/models/MediaModels';
+import { SheetItem, VideoNavParam, Folder } from '../common/models/MediaModels';
 import { picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';

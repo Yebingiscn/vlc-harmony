@@ -61,3 +61,6 @@ docs/
 .hvigor
 .idea
 oh_modules
+# Signing material (private keys, certs) - never commit
+sign/
+sign/**

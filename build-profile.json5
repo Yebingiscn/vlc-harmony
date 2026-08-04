@@ -5,13 +5,13 @@
         "name": "default",
         "type": "HarmonyOS",
         "material": {
-          "storeFile": "D:/huawei/CODE/certs/test.p12",
-          "storePassword": "0000001A5638DD6016C990A36842355BEF2CCD959A7FC5F717932E5514CC67F613EAB33FE52ABE2975F5",
-          "keyAlias": "test",
-          "keyPassword": "0000001A60CEA92D4FA3B2F7AF4E64CAE229932F67D1F2F8829C59202F226906F99027A028478ACB656A",
+          "certpath": "C:\\Users\\whoo\\.ohos\\config\\default_vlc-harmony_3GDLv7-FLYcaiyfiEeHTUowW06jYykACCzgBk05-jPI=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001BFD90743797BD9B9D57E49680643C1CFD3F2D8F70F5BC05579B40BEA08353BD8709DCD1F7DD8B46",
+          "profile": "C:\\Users\\whoo\\.ohos\\config\\default_vlc-harmony_3GDLv7-FLYcaiyfiEeHTUowW06jYykACCzgBk05-jPI=.p7b",
           "signAlg": "SHA256withECDSA",
-          "profile": "D:/huawei/CODE/certs/VLC_临时Debug.p7b",
-          "certpath": "D:/huawei/CODE/certs/仿今日头条调试证书.cer"
+          "storeFile": "C:\\Users\\whoo\\.ohos\\config\\default_vlc-harmony_3GDLv7-FLYcaiyfiEeHTUowW06jYykACCzgBk05-jPI=.p12",
+          "storePassword": "0000001BCCBE21780D325EA62AA7050C944C5BCF83EF5151CFB5387C0306458C3AFE951CF1C427FC885120"
         }
       }
     ],

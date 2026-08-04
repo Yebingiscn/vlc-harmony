@@ -371,7 +371,7 @@ export struct VideoPlayerOverlayHud {
             }
             this.overlayDelegate.resetHudTimer();
           })
-        Text(fmtTime(this.vm.duration - this.overlayDelegate.displayPosition()))
+        Text(fmtTime(this.vm.duration))
           .fontSize(12).fontColor('#FFFFFF').width(52).textAlign(TextAlign.End)
       }
       .width('100%')

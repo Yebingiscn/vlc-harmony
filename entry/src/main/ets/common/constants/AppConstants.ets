@@ -112,6 +112,7 @@ export const VLC_TABS: TabItem[] = [
 
 /** 路由名(NavPathStack)。 */
 export class RouteName {
+  static readonly FormatCompat: string = 'FormatCompat';
   static readonly Onboarding: string = 'Onboarding';
   static readonly Main: string = 'Main';
   static readonly VideoPlayer: string = 'VideoPlayer';

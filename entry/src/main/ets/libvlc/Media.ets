@@ -5,8 +5,11 @@ import {
   mediaRelease,
   mediaParse,
   mediaGetMeta,
+  mediaGetStats,
+  mediaAddOption,
   mediaAddSlave,
   VlcMetaInfo,
+  VlcMediaStats,
 } from 'libvlcnapi.so';
 import { VLCObject } from './VLCObject';
 import { LibVLC } from './LibVLC';
@@ -67,6 +70,20 @@ export class Media extends VLCObject {
       return null;
     }
     return mediaGetMeta(this.handle);
+  }
+
+  getStats(): VlcMediaStats | null {
+    if (this.isReleased()) {
+      return null;
+    }
+    return mediaGetStats(this.handle);
+  }
+
+  addOption(option: string): boolean {
+    if (this.isReleased()) {
+      return false;
+    }
+    return mediaAddOption(this.handle, option);
   }
 
   addSlave(type: MediaSlaveType, uri: string, priority: number = 4): boolean {

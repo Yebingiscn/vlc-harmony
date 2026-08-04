@@ -6,6 +6,7 @@ import { InfoPage, InfoParam } from './InfoPage';
 import { SecondaryPage } from './SecondaryPage';
 import { SearchPage } from './SearchPage';
 import { SecondaryParam } from '../common/models/MediaModels';
+import { AppContext } from '../common/data/AppContext';
 import { Settings } from '../common/data/Settings';
 import { NavController } from '../common/data/NavController';
 import { RouteName } from '../common/constants/AppConstants';
@@ -31,6 +32,7 @@ import { AboutFragmentPage } from './AboutFragmentPage';
 import { HistoryFragmentPage } from './HistoryFragmentPage';
 import { FileBrowserPage, BrowserMode } from './FileBrowserPage';
 import { MrlPanelPage } from './MrlPanelPage';
+import { FormatCompatibilityTestPage } from './FormatCompatibilityTestPage';
 
 /**
  * Index —— 应用入口(@Entry)。承载 Navigation + PageMap(所有 NavDestination 路由)。
@@ -47,6 +49,10 @@ struct Index {
   }
 
   async bootstrap(): Promise<void> {
+    if (AppContext.isFormatTestMode()) {
+      this.pathStack.pushPathByName(RouteName.FormatCompat, '');
+      return;
+    }
     await Settings.init();
     const onboardingDone = await Settings.getBoolean(Settings.NOTIFICATION_PERMISSION_ASKED, false) &&
       await Settings.getBoolean(Settings.INITIAL_PERMISSION_ASKED, false);
@@ -59,7 +65,9 @@ struct Index {
 
   @Builder
   PageMap(name: string, param: object) {
-    if (name === RouteName.Onboarding) {
+    if (name === RouteName.FormatCompat) {
+      FormatCompatibilityTestPage()
+    } else if (name === RouteName.Onboarding) {
       OnboardingPage({ onDone: () => this.pathStack.replacePathByName(RouteName.Main, '') })
     } else if (name === RouteName.Main) {
       MainPage()
