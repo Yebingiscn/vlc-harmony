@@ -29,10 +29,3 @@ done
 patch -p1 < patches/vlc-hpkbuild-apply-local-patches.patch
 patch -p1 < patches/vlc-hpkbuild-build-dvbpsi.patch
 ```
-
-## 与远端构建主机同步
-
-构建主机（`w00417029@192.168.8.65`）的源码树：
-`~/code/vlc_project/openharmony_tpc_samples/ohos_vlc/tpc_c_cplusplus/thirdparty/vlc/vlc-ohos-3.0.21/`
-
-修改补丁后需在主机上重新应用并增量重编对应插件（见工作区 AGENTS.md 的远程构建说明）。
