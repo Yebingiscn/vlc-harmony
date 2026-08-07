@@ -948,32 +948,33 @@ export struct PreferencesPage {
   // ---- PreferencesAudio ----
   static audioScreen(): PreferenceScreen {
     const top: PreferenceItem[] = [
-      new PreferenceItem({ key: Settings.RESUME_PLAYBACK, title: 'Resume playback after a call', type: 'toggle', summary: 'Stay in pause otherwise', defaultValue: true }),
-      new PreferenceItem({ key: 'audio_task_removed', title: 'Stop on application swipe', type: 'toggle', summary: 'Stop playback when application is dismissed', defaultValue: false }),
-      new PreferenceItem({ key: 'audio_digital_output', title: 'Digital audio output (passthrough)', type: 'toggle', summary: 'Audio Digital Output disabled', defaultValue: false }),
-      new PreferenceItem({ key: 'audio_preferred_language', title: 'Preferred audio language', type: 'list', summary: 'No language preference', defaultValue: '' }),
-      new PreferenceItem({ key: Settings.KEY_AUDIO_CONFIRM_RESUME, title: 'Resume played audio', type: 'list', defaultValue: '0', optionValues: ['0', '1', '2'], options: ['Always', 'Never', 'Ask confirmation'] }),
+      new PreferenceItem({ key: Settings.RESUME_PLAYBACK, title: '通话结束后继续播放', type: 'toggle', summary: '否则保持暂停', defaultValue: true }),
+      new PreferenceItem({ key: 'audio_task_removed', title: '滑开应用时停止', type: 'toggle', summary: '应用程序被滑开时停止播放', defaultValue: false }),
+      new PreferenceItem({ key: 'audio_digital_output', title: '数字音频输出 (直通)', type: 'toggle', summary: '音频数字输出已禁用', defaultValue: false }),
+      new PreferenceItem({ key: 'audio_preferred_language', title: '偏好的音频语言', type: 'list', defaultValue: '', optionValues: ['', 'zh-CN', 'en-US'], options: ['无语言偏好', '简体中文', 'English'] }),
+      new PreferenceItem({ key: Settings.KEY_AUDIO_CONFIRM_RESUME, title: '继续播放音频', type: 'list', defaultValue: '0', optionValues: ['0', '1', '2'], options: ['总是', '不要', '要求确认'] }),
     ];
     const headset: PreferenceItem[] = [
-      new PreferenceItem({ key: 'enable_headset_detection', title: 'Detect headset', type: 'toggle', summary: 'Detect headset insertion and removal', defaultValue: true }),
-      new PreferenceItem({ key: 'enable_play_on_headset_insertion', title: 'Resume on headset insertion', type: 'toggle', summary: 'Pause otherwise', defaultValue: false, dependency: 'enable_headset_detection' }),
-      new PreferenceItem({ key: 'ignore_headset_media_button_presses', title: 'Ignore headset media button presses', type: 'toggle', summary: 'Useful, for instance, if you are using a headset with broken physical buttons', defaultValue: false }),
+      new PreferenceItem({ key: 'enable_headset_detection', title: '启用耳机侦测', type: 'toggle', summary: '检测耳机的插入和拔出', defaultValue: true }),
+      new PreferenceItem({ key: 'enable_play_on_headset_insertion', title: '在插入耳机后继续播放', type: 'toggle', summary: '否则暂停', defaultValue: false, dependency: 'enable_headset_detection' }),
+      new PreferenceItem({ key: 'ignore_headset_media_button_presses', title: '忽略耳机媒体按钮的动作', type: 'toggle', summary: '例如正在使用的耳机物理按键损坏，这种情况下会用到该选项', defaultValue: false }),
     ];
     const replay: PreferenceItem[] = [
-      new PreferenceItem({ key: 'audio-replay-gain-enable', title: 'Enable replay gain', type: 'toggle', summary: 'Streams without replay gain information may be quieter due to the default gain', defaultValue: false }),
-      new PreferenceItem({ key: 'audio-replay-gain-mode', title: 'Replay gain mode', type: 'list', summary: 'Track mode plays streams with replay gain information at the same loudness. Album mode preserves relative stream loudness on the same album.', defaultValue: 'track', optionValues: ['track', 'album'], options: ['Track', 'Album'], dependency: 'audio-replay-gain-enable' }),
-      new PreferenceItem({ key: 'audio-replay-gain-preamp', title: 'Replay preamp', type: 'text', summary: 'Changes the default target level (89 dB) for streams with replay gain information', defaultValue: '0.0', dependency: 'audio-replay-gain-enable' }),
-      new PreferenceItem({ key: 'audio-replay-gain-default', title: 'Default replay gain', type: 'text', summary: 'Applies to streams without replay gain information\nSet to 0 to disable', defaultValue: '-7.0', dependency: 'audio-replay-gain-enable' }),
-      new PreferenceItem({ key: 'audio-replay-gain-peak-protection', title: 'Peak protection', type: 'toggle', summary: 'Protect against sound clipping', defaultValue: true, dependency: 'audio-replay-gain-enable' }),
+      new PreferenceItem({ key: 'audio-replay-gain-enable', title: '启用回放增益', type: 'toggle', summary: '由于默认增益的作用，对于没有回放增益信息的音频流，其音量可能会略低于其他音频流', defaultValue: false }),
+      new PreferenceItem({ key: 'audio-replay-gain-mode', title: '回放增益模式', type: 'list', summary: '｢音轨模式｣ 会以相同的响度播放所有带有回放增益信息的音频流。而 ｢专辑模式｣ 将保留同一张专辑内各音轨的相对响度。', defaultValue: 'track', optionValues: ['track', 'album'], options: ['音轨模式', '专辑模式'], dependency: 'audio-replay-gain-enable' }),
+      new PreferenceItem({ key: 'audio-replay-gain-preamp', title: '回放前置放大', type: 'text', summary: '为带有回放增益信息的音频流更改默认的目标电平 (89 dB)', defaultValue: '0.0', dependency: 'audio-replay-gain-enable' }),
+      new PreferenceItem({ key: 'audio-replay-gain-default', title: '默认回放增益', type: 'text', summary: '适用于没有回放增益信息的音频流\n设为 0 可禁用', defaultValue: '-7.0', dependency: 'audio-replay-gain-enable' }),
+      new PreferenceItem({ key: 'audio-replay-gain-peak-protection', title: '峰值保护', type: 'toggle', summary: '防止爆音', defaultValue: true, dependency: 'audio-replay-gain-enable' }),
     ];
     const advanced: PreferenceItem[] = [
-      new PreferenceItem({ key: Settings.AUDIO_DUCKING, title: 'Lower VLC volume on notifications', type: 'toggle', summary: 'Helps to hear audio notifications, navigation instructions or assistant talking', defaultValue: true }),
-      new PreferenceItem({ key: 'soundfont', title: 'MIDI SoundFont', type: 'nav', summary: 'Pick a SoundFont file to play midi audio tracks' }),
+      new PreferenceItem({ key: Settings.AUDIO_DUCKING, title: '收到通知时降低 VLC 音量', type: 'toggle', summary: '有助于听清通知声音、导航语音或辅助功能讲解', defaultValue: true }),
+      new PreferenceItem({ key: 'aout', title: '音频输出', type: 'list', summary: '更改 VLC 输出音频的方式', defaultValue: '0', optionValues: ['0', '2'], options: ['AudioTrack', 'OpenSL ES'] }),
+      new PreferenceItem({ key: 'soundfont', title: 'MIDI 音色库', type: 'nav', summary: '选择用于播放 MIDI 音轨的 SoundFont 文件' }),
     ];
-    return new PreferenceScreen('audio_category', 'Audio', [
+    return new PreferenceScreen('audio_category', '音频', [
       new PreferenceGroup('', top),
-      new PreferenceGroup('Headset', headset),
-      new PreferenceGroup('Replay Gain', replay),
+      new PreferenceGroup('耳机', headset),
+      new PreferenceGroup('回放增益', replay),
       new PreferenceGroup($r('app.string.advanced_prefs_category'), advanced),
     ]);
   }

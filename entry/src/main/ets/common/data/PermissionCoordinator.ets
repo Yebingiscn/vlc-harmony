@@ -1,7 +1,7 @@
 import { Settings } from './Settings';
 import { MediaLibrary } from './MediaLibrary';
 import { MediaWrapper } from '../models/MediaModels';
-import { abilityAccessCtrl, common } from '@kit.AbilityKit';
+import { abilityAccessCtrl, bundleManager, common } from '@kit.AbilityKit';
 import { notificationManager } from '@kit.NotificationKit';
 import { AppContext } from './AppContext';
 
@@ -36,6 +36,13 @@ const PROMPT_INSTANT_THRESHOLD_MS: number = 300;
 const PERMISSION_NOTIFICATION: string = 'ohos.permission.NOTIFICATION';
 const PERMISSION_READ_MEDIA: string = 'ohos.permission.READ_IMAGEVIDEO';
 const PERMISSION_WRITE_MEDIA: string = 'ohos.permission.WRITE_IMAGEVIDEO';
+
+/** checkAccessToken 参数所需权限名联合(系统 Permissions 类型的子集,不用 string 避免类型不符)。 */
+type OhPermissionName =
+  'ohos.permission.READ_AUDIO'
+  | 'ohos.permission.READ_IMAGEVIDEO'
+  | 'ohos.permission.READ_MEDIA'
+  | 'ohos.permission.WRITE_IMAGEVIDEO';
 
 /**
  * PermissionViewModel —— 安卓 `BaseHeadlessFragment.PermissionViewmodel`(activity 作用域,
@@ -285,6 +292,98 @@ export class PermissionCoordinator {
       return false;
     } catch (e) {
       return false;
+    }
+  }
+
+  /* ─────────────────── 权限状态查询(供 PermissionsDialog 等 UI 使用) ─────────────────── */
+
+  /** 查询当前应用是否已授予指定权限(AtManager.checkAccessToken,0=PERMISSION_GRANTED)。 */
+  private static async checkGranted(permission: OhPermissionName): Promise<boolean> {
+    try {
+      const mgr: abilityAccessCtrl.AtManager = abilityAccessCtrl.createAtManager();
+      const bundleInfo = await bundleManager.getBundleInfoForSelf(
+        bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION);
+      const tokenId: number = bundleInfo.appInfo.accessTokenId;
+      const status: number = await mgr.checkAccessToken(tokenId, permission);
+      return status === 0;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /** 通知权限是否已开启(对应安卓 canSendNotifications)。 */
+  static async hasNotificationPermission(): Promise<boolean> {
+    try {
+      return await notificationManager.isNotificationEnabled();
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /** 音频读取权限是否已授予(对应安卓 hasAudioPermission)。 */
+  static async hasAudioPermission(): Promise<boolean> {
+    return PermissionCoordinator.checkGranted('ohos.permission.READ_AUDIO');
+  }
+
+  /** 视频读取权限是否已授予(对应安卓 hasVideoPermission)。 */
+  static async hasVideoPermission(): Promise<boolean> {
+    return PermissionCoordinator.checkGranted('ohos.permission.READ_IMAGEVIDEO');
+  }
+
+  /**
+   * 完整文件访问(对应安卓 hasAllAccess / MANAGE_EXTERNAL_STORAGE)。
+   * 鸿蒙无公开的「管理全部文件」运行时权限,以受限权限 ohos.permission.READ_MEDIA 判定,
+   * 普通应用默认未授予;UI 层点击该项时跳系统设置页引导(见 openAppSettingsPage)。
+   */
+  static async hasAllAccess(): Promise<boolean> {
+    return PermissionCoordinator.checkGranted('ohos.permission.READ_MEDIA');
+  }
+
+  /** 请求媒体读取权限(READ_IMAGEVIDEO + READ_AUDIO,对应安卓 READ_MEDIA_VIDEO + READ_MEDIA_AUDIO)。 */
+  static async requestMediaPermission(): Promise<boolean> {
+    try {
+      if (!AppContext.isReady()) {
+        return false;
+      }
+      const ctx: common.UIAbilityContext = AppContext.get();
+      const mgr: abilityAccessCtrl.AtManager = abilityAccessCtrl.createAtManager();
+      const res = await mgr.requestPermissionsFromUser(ctx,
+        ['ohos.permission.READ_IMAGEVIDEO', 'ohos.permission.READ_AUDIO']);
+      // authResults 元素 0=PERMISSION_GRANTED;全部授予才算成功。
+      if (res && res.authResults && res.authResults.length > 0) {
+        for (let i = 0; i < res.authResults.length; i++) {
+          if (res.authResults[i] !== 0) {
+            return false;
+          }
+        }
+        return true;
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * 打开系统「应用信息 → 权限管理」页(对应安卓 showAppSettingsPage /
+   * ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)。用户在系统页自行开关各项权限。
+   */
+  static async openAppSettingsPage(): Promise<void> {
+    try {
+      if (!AppContext.isReady()) {
+        return;
+      }
+      const ctx: common.UIAbilityContext = AppContext.get();
+      const bundleInfo = await bundleManager.getBundleInfoForSelf(
+        bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT);
+      await ctx.startAbility({
+        bundleName: 'com.huawei.hmos.settings',
+        abilityName: 'com.huawei.hmos.settings.MainAbility',
+        uri: 'application_info_entry',
+        parameters: { pushParams: { bundleName: bundleInfo.name } },
+      });
+    } catch (e) {
+      // 无法拉起设置页时静默失败,不阻塞 UI。
     }
   }
 }

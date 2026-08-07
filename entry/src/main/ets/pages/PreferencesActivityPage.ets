@@ -1,5 +1,6 @@
 import { promptAction } from '@kit.ArkUI';
 import { VlcToolbar } from '../common/components/VlcToolbar';
+import { PermissionsDialog } from './PermissionsDialog';
 import { NavController } from '../common/data/NavController';
 import { RouteName } from '../common/constants/AppConstants';
 import { PreferencesScreenParam } from '../common/models/MediaModels';
@@ -42,6 +43,8 @@ export struct PreferencesActivityPage {
   @Local hardwareAccelerationDialogId: number = -1;
   /** 变更行摘要后重建列表项。 */
   @Local rowVersion: number = 0;
+  /** 权限管理 BottomSheet 是否可见。 */
+  @Local showPermissionsSheet: boolean = false;
 
   async aboutToAppear(): Promise<void> {
     this.sections = SettingsHomeCatalog.create();
@@ -98,6 +101,10 @@ export struct PreferencesActivityPage {
 
   /** 后续接入子页、单选弹窗、权限页或业务设置的统一入口。 */
   onSettingAction(item: SettingsHomeItem): void {
+    if (item.key === 'permissions') {
+      this.showPermissionsSheet = true;
+      return;
+    }
     if (item.key === Settings.SCREEN_ORIENTATION) {
       this.openOrientationDialog();
       return;
@@ -210,6 +217,13 @@ export struct PreferencesActivityPage {
   /** 后续接入 PreferenceSearchActivityPage 的统一入口。 */
   onSearch(): void {
     promptAction.showToast({ message: '设置搜索功能暂未实现' });
+  }
+
+  /** 权限管理 BottomSheet。 */
+  @Builder
+  permissionsSheet() {
+    PermissionsDialog({ onClose: () => this.showPermissionsSheet = false })
+      .width('100%')
   }
 
   iconFor(item: SettingsHomeItem): Resource {
@@ -344,6 +358,11 @@ export struct PreferencesActivityPage {
     .onBackPressed(() => {
       NavController.pop();
       return true;
+    })
+    .bindSheet(this.showPermissionsSheet, this.permissionsSheet(), {
+      height: SheetSize.FIT_CONTENT,
+      dragBar: true,
+      onDisappear: () => this.showPermissionsSheet = false,
     })
   }
 }

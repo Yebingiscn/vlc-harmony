@@ -801,6 +801,10 @@
       "value": "要启用该项，请先禁用常规媒体文件权限"
     },
     {
+      "name": "permission_media_warning",
+      "value": "要启用该项，请先禁用完整文件访问权限"
+    },
+    {
       "name": "permission_ask_again",
       "value": "授予权限"
     },
@@ -831,6 +835,10 @@
     {
       "name": "permission_onboarding_perm_all",
       "value": "您将能够在所有文件中自动扫描、播放各类媒体文件（包括奇怪的格式以及压缩文件）"
+    },
+    {
+      "name": "permission_onboarding_perm_media",
+      "value": "您将只能自动扫描常规媒体文件"
     },
     {
       "name": "permissions",

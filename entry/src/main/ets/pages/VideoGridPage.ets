@@ -280,6 +280,20 @@ export struct VideoGridPage {
     this.showContext = true;
   }
 
+  /** 「添加」入口:未授予视频权限 → 提示去授权(拉起系统授权弹窗);已授予 → 待实现的导入动作。 */
+  private async onAddVideo(): Promise<void> {
+    try {
+      const granted: boolean = await PermissionCoordinator.hasVideoPermission();
+      if (!granted) {
+        await PermissionCoordinator.askStoragePermission(false, false, true);
+        return;
+      }
+      promptAction.showToast({ message: $r('app.string.developing') });
+    } catch (e) {
+      hilog.warn(0x0001, 'VLC', '[VLC] onAddVideo: %{public}s', (e as Error).message ?? String(e));
+    }
+  }
+
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
       Column() {
@@ -292,7 +306,7 @@ export struct VideoGridPage {
             filterQuery: this.searchQuery,
             onOpenStorage: () => promptAction.showToast({ message: $r('app.string.developing') }),
             onGrantPermission: () => this.vm.refresh(),
-            onPickFile: () => promptAction.showToast({ message: $r('app.string.developing') }),
+            onPickFile: () => this.onAddVideo(),
           })
             .layoutWeight(1)
             .width('100%')

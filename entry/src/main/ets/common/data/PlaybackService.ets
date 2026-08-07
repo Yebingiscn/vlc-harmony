@@ -5,11 +5,12 @@
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
+import { audio } from '@kit.AudioKit';
+import { call, observer as telephonyObserver } from '@kit.TelephonyKit';
 import { MediaWrapper, PlayState } from '../models/MediaModels';
 import { Settings } from './Settings';
 import { LibVLC, Media, MediaPlayer, Equalizer, RendererDiscoverer, MediaSlaveType } from '../../libvlc';
 import { VlcTrackInfo, VlcChapterInfo, VlcRendererInfo, VlcMediaTrackInfo } from 'libvlcnapi.so';
-import { Settings } from './Settings';
 
 const LOG_DOMAIN: number = 0x0001;
 const LOG_TAG: string = 'VLC';
@@ -128,6 +129,22 @@ export class PlaybackService {
   private rendererDiscoverer: RendererDiscoverer | null = null;
   private currentRendererHandle: number = -1;
 
+  // ── 音频环境监听(耳机侦测 / 通知闪避 / 通话恢复)──
+  private audioManager: audio.AudioManager | null = null;
+  private routingManager: audio.AudioRoutingManager | null = null;
+  /** 通知闪避的 legacy 焦点模式(AudioManager.on('interrupt') 的第二个参数,off 时需要复用)。 */
+  private interruptFocusMode: audio.AudioInterrupt | null = null;
+  /** 耳机拔出时是否正在播放(对齐安卓 ACTION_AUDIO_BECOMING_NOISY 的 wasPlaying)。 */
+  private headsetWasPlaying: boolean = false;
+  /** 通知/打断是否处于「临时让出」(对齐安卓 AudioFocusHelper.lossTransient)。 */
+  private lossTransient: boolean = false;
+  private lossTransientWasPlaying: boolean = false;
+  /** 闪避时保存的原音量;-1 表示未闪避。 */
+  private duckedVolume: number = -1;
+  /** 通话期间是否暂停了播放(通话结束按 resume_playback 恢复)。 */
+  private pausedByCall: boolean = false;
+  private audioEnvSubscribed: boolean = false;
+
   static getInstance(): PlaybackService {
     if (!PlaybackService.instance) {
       PlaybackService.instance = new PlaybackService();
@@ -148,7 +165,7 @@ export class PlaybackService {
     this.initializing = true;
     try {
       hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] PlaybackService.init start');
-      this.lib = new LibVLC();
+      this.lib = new LibVLC(await this.buildLibVlcAudioOptions());
       if (this.lib.getHandle() === 0) {
         hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] LibVLC create FAILED');
         this.lib.release();
@@ -166,6 +183,8 @@ export class PlaybackService {
       }
       this.player.setEventListener((event: string, value: number) => this.onNativeEvent(event, value));
       this.inited = true;
+      // 订阅音频环境事件(耳机/通知闪避/通话),各回调内动态读设置,开关即时生效
+      this.setupAudioEnvironment();
       // 恢复上次会话持久化的随机/循环状态(对齐 Android setRepeatTypeFromSettings)
       this.shuffle = await Settings.getBoolean(Settings.AUDIO_SHUFFLING, false);
       this.repeatMode = await Settings.getInt(Settings.KEY_PLAYBACK_REPEAT_MODE, 0);
@@ -201,6 +220,258 @@ export class PlaybackService {
         (e as Error).message ?? String(e));
     } finally {
       this.initializing = false;
+    }
+  }
+
+  /**
+   * 音频设置 → libVLC 实例选项(对齐安卓 PreferencesAudio 的 onSharedPreferenceChanged →
+   * restartLibVLC,启动时按设置注入 libvlc_new)。仅对接 libvlccore.so 实际编译进库的选项:
+   *  - 回放增益 audio-replay-gain-*(mode/preamp/default/peak-protection)已编译 ✓
+   *  - 偏好的音频语言 --audio-language 已编译 ✓
+   *  aout(opensles/audiotrack)/soundfont/audio-passthrough 未编译进库,不注入。
+   * 生效时机:下次播放服务创建 libVLC 实例时(设置变更后重启应用/播放器)。
+   */
+  private async buildLibVlcAudioOptions(): Promise<string[]> {
+    const opts: string[] = [];
+    try {
+      // ── 回放增益(对齐安卓 replaygain 分组)──
+      const rgEnabled: boolean = await Settings.getBoolean('audio-replay-gain-enable', false);
+      const rgMode: string = await Settings.getString('audio-replay-gain-mode', 'track');
+      // enable 关 → mode=none(不处理增益);开 → 使用 track/album
+      const mode: string = (rgEnabled && (rgMode === 'track' || rgMode === 'album')) ? rgMode : 'none';
+      opts.push(`--audio-replay-gain-mode=${mode}`);
+      const rgPreamp: string = await Settings.getString('audio-replay-gain-preamp', '0.0');
+      const rgDefault: string = await Settings.getString('audio-replay-gain-default', '-7.0');
+      this.pushFloatOption(opts, '--audio-replay-gain-preamp', rgPreamp);
+      this.pushFloatOption(opts, '--audio-replay-gain-default', rgDefault);
+      const peakProtection: boolean = await Settings.getBoolean('audio-replay-gain-peak-protection', true);
+      opts.push(peakProtection ? '--audio-replay-gain-peak-protection' : '--no-audio-replay-gain-peak-protection');
+      // ── 偏好的音频语言(对齐安卓 audio_preferred_language,BCP-47,空=无偏好)──
+      const lang: string = await Settings.getString('audio_preferred_language', '');
+      if (lang.length > 0) {
+        opts.push(`--audio-language=${lang}`);
+      }
+      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] libvlc audio options: %{public}s', JSON.stringify(opts));
+    } catch (e) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] buildLibVlcAudioOptions fallback: %{public}s',
+        (e as Error).message ?? String(e));
+    }
+    return opts;
+  }
+
+  /** 浮点文本选项(回放增益 preamp/default):仅当值可解析为有限数字时注入,否则跳过。 */
+  private pushFloatOption(opts: string[], flag: string, raw: string): void {
+    const v = Number.parseFloat(raw);
+    if (Number.isFinite(v)) {
+      opts.push(`${flag}=${v}`);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 音频环境监听(业务层 · 对齐安卓 PlaybackService / VLCAudioFocusHelper):
+  //   1. 耳机侦测     —— AudioRoutingManager deviceChange → 拔出暂停 / 插入按设置续播
+  //   2. 通知闪避     —— AudioManager legacy 'interrupt' 焦点回调 → 降音量(duck) / 恢复 + 打断暂停恢复
+  //   3. 通话恢复     —— telephony callStateChange → 通话中暂停 / 结束按 resume_playback 恢复
+  // 所有回调在触发时动态读设置,开关切换即时生效;订阅在 ensureInit 成功后一次性建立,
+  // release 时移除。API 12+ 将 audioInterrupt 从 AudioStreamManager 移到 AudioRenderer
+  // (libVLC 的 aout 为原生流,JS 侧无 renderer 句柄),应用层仅剩 AudioManager 的 legacy
+  // 'interrupt' 焦点回调(自 API 9 弃用)可尝试对接,命中与否存在不确定性,故全程
+  // try/catch 兜底,耳机/通话两条路径不依赖它。
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /** 订阅音频环境事件。无权限要求,设备/系统事件。 */
+  private setupAudioEnvironment(): void {
+    if (this.audioEnvSubscribed) {
+      return;
+    }
+    try {
+      const mgr: audio.AudioManager = audio.getAudioManager();
+      const routing: audio.AudioRoutingManager = mgr.getRoutingManager();
+      this.audioManager = mgr;
+      this.routingManager = routing;
+      routing.on('deviceChange', audio.DeviceFlag.OUTPUT_DEVICES_FLAG, this.onDeviceChange);
+      // 通知闪避:注册媒体焦点,收到打断时自行处理(暂停/闪避),不做系统自动暂停
+      const focusMode: audio.AudioInterrupt = {
+        streamUsage: audio.StreamUsage.STREAM_USAGE_MEDIA,
+        contentType: audio.ContentType.CONTENT_TYPE_MUSIC,
+        pauseWhenDucked: false,
+      };
+      this.interruptFocusMode = focusMode;
+      mgr.on('interrupt', focusMode, this.onAudioInterrupt);
+      telephonyObserver.on('callStateChange', this.onCallStateChange);
+      this.audioEnvSubscribed = true;
+      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] audio environment listeners subscribed');
+    } catch (e) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] setupAudioEnvironment: %{public}s',
+        (e as Error).message ?? String(e));
+      this.audioManager = null;
+      this.routingManager = null;
+      this.interruptFocusMode = null;
+    }
+  }
+
+  private teardownAudioEnvironment(): void {
+    if (!this.audioEnvSubscribed) {
+      return;
+    }
+    try {
+      this.routingManager?.off('deviceChange', this.onDeviceChange);
+      if (this.audioManager && this.interruptFocusMode) {
+        this.audioManager.off('interrupt', this.interruptFocusMode, this.onAudioInterrupt);
+      }
+      telephonyObserver.off('callStateChange', this.onCallStateChange);
+    } catch (e) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] teardownAudioEnvironment: %{public}s',
+        (e as Error).message ?? String(e));
+    }
+    this.audioManager = null;
+    this.routingManager = null;
+    this.interruptFocusMode = null;
+    this.audioEnvSubscribed = false;
+    this.headsetWasPlaying = false;
+    this.lossTransient = false;
+    this.lossTransientWasPlaying = false;
+    this.duckedVolume = -1;
+    this.pausedByCall = false;
+  }
+
+  /** 有线/无线耳机设备类型(WIRED/BT/USB)。 */
+  private isHeadsetDeviceType(t: audio.DeviceType): boolean {
+    return t === audio.DeviceType.WIRED_HEADSET
+      || t === audio.DeviceType.WIRED_HEADPHONES
+      || t === audio.DeviceType.BLUETOOTH_SCO
+      || t === audio.DeviceType.BLUETOOTH_A2DP
+      || t === audio.DeviceType.USB_HEADSET;
+  }
+
+  private onDeviceChange = (action: audio.DeviceChangeAction): void => {
+    void this.handleDeviceChange(action);
+  };
+
+  /** 耳机侦测:拔出 → 暂停(记住 wasPlaying);插入 → 按 enable_play_on_headset_insertion 恢复。
+   *  对齐安卓 ACTION_AUDIO_BECOMING_NOISY / ACTION_HEADSET_PLUG。 */
+  private async handleDeviceChange(action: audio.DeviceChangeAction): Promise<void> {
+    try {
+      const enabled: boolean = await Settings.getBoolean('enable_headset_detection', true);
+      if (!enabled) {
+        return;
+      }
+      const devices: audio.AudioDeviceDescriptor[] = action.deviceDescriptors ?? [];
+      // 变化后设备列表是否仍含耳机:拔出后不含 → 音频路由被移除(对齐 Becoming Noisy)。
+      const headsetPresent: boolean = devices.some((d: audio.AudioDeviceDescriptor) =>
+        this.isHeadsetDeviceType(d.deviceType));
+      if (action.type === audio.DeviceChangeType.CONNECT) {
+        if (headsetPresent && this.headsetWasPlaying && this.getCurrent() !== null) {
+          const resume: boolean = await Settings.getBoolean('enable_play_on_headset_insertion', false);
+          if (resume) {
+            hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] headset inserted -> resume playback');
+            this.headsetWasPlaying = false;
+            this.play();
+          }
+        }
+      } else if (action.type === audio.DeviceChangeType.DISCONNECT) {
+        if (!headsetPresent) {
+          this.headsetWasPlaying = this.state === PlayState.PLAYING;
+          if (this.headsetWasPlaying && this.getCurrent() !== null) {
+            hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] headset removed -> pause playback');
+            this.pause();
+          }
+        }
+      }
+    } catch (e) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] handleDeviceChange: %{public}s',
+        (e as Error).message ?? String(e));
+    }
+  }
+
+  private onAudioInterrupt = (action: audio.InterruptAction): void => {
+    void this.handleAudioInterrupt(action);
+  };
+
+  /** 通知/来电打断(对齐安卓 VLCAudioFocusHelper.onAudioFocusChange):
+   *  INTERRUPT_HINT_PAUSE/STOP → 临时暂停;RESUME → 恢复音量 + 按 resume_playback 恢复播放;
+   *  INTERRUPT_HINT_DUCK → 按 audio_ducking 降为 1/3;UNDUCK → 恢复原音量。 */
+  private async handleAudioInterrupt(action: audio.InterruptAction): Promise<void> {
+    try {
+      const hint: audio.InterruptHint = action.hint ?? audio.InterruptHint.INTERRUPT_HINT_NONE;
+      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] audioInterrupt actionType=%{public}d type=%{public}d hint=%{public}d',
+        action.actionType, action.type ?? 0, hint);
+      if (hint === audio.InterruptHint.INTERRUPT_HINT_PAUSE
+        || hint === audio.InterruptHint.INTERRUPT_HINT_STOP) {
+        if (!this.lossTransient) {
+          this.lossTransient = true;
+          this.lossTransientWasPlaying = this.state === PlayState.PLAYING;
+          if (this.lossTransientWasPlaying) {
+            this.pause();
+          }
+        }
+      } else if (hint === audio.InterruptHint.INTERRUPT_HINT_RESUME) {
+        // 先恢复被闪避降低的音量
+        if (this.duckedVolume >= 0) {
+          this.setVolume(this.duckedVolume);
+          this.duckedVolume = -1;
+        }
+        if (this.lossTransient) {
+          const resume: boolean = await Settings.getBoolean(Settings.RESUME_PLAYBACK, true);
+          if (this.lossTransientWasPlaying && resume && this.state !== PlayState.PLAYING) {
+            hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] audioInterrupt resume playback');
+            this.play();
+          }
+          this.lossTransient = false;
+          this.lossTransientWasPlaying = false;
+        }
+      } else if (hint === audio.InterruptHint.INTERRUPT_HINT_DUCK) {
+        if (this.state === PlayState.PLAYING && this.duckedVolume < 0) {
+          const duck: boolean = await Settings.getBoolean(Settings.AUDIO_DUCKING, true);
+          if (duck) {
+            this.duckedVolume = this.getVolume();
+            const ducked: number = Math.max(1, Math.floor(this.duckedVolume / 3));
+            this.setVolume(ducked);
+            hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] audioInterrupt duck %{public}d -> %{public}d',
+              this.duckedVolume, ducked);
+          }
+        }
+      } else if (hint === audio.InterruptHint.INTERRUPT_HINT_UNDUCK) {
+        if (this.duckedVolume >= 0) {
+          this.setVolume(this.duckedVolume);
+          this.duckedVolume = -1;
+        }
+      }
+    } catch (e) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] handleAudioInterrupt: %{public}s',
+        (e as Error).message ?? String(e));
+    }
+  }
+
+  private onCallStateChange = (info: telephonyObserver.CallStateInfo): void => {
+    void this.handleCallStateChange(info);
+  };
+
+  /** 通话状态:进入通话(RINGING/OFFHOOK/ANSWERED) → 暂停;结束(IDLE) → 按 resume_playback 恢复。
+   *  对齐安卓 来电打断 + RESUME_PLAYBACK 设置(通话结束继续播放)。 */
+  private async handleCallStateChange(info: telephonyObserver.CallStateInfo): Promise<void> {
+    try {
+      const inCall: boolean = info.state !== call.CallState.CALL_STATE_IDLE
+        && info.state !== call.CallState.CALL_STATE_UNKNOWN;
+      if (inCall) {
+        if (this.state === PlayState.PLAYING) {
+          this.pausedByCall = true;
+          hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] call state=%{public}d -> pause playback', info.state);
+          this.pause();
+        }
+      } else {
+        if (this.pausedByCall) {
+          const resume: boolean = await Settings.getBoolean(Settings.RESUME_PLAYBACK, true);
+          if (resume && this.state !== PlayState.PLAYING) {
+            hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] call ended -> resume playback');
+            this.play();
+          }
+          this.pausedByCall = false;
+        }
+      }
+    } catch (e) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] handleCallStateChange: %{public}s',
+        (e as Error).message ?? String(e));
     }
   }
 
@@ -1171,6 +1442,7 @@ export class PlaybackService {
   }
 
   release(): void {
+    this.teardownAudioEnvironment();
     if (this.rendererDiscoverer) {
       this.rendererDiscoverer.stop();
       this.rendererDiscoverer.release();

@@ -75,7 +75,7 @@ export class SettingsHomeCatalog {
         new SettingsHomeItem('ui_category', '界面', '', 'navigation', false, false, 'ui', 'ui_category'),
         new SettingsHomeItem('video_category', '视频', '', 'navigation', false, false, 'video', 'video_category'),
         new SettingsHomeItem('subtitles_category', '字幕', '', 'navigation', false, false, 'subtitles'),
-        new SettingsHomeItem('audio_category', '音频', '', 'navigation', false, false, 'audio'),
+        new SettingsHomeItem('audio_category', '音频', '', 'navigation', false, false, 'audio', 'audio_category'),
         new SettingsHomeItem('equalizer', '均衡器', '', 'navigation', false, false, 'equalizer'),
         new SettingsHomeItem('casting_category', '投屏', '', 'navigation', false, false, 'casting', 'casting_category'),
         new SettingsHomeItem('parental_control', '家长控制', '', 'navigation', false, false, 'parental'),
