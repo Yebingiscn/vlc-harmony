@@ -417,6 +417,39 @@ export class PlaybackService {
     return this.player ? this.player.addSlave(MediaSlaveType.Subtitle, uri, true) : false;
   }
 
+  /**
+   * SPU / 音频延迟的本地缓存。
+   * libvlc 已桥接 set/get_spu_delay 与 set/get_audio_delay(任务 #8);本字段保留
+   * 作为快速 UI 显示路径,仅由 set* 回写,避免每次 getter 过 native 桥。
+   * 切换媒体/release 时外部需将两值重置为 0。
+   */
+  private spuDelayUs: number = 0;
+  private audioDelayUs: number = 0;
+
+  setSpuDelay(us: number): boolean {
+    const ok: boolean = this.player ? this.player.setSpuDelay(us) : false;
+    if (ok) {
+      this.spuDelayUs = us;
+    }
+    return ok;
+  }
+
+  getSpuDelay(): number {
+    return this.spuDelayUs;
+  }
+
+  setAudioDelay(us: number): boolean {
+    const ok: boolean = this.player ? this.player.setAudioDelay(us) : false;
+    if (ok) {
+      this.audioDelayUs = us;
+    }
+    return ok;
+  }
+
+  getAudioDelay(): number {
+    return this.audioDelayUs;
+  }
+
   applyEqualizer(enabled: boolean, presetIndex: number, preamp: number, bands: number[]): void {
     if (!this.player) {
       return;

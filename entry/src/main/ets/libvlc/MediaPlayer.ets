@@ -34,6 +34,9 @@ import {
   mediaPlayerSetSpuTrack,
   mediaPlayerSetVideoTrack,
   mediaPlayerSetSpuDelay,
+  mediaPlayerGetSpuDelay,
+  mediaPlayerSetAudioDelay,
+  mediaPlayerGetAudioDelay,
   mediaPlayerGetChapters,
   mediaPlayerGetChapter,
   mediaPlayerSetChapter,
@@ -254,6 +257,20 @@ export class MediaPlayer extends VLCObject {
 
   setSpuDelay(us: number): boolean {
     return this.isReleased() ? false : mediaPlayerSetSpuDelay(this.handle, us);
+  }
+
+  /** SPU 延迟反查:找不到 player 或 libvlc 返回错误时为 -1。 */
+  getSpuDelay(): number {
+    return this.isReleased() ? -1 : mediaPlayerGetSpuDelay(this.handle);
+  }
+
+  setAudioDelay(us: number): boolean {
+    return this.isReleased() ? false : mediaPlayerSetAudioDelay(this.handle, us);
+  }
+
+  /** 音频延迟反查:找不到 player 或 libvlc 返回错误时为 -1。 */
+  getAudioDelay(): number {
+    return this.isReleased() ? -1 : mediaPlayerGetAudioDelay(this.handle);
   }
 
   getChapters(titleIndex: number = -1): VlcChapterInfo[] {

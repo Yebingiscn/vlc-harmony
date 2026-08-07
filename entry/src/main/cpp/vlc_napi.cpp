@@ -1769,6 +1769,69 @@ napi_value MediaPlayerSetSpuDelay(napi_env env, napi_callback_info info)
     return Bool(env, ok);
 }
 
+napi_value MediaPlayerGetSpuDelay(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value argv[1];
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    int64_t delay = -1;
+    if (argc >= 1) {
+        uint32_t h = 0;
+        if (GetU32(env, argv[0], &h)) {
+            std::lock_guard<std::mutex> lk(g_mtx);
+            PlayerEntry *pe = FindPlayerLocked(h);
+            if (pe && pe->mp) {
+                delay = libvlc_video_get_spu_delay(pe->mp);
+            }
+        }
+    }
+    return I64(env, delay);
+}
+
+napi_value MediaPlayerSetAudioDelay(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value argv[2];
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    uint32_t h = 0;
+    int64_t us = 0;
+    if (argc < 2 || !GetU32(env, argv[0], &h) || !GetI64(env, argv[1], &us)) {
+        return Bool(env, false);
+    }
+    libvlc_media_player_t *mp = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(g_mtx);
+        PlayerEntry *pe = FindPlayerLocked(h);
+        if (pe && pe->mp) {
+            mp = pe->mp;
+        }
+    }
+    bool ok = false;
+    if (mp != nullptr) {
+        ok = libvlc_audio_set_delay(mp, us) == 0;
+    }
+    return Bool(env, ok);
+}
+
+napi_value MediaPlayerGetAudioDelay(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value argv[1];
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    int64_t delay = -1;
+    if (argc >= 1) {
+        uint32_t h = 0;
+        if (GetU32(env, argv[0], &h)) {
+            std::lock_guard<std::mutex> lk(g_mtx);
+            PlayerEntry *pe = FindPlayerLocked(h);
+            if (pe && pe->mp) {
+                delay = libvlc_audio_get_delay(pe->mp);
+            }
+        }
+    }
+    return I64(env, delay);
+}
+
 napi_value MediaPlayerGetChapters(napi_env env, napi_callback_info info)
 {
     size_t argc = 2;
@@ -2726,6 +2789,9 @@ napi_value VlcNapiInit(napi_env env, napi_value exports)
         {"mediaPlayerSetSpuTrack", nullptr, MediaPlayerSetSpuTrack, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerSetVideoTrack", nullptr, MediaPlayerSetVideoTrack, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerSetSpuDelay", nullptr, MediaPlayerSetSpuDelay, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"mediaPlayerGetSpuDelay", nullptr, MediaPlayerGetSpuDelay, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"mediaPlayerSetAudioDelay", nullptr, MediaPlayerSetAudioDelay, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"mediaPlayerGetAudioDelay", nullptr, MediaPlayerGetAudioDelay, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerGetChapters", nullptr, MediaPlayerGetChapters, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerGetChapter", nullptr, MediaPlayerGetChapter, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerSetChapter", nullptr, MediaPlayerSetChapter, nullptr, nullptr, nullptr, napi_default, nullptr},
