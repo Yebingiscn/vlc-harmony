@@ -6,6 +6,7 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { MediaWrapper, PlayState } from '../models/MediaModels';
+import { Settings } from './Settings';
 import { LibVLC, Media, MediaPlayer, Equalizer, RendererDiscoverer, MediaSlaveType } from '../../libvlc';
 import { VlcTrackInfo, VlcChapterInfo, VlcRendererInfo, VlcMediaTrackInfo } from 'libvlcnapi.so';
 
@@ -729,6 +730,26 @@ export class PlaybackService {
       this.state = PlayState.ERROR;
       this.emitState();
       return;
+    }
+
+    // 硬件加速(对应 Android VLCOptions.setMediaOptions):-1 自动不干预(OHOS 默认优先硬解,
+    // 失败自动回退软解);0 禁用强制软解;1 解码加速=硬解+关闭直渲;2 完全加速=硬解+直渲。
+    // iso/bluray 光碟不进此分支,保持下方强制软解(对应 Android MEDIA_NO_HWACCEL)。
+    const isDiscMrl: boolean = mrl.startsWith('bluray://') || mrl.toLowerCase().endsWith('.iso');
+    if (!isDiscMrl) {
+      const hwAccel: string = await Settings.getString(
+        Settings.KEY_HARDWARE_ACCELERATION, Settings.HARDWARE_ACCELERATION_DEFAULT);
+      if (hwAccel === '0') {
+        media.addOption(':avcodec-hw=disabled');
+        hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] hardware acceleration: disabled (software decode)');
+      } else if (hwAccel === '1') {
+        media.addOption(':avcodec-hw=any');
+        media.addOption(':no-avcodec-dr');
+        hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] hardware acceleration: decoding (hw decode, no direct render)');
+      } else if (hwAccel === '2') {
+        media.addOption(':avcodec-hw=any');
+        hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] hardware acceleration: full (hw decode + direct render)');
+      }
     }
 
     // Blu-ray 主视频为 H.264/HEVC。OHOS 补丁默认优先 h264_ohosavcodec 硬解,
