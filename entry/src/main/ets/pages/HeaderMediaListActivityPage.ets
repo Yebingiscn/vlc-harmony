@@ -78,6 +78,7 @@ class HeaderMediaListVM {
         const vt = new Track(v.id, v.title, v.uri);
         vt.length = v.length;
         vt.artworkPath = v.artworkUrl;
+        vt.seen = v.seen;
         list.push(vt);
         total += v.length;
       }
@@ -348,8 +349,18 @@ export struct HeaderMediaListActivityPage {
         .margin({ right: 2 })
       }
 
+      // 播完对号标识(更多按钮前)
+      if (this.vm.isVideoFolder && item.seen !== 0) {
+        Image($r('app.media.ic_check'))
+          .width(20)
+          .height(20)
+          .fillColor($r('app.color.list_subtitle'))
+          .margin({ right: 4 })
+      }
+
       Image($r('app.media.ic_more'))
-        .width(24).height(24)
+        .width(24)
+        .height(24)
         .fillColor($r('app.color.list_subtitle'))
         .padding(4)
         .onClick(() => {

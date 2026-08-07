@@ -107,6 +107,15 @@ export struct MediaListCard {
       .layoutWeight(1)
       .onClick(() => this.onItemClick())
 
+      // 播完对号标识(更多按钮前)
+      if (this.showSeenMarker && this.item.seen !== 0) {
+        Image($r('app.media.ic_check'))
+          .width(20)
+          .height(20)
+          .fillColor($r('app.color.list_subtitle'))
+          .margin({ right: 4 })
+      }
+
       if (this.isFavorite) {
         Image($r('app.media.ic_emoji_favorite')).width(24).height(24).objectFit(ImageFit.Contain).margin({ right: 4 })
       }

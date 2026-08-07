@@ -6,7 +6,6 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { MediaWrapper, PlayState } from '../models/MediaModels';
-import { Settings } from './Settings';
 import { LibVLC, Media, MediaPlayer, Equalizer, RendererDiscoverer, MediaSlaveType } from '../../libvlc';
 import { VlcTrackInfo, VlcChapterInfo, VlcRendererInfo, VlcMediaTrackInfo } from 'libvlcnapi.so';
 import { Settings } from './Settings';
