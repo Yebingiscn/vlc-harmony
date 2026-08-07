@@ -117,6 +117,8 @@ export struct MainPage {
     await PermissionCoordinator.askStoragePermission(false, false, true);
     await MediaLibrary.scan();
     this.scanning = false;
+    // 通知 VideoGridPage 重建列表(scan 完成后数据已更新,但页面不会自动 rebuild)。
+    this.displaySettingsVersion++;
   }
 
   async toggleDisplayAsList(): Promise<void> {

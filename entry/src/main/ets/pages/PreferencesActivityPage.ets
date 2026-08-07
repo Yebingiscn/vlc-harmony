@@ -10,6 +10,19 @@ import {
   SettingsHomeItem,
   SettingsHomeSection,
 } from '../common/models/SettingsHomeModels';
+import {
+  SCREEN_ORIENTATION_DEFAULT,
+  SCREEN_ORIENTATION_LABELS,
+  SCREEN_ORIENTATION_VALUES,
+  screenOrientationLabel,
+  ScreenOrientationDialog,
+} from './ScreenOrientationDialog';
+import {
+  HARDWARE_ACCELERATION_DEFAULT,
+  HARDWARE_ACCELERATION_LABELS,
+  HARDWARE_ACCELERATION_VALUES,
+  HardwareAccelerationDialog,
+} from './HardwareAccelerationDialog';
 
 /**
  * 更多 > 设置的首页。
@@ -21,6 +34,14 @@ import {
 export struct PreferencesActivityPage {
   @Local sections: SettingsHomeSection[] = [];
   @Local toggleValues: Record<string, boolean> = {};
+  /** 视频屏幕方向当前选中值(弹窗初始态 + 行摘要刷新)。 */
+  @Local orientationValue: string = SCREEN_ORIENTATION_DEFAULT;
+  @Local orientationDialogId: number = -1;
+  /** 硬件加速当前选中值(弹窗初始态)。 */
+  @Local hardwareAccelerationValue: string = HARDWARE_ACCELERATION_DEFAULT;
+  @Local hardwareAccelerationDialogId: number = -1;
+  /** 变更行摘要后重建列表项。 */
+  @Local rowVersion: number = 0;
 
   async aboutToAppear(): Promise<void> {
     this.sections = SettingsHomeCatalog.create();
@@ -34,6 +55,25 @@ export struct PreferencesActivityPage {
     }
     values[Settings.KEY_INCOGNITO] = await Settings.getBoolean(Settings.KEY_INCOGNITO, false);
     this.toggleValues = values;
+    await this.loadOrientationSummary();
+  }
+
+  private async loadOrientationSummary(): Promise<void> {
+    const value: string = await Settings.getString(Settings.SCREEN_ORIENTATION, SCREEN_ORIENTATION_DEFAULT);
+    this.orientationValue = value;
+    this.updateOrientationSummary(value);
+  }
+
+  private updateOrientationSummary(value: string): void {
+    for (const section of this.sections) {
+      for (const item of section.items) {
+        if (item.key === Settings.SCREEN_ORIENTATION) {
+          item.summary = screenOrientationLabel(value);
+          this.rowVersion++;
+          return;
+        }
+      }
+    }
   }
 
   isItemEnabled(item: SettingsHomeItem): boolean {
@@ -58,12 +98,113 @@ export struct PreferencesActivityPage {
 
   /** 后续接入子页、单选弹窗、权限页或业务设置的统一入口。 */
   onSettingAction(item: SettingsHomeItem): void {
+    if (item.key === Settings.SCREEN_ORIENTATION) {
+      this.openOrientationDialog();
+      return;
+    }
+    if (item.key === Settings.KEY_HARDWARE_ACCELERATION) {
+      this.openHardwareAccelerationDialog();
+      return;
+    }
     if (item.screenKey.length > 0) {
       const param: PreferencesScreenParam = { screenKey: item.screenKey };
       NavController.push(RouteName.PreferencesScreen, param);
       return;
     }
     promptAction.showToast({ message: `“${item.key}”功能暂未实现` });
+  }
+
+  private openOrientationDialog(): void {
+    Settings.getString(Settings.SCREEN_ORIENTATION, SCREEN_ORIENTATION_DEFAULT).then((value: string) => {
+      this.orientationValue = value;
+      this.getUIContext().getPromptAction().openCustomDialog({
+        builder: () => {
+          this.orientationDialogContent();
+        },
+        alignment: DialogAlignment.Center,
+        autoCancel: true,
+        maskColor: $r('app.color.dialog_mask'),
+        backgroundColor: Color.Transparent,
+      }).then((dialogId: number) => {
+        this.orientationDialogId = dialogId;
+      });
+    });
+  }
+
+  private closeOrientationDialog(): void {
+    if (this.orientationDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.orientationDialogId);
+    }
+    this.orientationDialogId = -1;
+  }
+
+  private onOrientationSelect(value: string): void {
+    this.orientationValue = value;
+    Settings.put(Settings.SCREEN_ORIENTATION, value);
+    this.updateOrientationSummary(value);
+    this.closeOrientationDialog();
+  }
+
+  private openHardwareAccelerationDialog(): void {
+    Settings.getString(Settings.KEY_HARDWARE_ACCELERATION, HARDWARE_ACCELERATION_DEFAULT).then((value: string) => {
+      this.hardwareAccelerationValue = value;
+      this.getUIContext().getPromptAction().openCustomDialog({
+        builder: () => {
+          this.hardwareAccelerationDialogContent();
+        },
+        alignment: DialogAlignment.Center,
+        autoCancel: true,
+        maskColor: $r('app.color.dialog_mask'),
+        backgroundColor: Color.Transparent,
+      }).then((dialogId: number) => {
+        this.hardwareAccelerationDialogId = dialogId;
+      });
+    });
+  }
+
+  private closeHardwareAccelerationDialog(): void {
+    if (this.hardwareAccelerationDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.hardwareAccelerationDialogId);
+    }
+    this.hardwareAccelerationDialogId = -1;
+  }
+
+  private onHardwareAccelerationSelect(value: string): void {
+    this.hardwareAccelerationValue = value;
+    Settings.put(Settings.KEY_HARDWARE_ACCELERATION, value);
+    this.closeHardwareAccelerationDialog();
+  }
+
+  @Builder
+  hardwareAccelerationDialogContent() {
+    Column() {
+      HardwareAccelerationDialog({
+        title: '硬件加速',
+        labels: HARDWARE_ACCELERATION_LABELS,
+        values: HARDWARE_ACCELERATION_VALUES,
+        selectedValue: this.hardwareAccelerationValue,
+        onSelect: (value: string) => this.onHardwareAccelerationSelect(value),
+        onCancel: () => this.closeHardwareAccelerationDialog(),
+      })
+        .width('100%')
+    }
+    .width('100%')
+  }
+
+  @Builder
+  orientationDialogContent() {
+    Column() {
+      ScreenOrientationDialog({
+        title: '视频屏幕方向',
+        labels: SCREEN_ORIENTATION_LABELS,
+        values: SCREEN_ORIENTATION_VALUES,
+        selectedValue: this.orientationValue,
+        onSelect: (value: string) => this.onOrientationSelect(value),
+        onCancel: () => this.closeOrientationDialog(),
+      })
+        .width('100%')
+    }
+    .width('100%')
   }
 
   /** 后续接入 PreferenceSearchActivityPage 的统一入口。 */
@@ -180,7 +321,7 @@ export struct PreferencesActivityPage {
               this.SectionHeader(section)
               ForEach(section.items, (item: SettingsHomeItem) => {
                 this.SettingRow(item)
-              }, (item: SettingsHomeItem) => item.key)
+              }, (item: SettingsHomeItem) => `${item.key}-${this.rowVersion}`)
               Divider()
                 .color($r('app.color.divider'))
                 .strokeWidth(1)

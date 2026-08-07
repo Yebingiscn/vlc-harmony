@@ -118,6 +118,7 @@ export struct DisplaySettingsDialog {
     this.currentSort = await Settings.getInt(Settings.KEY_VIDEO_SORT, 1);
     this.currentSortDesc = await Settings.getBoolean(Settings.KEY_VIDEO_SORT_DESC, false);
     this.onlyFavs = await Settings.getBoolean(Settings.KEY_VIDEO_ONLY_FAVS, false);
+    this.videoGroupIndex = await Settings.getInt(Settings.KEY_GROUP_VIDEOS, 0);
   }
 
   toggleDisplayMode(): void {
@@ -130,6 +131,14 @@ export struct DisplaySettingsDialog {
     this.currentSortDesc = desc;
     Settings.put(Settings.KEY_VIDEO_SORT, key);
     Settings.put(Settings.KEY_VIDEO_SORT_DESC, desc);
+  }
+
+  /** 文件夹分组时仅名称排序有意义,其余排序选项隐藏。 */
+  getVisibleSorts(): SortMeta[] {
+    if (this.videoGroupIndex === 1) {
+      return this.sorts.filter((s: SortMeta) => s.key === 1);
+    }
+    return this.sorts;
   }
 
   build() {
@@ -210,6 +219,11 @@ export struct DisplaySettingsDialog {
             .width('40%')
             .onSelect((idx: number) => {
               this.videoGroupIndex = idx;
+              Settings.put(Settings.KEY_GROUP_VIDEOS, idx);
+              // 切换到文件夹分组时,如果当前排序不是名称,重置为名称。
+              if (idx === 1 && this.currentSort !== 1) {
+                this.setSort(1, false);
+              }
             })
         }
         .width('100%')
@@ -263,9 +277,9 @@ export struct DisplaySettingsDialog {
             bottom: 8
           })
 
-        // 排序列表
+        // 排序列表(文件夹分组时仅显示名称排序)
         Column() {
-          ForEach(this.sorts, (meta: SortMeta) => {
+          ForEach(this.getVisibleSorts(), (meta: SortMeta) => {
             SortItem({
               title: meta.title,
               ascText: meta.ascText,

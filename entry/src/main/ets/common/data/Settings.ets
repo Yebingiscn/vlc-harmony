@@ -81,6 +81,8 @@ export class Settings {
   static readonly SLEEP_TIMER_RESET_ON_INTERACTION: string = 'SleepTimerResetOnInteraction';
   static readonly VIDEO_RATIO: string = 'video_ratio';
   static readonly SCREEN_ORIENTATION: string = 'screen_orientation';
+  static readonly KEY_HARDWARE_ACCELERATION: string = 'hardware_acceleration';
+  static readonly HARDWARE_ACCELERATION_DEFAULT: string = '-1';
   static readonly VIDEO_HUD_TIMEOUT: string = 'video_hud_timeout_in_s';
   static readonly VIDEO_TRANSITION_SHOW: string = 'video_transition_show';
   static readonly ENABLE_SEEK_BUTTONS: string = 'enable_seek_buttons';

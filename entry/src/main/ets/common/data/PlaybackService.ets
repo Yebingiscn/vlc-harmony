@@ -6,6 +6,7 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { MediaWrapper, PlayState } from '../models/MediaModels';
+import { Settings } from './Settings';
 import { LibVLC, Media, MediaPlayer, Equalizer, RendererDiscoverer, MediaSlaveType } from '../../libvlc';
 import { VlcTrackInfo, VlcChapterInfo, VlcRendererInfo, VlcMediaTrackInfo } from 'libvlcnapi.so';
 import { Settings } from './Settings';
@@ -457,6 +458,39 @@ export class PlaybackService {
     return this.player ? this.player.addSlave(MediaSlaveType.Subtitle, uri, true) : false;
   }
 
+  /**
+   * SPU / 音频延迟的本地缓存。
+   * libvlc 已桥接 set/get_spu_delay 与 set/get_audio_delay(任务 #8);本字段保留
+   * 作为快速 UI 显示路径,仅由 set* 回写,避免每次 getter 过 native 桥。
+   * 切换媒体/release 时外部需将两值重置为 0。
+   */
+  private spuDelayUs: number = 0;
+  private audioDelayUs: number = 0;
+
+  setSpuDelay(us: number): boolean {
+    const ok: boolean = this.player ? this.player.setSpuDelay(us) : false;
+    if (ok) {
+      this.spuDelayUs = us;
+    }
+    return ok;
+  }
+
+  getSpuDelay(): number {
+    return this.spuDelayUs;
+  }
+
+  setAudioDelay(us: number): boolean {
+    const ok: boolean = this.player ? this.player.setAudioDelay(us) : false;
+    if (ok) {
+      this.audioDelayUs = us;
+    }
+    return ok;
+  }
+
+  getAudioDelay(): number {
+    return this.audioDelayUs;
+  }
+
   applyEqualizer(enabled: boolean, presetIndex: number, preamp: number, bands: number[]): void {
     if (!this.player) {
       return;
@@ -772,6 +806,26 @@ export class PlaybackService {
       this.state = PlayState.ERROR;
       this.emitState();
       return;
+    }
+
+    // 硬件加速(对应 Android VLCOptions.setMediaOptions):-1 自动不干预(OHOS 默认优先硬解,
+    // 失败自动回退软解);0 禁用强制软解;1 解码加速=硬解+关闭直渲;2 完全加速=硬解+直渲。
+    // iso/bluray 光碟不进此分支,保持下方强制软解(对应 Android MEDIA_NO_HWACCEL)。
+    const isDiscMrl: boolean = mrl.startsWith('bluray://') || mrl.toLowerCase().endsWith('.iso');
+    if (!isDiscMrl) {
+      const hwAccel: string = await Settings.getString(
+        Settings.KEY_HARDWARE_ACCELERATION, Settings.HARDWARE_ACCELERATION_DEFAULT);
+      if (hwAccel === '0') {
+        media.addOption(':avcodec-hw=disabled');
+        hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] hardware acceleration: disabled (software decode)');
+      } else if (hwAccel === '1') {
+        media.addOption(':avcodec-hw=any');
+        media.addOption(':no-avcodec-dr');
+        hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] hardware acceleration: decoding (hw decode, no direct render)');
+      } else if (hwAccel === '2') {
+        media.addOption(':avcodec-hw=any');
+        hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] hardware acceleration: full (hw decode + direct render)');
+      }
     }
 
     // Blu-ray 主视频为 H.264/HEVC。OHOS 补丁默认优先 h264_ohosavcodec 硬解,

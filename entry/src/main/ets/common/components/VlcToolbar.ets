@@ -158,10 +158,9 @@ export struct VlcToolbar {
               .onClick(() => this.onAudioDisplaySettings())
           }
           if (this.showMore) {
-            Image($r('app.media.ic_more'))
-              .width(28)
-              .height(28)
-              .objectFit(ImageFit.Contain)
+            SymbolGlyph($r('sys.symbol.dot_grid_1x2'))
+              .fontSize(28)
+              .fontColor([$r('sys.color.icon_primary')])
               .margin({ right: 4 })
               .onClick(() => this.moreOpen = true)
               .bindMenu(this.moreOpen, this.moreMenu(), {
