@@ -5,6 +5,7 @@ import { formatDuration, VideoNavParam } from '../common/models/MediaModels';
 import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
 import { PlaybackHistoryEntry } from '../common/models/PlaybackHistoryModels';
 import { historyPreview } from '../common/models/MoreHomeModels';
+import { ParentalControlAction, ParentalControlParam } from './ParentalControlPage';
 
 @ObservedV2
 class MoreViewModel {
@@ -53,6 +54,17 @@ export struct MorePage {
 
   private openHistory(): void {
     NavController.push('History');
+  }
+
+  private async openPreferences(): Promise<void> {
+    const restricted = await Settings.getBoolean('restrict_settings', false);
+    if (!restricted) {
+      NavController.push('Preferences');
+      return;
+    }
+    const param = new ParentalControlParam();
+    param.action = ParentalControlAction.OPEN_SETTINGS;
+    NavController.push('ParentalControl', param);
   }
 
   private playHistoryItem(item: PlaybackHistoryEntry): void {
@@ -171,7 +183,7 @@ export struct MorePage {
       Column() {
         Row() {
           Column() {
-            this.ActionButton($r('app.media.ic_more_preferences'), '设置', () => NavController.push('Preferences'))
+            this.ActionButton($r('app.media.ic_more_preferences'), '设置', () => { void this.openPreferences(); })
           }
           .layoutWeight(1).margin({ right: 12 })
           Column() {

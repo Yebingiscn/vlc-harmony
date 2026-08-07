@@ -34,6 +34,7 @@ import {
   SCREEN_ORIENTATION_VALUES,
   ScreenOrientationDialog,
 } from './ScreenOrientationDialog';
+import { BACKGROUND_PIP_DEFAULT } from './BackgroundPipDialog';
 import {
   buildPlayerAdvancedOptions,
   PlayerAdvancedOptionId,
@@ -181,9 +182,13 @@ class VideoPlayerViewModel implements PlaybackListener {
   currentArtworkUrl: string = '';
   private list: VideoPlayItem[] = [];
   private listening: boolean = false;
-  private leaving: boolean = false;
+  /** 页面退出守卫(leaveEarly 置位);VideoPlayerPage 退后台逻辑需要读取。 */
+  leaving: boolean = false;
   private xcomponentId: string = '';
   private lastHistoryUri: string = '';
+  /** 播放开始回调(供页面自动进入画中画;autoPipFired 保证每个媒体只触发一次)。 */
+  onPlaybackStarted: (() => void) | null = null;
+  private autoPipFired: boolean = false;
 
   hasPrev(): boolean {
     return this.index > 0;
@@ -209,6 +214,7 @@ class VideoPlayerViewModel implements PlaybackListener {
     }
 
     this.leaving = false;
+    this.autoPipFired = false;
     this.xcomponentId = xcomponentId;
     const incoming: VideoPlayItem[] = param.list !== undefined ? param.list : [];
     if (incoming.length > 0) {
@@ -239,7 +245,7 @@ class VideoPlayerViewModel implements PlaybackListener {
 
     const mws: MediaWrapper[] = this.list.map((it: VideoPlayItem, i: number) =>
     new MediaWrapper(i + 1, it.title, it.uri, 0));
-    await svc.prepareList(mws, this.index, true);
+    await svc.prepareList(mws, this.index, true, 'video');
     svc.setSpeed(this.speed);
     const bound = await svc.bindAndPlay(xcomponentId, this.uri, this.title);
     this.state = svc.getState();
@@ -278,6 +284,12 @@ class VideoPlayerViewModel implements PlaybackListener {
       this.errorMsg = 'playback error';
     } else if (state === PlayState.PLAYING) {
       this.errorMsg = '';
+      if (!this.autoPipFired) {
+        this.autoPipFired = true;
+        if (this.onPlaybackStarted !== null) {
+          this.onPlaybackStarted();
+        }
+      }
       const svc = PlaybackService.getInstance();
       svc.refreshVideoSize();
       if (shouldRecordPlaybackStart('playing', this.lastHistoryUri, this.uri)) {
@@ -382,13 +394,14 @@ class VideoPlayerViewModel implements PlaybackListener {
     this.videoWidth = 0;
     this.videoHeight = 0;
     this.state = PlayState.IDLE;
+    this.autoPipFired = false;
     this.isoChapters = [];
     this.isoChapterIdx = 0;
     this.isIsoFile = this.uri.toLowerCase().endsWith('.iso');
     const svc = PlaybackService.getInstance();
     const mws: MediaWrapper[] = this.list.map((it: VideoPlayItem, idx: number) =>
     new MediaWrapper(idx + 1, it.title, it.uri, 0));
-    await svc.prepareList(mws, i, true);
+    await svc.prepareList(mws, i, true, 'video');
     if (this.xcomponentId.length > 0) {
       await svc.bindAndPlay(this.xcomponentId, this.uri, this.title);
     }
@@ -560,6 +573,8 @@ export struct VideoPlayerPage {
   private pipXc: XComponentController = new XComponentController();
   /** 画中画控制器(enterPopupPlayer 启动后持有,stopPiP 时清理)。 */
   private pipController: PiPWindow.PiPController | null = null;
+  /** 应用退后台监听器(aboutToAppear 注册,aboutToDisappear 注销)。 */
+  private appBackgroundListener: () => void = () => {};
   private touch: VideoTouchDelegate = new VideoTouchDelegate();
   private touchBound: boolean = false;
   private mainWindow: window.Window | null = null;
@@ -1016,6 +1031,13 @@ export struct VideoPlayerPage {
     void this.applyScreenOrientation();
     void this.touch.refreshPrefs();
     this.resetHudTimer();
+    this.appBackgroundListener = () => {
+      void this.handleAppBackground();
+    };
+    AppContext.onAppBackground(this.appBackgroundListener);
+    this.vm.onPlaybackStarted = () => {
+      void this.maybeAutoEnterPip();
+    };
   }
 
   aboutToDisappear(): void {
@@ -1040,6 +1062,8 @@ export struct VideoPlayerPage {
     this.touch.clearTouchAction();
     this.clearSleepTimer();
     void this.stopPopupPlayer();
+    AppContext.offAppBackground(this.appBackgroundListener);
+    this.vm.onPlaybackStarted = null;
     this.vm.release();
   }
 
@@ -1053,6 +1077,7 @@ export struct VideoPlayerPage {
   async playAsAudio(): Promise<void> {
     const cur: QueueItem | null = PlaybackService.getCurrent();
     const uri: string = cur?.uri ?? this.vm.uri;
+    hilog.info(0x0001, 'VLC', '[VLC] playAsAudio start uri=%{public}s', uri);
     if (uri.length === 0) {
       promptAction.showToast({ message: '没有可播放的视频' });
       return;
@@ -1151,6 +1176,60 @@ export struct VideoPlayerPage {
     } catch (e) {
       hilog.warn(0x0001, 'VLC', '[PiP] stop failed: %{public}s', (e as Error).message ?? String(e));
     }
+  }
+
+  /**
+   * 应用退到后台:按「背景/画中画模式」设置执行。
+   * 0=停止播放(页面保留);1=后台播放(切仅音频并回到主页);2=画中画(页面保留)。
+   * 对应 Android VideoPlayerActivity.onUserLeaveHint/onStop 逻辑。
+   */
+  private async handleAppBackground(): Promise<void> {
+    hilog.info(0x0001, 'VLC', '[VLC] handleAppBackground enter leaving=%{public}s state=%{public}d',
+      this.vm.leaving ? 'yes' : 'no', PlaybackService.getState());
+    if (this.vm.leaving) {
+      return;
+    }
+    const st: PlayState = PlaybackService.getState();
+    if (st !== PlayState.PLAYING && st !== PlayState.PREPARED) {
+      return;
+    }
+    let mode: string = BACKGROUND_PIP_DEFAULT;
+    try {
+      mode = await Settings.getString(Settings.KEY_VIDEO_APP_SWITCH, BACKGROUND_PIP_DEFAULT);
+    } catch (e) {
+      hilog.warn(0x0001, 'VLC', '[VLC] handleAppBackground getSetting failed: %{public}s',
+        (e as Error).message ?? String(e));
+    }
+    hilog.info(0x0001, 'VLC', '[VLC] handleAppBackground mode=%{public}s state=%{public}d', mode, st);
+    if (mode === '1') {
+      await this.playAsAudio();
+    } else if (mode === '2') {
+      if (this.pipController === null) {
+        await this.enterPopupPlayer();
+      }
+    } else {
+      PlaybackService.getInstance().stop();
+    }
+  }
+
+  /**
+   * 设置「以画中画模式播放视频」时,每次新视频开始播放自动进入弹出式播放器(PiP),
+   * 效果与播放器右上角菜单「弹出式播放器」一致。
+   */
+  private async maybeAutoEnterPip(): Promise<void> {
+    if (this.vm.leaving || this.pipController !== null) {
+      return;
+    }
+    const mode: string = await Settings.getString(Settings.KEY_VIDEO_APP_SWITCH, BACKGROUND_PIP_DEFAULT);
+    if (mode !== '2') {
+      return;
+    }
+    // 等首帧渲染稳定后再进入画中画,避免过早启动失败。
+    await new Promise<void>((r: () => void) => setTimeout(r, 500));
+    if (this.vm.leaving || this.pipController !== null) {
+      return;
+    }
+    await this.enterPopupPlayer();
   }
 
   private bindTouch(): void {

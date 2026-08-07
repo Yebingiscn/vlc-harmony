@@ -66,8 +66,7 @@ export class SettingsHomeCatalog {
         new SettingsHomeItem('permissions', '权限', '所有权限的列表'),
       ]),
       new SettingsHomeSection('history', '历史', [
-        new SettingsHomeItem('playback_history', '播放历史', '在「历史记录」下保留所有播放过的媒体', 'toggle', true),
-        new SettingsHomeItem('incognito_mode', '无痕模式', '播放媒体时不保存播放历史', 'toggle', false),
+        new SettingsHomeItem('enable_playback_history', '播放历史', '在「历史记录」下保留所有播放过的媒体', 'toggle', true),
         new SettingsHomeItem('video_resume_playback', '视频播放队列历史', '允许储存视频播放队列内容，以便稍后继续播放', 'toggle', true, true),
         new SettingsHomeItem('audio_resume_playback', '音频播放队列历史', '允许储存音频播放队列内容，以便稍后继续播放', 'toggle', true, true),
       ]),
@@ -78,7 +77,7 @@ export class SettingsHomeCatalog {
         new SettingsHomeItem('audio_category', '音频', '', 'navigation', false, false, 'audio', 'audio_category'),
         new SettingsHomeItem('equalizer', '均衡器', '', 'navigation', false, false, 'equalizer'),
         new SettingsHomeItem('casting_category', '投屏', '', 'navigation', false, false, 'casting', 'casting_category'),
-        new SettingsHomeItem('parental_control', '家长控制', '', 'navigation', false, false, 'parental'),
+        new SettingsHomeItem('parental_control', '家长控制', '', 'navigation', false, false, 'parental', 'parental_control'),
         new SettingsHomeItem('remote_access_category', '远程访问', '', 'navigation', false, false, 'remote', 'remote_access_category'),
         new SettingsHomeItem('android_auto_category', 'Android Auto', '', 'navigation', false, false, 'android_auto'),
         new SettingsHomeItem('adv_category', '高级', '', 'navigation', false, false, 'advanced'),
@@ -87,6 +86,6 @@ export class SettingsHomeCatalog {
   }
 
   static isEnabled(item: SettingsHomeItem, historyOn: boolean): boolean {
-    return !item.dependsOnHistory || historyOn;
+    return !item.dependsOnHistory || !historyOn;
   }
 }

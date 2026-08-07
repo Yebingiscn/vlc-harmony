@@ -61,6 +61,8 @@
     { "name": "rounded_corners_black_more_transparent", "value": "#88000000" },
     { "name": "dialog_mask", "value": "#66000000" },
     { "name": "sleep_timer_key", "value": "#6D6D6D" },
-    { "name": "sleep_timer_backspace_disabled", "value": "#C0C0C0" }
+    { "name": "sleep_timer_backspace_disabled", "value": "#C0C0C0" },
+    { "name": "history_selected_bg", "value": "#1AFF8800" },
+    { "name": "delete_red", "value": "#E84026" }
   ]
 }

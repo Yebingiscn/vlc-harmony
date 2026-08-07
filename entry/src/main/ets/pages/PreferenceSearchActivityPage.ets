@@ -38,7 +38,7 @@ export class PreferenceSearchVM {
       new PreferenceItem('auto_rescan', 'Auto rescan', 'Scan device for new media', 'Media library'),
       new PreferenceItem('hardware_acceleration', 'Hardware Acceleration', 'Decoding: may improve performance', 'Video'),
       new PreferenceItem('equalizer', 'Equalizer', 'Audio equalizer presets', 'Extra settings'),
-      new PreferenceItem('playback_history', 'Playback history', 'Save all media played in History', 'History'),
+      new PreferenceItem('enable_playback_history', 'Playback history', 'Save all media played in History', 'History'),
       new PreferenceItem('screen_orientation', 'Video screen orientation', 'Screen orientation', 'Video'),
     ];
     this.filter();

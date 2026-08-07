@@ -822,17 +822,23 @@ export class MediaLibrary {
     const map = new Map<string, Folder>();
     let fid = 0;
     for (const v of videos) {
-      // filePath 格式如 "Movies/Downloads/video.mp4";取目录部分作为分组键。
       const key = v.filePath.includes('/') ? v.filePath.slice(0, v.filePath.lastIndexOf('/')) : '';
       if (!map.has(key)) {
-        // 文件夹标题:取路径最后一段;根目录(空 key)显示"视频"。
         const folderTitle = key === '' ? '视频' : key.slice(key.lastIndexOf('/') + 1);
         const f = new Folder(fid++, folderTitle, key);
-        // 用首个视频的缩略图作为文件夹封面(网格卡片视觉效果更佳)。
-        f.artworkUrl = v.artworkUrl;
+        f.thumbnailUrls = [];
         map.set(key, f);
       }
-      (map.get(key) as Folder).mediaCount += 1;
+      const folder = map.get(key) as Folder;
+      folder.mediaCount += 1;
+      // 收集前 4 个视频缩略图用于 2x2 拼图封面。
+      if (folder.thumbnailUrls.length < 4 && v.artworkUrl.length > 0) {
+        folder.thumbnailUrls.push(v.artworkUrl);
+      }
+      // artworkUrl 兜底用第一个有缩略图的视频。
+      if (folder.artworkUrl.length === 0 && v.artworkUrl.length > 0) {
+        folder.artworkUrl = v.artworkUrl;
+      }
     }
     return Array.from(map.values());
   }

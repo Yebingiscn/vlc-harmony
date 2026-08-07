@@ -798,7 +798,7 @@
     },
     {
       "name": "pin_code_reason_create",
-      "value": "First, let\\'s create your PIN code"
+      "value": "Restricted. Set up your PIN code"
     },
     {
       "name": "pin_code_reason_modify",
@@ -1459,6 +1459,78 @@
     {
       "name": "songs",
       "value": "Songs"
+    },
+    {
+      "name": "selected_items_count",
+      "value": "%d selected"
+    },
+    {
+      "name": "file_info",
+      "value": "File info"
+    },
+    {
+      "name": "history_title",
+      "value": "Title"
+    },
+    {
+      "name": "history_path",
+      "value": "Path"
+    },
+    {
+      "name": "history_duration",
+      "value": "Duration"
+    },
+    {
+      "name": "history_last_played",
+      "value": "Last played"
+    },
+    {
+      "name": "incognito_on",
+      "value": "Incognito mode enabled"
+    },
+    {
+      "name": "incognito_off",
+      "value": "Incognito mode disabled"
+    },
+    {
+      "name": "parental_control",
+      "value": "Parental control"
+    },
+    {
+      "name": "change_password",
+      "value": "Change password"
+    },
+    {
+      "name": "restricted_content",
+      "value": "Restricted content"
+    },
+    {
+      "name": "parental_control_desc",
+      "value": "When setting up parental control for the first time, you need to set a new PIN"
+    },
+    {
+      "name": "storage",
+      "value": "Storage"
+    },
+    {
+      "name": "network",
+      "value": "Network"
+    },
+    {
+      "name": "skip",
+      "value": "Skip"
+    },
+    {
+      "name": "restrict_settings_access",
+      "value": "Restrict settings access"
+    },
+    {
+      "name": "safe_mode",
+      "value": "Safe mode"
+    },
+    {
+      "name": "safe_mode_summary",
+      "value": "When activated, files cannot be deleted or playlist modified without entering the pin"
     }
   ]
 }

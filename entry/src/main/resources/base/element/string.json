@@ -858,7 +858,7 @@
     },
     {
       "name": "pin_code_reason_create",
-      "value": "首先，我们需要设置安全密码"
+      "value": "受限，我们需要设置安全密码"
     },
     {
       "name": "pin_code_reason_modify",
@@ -1519,6 +1519,78 @@
     {
       "name": "songs",
       "value": "歌曲"
+    },
+    {
+      "name": "selected_items_count",
+      "value": "已选择 %d 项"
+    },
+    {
+      "name": "file_info",
+      "value": "文件信息"
+    },
+    {
+      "name": "history_title",
+      "value": "标题"
+    },
+    {
+      "name": "history_path",
+      "value": "路径"
+    },
+    {
+      "name": "history_duration",
+      "value": "时长"
+    },
+    {
+      "name": "history_last_played",
+      "value": "上次播放"
+    },
+    {
+      "name": "incognito_on",
+      "value": "无痕模式已开启"
+    },
+    {
+      "name": "incognito_off",
+      "value": "无痕模式已关闭"
+    },
+    {
+      "name": "parental_control",
+      "value": "家长控制"
+    },
+    {
+      "name": "change_password",
+      "value": "更改密码"
+    },
+    {
+      "name": "restricted_content",
+      "value": "受限制的内容"
+    },
+    {
+      "name": "parental_control_desc",
+      "value": "首次设置家长控制时, 我们需要设置一个新的 PIN 码"
+    },
+    {
+      "name": "storage",
+      "value": "存储"
+    },
+    {
+      "name": "network",
+      "value": "网络"
+    },
+    {
+      "name": "skip",
+      "value": "跳过"
+    },
+    {
+      "name": "restrict_settings_access",
+      "value": "限制设置访问"
+    },
+    {
+      "name": "safe_mode",
+      "value": "安全模式"
+    },
+    {
+      "name": "safe_mode_summary",
+      "value": "启用时，必须输入密码才能删除文件或修改播放列表"
     }
   ]
 }

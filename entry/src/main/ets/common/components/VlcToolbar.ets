@@ -20,6 +20,16 @@ export struct VlcToolbar {
   };
   @Event onSearchBack: () => void = () => {
   };
+  @Param selectionMode: boolean = false;
+  @Param selectionCount: number = 0;
+  @Event onSelectionBack: () => void = () => {
+  };
+  @Event onSelectionPlay: () => void = () => {
+  };
+  @Event onSelectionFav: () => void = () => {
+  };
+  @Event onSelectionDelete: () => void = () => {
+  };
   @Param showMore: boolean = false;
   @Param currentTab: string = 'video';
   @Param incognitoMode: boolean = false;
@@ -90,6 +100,46 @@ export struct VlcToolbar {
           .layoutWeight(1)
           .margin({ left: 12, right: 4 })
           .alignItems(VerticalAlign.Center)
+        }
+        .width('100%')
+        .height(92)
+        .padding({ left: 4, right: 4, top: 38, bottom: 4 })
+        .backgroundColor($r('app.color.background_actionbar'))
+      } else if (this.selectionMode) {
+        // 选择模式:返回箭头 + 选中数 + 播放/收藏/删除
+        Row() {
+          Image($r('app.media.ic_arrow_back'))
+            .width(28)
+            .height(28)
+            .objectFit(ImageFit.Contain)
+            .fillColor($r('app.color.list_title'))
+            .margin({ left: 4 })
+            .onClick(() => this.onSelectionBack())
+          Text(`选中 ${this.selectionCount} 项`)
+            .fontSize(18)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.list_title'))
+            .layoutWeight(1)
+            .textAlign(TextAlign.Start)
+            .margin({ left: 8 })
+          Image($r('app.media.ic_play_player'))
+            .width(24)
+            .height(24)
+            .fillColor($r('app.color.list_title'))
+            .margin({ right: 16 })
+            .onClick(() => this.onSelectionPlay())
+          Image($r('app.media.ic_fav_add'))
+            .width(24)
+            .height(24)
+            .fillColor($r('app.color.list_title'))
+            .margin({ right: 16 })
+            .onClick(() => this.onSelectionFav())
+          Image($r('app.media.ic_delete'))
+            .width(24)
+            .height(24)
+            .fillColor('#F44336')
+            .margin({ right: 12 })
+            .onClick(() => this.onSelectionDelete())
         }
         .width('100%')
         .height(92)

@@ -4,7 +4,6 @@ import { PermissionsDialog } from './PermissionsDialog';
 import { NavController } from '../common/data/NavController';
 import { RouteName } from '../common/constants/AppConstants';
 import { PreferencesScreenParam } from '../common/models/MediaModels';
-import { PlaybackHistory } from '../common/data/PlaybackHistory';
 import { Settings } from '../common/data/Settings';
 import {
   SettingsHomeCatalog,
@@ -24,6 +23,19 @@ import {
   HARDWARE_ACCELERATION_VALUES,
   HardwareAccelerationDialog,
 } from './HardwareAccelerationDialog';
+import {
+  BACKGROUND_PIP_DEFAULT,
+  BACKGROUND_PIP_LABELS,
+  BACKGROUND_PIP_VALUES,
+  BackgroundPipDialog,
+} from './BackgroundPipDialog';
+import {
+  METERED_CONNECTION_DEFAULT,
+  METERED_CONNECTION_LABELS,
+  METERED_CONNECTION_VALUES,
+  meteredConnectionLabel,
+  MeteredConnectionDialog,
+} from './MeteredConnectionDialog';
 
 /**
  * 更多 > 设置的首页。
@@ -41,24 +53,34 @@ export struct PreferencesActivityPage {
   /** 硬件加速当前选中值(弹窗初始态)。 */
   @Local hardwareAccelerationValue: string = HARDWARE_ACCELERATION_DEFAULT;
   @Local hardwareAccelerationDialogId: number = -1;
+  /** 背景/画中画模式当前选中值(弹窗初始态)。 */
+  @Local backgroundPipValue: string = BACKGROUND_PIP_DEFAULT;
+  @Local backgroundPipDialogId: number = -1;
+  /** 按流量计费的网络下对串流的处理当前选中值(弹窗初始态)。 */
+  @Local meteredConnectionValue: string = METERED_CONNECTION_DEFAULT;
+  @Local meteredConnectionDialogId: number = -1;
   /** 变更行摘要后重建列表项。 */
   @Local rowVersion: number = 0;
   /** 权限管理 BottomSheet 是否可见。 */
   @Local showPermissionsSheet: boolean = false;
+  @Local historyDisableConfirmOpen: boolean = false;
+  @Local historyDisableSheetType: string = '';
 
   async aboutToAppear(): Promise<void> {
     this.sections = SettingsHomeCatalog.create();
     const values: Record<string, boolean> = {};
+    // 启动时从 prefs 读 toggle 真值,缺省回退到 item.defaultOn。
+    // 此前直接用 item.defaultOn,导致切换不持久化、重启后回退到硬编码默认。
     for (const section of this.sections) {
       for (const item of section.items) {
         if (item.type === 'toggle') {
-          values[item.key] = item.defaultOn;
+          values[item.key] = await Settings.getBoolean(item.key, item.defaultOn);
         }
       }
     }
-    values[Settings.KEY_INCOGNITO] = await Settings.getBoolean(Settings.KEY_INCOGNITO, false);
     this.toggleValues = values;
     await this.loadOrientationSummary();
+    await this.loadMeteredConnectionSummary();
   }
 
   private async loadOrientationSummary(): Promise<void> {
@@ -80,7 +102,7 @@ export struct PreferencesActivityPage {
   }
 
   isItemEnabled(item: SettingsHomeItem): boolean {
-    return SettingsHomeCatalog.isEnabled(item, this.toggleValues.playback_history === true);
+    return SettingsHomeCatalog.isEnabled(item, this.toggleValues[Settings.ENABLE_PLAYBACK_HISTORY] === true);
   }
 
   isToggleOn(item: SettingsHomeItem): boolean {
@@ -91,15 +113,81 @@ export struct PreferencesActivityPage {
     if (!this.isItemEnabled(item)) {
       return;
     }
-    const next: Record<string, boolean> = this.toggleValues;
-    next[item.key] = value;
-    this.toggleValues = next;
+    if (item.key === Settings.ENABLE_PLAYBACK_HISTORY && !value && this.isToggleOn(item)) {
+      // ArkUI 会先切换 Toggle 的内部视觉状态；重建该行以回写仍为 true 的受控值。
+      this.rowVersion++;
+      this.historyDisableSheetType = 'playback';
+      this.historyDisableConfirmOpen = true;
+      return;
+    }
+    if (item.key === Settings.AUDIO_PLAY_QUEUE_HISTORY && !value && this.isToggleOn(item)) {
+      this.rowVersion++;
+      this.historyDisableSheetType = 'audio';
+      this.historyDisableConfirmOpen = true;
+      return;
+    }
+    this.toggleValues = this.updatedToggleValues(item.key, value);
+    this.rowVersion++;
+    // 落盘:对齐 PreferencesPage/PreferenceRow 的语义,所有 toggle 立即写 prefs,
+    // 否则下次冷启动 aboutToAppear 又会从 defaultOn 重新填充,看似"没保存"。
+    await Settings.put(item.key, value);
+    if (item.key === Settings.ENABLE_PLAYBACK_HISTORY && value) {
+      await Settings.put(Settings.VIDEO_PLAY_QUEUE_HISTORY, true);
+      await Settings.put(Settings.AUDIO_PLAY_QUEUE_HISTORY, true);
+    }
     if (item.key === Settings.KEY_INCOGNITO) {
-      await PlaybackHistory.setIncognito(value);
+      // 复用 PlaybackHistory 的通知管道,让订阅方(历史 tab 等)立即刷新。
     }
   }
 
   /** 后续接入子页、单选弹窗、权限页或业务设置的统一入口。 */
+  private async confirmDisablePlaybackHistory(): Promise<void> {
+    this.toggleValues = this.updatedToggleValues(Settings.ENABLE_PLAYBACK_HISTORY, false);
+    this.rowVersion++;
+    await Settings.put(Settings.ENABLE_PLAYBACK_HISTORY, false);
+    this.historyDisableConfirmOpen = false;
+    this.historyDisableSheetType = '';
+  }
+
+  private cancelDisablePlaybackHistory(): void {
+    // Toggle 的原始值仍为 true；递增 key 强制重建该行，撤销控件自身的瞬时视觉切换。
+    this.rowVersion++;
+    this.historyDisableConfirmOpen = false;
+    this.historyDisableSheetType = '';
+  }
+
+  private async confirmDisableAudioQueueHistory(): Promise<void> {
+    this.toggleValues = this.updatedToggleValues(Settings.AUDIO_PLAY_QUEUE_HISTORY, false);
+    this.rowVersion++;
+    await Settings.put(Settings.AUDIO_PLAY_QUEUE_HISTORY, false);
+    this.historyDisableConfirmOpen = false;
+    this.historyDisableSheetType = '';
+  }
+
+  private cancelDisableAudioQueueHistory(): void {
+    this.rowVersion++;
+    this.historyDisableConfirmOpen = false;
+    this.historyDisableSheetType = '';
+  }
+
+  /** 返回新对象引用，让播放历史与其子开关在同一帧重新计算可用状态。 */
+  private updatedToggleValues(key: string, value: boolean): Record<string, boolean> {
+    const next: Record<string, boolean> = {};
+    for (const section of this.sections) {
+      for (const item of section.items) {
+        if (item.type === 'toggle') {
+          if (key === Settings.ENABLE_PLAYBACK_HISTORY && value &&
+            (item.key === Settings.VIDEO_PLAY_QUEUE_HISTORY || item.key === Settings.AUDIO_PLAY_QUEUE_HISTORY)) {
+            next[item.key] = true;
+          } else {
+            next[item.key] = item.key === key ? value : this.toggleValues[item.key] === true;
+          }
+        }
+      }
+    }
+    return next;
+  }
+
   onSettingAction(item: SettingsHomeItem): void {
     if (item.key === 'permissions') {
       this.showPermissionsSheet = true;
@@ -111,6 +199,16 @@ export struct PreferencesActivityPage {
     }
     if (item.key === Settings.KEY_HARDWARE_ACCELERATION) {
       this.openHardwareAccelerationDialog();
+      return;
+    }
+    // 设置首页目录项 key 为 background_pip;持久化 key 复用 KEY_VIDEO_APP_SWITCH。
+    if (item.key === 'background_pip') {
+      this.openBackgroundPipDialog();
+      return;
+    }
+    // 设置首页目录项 key 与持久化 key 一致(metered_connection)。
+    if (item.key === Settings.KEY_METERED_CONNECTION) {
+      this.openMeteredConnectionDialog();
       return;
     }
     if (item.screenKey.length > 0) {
@@ -180,6 +278,117 @@ export struct PreferencesActivityPage {
     this.hardwareAccelerationValue = value;
     Settings.put(Settings.KEY_HARDWARE_ACCELERATION, value);
     this.closeHardwareAccelerationDialog();
+  }
+
+  private openBackgroundPipDialog(): void {
+    Settings.getString(Settings.KEY_VIDEO_APP_SWITCH, BACKGROUND_PIP_DEFAULT).then((value: string) => {
+      this.backgroundPipValue = value;
+      this.getUIContext().getPromptAction().openCustomDialog({
+        builder: () => {
+          this.backgroundPipDialogContent();
+        },
+        alignment: DialogAlignment.Center,
+        autoCancel: true,
+        maskColor: $r('app.color.dialog_mask'),
+        backgroundColor: Color.Transparent,
+      }).then((dialogId: number) => {
+        this.backgroundPipDialogId = dialogId;
+      });
+    });
+  }
+
+  private closeBackgroundPipDialog(): void {
+    if (this.backgroundPipDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.backgroundPipDialogId);
+    }
+    this.backgroundPipDialogId = -1;
+  }
+
+  private onBackgroundPipSelect(value: string): void {
+    this.backgroundPipValue = value;
+    Settings.put(Settings.KEY_VIDEO_APP_SWITCH, value);
+    this.closeBackgroundPipDialog();
+  }
+
+  @Builder
+  backgroundPipDialogContent() {
+    Column() {
+      BackgroundPipDialog({
+        title: '背景/画中画模式',
+        labels: BACKGROUND_PIP_LABELS,
+        values: BACKGROUND_PIP_VALUES,
+        selectedValue: this.backgroundPipValue,
+        onSelect: (value: string) => this.onBackgroundPipSelect(value),
+        onCancel: () => this.closeBackgroundPipDialog(),
+      })
+        .width('100%')
+    }
+    .width('100%')
+  }
+
+  private async loadMeteredConnectionSummary(): Promise<void> {
+    const value: string = await Settings.getString(Settings.KEY_METERED_CONNECTION, METERED_CONNECTION_DEFAULT);
+    this.meteredConnectionValue = value;
+    this.updateMeteredConnectionSummary(value);
+  }
+
+  private updateMeteredConnectionSummary(value: string): void {
+    for (const section of this.sections) {
+      for (const item of section.items) {
+        if (item.key === Settings.KEY_METERED_CONNECTION) {
+          item.summary = meteredConnectionLabel(value);
+          this.rowVersion++;
+          return;
+        }
+      }
+    }
+  }
+
+  private openMeteredConnectionDialog(): void {
+    Settings.getString(Settings.KEY_METERED_CONNECTION, METERED_CONNECTION_DEFAULT).then((value: string) => {
+      this.meteredConnectionValue = value;
+      this.getUIContext().getPromptAction().openCustomDialog({
+        builder: () => {
+          this.meteredConnectionDialogContent();
+        },
+        alignment: DialogAlignment.Center,
+        autoCancel: true,
+        maskColor: $r('app.color.dialog_mask'),
+        backgroundColor: Color.Transparent,
+      }).then((dialogId: number) => {
+        this.meteredConnectionDialogId = dialogId;
+      });
+    });
+  }
+
+  private closeMeteredConnectionDialog(): void {
+    if (this.meteredConnectionDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.meteredConnectionDialogId);
+    }
+    this.meteredConnectionDialogId = -1;
+  }
+
+  private onMeteredConnectionSelect(value: string): void {
+    this.meteredConnectionValue = value;
+    Settings.put(Settings.KEY_METERED_CONNECTION, value);
+    this.updateMeteredConnectionSummary(value);
+    this.closeMeteredConnectionDialog();
+  }
+
+  @Builder
+  meteredConnectionDialogContent() {
+    Column() {
+      MeteredConnectionDialog({
+        title: '按流量计费的网络下对串流的处理',
+        labels: METERED_CONNECTION_LABELS,
+        values: METERED_CONNECTION_VALUES,
+        selectedValue: this.meteredConnectionValue,
+        onSelect: (value: string) => this.onMeteredConnectionSelect(value),
+        onCancel: () => this.closeMeteredConnectionDialog(),
+      })
+        .width('100%')
+    }
+    .width('100%')
   }
 
   @Builder
@@ -354,6 +563,11 @@ export struct PreferencesActivityPage {
       .height('100%')
       .backgroundColor($r('app.color.background_default'))
     }
+    .bindSheet(this.historyDisableConfirmOpen, this.historyDisableSheet(), {
+      height: SheetSize.FIT_CONTENT,
+      dragBar: true,
+      onDisappear: () => this.cancelHistoryDisableSheet(),
+    })
     .hideTitleBar(true)
     .onBackPressed(() => {
       NavController.pop();
@@ -364,5 +578,114 @@ export struct PreferencesActivityPage {
       dragBar: true,
       onDisappear: () => this.showPermissionsSheet = false,
     })
+  }
+
+  private cancelHistoryDisableSheet(): void {
+    if (this.historyDisableSheetType === 'audio') {
+      this.cancelDisableAudioQueueHistory();
+      return;
+    }
+    this.cancelDisablePlaybackHistory();
+  }
+
+  @Builder
+  historyDisableSheet() {
+    if (this.historyDisableSheetType === 'audio') {
+      this.audioQueueHistoryDisableSheet()
+    } else {
+      this.playbackHistoryDisableSheet()
+    }
+  }
+
+  @Builder
+  playbackHistoryDisableSheet() {
+    Column() {
+      Row() {
+        Image($r('app.media.ic_warning'))
+          .width(54)
+          .height(54)
+          .fillColor('#BDBDBD')
+        Text('播放历史')
+          .fontSize(22)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#212121')
+          .margin({ left: 16 })
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      Text('禁用播放历史将隐藏历史记录、媒体进度和已看标记。应用将继续保存您的活动，并在历史记录重新启用时恢复这些记录。\n\n如果您想完全停止保存活动，请改用无痕模式。\n\n您还可以在历史记录界面或高级设置中清除历史记录。')
+        .fontSize(16)
+        .fontColor('#757575')
+        .lineHeight(24)
+        .width('100%')
+        .margin({ top: 24 })
+
+      Row() {
+        Text('取消')
+          .fontSize(16)
+          .fontColor('#FF8800')
+          .padding(12)
+          .onClick(() => this.cancelDisablePlaybackHistory())
+        Text('确定')
+          .fontSize(16)
+          .fontColor('#FF8800')
+          .padding(12)
+          .margin({ left: 22 })
+          .onClick(() => this.confirmDisablePlaybackHistory())
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.End)
+      .margin({ top: 48 })
+    }
+    .width('100%')
+    .padding({ left: 24, right: 24, top: 20, bottom: 16 })
+    .backgroundColor('#FFFFFF')
+  }
+
+  @Builder
+  audioQueueHistoryDisableSheet() {
+    Column() {
+      Row() {
+        Image($r('app.media.ic_warning'))
+          .width(54)
+          .height(54)
+          .fillColor('#BDBDBD')
+        Text('音频播放队列历史')
+          .fontSize(22)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#212121')
+          .margin({ left: 16 })
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      Text('禁用音频播放队列历史可能会引发异常行为。\n禁用以后，您将无法在以下位置执行继续播放操作：\n\n－ 蓝牙设备\n－ 小工具\n－ 媒体通知界面')
+        .fontSize(16)
+        .fontColor('#757575')
+        .lineHeight(24)
+        .width('100%')
+        .margin({ top: 24 })
+
+      Row() {
+        Text('取消')
+          .fontSize(16)
+          .fontColor('#FF8800')
+          .padding(12)
+          .onClick(() => this.cancelDisableAudioQueueHistory())
+        Text('确定')
+          .fontSize(16)
+          .fontColor('#FF8800')
+          .padding(12)
+          .margin({ left: 22 })
+          .onClick(() => this.confirmDisableAudioQueueHistory())
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.End)
+      .margin({ top: 48 })
+    }
+    .width('100%')
+    .padding({ left: 24, right: 24, top: 20, bottom: 16 })
+    .backgroundColor('#FFFFFF')
   }
 }

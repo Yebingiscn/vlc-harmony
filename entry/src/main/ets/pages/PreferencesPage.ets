@@ -122,6 +122,9 @@ export struct PreferencesPage {
     if (item.dependency === Settings.KEY_INCOGNITO) {
       return this.incognitoEnabled;
     }
+    if (item.dependency === Settings.ENABLE_PLAYBACK_HISTORY) {
+      return this.toggleStates[Settings.ENABLE_PLAYBACK_HISTORY] !== true;
+    }
     return this.toggleStates[item.dependency] === true;
   }
 
@@ -254,11 +257,15 @@ export struct PreferencesPage {
       this.openSleepTimer(item);
       return;
     }
+    if (item.routeName && item.routeName.length > 0) {
+      NavController.push(item.routeName);
+      return;
+    }
     if (item.targetScreen && item.targetScreen.length > 0) {
       const p: PreferencesScreenParam = { screenKey: item.targetScreen };
       NavController.push('Preferences', p);
     } else {
-      // 外部契约跳转(equalizer / directories / parental_control PIN 门 等)。TODO(契约)
+      // 外部契约跳转(directories / equalizer 等)。TODO(契约)
       promptAction.showToast({ message: item.key });
     }
   }
@@ -269,7 +276,7 @@ export struct PreferencesPage {
    * 其它情况返回 false 交由 PreferenceRow 直接 put,但需同步 toggleStates 镜像使 dependency 即时生效。
    */
   onToggleChange(item: PreferenceItem, newValue: boolean): boolean {
-    const confirmKeys: string[] = [Settings.PLAYBACK_HISTORY, 'audio_resume_playback', 'video_resume_playback'];
+    const confirmKeys: string[] = [Settings.ENABLE_PLAYBACK_HISTORY];
     if (!newValue && confirmKeys.indexOf(item.key) >= 0) {
       this.confirmItem = item;
       this.confirmSheetOpen = true;
@@ -555,7 +562,9 @@ export struct PreferencesPage {
       PreferenceConfirmDialog({
         preferenceKey: this.confirmItem.key,
         titleText: this.confirmItem.title,
-        warningText: $r('app.string.clear_playback_history'),
+        warningText: this.confirmItem.key === Settings.ENABLE_PLAYBACK_HISTORY
+          ? '禁用播放历史将隐藏历史记录、媒体进度和已看标记。应用将继续保存您的活动，并在历史记录重新启用时恢复这些记录。\n\n如果您想完全停止保存活动，请改用无痕模式。\n\n您还可以在历史记录界面或高级设置中清除历史记录。'
+          : $r('app.string.clear_playback_history'),
         onAccept: () => this.confirmDisable(),
         onCancel: () => this.cancelDisable(),
       }).width('100%')
@@ -802,18 +811,18 @@ export struct PreferencesPage {
       // History
       new PreferenceGroup('History', [
         new PreferenceItem({
-          key: Settings.PLAYBACK_HISTORY, title: 'Playback history', type: 'toggle',
+          key: Settings.ENABLE_PLAYBACK_HISTORY, title: 'Playback history', type: 'toggle',
           summary: 'Save all media played in History section', defaultValue: true,
         }),
         new PreferenceItem({
-          key: 'video_resume_playback', title: 'Video play queue history', type: 'toggle',
+          key: Settings.VIDEO_PLAY_QUEUE_HISTORY, title: 'Video play queue history', type: 'toggle',
           summary: 'Allow saving the video play queue to resume later', defaultValue: true,
-          dependency: Settings.PLAYBACK_HISTORY,
+          dependency: Settings.ENABLE_PLAYBACK_HISTORY,
         }),
         new PreferenceItem({
-          key: 'audio_resume_playback', title: 'Audio play queue history', type: 'toggle',
+          key: Settings.AUDIO_PLAY_QUEUE_HISTORY, title: 'Audio play queue history', type: 'toggle',
           summary: 'Allow saving the audio play queue to resume later', defaultValue: true,
-          dependency: Settings.PLAYBACK_HISTORY,
+          dependency: Settings.ENABLE_PLAYBACK_HISTORY,
         }),
       ]),
       // Extra settings(带图标跳转)
@@ -824,7 +833,7 @@ export struct PreferencesPage {
         new PreferenceItem({ key: 'audio_category', title: 'Audio', type: 'nav', icon: $r('app.media.ic_settings'), targetScreen: 'audio_category' }),
         new PreferenceItem({ key: 'equalizer', title: $r('app.string.equalizer'), type: 'nav', icon: $r('app.media.ic_settings') }),
         new PreferenceItem({ key: 'casting_category', title: 'Casting', type: 'nav', icon: $r('app.media.ic_settings'), targetScreen: 'casting_category' }),
-        new PreferenceItem({ key: 'parental_control', title: 'Parental control', type: 'nav', icon: $r('app.media.ic_settings'), targetScreen: 'parental_control' }),
+        new PreferenceItem({ key: 'parental_control', title: $r('app.string.parental_control'), type: 'nav', icon: $r('app.media.ic_settings') }),
         new PreferenceItem({ key: 'remote_access_category', title: 'Remote access', type: 'nav', icon: $r('app.media.ic_settings'), targetScreen: 'remote_access_category' }),
         new PreferenceItem({ key: 'android_auto_category', title: $r('app.string.android_auto'), type: 'nav', icon: $r('app.media.ic_settings'), targetScreen: 'android_auto_category' }),
         new PreferenceItem({ key: 'adv_category', title: $r('app.string.advanced_prefs_category'), type: 'nav', icon: $r('app.media.ic_settings'), targetScreen: 'adv_category' }),
@@ -842,7 +851,6 @@ export struct PreferencesPage {
         optionValues: ['-1', '1', '2'],
         options: [$r('app.string.follow_system_mode'), $r('app.string.light_theme'), $r('app.string.enable_black_theme')],
       }),
-      new PreferenceItem({ key: 'tv_ui', title: $r('app.string.tv_ui_title'), type: 'checkbox', summary: $r('app.string.tv_ui_summary'), defaultValue: false }),
       new PreferenceItem({
         key: 'set_locale', title: $r('app.string.setting_language'), type: 'list', defaultValue: 'default',
         optionValues: ['default', 'zh-CN', 'en-US'],
@@ -992,12 +1000,13 @@ export struct PreferencesPage {
 
   // ---- PreferencesParentalControl ----
   static parentalScreen(): PreferenceScreen {
-    const items: PreferenceItem[] = [
-      new PreferenceItem({ key: 'modify_pin_code', title: 'Change your PIN code', type: 'nav' }),
-      new PreferenceItem({ key: 'restrict_settings', title: 'Restrict settings access', type: 'toggle', defaultValue: false }),
-      new PreferenceItem({ key: 'safe_mode', title: 'Safe mode', type: 'toggle', summary: 'When activated, files cannot be deleted or playlist modified without entering the pin', defaultValue: false }),
-    ];
-    return new PreferenceScreen('parental_control', 'Parental control', [new PreferenceGroup('', items)]);
+    return new PreferenceScreen('parental_control', $r('app.string.parental_control'), [
+      new PreferenceGroup('', [
+        new PreferenceItem({ key: 'change_pin', title: $r('app.string.change_password'), type: 'nav', routeName: 'ParentalControl' }),
+        new PreferenceItem({ key: 'restrict_settings', title: $r('app.string.restrict_settings_access'), type: 'checkbox', defaultValue: false }),
+        new PreferenceItem({ key: 'safe_mode', title: $r('app.string.safe_mode'), type: 'checkbox', summary: $r('app.string.safe_mode_summary'), defaultValue: false }),
+      ]),
+    ]);
   }
 
   // ---- PreferencesRemoteAccess ----
