@@ -123,7 +123,7 @@ class VideoGridViewModel {
 
   applySearch(q: string): void {
     this.searchQuery = q;
-    void this.rebuild();
+    this.rebuild();
   }
 
   applySort(items: MediaWrapper[]): MediaWrapper[] {
@@ -200,11 +200,17 @@ export struct VideoGridPage {
   @Local contextItemFav: boolean = false;
   @Local contextFolder: Folder | null = null;
   @Local contextFolderFav: boolean = false;
+  @Local inSelection: boolean = false;
+  @Local selectedUris: string[] = [];
   @Param settingsVersion: number = 0;
   @Param searchMode: boolean = false;
   @Param searchQuery: string = '';
+  @Param selectionActionVersion: number = 0;
+  @Param selectionActionType: string = '';
   private removeSettingsListener: (() => void) | null = null;
   @Event onSearchGlobal: () => void = () => {
+  };
+  @Event onSelectionChange: (active: boolean, count: number) => void = () => {
   };
 
   aboutToAppear(): void {
@@ -320,6 +326,101 @@ export struct VideoGridPage {
     this.contextFolder = null;
     this.contextItemFav = MediaLibrary.isVideoFav(item.uri);
     this.showContext = true;
+  }
+
+  // ---- 选择模式 ----
+
+  isSelected(uri: string): boolean {
+    return this.selectedUris.includes(uri);
+  }
+
+  enterSelection(item: MediaWrapper): void {
+    this.inSelection = true;
+    this.selectedUris = [item.uri];
+    this.onSelectionChange(true, 1);
+  }
+
+  toggleSelection(uri: string): void {
+    if (this.selectedUris.includes(uri)) {
+      this.selectedUris = this.selectedUris.filter((u: string) => u !== uri);
+    } else {
+      this.selectedUris = [...this.selectedUris, uri];
+    }
+    if (this.selectedUris.length === 0) {
+      this.exitSelection();
+    } else {
+      this.onSelectionChange(true, this.selectedUris.length);
+    }
+  }
+
+  exitSelection(): void {
+    this.inSelection = false;
+    this.selectedUris = [];
+    this.onSelectionChange(false, 0);
+  }
+
+  /** MainPage 工具栏操作触发:play / fav / delete / exit。 */
+  @Monitor('selectionActionVersion')
+  onSelectionAction(): void {
+    if (this.selectionActionType === 'play') {
+      this.playSelected();
+    } else if (this.selectionActionType === 'fav') {
+      this.favSelected();
+    } else if (this.selectionActionType === 'delete') {
+      this.deleteSelected();
+    } else if (this.selectionActionType === 'exit') {
+      this.exitSelection();
+    }
+  }
+
+  /** 播放选中的第一个视频(以全部选中视频为队列)。 */
+  playSelected(): void {
+    const items = this.vm.items.filter((v: MediaWrapper) => this.selectedUris.includes(v.uri));
+    if (items.length === 0) {
+      return;
+    }
+    const list: VideoPlayItem[] = items.map((m: MediaWrapper) => {
+      const e: VideoPlayItem = { uri: m.uri, title: m.title, artworkUrl: m.artworkUrl };
+      return e;
+    });
+    const param: VideoParam = {
+      uri: items[0].uri,
+      title: items[0].title,
+      list: list,
+      index: 0,
+    };
+    this.exitSelection();
+    NavController.push('VideoPlayer', param);
+  }
+
+  /** 添加选中的视频到收藏夹。 */
+  favSelected(): void {
+    const toAdd: string[] = this.selectedUris.filter((uri: string) => !MediaLibrary.isVideoFav(uri));
+    if (toAdd.length === 0) {
+      promptAction.showToast({ message: '已全部收藏' });
+      this.exitSelection();
+      return;
+    }
+    const tasks: Promise<boolean>[] = toAdd.map((uri: string) => MediaLibrary.toggleVideoFav(uri));
+    Promise.all(tasks).then(() => {
+      promptAction.showToast({ message: '已收藏' });
+      void this.vm.rebuild();
+      this.exitSelection();
+    });
+  }
+
+  /** 删除选中的视频。 */
+  deleteSelected(): void {
+    const items = this.vm.items.filter((v: MediaWrapper) => this.selectedUris.includes(v.uri));
+    if (items.length === 0) {
+      return;
+    }
+    const tasks: Promise<boolean>[] = items.map((v: MediaWrapper) => MediaLibrary.deleteVideo(v));
+    Promise.all(tasks).then(() => {
+      promptAction.showToast({ message: '已删除' });
+      void this.vm.rebuild();
+      this.exitSelection();
+    });
   }
 
   build() {
@@ -658,7 +759,7 @@ export struct VideoGridPage {
           MediaLibrary.toggleFolderFav(path).then((fav: boolean) => {
             this.contextFolderFav = fav;
             promptAction.showToast({ message: fav ? '已收藏' : '已取消收藏' });
-            void this.vm.rebuild();
+            this.vm.rebuild();
           });
         })
 
@@ -753,11 +854,31 @@ export struct VideoGridPage {
         GridItem() {
           MediaGridCard({
             item: item,
+            selected: this.isSelected(item.uri),
+            inSelection: this.inSelection,
             showSeenMarker: this.vm.showSeenMarker,
             showThumbnail: this.vm.showThumbnails,
-            onItemClick: () => this.playVideo(item),
-            onItemLongClick: () => this.openContext(item),
-            onItemMoreClick: () => this.openContext(item),
+            onItemClick: () => {
+              if (this.inSelection) {
+                this.toggleSelection(item.uri);
+              } else {
+                this.playVideo(item);
+              }
+            },
+            onItemLongClick: () => {
+              if (this.inSelection) {
+                this.toggleSelection(item.uri);
+              } else {
+                this.enterSelection(item);
+              }
+            },
+            onItemMoreClick: () => {
+              if (this.inSelection) {
+                this.toggleSelection(item.uri);
+              } else {
+                this.openContext(item);
+              }
+            },
           })
         }
       }, (item: MediaWrapper) => item.uri)
@@ -777,11 +898,31 @@ export struct VideoGridPage {
         ListItem() {
           MediaListCard({
             item: item,
+            selected: this.isSelected(item.uri),
+            inSelection: this.inSelection,
             showSeenMarker: this.vm.showSeenMarker,
             showThumbnail: this.vm.showThumbnails,
-            onItemClick: () => this.playVideo(item),
-            onItemLongClick: () => this.openContext(item),
-            onItemMoreClick: () => this.openContext(item),
+            onItemClick: () => {
+              if (this.inSelection) {
+                this.toggleSelection(item.uri);
+              } else {
+                this.playVideo(item);
+              }
+            },
+            onItemLongClick: () => {
+              if (this.inSelection) {
+                this.toggleSelection(item.uri);
+              } else {
+                this.enterSelection(item);
+              }
+            },
+            onItemMoreClick: () => {
+              if (this.inSelection) {
+                this.toggleSelection(item.uri);
+              } else {
+                this.openContext(item);
+              }
+            },
           })
         }
       }, (item: MediaWrapper) => item.uri)
