@@ -48,6 +48,8 @@ export class PreferenceItem {
   dependency?: string;
   /** 跳转目标子 screen key(nav/click 类型,点击 push 进 PreferencesPage)。 */
   targetScreen?: string;
+  /** 直接跳转的外部路由名(如 'ParentalControl')。非空时优先于 targetScreen。 */
+  routeName?: string;
   /** 数字选择器最小值(numberpicker)。 */
   numberMin?: number;
   /** 数字选择器最大值(numberpicker)。 */
@@ -70,6 +72,7 @@ export class PreferenceItem {
     this.step = init.step;
     this.dependency = init.dependency;
     this.targetScreen = init.targetScreen;
+    this.routeName = init.routeName;
     this.numberMin = init.numberMin;
     this.numberMax = init.numberMax;
     this.maxLength = init.maxLength;
@@ -92,6 +95,7 @@ export interface PreferenceItemInit {
   step?: number;
   dependency?: string;
   targetScreen?: string;
+  routeName?: string;
   numberMin?: number;
   numberMax?: number;
   maxLength?: number;

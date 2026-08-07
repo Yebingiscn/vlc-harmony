@@ -61,6 +61,16 @@ export class PlaybackHistory {
     PlaybackHistory.notify();
   }
 
+  static async removeEntry(uri: string): Promise<void> {
+    await PlaybackHistory.ensureLoaded();
+    const before = PlaybackHistory.entries.length;
+    PlaybackHistory.entries = PlaybackHistory.entries.filter((entry: PlaybackHistoryEntry) => entry.uri !== uri);
+    if (PlaybackHistory.entries.length !== before) {
+      await PlaybackHistory.persist();
+      PlaybackHistory.notify();
+    }
+  }
+
   static async setIncognito(enabled: boolean): Promise<void> {
     await Settings.put(Settings.KEY_INCOGNITO, enabled);
     PlaybackHistory.notify();

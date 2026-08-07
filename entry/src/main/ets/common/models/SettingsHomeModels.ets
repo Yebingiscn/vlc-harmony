@@ -78,7 +78,7 @@ export class SettingsHomeCatalog {
         new SettingsHomeItem('audio_category', '音频', '', 'navigation', false, false, 'audio'),
         new SettingsHomeItem('equalizer', '均衡器', '', 'navigation', false, false, 'equalizer'),
         new SettingsHomeItem('casting_category', '投屏', '', 'navigation', false, false, 'casting', 'casting_category'),
-        new SettingsHomeItem('parental_control', '家长控制', '', 'navigation', false, false, 'parental'),
+        new SettingsHomeItem('parental_control', '家长控制', '', 'navigation', false, false, 'parental', 'parental_control'),
         new SettingsHomeItem('remote_access_category', '远程访问', '', 'navigation', false, false, 'remote', 'remote_access_category'),
         new SettingsHomeItem('android_auto_category', 'Android Auto', '', 'navigation', false, false, 'android_auto'),
         new SettingsHomeItem('adv_category', '高级', '', 'navigation', false, false, 'advanced'),
