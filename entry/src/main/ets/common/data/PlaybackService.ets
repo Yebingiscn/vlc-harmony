@@ -15,7 +15,6 @@ import { MediaSessionManager } from './MediaSessionManager';
 import { NetworkConnectionManager } from './NetworkConnectionManager';
 import { LibVLC, Media, MediaPlayer, Equalizer, RendererDiscoverer, MediaSlaveType } from '../../libvlc';
 import { VlcTrackInfo, VlcChapterInfo, VlcRendererInfo, VlcMediaTrackInfo } from 'libvlcnapi.so';
-import { Settings } from './Settings';
 import { PlaybackQueueHistory, PlaybackQueueHistoryType } from './PlaybackQueueHistory';
 
 const LOG_DOMAIN: number = 0x0001;
