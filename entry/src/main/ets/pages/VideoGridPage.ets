@@ -55,9 +55,14 @@ class VideoGridViewModel {
     this.sortDesc = await Settings.getBoolean(Settings.KEY_VIDEO_SORT_DESC, false);
     this.onlyFavs = await Settings.getBoolean(Settings.KEY_VIDEO_ONLY_FAVS, false);
     this.grouping = VideoGridViewModel.toGroupingType(await Settings.getInt(Settings.KEY_GROUP_VIDEOS, 0));
-    // 先确保媒体读权限(首次弹授权框),再扫描 -- 否则扫描在授权完成前跑会返回空。
-    await PermissionCoordinator.askStoragePermission(false, false, true);
-    await MediaLibrary.scan();
+    // 尊重「自动重新扫描」开关:autoRescan 关闭时不自动扫描。
+    // 手动刷新请走 vm.refresh()(下拉 / FAB / 权限弹窗授权后),不受此门控影响。
+    const autoRescan = await Settings.getBoolean(Settings.KEY_MEDIALIBRARY_AUTO_RESCAN, true);
+    if (autoRescan) {
+      // 先确保媒体读权限(首次弹授权框),再扫描 -- 否则扫描在授权完成前跑会返回空。
+      await PermissionCoordinator.askStoragePermission(false, false, true);
+      await MediaLibrary.scan();
+    }
     await MediaLibrary.loadVideoFavs();
     await MediaLibrary.loadFolderFavs();
     await this.rebuild();

@@ -62,7 +62,12 @@ class AudioBrowserVM {
     this.sortDesc = await Settings.getBoolean(Settings.KEY_AUDIO_SORT_DESC, false);
     this.showAllArtists = await Settings.getBoolean(Settings.KEY_ARTISTS_SHOW_ALL, false);
     this.onlyFavs = await Settings.getBoolean(Settings.KEY_AUDIO_ONLY_FAVS, false);
-    await MediaLibrary.scan();
+    // 尊重「自动重新扫描」开关:autoRescan 关闭时不自动扫描。
+    // 手动刷新请走 vm.reload()(下拉刷新),不受此门控影响。
+    const autoRescan = await Settings.getBoolean(Settings.KEY_MEDIALIBRARY_AUTO_RESCAN, true);
+    if (autoRescan) {
+      await MediaLibrary.scan();
+    }
     await MediaLibrary.loadMediaFavs();
     this.syncData();
     this.loading = false;
