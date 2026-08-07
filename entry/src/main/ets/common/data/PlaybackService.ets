@@ -7,10 +7,12 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { wantAgent, WantAgent } from '@kit.AbilityKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
+import { promptAction } from '@kit.ArkUI';
 import { MediaWrapper, PlayState } from '../models/MediaModels';
 import { Settings } from './Settings';
 import { AppContext } from './AppContext';
 import { MediaSessionManager } from './MediaSessionManager';
+import { NetworkConnectionManager } from './NetworkConnectionManager';
 import { LibVLC, Media, MediaPlayer, Equalizer, RendererDiscoverer, MediaSlaveType } from '../../libvlc';
 import { VlcTrackInfo, VlcChapterInfo, VlcRendererInfo, VlcMediaTrackInfo } from 'libvlcnapi.so';
 
@@ -30,6 +32,12 @@ function needsFdOpen(uri: string): boolean {
     return true;
   }
   return false;
+}
+
+/** 是否为网络串流 URI(对齐 Android isSchemeStreaming)。 */
+function isStreamingUri(uri: string): boolean {
+  return uri.startsWith('http://') || uri.startsWith('https://') ||
+    uri.startsWith('mms') || uri.startsWith('rtsp');
 }
 
 /** 播放队列条目(兼容 origin/dev 音频列表 API;内部仍转 MediaWrapper 走 libVLC)。 */
@@ -114,6 +122,8 @@ export class PlaybackService {
   private continuousTaskActive: boolean = false;
   /** 长时任务通知点击使用的 WantAgent(复用,避免重复构建)。 */
   private wantAgentObj: WantAgent | null = null;
+  /** 网络计费变化监听(init 注册,release 注销)。 */
+  private meteredChangeListener: (metered: boolean) => void = () => {};
   private duration: number = 0;
   private position: number = 0;
   private listeners: PlaybackListener[] = [];
@@ -209,6 +219,11 @@ export class PlaybackService {
         onSetSpeed: (rate: number) => { this.setSpeed(rate); },
       });
       void MediaSessionManager.ensure();
+      this.meteredChangeListener = (metered: boolean) => {
+        void this.checkMeteredNetwork(metered);
+      };
+      NetworkConnectionManager.onMeteredChange(this.meteredChangeListener);
+      NetworkConnectionManager.start();
       hilog.info(LOG_DOMAIN, LOG_TAG,
         '[VLC] PlaybackService.init ok shuffle=%{public}s repeatMode=%{public}d globalSpeed=%{public}s speed=%{public}f tracks=%{public}d',
         this.shuffle ? 'on' : 'off', this.repeatMode,
@@ -317,6 +332,39 @@ export class PlaybackService {
     }
   }
 
+  /** 按流量计费的网络下对串流的处理(对齐 Android checkMetered)。 */
+  private async checkMeteredNetwork(meteredOverride?: boolean): Promise<void> {
+    if (this.state !== PlayState.PLAYING && this.state !== PlayState.PREPARED) {
+      return;
+    }
+    const action: string = await Settings.getString(Settings.KEY_METERED_CONNECTION, '0');
+    if (action === '0') {
+      return;
+    }
+    const cur: MediaWrapper | null = this.getCurrent();
+    const uri: string = cur?.uri ?? '';
+    if (!isStreamingUri(uri)) {
+      return;
+    }
+    let metered: boolean;
+    if (meteredOverride !== undefined) {
+      metered = meteredOverride;
+    } else {
+      metered = await NetworkConnectionManager.isMetered();
+    }
+    if (!metered) {
+      return;
+    }
+    hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] metered stream action=%{public}s uri=%{public}s',
+      action, uri);
+    if (action === '1') {
+      this.stop();
+      promptAction.showToast({ message: '已停止播放（按流量计费的网络上的串流）' });
+    } else {
+      promptAction.showToast({ message: '警告：正在按流量计费的网络上播放串流，可能产生流量费用' });
+    }
+  }
+
   private onNativeEvent(event: string, value: number): void {
     // 注意:这里不要对每个事件打 hilog —— seek 后 libVLC 会爆发大量 timeChanged,
     // 逐条打日志会把 hilog socket 写满导致 writev 阻塞,JS 主线程卡死(AppFreeze)。
@@ -327,6 +375,7 @@ export class PlaybackService {
         this.refreshVideoSize();
         this.startSessionSync();
         void this.startContinuousTask();
+        void this.checkMeteredNetwork();
         void MediaSessionManager.updatePlaybackState(PlayState.PLAYING, this.position, this.duration, this.speed);
         break;
       case 'paused':
@@ -1317,6 +1366,7 @@ export class PlaybackService {
     this.emitState();
     this.stopSessionSync();
     void this.stopContinuousTask();
+    NetworkConnectionManager.offMeteredChange(this.meteredChangeListener);
     void MediaSessionManager.release();
   }
 

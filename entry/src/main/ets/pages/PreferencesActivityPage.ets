@@ -29,6 +29,13 @@ import {
   BACKGROUND_PIP_VALUES,
   BackgroundPipDialog,
 } from './BackgroundPipDialog';
+import {
+  METERED_CONNECTION_DEFAULT,
+  METERED_CONNECTION_LABELS,
+  METERED_CONNECTION_VALUES,
+  meteredConnectionLabel,
+  MeteredConnectionDialog,
+} from './MeteredConnectionDialog';
 
 /**
  * 更多 > 设置的首页。
@@ -49,6 +56,9 @@ export struct PreferencesActivityPage {
   /** 背景/画中画模式当前选中值(弹窗初始态)。 */
   @Local backgroundPipValue: string = BACKGROUND_PIP_DEFAULT;
   @Local backgroundPipDialogId: number = -1;
+  /** 按流量计费的网络下对串流的处理当前选中值(弹窗初始态)。 */
+  @Local meteredConnectionValue: string = METERED_CONNECTION_DEFAULT;
+  @Local meteredConnectionDialogId: number = -1;
   /** 变更行摘要后重建列表项。 */
   @Local rowVersion: number = 0;
 
@@ -66,6 +76,7 @@ export struct PreferencesActivityPage {
     }
     this.toggleValues = values;
     await this.loadOrientationSummary();
+    await this.loadMeteredConnectionSummary();
   }
 
   private async loadOrientationSummary(): Promise<void> {
@@ -123,6 +134,11 @@ export struct PreferencesActivityPage {
     // 设置首页目录项 key 为 background_pip;持久化 key 复用 KEY_VIDEO_APP_SWITCH。
     if (item.key === 'background_pip') {
       this.openBackgroundPipDialog();
+      return;
+    }
+    // 设置首页目录项 key 与持久化 key 一致(metered_connection)。
+    if (item.key === Settings.KEY_METERED_CONNECTION) {
+      this.openMeteredConnectionDialog();
       return;
     }
     if (item.screenKey.length > 0) {
@@ -234,6 +250,71 @@ export struct PreferencesActivityPage {
         selectedValue: this.backgroundPipValue,
         onSelect: (value: string) => this.onBackgroundPipSelect(value),
         onCancel: () => this.closeBackgroundPipDialog(),
+      })
+        .width('100%')
+    }
+    .width('100%')
+  }
+
+  private async loadMeteredConnectionSummary(): Promise<void> {
+    const value: string = await Settings.getString(Settings.KEY_METERED_CONNECTION, METERED_CONNECTION_DEFAULT);
+    this.meteredConnectionValue = value;
+    this.updateMeteredConnectionSummary(value);
+  }
+
+  private updateMeteredConnectionSummary(value: string): void {
+    for (const section of this.sections) {
+      for (const item of section.items) {
+        if (item.key === Settings.KEY_METERED_CONNECTION) {
+          item.summary = meteredConnectionLabel(value);
+          this.rowVersion++;
+          return;
+        }
+      }
+    }
+  }
+
+  private openMeteredConnectionDialog(): void {
+    Settings.getString(Settings.KEY_METERED_CONNECTION, METERED_CONNECTION_DEFAULT).then((value: string) => {
+      this.meteredConnectionValue = value;
+      this.getUIContext().getPromptAction().openCustomDialog({
+        builder: () => {
+          this.meteredConnectionDialogContent();
+        },
+        alignment: DialogAlignment.Center,
+        autoCancel: true,
+        maskColor: $r('app.color.dialog_mask'),
+        backgroundColor: Color.Transparent,
+      }).then((dialogId: number) => {
+        this.meteredConnectionDialogId = dialogId;
+      });
+    });
+  }
+
+  private closeMeteredConnectionDialog(): void {
+    if (this.meteredConnectionDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.meteredConnectionDialogId);
+    }
+    this.meteredConnectionDialogId = -1;
+  }
+
+  private onMeteredConnectionSelect(value: string): void {
+    this.meteredConnectionValue = value;
+    Settings.put(Settings.KEY_METERED_CONNECTION, value);
+    this.updateMeteredConnectionSummary(value);
+    this.closeMeteredConnectionDialog();
+  }
+
+  @Builder
+  meteredConnectionDialogContent() {
+    Column() {
+      MeteredConnectionDialog({
+        title: '按流量计费的网络下对串流的处理',
+        labels: METERED_CONNECTION_LABELS,
+        values: METERED_CONNECTION_VALUES,
+        selectedValue: this.meteredConnectionValue,
+        onSelect: (value: string) => this.onMeteredConnectionSelect(value),
+        onCancel: () => this.closeMeteredConnectionDialog(),
       })
         .width('100%')
     }

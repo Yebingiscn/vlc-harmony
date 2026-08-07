@@ -99,6 +99,7 @@ export class Settings {
   static readonly LOCK_USE_SENSOR: string = 'lock_use_sensor';
   static readonly LAST_LOCK_ORIENTATION: string = 'last_lock_orientation';
   static readonly KEY_VIDEO_APP_SWITCH: string = 'video_action_switch';
+  static readonly KEY_METERED_CONNECTION: string = 'metered_connection';
   // Equalizer
   static readonly KEY_CURRENT_EQUALIZER_ID: string = 'current_equalizer_id';
   static readonly KEY_EQUALIZER_ENABLED: string = 'equalizer_enabled';
