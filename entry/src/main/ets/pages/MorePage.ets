@@ -193,8 +193,9 @@ export struct MorePage {
         }
         .width('100%').padding({ left: 16, right: 16, top: 20 })
 
-        this.SectionTitle('串流', () => NavController.push('MrlPanel'))
-        this.NewStreamCard()
+        // 串流入口按需求隐藏(保留底层实现,仅不在此展示):
+        // this.SectionTitle('串流', () => NavController.push('MrlPanel'))
+        // this.NewStreamCard()
 
         if (this.vm.history.length > 0) {
           this.SectionTitle('历史', () => this.openHistory())
