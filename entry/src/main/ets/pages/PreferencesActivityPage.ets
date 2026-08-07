@@ -23,6 +23,12 @@ import {
   HARDWARE_ACCELERATION_VALUES,
   HardwareAccelerationDialog,
 } from './HardwareAccelerationDialog';
+import {
+  BACKGROUND_PIP_DEFAULT,
+  BACKGROUND_PIP_LABELS,
+  BACKGROUND_PIP_VALUES,
+  BackgroundPipDialog,
+} from './BackgroundPipDialog';
 
 /**
  * 更多 > 设置的首页。
@@ -40,6 +46,9 @@ export struct PreferencesActivityPage {
   /** 硬件加速当前选中值(弹窗初始态)。 */
   @Local hardwareAccelerationValue: string = HARDWARE_ACCELERATION_DEFAULT;
   @Local hardwareAccelerationDialogId: number = -1;
+  /** 背景/画中画模式当前选中值(弹窗初始态)。 */
+  @Local backgroundPipValue: string = BACKGROUND_PIP_DEFAULT;
+  @Local backgroundPipDialogId: number = -1;
   /** 变更行摘要后重建列表项。 */
   @Local rowVersion: number = 0;
 
@@ -104,6 +113,11 @@ export struct PreferencesActivityPage {
     }
     if (item.key === Settings.KEY_HARDWARE_ACCELERATION) {
       this.openHardwareAccelerationDialog();
+      return;
+    }
+    // 设置首页目录项 key 为 background_pip;持久化 key 复用 KEY_VIDEO_APP_SWITCH。
+    if (item.key === 'background_pip') {
+      this.openBackgroundPipDialog();
       return;
     }
     if (item.screenKey.length > 0) {
@@ -173,6 +187,52 @@ export struct PreferencesActivityPage {
     this.hardwareAccelerationValue = value;
     Settings.put(Settings.KEY_HARDWARE_ACCELERATION, value);
     this.closeHardwareAccelerationDialog();
+  }
+
+  private openBackgroundPipDialog(): void {
+    Settings.getString(Settings.KEY_VIDEO_APP_SWITCH, BACKGROUND_PIP_DEFAULT).then((value: string) => {
+      this.backgroundPipValue = value;
+      this.getUIContext().getPromptAction().openCustomDialog({
+        builder: () => {
+          this.backgroundPipDialogContent();
+        },
+        alignment: DialogAlignment.Center,
+        autoCancel: true,
+        maskColor: $r('app.color.dialog_mask'),
+        backgroundColor: Color.Transparent,
+      }).then((dialogId: number) => {
+        this.backgroundPipDialogId = dialogId;
+      });
+    });
+  }
+
+  private closeBackgroundPipDialog(): void {
+    if (this.backgroundPipDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.backgroundPipDialogId);
+    }
+    this.backgroundPipDialogId = -1;
+  }
+
+  private onBackgroundPipSelect(value: string): void {
+    this.backgroundPipValue = value;
+    Settings.put(Settings.KEY_VIDEO_APP_SWITCH, value);
+    this.closeBackgroundPipDialog();
+  }
+
+  @Builder
+  backgroundPipDialogContent() {
+    Column() {
+      BackgroundPipDialog({
+        title: '背景/画中画模式',
+        labels: BACKGROUND_PIP_LABELS,
+        values: BACKGROUND_PIP_VALUES,
+        selectedValue: this.backgroundPipValue,
+        onSelect: (value: string) => this.onBackgroundPipSelect(value),
+        onCancel: () => this.closeBackgroundPipDialog(),
+      })
+        .width('100%')
+    }
+    .width('100%')
   }
 
   @Builder

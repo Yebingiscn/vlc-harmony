@@ -5,8 +5,12 @@
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
+import { wantAgent, WantAgent } from '@kit.AbilityKit';
+import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { MediaWrapper, PlayState } from '../models/MediaModels';
 import { Settings } from './Settings';
+import { AppContext } from './AppContext';
+import { MediaSessionManager } from './MediaSessionManager';
 import { LibVLC, Media, MediaPlayer, Equalizer, RendererDiscoverer, MediaSlaveType } from '../../libvlc';
 import { VlcTrackInfo, VlcChapterInfo, VlcRendererInfo, VlcMediaTrackInfo } from 'libvlcnapi.so';
 
@@ -98,6 +102,10 @@ export class PlaybackService {
   private shuffle: boolean = false;
   private repeatMode: number = 0;
   private playAsAudio: boolean = false;
+  /** AUDIO_PLAYBACK 长时任务激活标记(播放中申请,暂停/停止时取消)。 */
+  private continuousTaskActive: boolean = false;
+  /** 长时任务通知点击使用的 WantAgent(复用,避免重复构建)。 */
+  private wantAgentObj: WantAgent | null = null;
   private duration: number = 0;
   private position: number = 0;
   private listeners: PlaybackListener[] = [];
@@ -155,6 +163,16 @@ export class PlaybackService {
       this.player.setEventListener((event: string, value: number) => this.onNativeEvent(event, value));
       this.inited = true;
       hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] PlaybackService.init ok');
+      MediaSessionManager.setCallbacks({
+        onPlay: () => { void this.play(); },
+        onPause: () => { this.pause(); },
+        onStop: () => { this.stop(); },
+        onNext: () => { void this.next(); },
+        onPrevious: () => { void this.prev(); },
+        onSeek: (ms: number) => { this.seek(ms); },
+        onSetSpeed: (rate: number) => { this.setSpeed(rate); },
+      });
+      void MediaSessionManager.ensure();
     } catch (e) {
       hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] PlaybackService.init exception: %{public}s',
         (e as Error).message ?? String(e));
@@ -164,6 +182,8 @@ export class PlaybackService {
   }
 
   private lastTimeEmit: number = 0;
+  /** AVSession 播放中进度同步定时器(确保通知栏进度条持续推进)。 */
+  private sessionSyncTimer: number = -1;
 
   /** timeChanged 节流:libVLC 在 seek/定位时会爆发高频 timeChanged,逐条刷新
    *  position 会触发 ArkUI 渲染风暴并积压 tsfn 队列;合并到 300ms 一刷。 */
@@ -175,6 +195,86 @@ export class PlaybackService {
     this.lastTimeEmit = now;
     this.position = ms;
     this.emitTime();
+    void MediaSessionManager.updatePlaybackState(this.state, ms, this.duration, this.speed);
+  }
+
+  private startSessionSync(): void {
+    if (this.sessionSyncTimer !== -1) {
+      return;
+    }
+    this.sessionSyncTimer = setInterval(() => {
+      void MediaSessionManager.updatePlaybackState(this.state, this.position, this.duration, this.speed);
+    }, 1000);
+  }
+
+  private stopSessionSync(): void {
+    if (this.sessionSyncTimer !== -1) {
+      clearInterval(this.sessionSyncTimer);
+      this.sessionSyncTimer = -1;
+    }
+  }
+
+  /** 构建长时任务通知的 WantAgent(点击通知回到应用)。 */
+  private async getContinuousWantAgent(): Promise<WantAgent | null> {
+    if (this.wantAgentObj !== null) {
+      return this.wantAgentObj;
+    }
+    try {
+      const ctx = AppContext.get();
+      const info: wantAgent.WantAgentInfo = {
+        wants: [{
+          bundleName: ctx.abilityInfo.bundleName,
+          abilityName: 'EntryAbility',
+        }],
+        operationType: wantAgent.OperationType.START_ABILITY,
+        requestCode: 0,
+        wantAgentFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG],
+      };
+      this.wantAgentObj = await wantAgent.getWantAgent(info);
+    } catch (e) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] build continuous-task wantAgent failed: %{public}s',
+        (e as Error).message ?? String(e));
+    }
+    return this.wantAgentObj;
+  }
+
+  /** 申请 AUDIO_PLAYBACK 长时任务,保证退后台后音频不被系统静音/挂起。 */
+  private async startContinuousTask(): Promise<void> {
+    if (this.continuousTaskActive || !AppContext.isReady()) {
+      return;
+    }
+    const agent: WantAgent | null = await this.getContinuousWantAgent();
+    if (agent === null) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] startBackgroundRunning skipped: wantAgent unavailable');
+      return;
+    }
+    try {
+      await backgroundTaskManager.startBackgroundRunning(
+        AppContext.get(), backgroundTaskManager.BackgroundMode.AUDIO_PLAYBACK, agent);
+      this.continuousTaskActive = true;
+      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] continuous task started (AUDIO_PLAYBACK)');
+    } catch (e) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] startBackgroundRunning failed: %{public}s',
+        (e as Error).message ?? String(e));
+    }
+  }
+
+  /** 取消长时任务(暂停/停止/出错/释放时)。 */
+  private async stopContinuousTask(): Promise<void> {
+    if (!this.continuousTaskActive) {
+      return;
+    }
+    this.continuousTaskActive = false;
+    if (!AppContext.isReady()) {
+      return;
+    }
+    try {
+      await backgroundTaskManager.stopBackgroundRunning(AppContext.get());
+      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] continuous task stopped');
+    } catch (e) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] stopBackgroundRunning failed: %{public}s',
+        (e as Error).message ?? String(e));
+    }
   }
 
   private onNativeEvent(event: string, value: number): void {
@@ -185,23 +285,38 @@ export class PlaybackService {
         this.state = PlayState.PLAYING;
         this.emitState();
         this.refreshVideoSize();
+        this.startSessionSync();
+        void this.startContinuousTask();
+        void MediaSessionManager.updatePlaybackState(PlayState.PLAYING, this.position, this.duration, this.speed);
         break;
       case 'paused':
         this.state = PlayState.PAUSED;
         this.emitState();
+        this.stopSessionSync();
+        void this.stopContinuousTask();
+        void MediaSessionManager.updatePlaybackState(PlayState.PAUSED, this.position, this.duration, this.speed);
         break;
       case 'stopped':
         this.state = PlayState.STOPPED;
         this.emitState();
+        this.stopSessionSync();
+        void this.stopContinuousTask();
+        void MediaSessionManager.updatePlaybackState(PlayState.STOPPED, this.position, this.duration, this.speed);
         break;
       case 'ended':
         this.emitMediaEnded();
         this.onComplete();
+        this.stopSessionSync();
+        void this.stopContinuousTask();
+        void MediaSessionManager.updatePlaybackState(PlayState.STOPPED, this.position, this.duration, this.speed);
         break;
       case 'error':
         hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] MediaPlayerEncounteredError');
         this.state = PlayState.ERROR;
         this.emitState();
+        this.stopSessionSync();
+        void this.stopContinuousTask();
+        void MediaSessionManager.updatePlaybackState(PlayState.ERROR, this.position, this.duration, this.speed);
         break;
       case 'timeChanged':
         this.onTimeChangedThrottled(value);
@@ -209,6 +324,8 @@ export class PlaybackService {
       case 'lengthChanged':
         this.duration = value;
         this.emitTime();
+        void MediaSessionManager.updateMetadataDuration(value);
+        void MediaSessionManager.updatePlaybackState(this.state, this.position, this.duration, this.speed);
         break;
       case 'vout':
         hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] vout count=%{public}s videoOutId=%{public}s',
@@ -786,6 +903,8 @@ export class PlaybackService {
     this.player.play();
     this.state = PlayState.PREPARED;
     this.emitState();
+    void MediaSessionManager.updateMetadata(item.title, item.artistName, this.duration);
+    void MediaSessionManager.updatePlaybackState(this.state, this.position, this.duration, this.speed);
   }
 
   setStopAfterCurrent(v: boolean): void {
@@ -847,9 +966,12 @@ export class PlaybackService {
    * NAPI 侧已保证 stop 不持全局锁,可在返回路径上同步调用。
    */
   stop(): void {
+    this.stopSessionSync();
+    void this.stopContinuousTask();
     this.player?.stop();
     this.state = PlayState.STOPPED;
     this.emitState();
+    void MediaSessionManager.updatePlaybackState(PlayState.STOPPED, 0, 0, this.speed);
   }
 
   /** 解绑视频 Surface(对标 Android cleanUI → detachViews)。 */
@@ -954,6 +1076,9 @@ export class PlaybackService {
     this.currentRendererHandle = -1;
     this.state = PlayState.IDLE;
     this.emitState();
+    this.stopSessionSync();
+    void this.stopContinuousTask();
+    void MediaSessionManager.release();
   }
 
   // ---- 静态门面(兼容 origin/dev 页面调用;底层仍是 libVLC 单例) ----
