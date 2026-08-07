@@ -9,6 +9,7 @@ import { MediaWrapper, PlayState } from '../models/MediaModels';
 import { LibVLC, Media, MediaPlayer, Equalizer, RendererDiscoverer, MediaSlaveType } from '../../libvlc';
 import { VlcTrackInfo, VlcChapterInfo, VlcRendererInfo, VlcMediaTrackInfo } from 'libvlcnapi.so';
 import { Settings } from './Settings';
+import { PlaybackQueueHistory, PlaybackQueueHistoryType } from './PlaybackQueueHistory';
 
 const LOG_DOMAIN: number = 0x0001;
 const LOG_TAG: string = 'VLC';
@@ -120,6 +121,8 @@ export class PlaybackService {
   /** 随机播放历史(对齐 Android PlaylistManager.previous):记录已播放过的索引,
    *  随机时不与历史重复,全部播完一轮后 repeat-all 清空重洗 / 否则停止。 */
   private shuffleHistory: number[] = [];
+  /** Identifies the current queue's history bucket, so index changes are persisted too. */
+  private queueHistoryType: PlaybackQueueHistoryType | null = null;
 
   private lib: LibVLC | null = null;
   private player: MediaPlayer | null = null;
@@ -669,7 +672,7 @@ export class PlaybackService {
   /** QueueItem[] → MediaWrapper[] 后播放(音频列表入口)。 */
   async playQueueItems(items: QueueItem[], startIndex: number = 0, replace: boolean = true): Promise<void> {
     const mws = items.map((q: QueueItem) => q.toMediaWrapper(1));
-    await this.playList(mws, startIndex, replace);
+    await this.playList(mws, startIndex, replace, 'audio');
   }
 
   async appendQueueItems(items: QueueItem[]): Promise<void> {
@@ -677,7 +680,8 @@ export class PlaybackService {
     await this.append(mws);
   }
 
-  async prepareList(items: MediaWrapper[], startIndex: number = 0, replace: boolean = true): Promise<void> {
+  async prepareList(items: MediaWrapper[], startIndex: number = 0, replace: boolean = true,
+    historyType: PlaybackQueueHistoryType | null = null): Promise<void> {
     if (items.length === 0) {
       return;
     }
@@ -687,6 +691,9 @@ export class PlaybackService {
     }
     this.queue = replace ? items.slice() : this.queue.concat(items);
     this.currentIndex = replace ? startIndex : this.queue.length - items.length + startIndex;
+    if (historyType !== null) {
+      this.queueHistoryType = historyType;
+    }
     // 任何"换队列"动作(替换)都意味着重新进入正常播放流程,清掉"仅播放音频"标记,
     // 避免之前打开的 playAsAudio 状态泄漏到下一首。
     if (replace) {
@@ -697,10 +704,12 @@ export class PlaybackService {
       '[VLC] prepareList size=%{public}d index=%{public}d uri=%{public}s',
       this.queue.length, this.currentIndex, this.getCurrent()?.uri ?? '');
     this.emitQueue();
+    this.saveQueueHistory();
   }
 
-  async playList(items: MediaWrapper[], startIndex: number = 0, replace: boolean = true): Promise<void> {
-    await this.prepareList(items, startIndex, replace);
+  async playList(items: MediaWrapper[], startIndex: number = 0, replace: boolean = true,
+    historyType: PlaybackQueueHistoryType | null = null): Promise<void> {
+    await this.prepareList(items, startIndex, replace, historyType);
     if (!this.inited) {
       return;
     }
@@ -709,6 +718,12 @@ export class PlaybackService {
 
   append(items: MediaWrapper[]): Promise<void> {
     return this.playList(items, 0, false);
+  }
+
+  private saveQueueHistory(): void {
+    if (this.queueHistoryType !== null) {
+      void PlaybackQueueHistory.save(this.queueHistoryType, this.queue, this.currentIndex);
+    }
   }
 
   async bindAndPlay(xcomponentId: string, fallbackUri?: string, fallbackTitle?: string): Promise<boolean> {
@@ -967,6 +982,7 @@ export class PlaybackService {
     }
     this.currentIndex = nextIdx;
     this.emitQueue();
+    this.saveQueueHistory();
     void this.loadCurrent();
   }
 
@@ -1080,6 +1096,7 @@ export class PlaybackService {
       this.shuffle ? 'on' : 'off', this.repeatMode, this.shuffleHistory.length);
     this.currentIndex = nextIdx;
     this.emitQueue();
+    this.saveQueueHistory();
     await this.loadCurrent();
   }
 
@@ -1121,6 +1138,7 @@ export class PlaybackService {
     }
     this.currentIndex = prevIdx;
     this.emitQueue();
+    this.saveQueueHistory();
     await this.loadCurrent();
   }
 

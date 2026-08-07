@@ -122,6 +122,9 @@ export struct PreferencesPage {
     if (item.dependency === Settings.KEY_INCOGNITO) {
       return this.incognitoEnabled;
     }
+    if (item.dependency === Settings.ENABLE_PLAYBACK_HISTORY) {
+      return this.toggleStates[Settings.ENABLE_PLAYBACK_HISTORY] !== true;
+    }
     return this.toggleStates[item.dependency] === true;
   }
 
@@ -273,7 +276,7 @@ export struct PreferencesPage {
    * 其它情况返回 false 交由 PreferenceRow 直接 put,但需同步 toggleStates 镜像使 dependency 即时生效。
    */
   onToggleChange(item: PreferenceItem, newValue: boolean): boolean {
-    const confirmKeys: string[] = [Settings.PLAYBACK_HISTORY, 'audio_resume_playback', 'video_resume_playback'];
+    const confirmKeys: string[] = [Settings.ENABLE_PLAYBACK_HISTORY];
     if (!newValue && confirmKeys.indexOf(item.key) >= 0) {
       this.confirmItem = item;
       this.confirmSheetOpen = true;
@@ -559,7 +562,9 @@ export struct PreferencesPage {
       PreferenceConfirmDialog({
         preferenceKey: this.confirmItem.key,
         titleText: this.confirmItem.title,
-        warningText: $r('app.string.clear_playback_history'),
+        warningText: this.confirmItem.key === Settings.ENABLE_PLAYBACK_HISTORY
+          ? '禁用播放历史将隐藏历史记录、媒体进度和已看标记。应用将继续保存您的活动，并在历史记录重新启用时恢复这些记录。\n\n如果您想完全停止保存活动，请改用无痕模式。\n\n您还可以在历史记录界面或高级设置中清除历史记录。'
+          : $r('app.string.clear_playback_history'),
         onAccept: () => this.confirmDisable(),
         onCancel: () => this.cancelDisable(),
       }).width('100%')
@@ -806,18 +811,18 @@ export struct PreferencesPage {
       // History
       new PreferenceGroup('History', [
         new PreferenceItem({
-          key: Settings.PLAYBACK_HISTORY, title: 'Playback history', type: 'toggle',
+          key: Settings.ENABLE_PLAYBACK_HISTORY, title: 'Playback history', type: 'toggle',
           summary: 'Save all media played in History section', defaultValue: true,
         }),
         new PreferenceItem({
-          key: 'video_resume_playback', title: 'Video play queue history', type: 'toggle',
+          key: Settings.VIDEO_PLAY_QUEUE_HISTORY, title: 'Video play queue history', type: 'toggle',
           summary: 'Allow saving the video play queue to resume later', defaultValue: true,
-          dependency: Settings.PLAYBACK_HISTORY,
+          dependency: Settings.ENABLE_PLAYBACK_HISTORY,
         }),
         new PreferenceItem({
-          key: 'audio_resume_playback', title: 'Audio play queue history', type: 'toggle',
+          key: Settings.AUDIO_PLAY_QUEUE_HISTORY, title: 'Audio play queue history', type: 'toggle',
           summary: 'Allow saving the audio play queue to resume later', defaultValue: true,
-          dependency: Settings.PLAYBACK_HISTORY,
+          dependency: Settings.ENABLE_PLAYBACK_HISTORY,
         }),
       ]),
       // Extra settings(带图标跳转)
@@ -846,7 +851,6 @@ export struct PreferencesPage {
         optionValues: ['-1', '1', '2'],
         options: [$r('app.string.follow_system_mode'), $r('app.string.light_theme'), $r('app.string.enable_black_theme')],
       }),
-      new PreferenceItem({ key: 'tv_ui', title: $r('app.string.tv_ui_title'), type: 'checkbox', summary: $r('app.string.tv_ui_summary'), defaultValue: false }),
       new PreferenceItem({
         key: 'set_locale', title: $r('app.string.setting_language'), type: 'list', defaultValue: 'default',
         optionValues: ['default', 'zh-CN', 'en-US'],

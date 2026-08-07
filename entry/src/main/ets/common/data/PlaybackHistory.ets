@@ -43,6 +43,10 @@ export class PlaybackHistory {
 
   static async record(uri: string, title: string, length: number = 0, artworkUrl: string = ''): Promise<void> {
     await PlaybackHistory.ensureLoaded();
+    const historyEnabled = await Settings.getBoolean(Settings.ENABLE_PLAYBACK_HISTORY, true);
+    if (!historyEnabled) {
+      return;
+    }
     const incognito = await Settings.getBoolean(Settings.KEY_INCOGNITO, Settings.incognitoMode);
     if (!shouldRecordPlaybackHistory(incognito)) {
       return;

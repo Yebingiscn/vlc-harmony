@@ -239,7 +239,7 @@ class VideoPlayerViewModel implements PlaybackListener {
 
     const mws: MediaWrapper[] = this.list.map((it: VideoPlayItem, i: number) =>
     new MediaWrapper(i + 1, it.title, it.uri, 0));
-    await svc.prepareList(mws, this.index, true);
+    await svc.prepareList(mws, this.index, true, 'video');
     svc.setSpeed(this.speed);
     const bound = await svc.bindAndPlay(xcomponentId, this.uri, this.title);
     this.state = svc.getState();
@@ -388,7 +388,7 @@ class VideoPlayerViewModel implements PlaybackListener {
     const svc = PlaybackService.getInstance();
     const mws: MediaWrapper[] = this.list.map((it: VideoPlayItem, idx: number) =>
     new MediaWrapper(idx + 1, it.title, it.uri, 0));
-    await svc.prepareList(mws, i, true);
+    await svc.prepareList(mws, i, true, 'video');
     if (this.xcomponentId.length > 0) {
       await svc.bindAndPlay(this.xcomponentId, this.uri, this.title);
     }

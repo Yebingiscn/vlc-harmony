@@ -118,6 +118,10 @@ export class Settings {
   /** 每曲目独立播放速度持久化:{uri: speed} JSON(仅全局速度关闭时生效)。 */
   static readonly KEY_AUDIO_TRACK_SPEEDS: string = 'audio_track_speeds';
   // Misc
+  /** Whether played media is added to the History screen. Kept separate from its JSON payload. */
+  static readonly ENABLE_PLAYBACK_HISTORY: string = 'enable_playback_history';
+  static readonly VIDEO_PLAY_QUEUE_HISTORY: string = 'video_resume_playback';
+  static readonly AUDIO_PLAY_QUEUE_HISTORY: string = 'audio_resume_playback';
   static readonly PLAYBACK_HISTORY: string = 'playback_history';
   static readonly RESUME_PLAYBACK: string = 'resume_playback';
   static readonly AUDIO_DUCKING: string = 'audio_ducking';
