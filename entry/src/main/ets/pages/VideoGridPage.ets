@@ -393,17 +393,23 @@ export struct VideoGridPage {
     NavController.push('VideoPlayer', param);
   }
 
-  /** 添加选中的视频到收藏夹。 */
+  /** 切换选中视频的收藏状态:全部已收藏则取消收藏,否则收藏未收藏项。 */
   favSelected(): void {
-    const toAdd: string[] = this.selectedUris.filter((uri: string) => !MediaLibrary.isVideoFav(uri));
-    if (toAdd.length === 0) {
-      promptAction.showToast({ message: '已全部收藏' });
+    if (this.selectedUris.length === 0) {
       this.exitSelection();
       return;
     }
-    const tasks: Promise<boolean>[] = toAdd.map((uri: string) => MediaLibrary.toggleVideoFav(uri));
+    const allFav: boolean = this.selectedUris.every((uri: string) => MediaLibrary.isVideoFav(uri));
+    const targets: string[] = allFav
+      ? this.selectedUris.slice()
+      : this.selectedUris.filter((uri: string) => !MediaLibrary.isVideoFav(uri));
+    if (targets.length === 0) {
+      this.exitSelection();
+      return;
+    }
+    const tasks: Promise<boolean>[] = targets.map((uri: string) => MediaLibrary.toggleVideoFav(uri));
     Promise.all(tasks).then(() => {
-      promptAction.showToast({ message: '已收藏' });
+      promptAction.showToast({ message: allFav ? '已取消收藏' : '已收藏' });
       void this.vm.rebuild();
       this.exitSelection();
     });
@@ -854,6 +860,7 @@ export struct VideoGridPage {
         GridItem() {
           MediaGridCard({
             item: item,
+            isFavorite: MediaLibrary.isVideoFav(item.uri),
             selected: this.isSelected(item.uri),
             inSelection: this.inSelection,
             showSeenMarker: this.vm.showSeenMarker,
@@ -881,7 +888,7 @@ export struct VideoGridPage {
             },
           })
         }
-      }, (item: MediaWrapper) => item.uri)
+      }, (item: MediaWrapper) => item.uri + (MediaLibrary.isVideoFav(item.uri) ? '|1' : '|0'))
     }
     .columnsTemplate('1fr 1fr')
     .columnsGap(8)
@@ -898,6 +905,7 @@ export struct VideoGridPage {
         ListItem() {
           MediaListCard({
             item: item,
+            isFavorite: MediaLibrary.isVideoFav(item.uri),
             selected: this.isSelected(item.uri),
             inSelection: this.inSelection,
             showSeenMarker: this.vm.showSeenMarker,
@@ -925,7 +933,7 @@ export struct VideoGridPage {
             },
           })
         }
-      }, (item: MediaWrapper) => item.uri)
+      }, (item: MediaWrapper) => item.uri + (MediaLibrary.isVideoFav(item.uri) ? '|1' : '|0'))
     }
     .divider({
       strokeWidth: 0.5,
