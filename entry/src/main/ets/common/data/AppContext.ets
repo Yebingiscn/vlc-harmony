@@ -1,10 +1,12 @@
 import { common } from '@kit.AbilityKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 
 /**
  * 全局 Context 持有者。EntryAbility.onCreate 注入,数据层(Preferences/MediaLibrary)取用。
  */
 export class AppContext {
   private static context: common.UIAbilityContext | null = null;
+  private static backgroundListeners: Array<() => void> = [];
   private static formatTestMode: boolean = false;
   private static formatTestLimit: number = 0;
   private static formatTestStart: number = 0;
@@ -73,5 +75,32 @@ export class AppContext {
 
   static getFormatParseTimeoutMs(): number {
     return AppContext.formatParseTimeoutMs;
+  }
+
+  /** 注册应用退后台回调(EntryAbility.onBackground 触发)。 */
+  static onAppBackground(listener: () => void): void {
+    if (!AppContext.backgroundListeners.includes(listener)) {
+      AppContext.backgroundListeners.push(listener);
+    }
+  }
+
+  /** 注销应用退后台回调。 */
+  static offAppBackground(listener: () => void): void {
+    AppContext.backgroundListeners = AppContext.backgroundListeners.filter(
+      (l: () => void) => l !== listener);
+  }
+
+  /** EntryAbility.onBackground 调用,广播给当前页面。 */
+  static notifyAppBackground(): void {
+    hilog.info(0x0001, 'VLC', '[VLC] notifyAppBackground listeners=%{public}d',
+      AppContext.backgroundListeners.length);
+    const copy: Array<() => void> = AppContext.backgroundListeners.slice();
+    for (const listener of copy) {
+      try {
+        listener();
+      } catch (e) {
+        // 单个监听器异常不影响其它监听器
+      }
+    }
   }
 }
