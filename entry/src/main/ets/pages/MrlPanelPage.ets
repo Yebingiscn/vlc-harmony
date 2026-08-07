@@ -69,7 +69,8 @@ export struct MrlPanelPage {
               .margin({ left: 16 })
             Blank()
             Button({ type: ButtonType.Normal, stateEffect: true }) {
-              Image($r('app.media.ic_more_w')).width(28).height(28)
+              SymbolGlyph($r('sys.symbol.dot_grid_1x2'))
+                .fontSize(28).fontColor([$r('sys.color.icon_primary')])
             }
             .width(56).height(56).backgroundColor(Color.Transparent).margin({ right: 4 })
             .onClick(() => this.menuOpen = !this.menuOpen)
