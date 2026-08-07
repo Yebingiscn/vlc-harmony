@@ -1,9 +1,11 @@
 import { PlaybackService, PlaybackState } from '../common/data/PlaybackService';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
 import { NavController } from '../common/data/NavController';
-import { PlayState, formatDuration } from '../common/models/MediaModels';
-import { PlaybackSpeedDialog } from './PlaybackSpeedDialog';
+import { AudioBrowserRequest } from '../common/data/AudioBrowserRequest';
+import { PlayState, Track, formatDuration } from '../common/models/MediaModels';
+import { PlaybackSpeedDialog, PlaybackSpeedAction } from './PlaybackSpeedDialog';
 import { EqualizerDialog } from './EqualizerDialog';
+import { AudioInfoDialog, AudioInfoParams } from './AudioInfoDialog';
 
 import { SleepTimerDialog } from './SleepTimerDialog';
 import { JumpToTimeDialog } from './JumpToTimeDialog';
@@ -12,6 +14,7 @@ import { BookMark } from '../common/models/BookmarkModels';
 import { AddToPlaylistDialog, AddToPlaylistAction } from './AddToPlaylistDialog';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { promptAction } from '@kit.ArkUI';
+import { fileIo as fs } from '@kit.CoreFileKit';
 import {
   buildPlayerAdvancedOptions,
   PlayerAdvancedOptionId,
@@ -34,6 +37,7 @@ class AudioPlayerViewModel {
   @Trace shuffle: boolean = false;
   @Trace repeatMode: number = 0;
   @Trace speed: number = 1.0;
+  @Trace globalSpeedEnabled: boolean = false;
   @Trace locked: boolean = false;
 
   private listenerId: number = 0;
@@ -55,6 +59,7 @@ class AudioPlayerViewModel {
       this.shuffle = s.shuffle;
       this.repeatMode = s.repeatMode;
       this.speed = s.speed;
+      this.globalSpeedEnabled = s.globalSpeedEnabled;
       // 记录播放历史:状态转为 PLAYING 且非重复记录同一曲目
       if (s.state === PlayState.PLAYING && prev !== PlayState.PLAYING && this.title.length > 0) {
         const cur = PlaybackService.getCurrent();
@@ -92,6 +97,9 @@ export struct AudioPlayerPage {
   @Local sleepOpen: boolean = false;
   @Local jumpOpen: boolean = false;
   @Local savePlaylistOpen: boolean = false;
+  @Local infoOpen: boolean = false;
+  /** 信息弹窗打开时的一次性数据快照(打开时组装,避免每帧轮询做媒体库反查)。 */
+  @Local infoParams: AudioInfoParams = new AudioInfoParams();
   private pendingAdvancedAction: PlayerAdvancedOptionId | null = null;
 
   /** 带动画打开覆盖层。 */
@@ -127,6 +135,7 @@ export struct AudioPlayerPage {
     this.vm.shuffle = s.shuffle;
     this.vm.repeatMode = s.repeatMode;
     this.vm.speed = s.speed;
+    this.vm.globalSpeedEnabled = s.globalSpeedEnabled;
     this.vm.onAbLoopCheck = () => {
       if (this.abActive && this.abPointB > this.abPointA && this.vm.position >= this.abPointB - 200) {
         PlaybackService.seek(this.abPointA);
@@ -342,7 +351,11 @@ export struct AudioPlayerPage {
               .backgroundColor(Color.Transparent)
               .onClick(() => this.animateClose(() => { this.speedOpen = false; }))
             PlaybackSpeedDialog({
+              currentSpeed: this.vm.speed,
+              mediaKind: 'audio',
+              currentScope: this.vm.globalSpeedEnabled ? 'all' : 'this',
               onClose: () => this.animateClose(() => { this.speedOpen = false; }),
+              onConfirm: (action: PlaybackSpeedAction) => this.onSpeedConfirm(action),
             }).width('100%').height('50%')
           }
           .width('100%')
@@ -417,6 +430,31 @@ export struct AudioPlayerPage {
                 void this.onSavePlaylistConfirm(action);
               },
             }).width('100%').height('50%')
+          }
+          .width('100%')
+          .height('100%')
+          .transition(TransitionEffect.translate({ y: '100%' }).animation({ duration: 300, curve: Curve.EaseOut }))
+        }
+
+        // 信息展示弹框
+        if (this.infoOpen) {
+          Column() {
+            Column()
+              .width('100%').layoutWeight(1)
+              .backgroundColor(Color.Transparent)
+              .onClick(() => this.animateClose(() => { this.infoOpen = false; }))
+            AudioInfoDialog({
+              title: this.infoParams.title,
+              artist: this.infoParams.artist,
+              album: this.infoParams.album,
+              genre: this.infoParams.genre,
+              trackNumber: this.infoParams.trackNumber,
+              year: this.infoParams.year,
+              durationMs: this.infoParams.durationMs,
+              uri: this.infoParams.uri,
+              fileSize: this.infoParams.fileSize,
+              onClose: () => this.animateClose(() => { this.infoOpen = false; }),
+            }).width('100%').height('60%')
           }
           .width('100%')
           .height('100%')
@@ -508,7 +546,87 @@ export struct AudioPlayerPage {
       this.animateOpen(() => { this.savePlaylistOpen = true; });
       return;
     }
+    if (id === 'audioInfo') {
+      this.infoParams = this.buildInfoParams();
+      this.animateOpen(() => { this.infoOpen = true; });
+      return;
+    }
+    if (id === 'goToArtist') {
+      // 对齐 Android CTX_GO_TO_ARTIST:回到音频浏览器的"艺术家"Tab 并定位到对应歌手。
+      // 写入请求 → 弹回 Main(Main.onShown 切音频 tab 并派发给 AudioBrowserPage)。
+      const cur = PlaybackService.getCurrent();
+      if (cur !== null && cur.artistName.length > 0) {
+        AudioBrowserRequest.requestGoToArtist(cur.artistName);
+        NavController.popToMain();
+      } else {
+        promptAction.showToast({ message: '当前曲目没有艺术家信息' });
+      }
+      return;
+    }
     promptAction.showToast({ message: '该功能暂未实现' });
+  }
+
+  // ── 信息展示 ──
+
+  /**
+   * 组装「信息展示」弹窗数据:当前曲目(MediaWrapper)字段 + 媒体库 Track 反查
+   * (流派/音轨号/年份只有 Track 上有,MediaWrapper 没有)。文件大小尽量用 fs 实取,
+   * 取不到(如 datashare:// 临时授权 URI)则回落 0 → 弹窗显示 '—'。
+   */
+  buildInfoParams(): AudioInfoParams {
+    const p = new AudioInfoParams();
+    const cur = PlaybackService.getInstance().getCurrent();
+    if (cur !== null) {
+      p.title = cur.title;
+      p.artist = cur.artistName;
+      p.album = cur.albumName;
+      p.durationMs = cur.length > 0 ? cur.length : this.vm.duration;
+      p.uri = cur.uri;
+      p.fileSize = this.resolveFileSize(cur.uri);
+      // 按 URI 反查 Track,补齐流派/音轨号/年份。
+      const t = MediaLibrary.getAudios().find((x: Track) => x.uri === cur.uri);
+      if (t !== undefined) {
+        p.genre = t.genre;
+        p.trackNumber = t.trackNumber;
+        p.year = t.year;
+      }
+    }
+    return p;
+  }
+
+  /** 解析本地文件大小(file:// 沙箱路径可直接 stat;其它 URI 返回 0)。 */
+  private resolveFileSize(uri: string): number {
+    if (uri.length === 0) {
+      return 0;
+    }
+    let p = uri;
+    if (p.startsWith('file://')) {
+      p = p.slice('file://'.length);
+    }
+    try {
+      const st = fs.statSync(p);
+      return st.size;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  /**
+   * 「回放速度」确认回调。
+   * - scope=all:所有曲目统一速度(开全局开关 + 持久化 + 清空独立速度)。
+   * - scope=this:仅当前曲目生效(关全局开关 + 该 URI 独立速度持久化)。
+   */
+  onSpeedConfirm(action: PlaybackSpeedAction): void {
+    const cur = PlaybackService.getCurrent();
+    if (action.scope === 'all') {
+      PlaybackService.setGlobalSpeed(action.speed);
+    } else if (cur !== null) {
+      PlaybackService.setTrackSpeed(cur.uri, action.speed);
+    } else {
+      PlaybackService.getInstance().setSpeed(action.speed);
+    }
+    promptAction.showToast({ message: `播放速度已设为 ${action.speed.toFixed(2)}x` });
+    this.animateClose(() => { this.speedOpen = false; });
   }
 
   // ── A-B 循环 ──

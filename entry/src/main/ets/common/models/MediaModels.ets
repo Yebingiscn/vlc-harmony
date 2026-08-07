@@ -99,6 +99,7 @@ export class MediaWrapper extends MediaLibraryItem {
 export class Folder extends MediaLibraryItem {
   path: string;
   mediaCount: number = 0;
+  thumbnailUrls: string[] = [];
 
   constructor(id: number, title: string, path: string) {
     super(id, title, MediaItemType.FOLDER);

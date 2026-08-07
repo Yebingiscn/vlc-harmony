@@ -1,20 +1,18 @@
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
 import { NavController } from '../common/data/NavController';
-import { SheetItem, VideoNavParam, Folder, FileBrowserParam } from '../common/models/MediaModels';
+import { MediaWrapper, SheetItem, VideoNavParam } from '../common/models/MediaModels';
 import { picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
-import { TitleListView } from '../common/components/TitleListView';
-import { NetworkServerDialog } from './NetworkServerDialog';
 
 /**
- * MainBrowserPage —— Browse Tab (对齐 Android MainBrowserFragment 3.6.0)。
+ * MainBrowserPage -- Browse Tab (对齐 Android MainBrowserFragment 3.6.0)。
  *
  * 状态管理对齐 AudioBrowserVM 模式: @ObservedV2 + @Trace + syncData()。
  * 关键点: @Builder 不传响应式数组参数(参数是快照),直接通过 this.vm.xxx 读取状态。
  * 收藏: Settings JSON 持久化
- * 存储: DocumentViewPicker 选择音视频 → 导入 MediaLibrary → 可收藏
+ * 存储: DocumentViewPicker 选择音视频 -> 导入 MediaLibrary -> 可收藏
  */
 @ObservedV2
 class BrowseVM {
@@ -28,8 +26,8 @@ class BrowseVM {
   }
 
   /**
-   * 同步数据到 @Trace 属性 —— 对齐 AudioBrowserVM.syncData()。
-   * 每次创建新数组引用,触发 ArkUI V2 @ObservedV2 → @Trace 观察链。
+   * 同步数据到 @Trace 属性 -- 对齐 AudioBrowserVM.syncData()。
+   * 每次创建新数组引用,触发 ArkUI V2 @ObservedV2 -> @Trace 观察链。
    */
   syncData(favs: SheetItem[]): void {
     const stors = MediaLibrary.getStorageFiles();
@@ -81,9 +79,11 @@ export struct MainBrowserPage {
     }
   }
 
-  /** 播放存储中的文件,音频→AudioPlayer,视频→VideoPlayer。 */
+  /** 播放存储中的文件,音频->AudioPlayer,视频->VideoPlayer。 */
   playStorageItem(item: SheetItem): void {
-    if (item.uri.length === 0) { return; }
+    if (item.uri.length === 0) {
+      return;
+    }
     const lower = item.uri.toLowerCase();
     const audioExts = ['.mp3', '.flac', '.ogg', '.wav', '.aac', '.m4a', '.wma', '.opus'];
     const isAudio = audioExts.some(e => lower.endsWith(e));
@@ -106,8 +106,22 @@ export struct MainBrowserPage {
     this.playStorageItem(item);
   }
 
+  /** 判断 SheetItem 是否为视频文件。 */
+  isVideoItem(item: SheetItem): boolean {
+    const lower = item.uri.toLowerCase();
+    const videoExts = ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.ts', '.iso', '.3gp', '.wmv', '.flv', '.m4v'];
+    return videoExts.some(e => lower.endsWith(e));
+  }
+
+  /** 将 SheetItem 包装为 MediaWrapper(供 shareVideo/deleteVideo 使用)。 */
+  toMediaWrapper(item: SheetItem): MediaWrapper {
+    const mw = new MediaWrapper(0, item.title, item.uri, 0);
+    mw.artworkUrl = item.artworkPath;
+    return mw;
+  }
+
   build() {
-    Stack() {
+    Stack({ alignContent: Alignment.TopStart }) {
       Scroll() {
         Column() {
           // === 收藏 ===
@@ -122,7 +136,8 @@ export struct MainBrowserPage {
               }, (item: SheetItem) => item.title)
             }
             .listDirection(Axis.Horizontal)
-            .width('100%').height(160)
+            .width('100%')
+            .height(160)
             .scrollBar(BarState.Off)
             .padding({ left: 12, right: 12 })
             .margin({ top: 12 })
@@ -132,47 +147,67 @@ export struct MainBrowserPage {
           this.sectionTitle($r('app.string.browser_storages'))
           Row() {
             Blank()
-            Image($r('app.media.ic_add')).width(24).height(24).fillColor($r('app.color.list_title'))
+            Image($r('app.media.ic_add'))
+              .width(24)
+              .height(24)
+              .fillColor($r('app.color.list_title'))
               .margin({ right: 6 })
-              .onClick(() => { this.pickStorageFiles(); })
+              .onClick(() => {
+                this.pickStorageFiles();
+              })
             Text('导入').fontSize(13).fontColor($r('app.color.list_subtitle'))
               .margin({ right: 16 })
-              .onClick(() => { this.pickStorageFiles(); })
+              .onClick(() => {
+                this.pickStorageFiles();
+              })
           }
           .width('100%').margin({ top: -8, bottom: 4 })
 
           if (this.vm.storages.length > 0) {
-            // 纵向列表(对齐 Android browser_item.xml 行式布局)
-            List({ space: 0 }) {
-              ForEach(this.vm.storages, (item: SheetItem) => {
-                ListItem() {
-                  this.storageRowItem(item)
+            // 存储设备:直接平铺在 Scroll 内(不能再用纵向 List 嵌套,否则 List 拦截滚动手势,
+            // 外层 Scroll 无法向下滚动),由外层 Scroll 统一滚动。
+            ForEach(this.vm.storages, (item: SheetItem, idx: number) => {
+              Column() {
+                this.storageRowItem(item)
+                if (idx < this.vm.storages.length - 1) {
+                  Divider()
+                    .strokeWidth(0.5)
+                    .color($r('app.color.divider'))
+                    .margin({ left: 60, right: 16 })
                 }
-              }, (item: SheetItem) => item.title)
-            }
-            .width('100%')
-            .divider({ strokeWidth: 0.5, color: $r('app.color.divider'), startMargin: 60, endMargin: 16 })
-            .padding({ left: 0, right: 0 })
-            .margin({ top: 8 })
+              }
+              .width('100%')
+            }, (item: SheetItem) => item.title)
           }
 
         }
-        .width('100%').height('100%').alignItems(HorizontalAlign.Start)
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
       }
-      .width('100%').height('100%')
-      .backgroundColor($r('app.color.background_default')).scrollBar(BarState.Auto)
+      .width('100%')
+      .height('100%')
+      .align(Alignment.TopStart)
+      .backgroundColor($r('app.color.background_default'))
+      .scrollBar(BarState.Auto)
     }
     .width('100%').height('100%')
     .bindSheet(this.showCtxSheet, this.ctxSheet(), {
-      height: SheetSize.FIT_CONTENT, dragBar: true,
-      onDisappear: () => { this.showCtxSheet = false; this.ctxItem = null; },
+      height: SheetSize.FIT_CONTENT,
+      showClose: false,
+      dragBar: true,
+      onDisappear: () => {
+        this.showCtxSheet = false;
+        this.ctxItem = null;
+      },
     })
   }
 
   @Builder
   sectionTitle(title: Resource) {
     Text(title)
-      .fontSize(18).fontColor($r('app.color.colorAccent')).fontWeight(FontWeight.Medium)
+      .fontSize(18)
+      .fontColor($r('app.color.colorAccent'))
+      .fontWeight(FontWeight.Medium)
       .margin({ left: 16, top: 16 })
       .width('100%')
   }
@@ -182,19 +217,31 @@ export struct MainBrowserPage {
   storageRowItem(item: SheetItem) {
     Row() {
       Image(item.artworkPath.length > 0 ? item.artworkPath : item.icon)
-        .width(48).height(48).objectFit(ImageFit.Cover).borderRadius(4)
+        .width(48)
+        .height(48)
+        .objectFit(ImageFit.Cover)
+        .borderRadius(4)
         .margin({ left: 12, top: 4, bottom: 4 })
       Column() {
         Text(item.title).fontSize(16).fontColor($r('app.color.list_title')).maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         if (item.subtitle.length > 0) {
-          Text(item.subtitle).fontSize(12).fontColor($r('app.color.list_subtitle')).maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ top: 2 })
+          Text(item.subtitle)
+            .fontSize(12)
+            .fontColor($r('app.color.list_subtitle'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .margin({ top: 2 })
         }
       }
       .layoutWeight(1).alignItems(HorizontalAlign.Start).margin({ left: 12, right: 8 })
-      Image($r('app.media.ic_more')).width(24).height(24).fillColor($r('app.color.list_subtitle'))
-        .padding(4).margin({ right: 4 })
+
+      Image($r('app.media.ic_more'))
+        .width(24)
+        .height(24)
+        .fillColor($r('app.color.list_subtitle'))
+        .padding(4)
+        .margin({ right: 4 })
         .onClick(() => {
           this.ctxItem = item;
           this.ctxIsFavorite = false;
@@ -202,7 +249,9 @@ export struct MainBrowserPage {
         })
     }
     .width('100%').constraintSize({ minHeight: 56 }).alignItems(VerticalAlign.Center)
-    .onClick(() => { this.onStorageCardClick(item); })
+    .onClick(() => {
+      this.onStorageCardClick(item);
+    })
   }
 
   /** 卡片内容(对齐 Android card_browser_item.xml)。由 ForEach 迭代调用,item 来自 ForEach 的响应式迭代。 */
@@ -211,22 +260,32 @@ export struct MainBrowserPage {
     Column() {
       // 优先显示音频提取的封面图,回退到通用图标
       Image(item.artworkPath.length > 0 ? item.artworkPath : item.icon)
-        .width(64).height(64).objectFit(ImageFit.Cover)
+        .width(64)
+        .height(64)
+        .objectFit(ImageFit.Cover)
         .borderRadius(4)
         .margin({ top: 8 })
 
       Text(item.title)
-        .fontSize(14).fontColor($r('app.color.list_title')).maxLines(1)
+        .fontSize(14)
+        .fontColor($r('app.color.list_title'))
+        .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .margin({ top: 8, left: 8, right: 8 })
 
       Row() {
         Text(item.subtitle)
-          .fontSize(12).fontColor($r('app.color.list_subtitle')).maxLines(1)
+          .fontSize(12)
+          .fontColor($r('app.color.list_subtitle'))
+          .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
-        Image($r('app.media.ic_more')).width(24).height(24).fillColor($r('app.color.list_subtitle'))
-          .padding(4).margin({ left: 4 })
+        Image($r('app.media.ic_more'))
+          .width(24)
+          .height(24)
+          .fillColor($r('app.color.list_subtitle'))
+          .padding(4)
+          .margin({ left: 4 })
           .onClick(() => {
             this.ctxItem = item;
             this.ctxIsFavorite = isFavorite;
@@ -237,7 +296,9 @@ export struct MainBrowserPage {
       .margin({ left: 8, right: 8, bottom: 4 })
       .alignItems(VerticalAlign.Center)
     }
-    .width(140).borderRadius(4).backgroundColor($r('app.color.card_background'))
+    .width(140)
+    .borderRadius(4)
+    .backgroundColor($r('app.color.card_background'))
     .padding(2)
     .onClick(() => {
       if (isFavorite) {
@@ -248,82 +309,180 @@ export struct MainBrowserPage {
     })
   }
 
-  /** 上下文操作半模态(对齐 Android ContextOption: CTX_PLAY / CTX_FAV_ADD / CTX_FAV_REMOVE / CTX_INFORMATION)。 */
+  /** 上下文操作半模态:视频项与视频 tab 一致,音频项保持原有行为。 */
   @Builder
   ctxSheet() {
     Column() {
-      // 头部: 项目名称
-      Row() {
-        Image(this.ctxItem?.icon ?? $r('app.media.ic_folder'))
-          .width(40).height(40).objectFit(ImageFit.Contain)
-          .margin({ right: 12 })
-        Text(this.ctxItem?.title ?? '')
-          .fontSize(16).fontColor($r('app.color.list_title')).fontWeight(FontWeight.Medium).maxLines(1)
-      }
-      .width('100%').padding(16).alignItems(VerticalAlign.Center)
-
-      Divider().strokeWidth(0.5).color($r('app.color.divider'))
-
-      // CTX_PLAY — 播放
-      Row() {
-        Image($r('app.media.ic_play_player')).width(24).height(24).fillColor('#FFFFFF').margin({ right: 12 })
-        Text('播放').fontSize(15).fontColor($r('app.color.list_title'))
-      }
-      .width('100%').padding({ left: 16, right: 16, top: 14, bottom: 14 })
-      .onClick(() => {
-        if (this.ctxItem) {
-          this.playStorageItem(this.ctxItem);
-        }
-        this.showCtxSheet = false;
-      })
-
-      // CTX_FAV_ADD / CTX_FAV_REMOVE
-      if (this.ctxIsFavorite) {
+      if (this.ctxItem !== null) {
+        // 头部:封面 + 项目名称
         Row() {
-          Image($r('app.media.ic_fav_remove')).width(24).height(24).fillColor('#FF8800').margin({ right: 12 })
-          Text('取消收藏').fontSize(15).fontColor('#FF8800')
+          Image(this.ctxItem.artworkPath.length > 0 ? this.ctxItem.artworkPath :
+            (this.ctxItem.icon ?? $r('app.media.ic_folder')))
+            .width(80)
+            .height(50)
+            .objectFit(ImageFit.Cover)
+            .borderRadius(4)
+            .margin({ right: 12 })
+            .alt($r('app.media.ic_folder'))
+          Text(this.ctxItem.title)
+            .fontSize(16)
+            .fontColor('#212121')
+            .fontWeight(FontWeight.Medium)
+            .layoutWeight(1)
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
         }
-        .width('100%').padding({ left: 16, right: 16, top: 14, bottom: 14 })
-        .onClick(async () => {
-          if (this.ctxItem) {
-            await MediaLibrary.removeFavorite(this.ctxItem.title);
-            const favs = await MediaLibrary.getFavorites();
-            this.vm.syncData(favs);
-          }
+        .width('100%')
+        .padding(16)
+        .alignItems(VerticalAlign.Center)
+
+        Divider()
+          .strokeWidth(0.5)
+          .color('#E0E0E0')
+
+        // 播放
+        Row() {
+          Image($r('app.media.ic_play_player'))
+            .width(24)
+            .height(24)
+            .fillColor('#212121')
+            .margin({ right: 12 })
+          Text('播放')
+            .fontSize(15)
+            .fontColor('#212121')
+        }
+        .width('100%')
+        .padding({
+          left: 16,
+          right: 16,
+          top: 14,
+          bottom: 14
+        })
+        .onClick(() => {
+          this.playStorageItem(this.ctxItem!);
           this.showCtxSheet = false;
         })
-      } else {
+
+        // 收藏 / 取消收藏
         Row() {
-          Image($r('app.media.ic_fav_add')).width(24).height(24).fillColor('#FFFFFF').margin({ right: 12 })
-          Text('收藏').fontSize(15).fontColor($r('app.color.list_title'))
+          Image(this.ctxIsFavorite ? $r('app.media.ic_fav_remove') : $r('app.media.ic_fav_add'))
+            .width(24)
+            .height(24)
+            .fillColor('#212121')
+            .margin({ right: 12 })
+          Text(this.ctxIsFavorite ? '取消收藏' : '添加到收藏夹')
+            .fontSize(15)
+            .fontColor('#212121')
         }
-        .width('100%').padding({ left: 16, right: 16, top: 14, bottom: 14 })
+        .width('100%')
+        .padding({
+          left: 16,
+          right: 16,
+          top: 14,
+          bottom: 14
+        })
         .onClick(async () => {
-          if (this.ctxItem) {
-            await MediaLibrary.addFavorite(this.ctxItem);
-            const favs = await MediaLibrary.getFavorites();
-            this.vm.syncData(favs);
+          if (this.ctxIsFavorite) {
+            await MediaLibrary.removeFavorite(this.ctxItem!.title);
+          } else {
+            await MediaLibrary.addFavorite(this.ctxItem!);
+            promptAction.showToast({ message: '已收藏' });
           }
-          promptAction.showToast({ message: '已收藏' });
+          const favs = await MediaLibrary.getFavorites();
+          this.vm.syncData(favs);
           this.showCtxSheet = false;
         })
-      }
 
-      // CTX_INFORMATION — 信息
-      Row() {
-        Image($r('app.media.ic_information')).width(24).height(24).fillColor('#FFFFFF').margin({ right: 12 })
-        Text($r('app.string.video_information')).fontSize(15).fontColor($r('app.color.list_title'))
-      }
-      .width('100%').padding({ left: 16, right: 16, top: 14, bottom: 14 })
-      .onClick(() => {
-        promptAction.showToast({ message: `名称: ${this.ctxItem?.title}` });
-        this.showCtxSheet = false;
-      })
+        // 视频信息
+        Row() {
+          Image($r('app.media.ic_information'))
+            .width(24)
+            .height(24)
+            .fillColor('#212121')
+            .margin({ right: 12 })
+          Text('视频信息')
+            .fontSize(15)
+            .fontColor('#212121')
+        }
+        .width('100%')
+        .padding({
+          left: 16,
+          right: 16,
+          top: 14,
+          bottom: 14
+        })
+        .onClick(() => {
+          promptAction.showToast({ message: `名称: ${this.ctxItem?.title}` });
+          this.showCtxSheet = false;
+        })
 
-      Blank().height(24)
+        // 分享(仅视频)
+        if (this.isVideoItem(this.ctxItem!)) {
+          Row() {
+            Image($r('app.media.ic_share'))
+              .width(24)
+              .height(24)
+              .fillColor('#212121')
+              .margin({ right: 12 })
+            Text('分享')
+              .fontSize(15)
+              .fontColor('#212121')
+          }
+          .width('100%')
+          .padding({
+            left: 16,
+            right: 16,
+            top: 14,
+            bottom: 14
+          })
+          .onClick(() => {
+            const item = this.ctxItem!;
+            this.showCtxSheet = false;
+            void MediaLibrary.shareVideo(item.uri, item.title);
+          })
+
+          // 删除(仅视频,MediaAssetChangeRequest.deleteAssets 会弹系统确认框)
+          Row() {
+            Image($r('app.media.ic_delete'))
+              .width(24)
+              .height(24)
+              .fillColor('#F44336')
+              .margin({ right: 12 })
+            Text('删除')
+              .fontSize(15)
+              .fontColor('#F44336')
+          }
+          .width('100%')
+          .padding({
+            left: 16,
+            right: 16,
+            top: 14,
+            bottom: 14
+          })
+          .onClick(() => {
+            const item = this.ctxItem!;
+            this.showCtxSheet = false;
+            const mw = this.toMediaWrapper(item);
+            MediaLibrary.deleteVideo(mw).then((ok: boolean) => {
+              if (ok) {
+                promptAction.showToast({ message: '已删除' });
+                void this.vm.load();
+              } else {
+                promptAction.showToast({ message: '删除失败,可能缺少权限' });
+              }
+            });
+          })
+        }
+
+        Divider()
+          .strokeWidth(0.5)
+          .color('#E0E0E0')
+        Blank()
+          .height(24)
+      }
     }
-    .width('100%').backgroundColor($r('app.color.bottom_sheet_background'))
+    .width('100%')
+    .backgroundColor('#FFFFFF')
     .borderRadius({ topLeft: 16, topRight: 16 })
   }
-
 }

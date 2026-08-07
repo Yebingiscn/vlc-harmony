@@ -8,6 +8,7 @@ import { fileIo as fs } from '@kit.CoreFileKit';
 import { MediaWrapper, PlayState } from '../models/MediaModels';
 import { LibVLC, Media, MediaPlayer, Equalizer, RendererDiscoverer, MediaSlaveType } from '../../libvlc';
 import { VlcTrackInfo, VlcChapterInfo, VlcRendererInfo, VlcMediaTrackInfo } from 'libvlcnapi.so';
+import { Settings } from './Settings';
 
 const LOG_DOMAIN: number = 0x0001;
 const LOG_TAG: string = 'VLC';
@@ -70,6 +71,8 @@ export interface PlaybackState {
   speed: number;
   shuffle: boolean;
   repeatMode: number;
+  /** 全局音频播放速度是否开启(速度弹窗默认作用域:开→所有曲目,关→此曲目)。 */
+  globalSpeedEnabled: boolean;
   queueSize: number;
   currentIndex: number;
   /** 当前播放是否处于"仅播放音频"模式(视频文件当音频播),让 MiniPlayer 也能显示视频。 */
@@ -94,6 +97,12 @@ export class PlaybackService {
   private currentIndex: number = -1;
   private state: PlayState = PlayState.IDLE;
   private speed: number = 1.0;
+  /** 全局音频播放速度开关(设置页 Use the global playback speed):开 → 所有曲目用 globalSpeedValue。 */
+  private globalSpeedEnabled: boolean = false;
+  /** 全局音频播放速度值。 */
+  private globalSpeedValue: number = 1.0;
+  /** 每曲目独立播放速度(按 URI):仅在全局开关关闭时生效。 */
+  private trackSpeeds: Map<string, number> = new Map();
   private shuffle: boolean = false;
   private repeatMode: number = 0;
   private playAsAudio: boolean = false;
@@ -108,6 +117,9 @@ export class PlaybackService {
   private volume: number = 100;
   /** 睡眠计时「先等当前媒体播完」:播完后 stop,不自动下一首。 */
   private stopAfterCurrent: boolean = false;
+  /** 随机播放历史(对齐 Android PlaylistManager.previous):记录已播放过的索引,
+   *  随机时不与历史重复,全部播完一轮后 repeat-all 清空重洗 / 否则停止。 */
+  private shuffleHistory: number[] = [];
 
   private lib: LibVLC | null = null;
   private player: MediaPlayer | null = null;
@@ -153,7 +165,36 @@ export class PlaybackService {
       }
       this.player.setEventListener((event: string, value: number) => this.onNativeEvent(event, value));
       this.inited = true;
-      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] PlaybackService.init ok');
+      // 恢复上次会话持久化的随机/循环状态(对齐 Android setRepeatTypeFromSettings)
+      this.shuffle = await Settings.getBoolean(Settings.AUDIO_SHUFFLING, false);
+      this.repeatMode = await Settings.getInt(Settings.KEY_PLAYBACK_REPEAT_MODE, 0);
+      // 恢复全局音频播放速度(对齐 Android 设置项 Use the global playback speed)
+      this.globalSpeedEnabled = await Settings.getBoolean(Settings.KEY_PLAYBACK_SPEED_AUDIO_GLOBAL, false);
+      this.globalSpeedValue = await Settings.getFloat(Settings.KEY_PLAYBACK_SPEED_AUDIO_GLOBAL_VALUE, 1.0);
+      if (this.globalSpeedValue < 0.25 || this.globalSpeedValue > 8.0) {
+        this.globalSpeedValue = 1.0;
+      }
+      // 恢复每曲目独立速度 {uri: speed}
+      const savedSpeeds = await Settings.getString(Settings.KEY_AUDIO_TRACK_SPEEDS, '');
+      if (savedSpeeds.length > 0) {
+        try {
+          const obj = JSON.parse(savedSpeeds) as Record<string, number>;
+          this.trackSpeeds = new Map();
+          for (const k of Object.keys(obj)) {
+            const v = Number(obj[k]);
+            if (v >= 0.25 && v <= 8.0) {
+              this.trackSpeeds.set(k, v);
+            }
+          }
+        } catch (e) {
+          hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] trackSpeeds parse failed: %{public}s',
+            (e as Error).message ?? String(e));
+        }
+      }
+      hilog.info(LOG_DOMAIN, LOG_TAG,
+        '[VLC] PlaybackService.init ok shuffle=%{public}s repeatMode=%{public}d globalSpeed=%{public}s speed=%{public}f tracks=%{public}d',
+        this.shuffle ? 'on' : 'off', this.repeatMode,
+        this.globalSpeedEnabled ? 'on' : 'off', this.speed, this.trackSpeeds.size);
     } catch (e) {
       hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] PlaybackService.init exception: %{public}s',
         (e as Error).message ?? String(e));
@@ -416,6 +457,39 @@ export class PlaybackService {
     return this.player ? this.player.addSlave(MediaSlaveType.Subtitle, uri, true) : false;
   }
 
+  /**
+   * SPU / 音频延迟的本地缓存。
+   * libvlc 已桥接 set/get_spu_delay 与 set/get_audio_delay(任务 #8);本字段保留
+   * 作为快速 UI 显示路径,仅由 set* 回写,避免每次 getter 过 native 桥。
+   * 切换媒体/release 时外部需将两值重置为 0。
+   */
+  private spuDelayUs: number = 0;
+  private audioDelayUs: number = 0;
+
+  setSpuDelay(us: number): boolean {
+    const ok: boolean = this.player ? this.player.setSpuDelay(us) : false;
+    if (ok) {
+      this.spuDelayUs = us;
+    }
+    return ok;
+  }
+
+  getSpuDelay(): number {
+    return this.spuDelayUs;
+  }
+
+  setAudioDelay(us: number): boolean {
+    const ok: boolean = this.player ? this.player.setAudioDelay(us) : false;
+    if (ok) {
+      this.audioDelayUs = us;
+    }
+    return ok;
+  }
+
+  getAudioDelay(): number {
+    return this.audioDelayUs;
+  }
+
   applyEqualizer(enabled: boolean, presetIndex: number, preamp: number, bands: number[]): void {
     if (!this.player) {
       return;
@@ -525,6 +599,7 @@ export class PlaybackService {
       speed: this.speed,
       shuffle: this.shuffle,
       repeatMode: this.repeatMode,
+      globalSpeedEnabled: this.globalSpeedEnabled,
       queueSize: this.queue.length,
       currentIndex: this.currentIndex,
       playAsAudio: this.playAsAudio,
@@ -616,6 +691,7 @@ export class PlaybackService {
     // 避免之前打开的 playAsAudio 状态泄漏到下一首。
     if (replace) {
       this.playAsAudio = false;
+      this.shuffleHistory = [];
     }
     hilog.info(LOG_DOMAIN, LOG_TAG,
       '[VLC] prepareList size=%{public}d index=%{public}d uri=%{public}s',
@@ -731,6 +807,26 @@ export class PlaybackService {
       return;
     }
 
+    // 硬件加速(对应 Android VLCOptions.setMediaOptions):-1 自动不干预(OHOS 默认优先硬解,
+    // 失败自动回退软解);0 禁用强制软解;1 解码加速=硬解+关闭直渲;2 完全加速=硬解+直渲。
+    // iso/bluray 光碟不进此分支,保持下方强制软解(对应 Android MEDIA_NO_HWACCEL)。
+    const isDiscMrl: boolean = mrl.startsWith('bluray://') || mrl.toLowerCase().endsWith('.iso');
+    if (!isDiscMrl) {
+      const hwAccel: string = await Settings.getString(
+        Settings.KEY_HARDWARE_ACCELERATION, Settings.HARDWARE_ACCELERATION_DEFAULT);
+      if (hwAccel === '0') {
+        media.addOption(':avcodec-hw=disabled');
+        hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] hardware acceleration: disabled (software decode)');
+      } else if (hwAccel === '1') {
+        media.addOption(':avcodec-hw=any');
+        media.addOption(':no-avcodec-dr');
+        hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] hardware acceleration: decoding (hw decode, no direct render)');
+      } else if (hwAccel === '2') {
+        media.addOption(':avcodec-hw=any');
+        hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] hardware acceleration: full (hw decode + direct render)');
+      }
+    }
+
     // Blu-ray 主视频为 H.264/HEVC。OHOS 补丁默认优先 h264_ohosavcodec 硬解,
     // 但该硬解器对部分流(实测 H.264 m2ts)会 "cannot start codec" 导致黑屏且不回退。
     // 按媒体注入软解选项(必须在 setMedia 前),对齐 Android Media.setHWDecoderEnabled 的 per-media 开关。
@@ -759,12 +855,80 @@ export class PlaybackService {
       this.videoHeight = item.height;
       this.emitVideoSize();
     }
-    this.player.setRate(this.speed);
+    // 按当前媒体的音视频语境应用速度:音频按 全局/单曲 优先级,视频沿用 this.speed(视频页自行管理)
+    this.applyEffectiveSpeed();
     this.player.setScale(0);
     this.player.setVolume(this.volume);
     this.player.play();
     this.state = PlayState.PREPARED;
     this.emitState();
+  }
+
+  /**
+   * 计算并应用当前媒体的有效播放速度。
+   * - 音频(或仅播放音频):全局开关开 → 全局值;否则该曲目独立速度,没有则 1.0。
+   * - 视频:沿用 this.speed(视频播放页通过 setSpeed 自行管理,不受音频全局/单曲速度影响)。
+   */
+  private applyEffectiveSpeed(): void {
+    const item = this.getCurrent();
+    if (!item || !this.player) {
+      return;
+    }
+    let eff: number = 1.0;
+    if (item.type === 1 || this.playAsAudio) {
+      if (this.globalSpeedEnabled) {
+        eff = this.globalSpeedValue;
+      } else {
+        eff = this.trackSpeeds.get(item.uri) ?? 1.0;
+      }
+    } else {
+      eff = this.speed;
+    }
+    eff = Math.max(0.25, Math.min(8.0, eff));
+    if (Math.abs(eff - this.speed) > 0.001) {
+      this.speed = eff;
+    }
+    this.player.setRate(eff);
+  }
+
+  /** 设置单曲速度:关闭全局开关,为该 URI 写入独立速度(仅当前曲目生效)。 */
+  setTrackSpeed(uri: string, rate: number): void {
+    const r: number = Math.max(0.25, Math.min(8.0, rate));
+    this.globalSpeedEnabled = false;
+    this.trackSpeeds.set(uri, r);
+    this.speed = r;
+    this.player?.setRate(r);
+    this.persistTrackSpeeds();
+    void Settings.put(Settings.KEY_PLAYBACK_SPEED_AUDIO_GLOBAL, false);
+    hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] setTrackSpeed uri=%{public}s rate=%{public}f', uri, r);
+  }
+
+  /** 设置全局速度:开启全局开关、清空独立速度,所有曲目统一使用该速度(持久化)。 */
+  setGlobalSpeed(rate: number): void {
+    const r: number = Math.max(0.25, Math.min(8.0, rate));
+    this.globalSpeedEnabled = true;
+    this.globalSpeedValue = r;
+    this.trackSpeeds.clear();
+    this.speed = r;
+    this.player?.setRate(r);
+    this.persistTrackSpeeds();
+    void Settings.put(Settings.KEY_PLAYBACK_SPEED_AUDIO_GLOBAL, true);
+    void Settings.put(Settings.KEY_PLAYBACK_SPEED_AUDIO_GLOBAL_VALUE, r);
+    hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] setGlobalSpeed rate=%{public}f', r);
+  }
+
+  /** 持久化每曲目独立速度 {uri: speed}。 */
+  private persistTrackSpeeds(): void {
+    const obj: Record<string, number> = {};
+    this.trackSpeeds.forEach((v: number, k: string) => {
+      obj[k] = v;
+    });
+    void Settings.put(Settings.KEY_AUDIO_TRACK_SPEEDS, JSON.stringify(obj));
+  }
+
+  /** 全局音频速度开关当前状态(供弹窗默认作用域)。 */
+  isGlobalSpeedEnabled(): boolean {
+    return this.globalSpeedEnabled;
   }
 
   setStopAfterCurrent(v: boolean): void {
@@ -780,21 +944,79 @@ export class PlaybackService {
       this.stop();
       return;
     }
-    if (this.repeatMode === 2) {
-      // 单曲循环:重置到 0 后重新播放
-      this.player?.setTime(0);
-      this.player?.play();
+    // 对齐 Android PlaylistManager.EndReached → determinePrevAndNextIndices + next():
+    // 自动播完时 repeat-one 重播当前,其余按队列/随机继续或停止。
+    const nextIdx = this.computeNextIndex(false);
+    hilog.info(LOG_DOMAIN, LOG_TAG,
+      '[VLC] onComplete -> nextIdx=%{public}d (cur=%{public}d len=%{public}d shuffle=%{public}s repeat=%{public}d)',
+      nextIdx, this.currentIndex, this.queue.length,
+      this.shuffle ? 'on' : 'off', this.repeatMode);
+    if (nextIdx < 0) {
+      // 没有下一首(随机全部播完且未开循环 / 顺序到队尾且未开循环)→ 停止
+      this.stop();
       return;
     }
-    if (this.repeatMode === 1) {
-      // 列表循环:从头重新加载并播放,确保 player 状态正确切换
-      this.currentIndex = 0;
-      this.emitQueue();
+    // libVLC 在 EndReached 后 player 进入 Ended 终止态,直接 setMedia+play 在本 port
+    // 不保证重启(旧版 setTime(0)+play 同样无效)。先复位 native player 状态机,
+    // 再 setMedia+play 重载,对齐 Android 播放完自动接续的标准做法。
+    this.player?.stop();
+    if (nextIdx === this.currentIndex) {
+      // 单曲循环:重播当前(重新加载媒体最可靠,避免 ended 后 setTime 无效)
       void this.loadCurrent();
       return;
     }
-    // repeatMode === 0:播完即停,触发停止状态
-    this.stop();
+    this.currentIndex = nextIdx;
+    this.emitQueue();
+    void this.loadCurrent();
+  }
+
+  /**
+   * 计算下一首索引(对齐 Android PlaylistManager.determinePrevAndNextIndices + next)。
+   * @param forceManual 是否用户手动点“下一首”。单曲循环(repeatMode===2)时无论手动还是自动
+   *                    都重播当前(IndexPair(currentIndex,currentIndex));其余模式 forceManual
+   *                    只影响队尾是否回卷(手动永不停止)。
+   * @returns 下一首索引;返回 -1 表示应停止(队列空 / 随机播完未循环 / 顺序队尾未循环)。
+   */
+  private computeNextIndex(forceManual: boolean): number {
+    const size = this.queue.length;
+    if (size === 0) {
+      return -1;
+    }
+    // 单曲循环:手动下一曲与自动播完都重播当前(对齐 Android REPEAT_ONE → IndexPair(currentIndex,currentIndex)),
+    // 不切换曲目、不复位模式。
+    if (this.repeatMode === 2) {
+      return this.currentIndex;
+    }
+    if (this.shuffle) {
+      // 随机不重复:shuffleHistory 记录已播放过的索引。全部播完一轮后,
+      // 手动跳过永不停止(清空重洗);自动播完且未开循环时停止。
+      if (this.shuffleHistory.length + 1 >= size) {
+        if (!forceManual && this.repeatMode === 0) {
+          this.shuffleHistory = [];
+          return -1;
+        }
+        this.shuffleHistory = [];
+      }
+      let idx: number = this.currentIndex;
+      let guard: number = 0;
+      do {
+        idx = Math.floor(Math.random() * size);
+        guard++;
+      } while ((idx === this.currentIndex || this.shuffleHistory.includes(idx)) && guard < 200);
+      this.shuffleHistory.push(this.currentIndex);
+      return idx;
+    }
+    // 顺序播放
+    const nextIdx: number = this.currentIndex + 1;
+    if (nextIdx < size) {
+      return nextIdx;
+    }
+    // 已到队尾:手动跳转永远回卷到第 0 首(不暂停);
+    // 自动播完仅在开循环(全部/单曲)时回卷,否则停止。
+    if (forceManual || this.repeatMode !== 0) {
+      return 0;
+    }
+    return -1;
   }
 
   async play(): Promise<void> {
@@ -828,6 +1050,7 @@ export class PlaybackService {
   stop(): void {
     this.player?.stop();
     this.state = PlayState.STOPPED;
+    this.shuffleHistory = [];
     this.emitState();
   }
 
@@ -843,20 +1066,18 @@ export class PlaybackService {
     if (this.queue.length === 0) {
       return;
     }
-    let nextIdx: number;
-    if (this.shuffle) {
-      nextIdx = Math.floor(Math.random() * this.queue.length);
-    } else {
-      nextIdx = this.currentIndex + 1;
-      if (nextIdx >= this.queue.length) {
-        if (this.repeatMode === 1 || !auto) {
-          nextIdx = 0;
-        } else {
-          this.stop();
-          return;
-        }
-      }
+    const forceManual = !auto;
+    const nextIdx = this.computeNextIndex(forceManual);
+    if (nextIdx < 0) {
+      // 没有下一首:自动播完到队尾且未开循环时才 stop
+      this.stop();
+      return;
     }
+    // 注意:循环模式在手动跳转时保持不变(持久化),不再像 Android 那样从单曲循环复位
+    hilog.info(LOG_DOMAIN, LOG_TAG,
+      '[VLC] next auto=%{public}s from=%{public}d -> %{public}d (shuffle=%{public}s repeat=%{public}d history=%{public}d)',
+      auto ? 'auto' : 'manual', this.currentIndex, nextIdx,
+      this.shuffle ? 'on' : 'off', this.repeatMode, this.shuffleHistory.length);
     this.currentIndex = nextIdx;
     this.emitQueue();
     await this.loadCurrent();
@@ -866,9 +1087,37 @@ export class PlaybackService {
     if (this.queue.length === 0) {
       return;
     }
-    let prevIdx = this.currentIndex - 1;
-    if (prevIdx < 0) {
-      prevIdx = this.queue.length - 1;
+    // 对齐 Android PREVIOUS_LIMIT_DELAY:当前已播放超过 5s 时,上一首按钮先重播当前
+    if (this.position > 5000) {
+      this.seek(0);
+      this.player?.play();
+      return;
+    }
+    // 单曲循环:上一曲也重播当前(对齐 Android REPEAT_ONE → prev 也返回 currentIndex)
+    if (this.repeatMode === 2) {
+      this.seek(0);
+      this.player?.play();
+      return;
+    }
+    let prevIdx: number;
+    if (this.shuffle) {
+      // 随机模式:从历史回退(Android previous.pop())
+      if (this.shuffleHistory.length > 0) {
+        prevIdx = this.shuffleHistory[this.shuffleHistory.length - 1];
+        this.shuffleHistory.pop();
+      } else {
+        prevIdx = this.currentIndex;
+      }
+    } else {
+      prevIdx = this.currentIndex - 1;
+      if (prevIdx < 0) {
+        prevIdx = this.queue.length - 1;
+      }
+    }
+    if (prevIdx < 0 || prevIdx >= this.queue.length) {
+      this.seek(0);
+      this.player?.play();
+      return;
     }
     this.currentIndex = prevIdx;
     this.emitQueue();
@@ -896,17 +1145,27 @@ export class PlaybackService {
 
   toggleShuffle(): void {
     this.shuffle = !this.shuffle;
+    // 对齐 Android shuffle():切换后清空历史,随机从当前曲目重新开始
+    this.shuffleHistory = [];
+    hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] toggleShuffle -> %{public}s',
+      this.shuffle ? 'on' : 'off');
+    void Settings.put(Settings.AUDIO_SHUFFLING, this.shuffle);
     this.emitQueue();
   }
 
   setShuffle(value: boolean): void {
     if (this.shuffle === value) { return; }
     this.shuffle = value;
+    this.shuffleHistory = [];
+    void Settings.put(Settings.AUDIO_SHUFFLING, this.shuffle);
     this.emitQueue();
   }
 
   cycleRepeat(): void {
     this.repeatMode = (this.repeatMode + 1) % 3;
+    hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] cycleRepeat -> %{public}d (0=none 1=all 2=one)',
+      this.repeatMode);
+    void Settings.put(Settings.KEY_PLAYBACK_REPEAT_MODE, this.repeatMode);
     this.emitQueue();
   }
 
@@ -931,6 +1190,7 @@ export class PlaybackService {
     this.inited = false;
     this.videoOutId = '';
     this.currentRendererHandle = -1;
+    this.shuffleHistory = [];
     this.state = PlayState.IDLE;
     this.emitState();
   }
@@ -996,6 +1256,20 @@ export class PlaybackService {
 
   static async setSpeed(rate: number): Promise<void> {
     PlaybackService.getInstance().setSpeed(rate);
+  }
+
+  /** 仅当前曲目生效的速度(关全局开关)。 */
+  static setTrackSpeed(uri: string, rate: number): void {
+    PlaybackService.getInstance().setTrackSpeed(uri, rate);
+  }
+
+  /** 所有曲目统一的速度(开全局开关)。 */
+  static setGlobalSpeed(rate: number): void {
+    PlaybackService.getInstance().setGlobalSpeed(rate);
+  }
+
+  static isGlobalSpeedEnabled(): boolean {
+    return PlaybackService.getInstance().isGlobalSpeedEnabled();
   }
 
   static async next(auto: boolean = false): Promise<void> {

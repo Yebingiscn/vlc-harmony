@@ -1,5 +1,6 @@
 import { NavController } from '../common/data/NavController';
 import { MediaLibrary } from '../common/data/MediaLibrary';
+import { Settings } from '../common/data/Settings';
 import { Track, MediaWrapper, EmptyLoadingState } from '../common/models/MediaModels';
 import { EmptyStateView } from '../common/components/EmptyStateView';
 import { PlaylistDialog } from './PlaylistDialog';
@@ -39,11 +40,16 @@ class PlaylistsVM {
   @Trace loading: boolean = true;
   private searchQuery: string = '';
 
-  async load(): Promise<void> {
+  async load(forceScan: boolean = false): Promise<void> {
     this.loading = true;
     // 每次加载都强制从 Settings 刷新播放列表数据
     await MediaLibrary.reloadPlaylistCache();
-    await MediaLibrary.scan();
+    // 尊重「自动重新扫描」开关:autoRescan 关闭时不自动扫描。
+    // forceScan=true 用于下拉刷新等用户主动路径,绕过此门控(对齐 vm.refresh/vm.reload)。
+    const autoRescan = forceScan || await Settings.getBoolean(Settings.KEY_MEDIALIBRARY_AUTO_RESCAN, true);
+    if (autoRescan) {
+      await MediaLibrary.scan();
+    }
     this.rebuildCards();
     this.loading = false;
   }
@@ -155,7 +161,8 @@ export struct PlaylistsPage {
 
   async doRefresh(): Promise<void> {
     this.refreshing = true;
-    await this.vm.load();
+    // 下拉刷新:用户主动路径,绕过 autoRescan 门控,强制重新扫描。
+    await this.vm.load(true);
     this.refreshing = false;
   }
 

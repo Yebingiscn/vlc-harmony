@@ -2,14 +2,16 @@ import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { media } from '@kit.MediaKit';
 import { image } from '@kit.ImageKit';
-import { dataSharePredicates } from '@kit.ArkData';
+import { dataSharePredicates, uniformTypeDescriptor as utd } from '@kit.ArkData';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { emitter } from '@kit.BasicServicesKit';
+import { systemShare } from '@kit.ShareKit';
 import { AppContext } from './AppContext';
 import { MediaWrapper, Track, Artist, Album, Genre, Folder, VideoGroup, SheetItem, Playlist } from '../models/MediaModels';
 import { BookMark } from '../models/BookmarkModels';
 import { QueueItem } from './PlaybackService';
 import { Settings } from './Settings';
+import { PermissionCoordinator } from './PermissionCoordinator';
 
 /** 统一日志:tag=VLC,消息带 [VLC] 前缀,便于 `grep VLC run.log` 过滤出应用日志。 */
 const HILog = (msg: string): void => hilog.info(0x0001, 'VLC', '[VLC] %{public}s', msg);
@@ -59,6 +61,7 @@ interface PersistedTrack {
  * 【非 mock】:返回设备上真实存在的媒体;无媒体/无权限时返回空列表(UI 按规格显示空态)。
  */
 const AUDIO_EXTS: string[] = ['mp3', 'aac', 'flac', 'ogg', 'wav', 'm4a', 'wma', 'opus'];
+const VIDEO_EXTS: string[] = ['mp4', 'mkv', 'avi', 'mov', 'webm', 'ts', 'iso', '3gp', 'wmv', 'flv', 'm4v', 'mpg', 'mpeg', 'm2ts', 'vob'];
 
 export class MediaLibrary {
   private static videos: MediaWrapper[] = [];
@@ -173,9 +176,9 @@ export class MediaLibrary {
           mw.size = size;
           mw.dateAdded = Number(asset.get('date_added') ?? 0);
           mw.dateModified = Number(asset.get('date_modified') ?? 0);
-          mw.displayName = title;
           mw.resolution = width > 0 && height > 0 ? `${width}x${height}` : '';
-          // 缩略图:用 PhotoAsset.getThumbnail 提取真实缩略图并缓存到本地文件。
+          // displayName 存原始文件名(含扩展名),供后续文件系统扫描按文件名匹配回填 filePath。
+          mw.displayName = asset.displayName || title;
           mw.artworkUrl = '';
           try {
             if (loadThumbnails) {
@@ -197,8 +200,9 @@ export class MediaLibrary {
           } catch (thumbErr) {
             // 缩略图提取失败,保留空 artworkUrl,UI 回落占位图。
           }
-          // filePath 供按目录分组(getVideoFolders)使用;media uri 无真实路径时退化为 uri。
-          mw.filePath = uri;
+          // filePath 供按目录分组(getVideoFolders)使用;photoAccessHelper 不暴露真实路径,
+          // 留空串 -- 后续文件系统扫描会按文件名匹配回填真实路径;未匹配到的归入"视频"文件夹。
+          mw.filePath = '';
           list.push(mw);
           videoCount++;
         } catch (e) {
@@ -207,9 +211,92 @@ export class MediaLibrary {
           }
         }
       }
-      HILog(`scanVideos: ${list.length} video(s)`);
+      HILog(`scanVideos: photoAccessHelper ${list.length} video(s)`);
     } catch (e) {
       HILog(`scanVideos error: ${(e as Error).message ?? String(e)}`);
+    }
+
+    // 文件系统遍历:补充 photoAccessHelper 未索引的视频(用户在文件管理器自定义文件夹中的视频)。
+    // photoAccessHelper 仅覆盖系统媒体库索引的目录(Movies/DCIM/Pictures 等),
+    // 用户在文件管理器中新建文件夹并移入的视频不会被索引,需要通过 fs 递归扫描补充。
+    // 同时,文件系统扫描得到的真实路径会按文件名回填给 photoAccessHelper 扫到的视频,
+    // 使其也能正确按文件夹分组。
+    const nameToVideo = new Map<string, MediaWrapper>();
+    for (const v of list) {
+      if (v.displayName.length > 0) {
+        nameToVideo.set(v.displayName.toLowerCase(), v);
+      }
+    }
+    const fsScannedNames = new Set<string>();
+    const videoRoots: string[] = ['/storage/Users/currentUser'];
+    for (const root of videoRoots) {
+      try {
+        fs.statSync(root);
+        const found: string[] = [];
+        MediaLibrary.collectVideoPaths(root, found, 0, 5);
+        HILog(`fs video from ${root}: found ${found.length} file(s)`);
+        for (const f of found) {
+          // 提取文件名(含扩展名,小写)用于和 photoAccessHelper 的 displayName 匹配。
+          const fileName = f.includes('/') ? f.slice(f.lastIndexOf('/') + 1).toLowerCase() : f.toLowerCase();
+          if (fsScannedNames.has(fileName)) {
+            continue; // 文件系统扫描内同名文件去重
+          }
+          fsScannedNames.add(fileName);
+          const existing = nameToVideo.get(fileName);
+          if (existing !== undefined) {
+            // photoAccessHelper 已扫到此视频,回填真实路径供文件夹分组使用。
+            existing.filePath = f;
+            // 补充 photoAccessHelper 可能缺失的文件大小和时间戳。
+            if (existing.size === 0) {
+              try {
+                const vstat = fs.statSync(f);
+                existing.size = vstat.size;
+                existing.dateAdded = vstat.ctime;
+                existing.dateModified = vstat.mtime;
+              } catch (e) {
+                // stat 失败不影响
+              }
+            }
+            continue;
+          }
+          // photoAccessHelper 未扫到的新视频(自定义文件夹中的视频),创建新条目。
+          const fileUri = f.startsWith('file://') ? f : `file://${f}`;
+          const title = MediaLibrary.fileNameTitle(f);
+          const mw = new MediaWrapper(list.length, title, fileUri, 0);
+          mw.displayName = title;
+          mw.filePath = f; // 真实文件系统路径,供按文件夹分组使用
+          // 文件大小和时间戳(fs.statSync 快速,不需打开文件)。
+          try {
+            const vstat = fs.statSync(f);
+            mw.size = vstat.size;
+            mw.dateAdded = vstat.ctime;
+            mw.dateModified = vstat.mtime;
+          } catch (e) {
+            // stat 失败不影响添加视频
+          }
+          // 尝试提取时长和缩略图(慢操作,失败则保留默认值)。
+          try {
+            const meta = await MediaLibrary.parseFileMeta(f);
+            if (meta.title.length > 0) {
+              mw.title = meta.title;
+              mw.displayName = meta.title;
+            }
+            mw.length = meta.duration;
+            if (meta.artworkPath.length > 0) {
+              mw.artworkUrl = meta.artworkPath;
+            }
+          } catch (e) {
+            // 元数据提取失败,保留文件名标题和 duration=0
+          }
+          list.push(mw);
+          if (list.length % 50 === 49) {
+            await new Promise<void>((r: () => void) => setTimeout(r, 0));
+          }
+        }
+        HILog(`fs video: total after merge: ${list.length}`);
+      } catch (e) {
+        HILog(`fs video root ${root} not accessible: ${(e as Error).message ?? String(e)}`);
+      }
     }
     MediaLibrary.videos = list;
   }
@@ -342,6 +429,39 @@ export class MediaLibrary {
       } else {
         const ext = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1).toLowerCase() : '';
         if (AUDIO_EXTS.includes(ext)) {
+          out.push(full);
+        }
+      }
+    }
+  }
+
+  /** 递归收集目录中的视频文件路径(不解析元数据,仅发现)。 */
+  private static collectVideoPaths(dir: string, out: string[], depth: number = 0, maxDepth: number = 5): void {
+    if (depth > maxDepth) {
+      return;
+    }
+    let names: string[];
+    try {
+      names = fs.listFileSync(dir);
+    } catch (e) {
+      return;
+    }
+    for (const name of names) {
+      if (name.startsWith('.')) {
+        continue;
+      }
+      const full = `${dir}/${name}`;
+      let stat: fs.Stat;
+      try {
+        stat = fs.statSync(full);
+      } catch (e) {
+        continue;
+      }
+      if (stat.isDirectory()) {
+        MediaLibrary.collectVideoPaths(full, out, depth + 1, maxDepth);
+      } else {
+        const ext = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1).toLowerCase() : '';
+        if (VIDEO_EXTS.includes(ext)) {
           out.push(full);
         }
       }
@@ -697,19 +817,45 @@ export class MediaLibrary {
     }
   }
 
-  /** 按视频所在目录分组(VideoGroupingType.FOLDER)。 */
-  static getVideoFolders(): Folder[] {
+  /** 从给定的视频列表派生文件夹分组(供 VideoGridPage 按文件夹分组展示)。 */
+  static getFoldersFromVideos(videos: MediaWrapper[]): Folder[] {
     const map = new Map<string, Folder>();
     let fid = 0;
-    for (const v of MediaLibrary.videos) {
+    for (const v of videos) {
       const key = v.filePath.includes('/') ? v.filePath.slice(0, v.filePath.lastIndexOf('/')) : '';
       if (!map.has(key)) {
-        const f = new Folder(fid++, key === '' ? 'Videos' : key.slice(key.lastIndexOf('/') + 1), key);
+        const folderTitle = key === '' ? '视频' : key.slice(key.lastIndexOf('/') + 1);
+        const f = new Folder(fid++, folderTitle, key);
+        f.thumbnailUrls = [];
         map.set(key, f);
       }
-      (map.get(key) as Folder).mediaCount += 1;
+      const folder = map.get(key) as Folder;
+      folder.mediaCount += 1;
+      // 收集前 4 个视频缩略图用于 2x2 拼图封面。
+      if (folder.thumbnailUrls.length < 4 && v.artworkUrl.length > 0) {
+        folder.thumbnailUrls.push(v.artworkUrl);
+      }
+      // artworkUrl 兜底用第一个有缩略图的视频。
+      if (folder.artworkUrl.length === 0 && v.artworkUrl.length > 0) {
+        folder.artworkUrl = v.artworkUrl;
+      }
     }
     return Array.from(map.values());
+  }
+
+  /** 按视频所在目录分组(VideoGroupingType.FOLDER)。 */
+  static getVideoFolders(): Folder[] {
+    return MediaLibrary.getFoldersFromVideos(MediaLibrary.videos);
+  }
+
+  /** 获取指定文件夹路径下的所有视频(供文件夹详情页使用)。 */
+  static getVideosByFolder(folderPath: string): MediaWrapper[] {
+    return MediaLibrary.videos.filter((v: MediaWrapper) => {
+      if (v.filePath.includes('/')) {
+        return v.filePath.slice(0, v.filePath.lastIndexOf('/')) === folderPath;
+      }
+      return folderPath === '';
+    });
   }
 
   static getVideoGroups(): VideoGroup[] {
@@ -1130,6 +1276,122 @@ export class MediaLibrary {
     const arr: string[] = Array.from(MediaLibrary.videoFavCache);
     await Settings.put(MediaLibrary.KEY_VIDEO_FAVS, JSON.stringify(arr));
     return MediaLibrary.videoFavCache.has(uri);
+  }
+
+  // ---- 文件夹收藏(按 folder path) ----
+
+  private static readonly KEY_FOLDER_FAVS: string = 'folder_favorites';
+  private static folderFavCache: Set<string> = new Set<string>();
+
+  static async loadFolderFavs(): Promise<void> {
+    const raw: string = await Settings.getString(MediaLibrary.KEY_FOLDER_FAVS, '[]');
+    MediaLibrary.folderFavCache = new Set<string>();
+    try {
+      const arr: string[] = JSON.parse(raw) as string[];
+      for (const k of arr) {
+        MediaLibrary.folderFavCache.add(k);
+      }
+    } catch (e) {
+      // parse error -> empty
+    }
+  }
+
+  static isFolderFav(path: string): boolean {
+    return MediaLibrary.folderFavCache.has(path);
+  }
+
+  /** 切换文件夹收藏状态,返回切换后是否已收藏。 */
+  static async toggleFolderFav(path: string): Promise<boolean> {
+    if (MediaLibrary.folderFavCache.has(path)) {
+      MediaLibrary.folderFavCache.delete(path);
+    } else {
+      MediaLibrary.folderFavCache.add(path);
+    }
+    const arr: string[] = Array.from(MediaLibrary.folderFavCache);
+    await Settings.put(MediaLibrary.KEY_FOLDER_FAVS, JSON.stringify(arr));
+    return MediaLibrary.folderFavCache.has(path);
+  }
+
+  // ---- 分享与删除 ----
+
+  /** 拉起系统分享面板分享视频文件。 */
+  static async shareVideo(uri: string, title: string): Promise<void> {
+    try {
+      const ctx = AppContext.get();
+      // 从 URI 中提取文件后缀，获取精准的 utd 类型(媒体类型族)。
+      const fileName: string = uri.substring(uri.lastIndexOf('/') + 1);
+      const dotIdx: number = fileName.lastIndexOf('.');
+      const extension: string = dotIdx >= 0 ? fileName.substring(dotIdx) : '';
+      const utdTypeId: string = extension.length > 0
+        ? utd.getUniformDataTypeByFilenameExtension(extension, utd.UniformDataType.MEDIA)
+        : utd.UniformDataType.MEDIA;
+      // 构造分享数据，uri 字段直接使用文件 URI。
+      const shareData: systemShare.SharedData = new systemShare.SharedData({
+        utd: utdTypeId,
+        uri: uri,
+        title: title,
+        description: '视频文件'
+      });
+      // 创建分享控制器并拉起系统分享面板。
+      const controller: systemShare.ShareController = new systemShare.ShareController(shareData);
+      await controller.show(ctx, {
+        previewMode: systemShare.SharePreviewMode.DETAIL,
+        selectionMode: systemShare.SelectionMode.SINGLE
+      });
+    } catch (e) {
+      HILog(`shareVideo error: ${(e as Error).message ?? String(e)}`);
+    }
+  }
+
+  /** 删除设备上的视频文件,返回是否成功。 */
+  static async deleteVideo(video: MediaWrapper): Promise<boolean> {
+    // 请求写权限(首次弹授权框);仅 photoAccessHelper 资产需要,文件系统文件也尝试请求。
+    const granted = await PermissionCoordinator.askStoragePermission(true, false, true);
+    if (!granted) {
+      HILog('deleteVideo: WRITE_IMAGEVIDEO permission denied');
+      return false;
+    }
+    try {
+      const uri = video.uri;
+      if (uri.includes('media/Photo/') || uri.startsWith('file://media/')) {
+        // photoAccessHelper 管理的资产:按 URI 查到 PhotoAsset,用 MediaAssetChangeRequest.deleteAssets 删除。
+        const ctx = AppContext.get();
+        const helper = photoAccessHelper.getPhotoAccessHelper(ctx);
+        const predicates = new dataSharePredicates.DataSharePredicates();
+        predicates.equalTo(photoAccessHelper.PhotoKeys.URI, uri);
+        const opts: photoAccessHelper.FetchOptions = {
+          fetchColumns: [],
+          predicates: predicates,
+        };
+        let fetchResult: photoAccessHelper.FetchResult<photoAccessHelper.PhotoAsset> | null = null;
+        try {
+          fetchResult = await helper.getAssets(opts);
+          const photoAsset: photoAccessHelper.PhotoAsset = await fetchResult.getFirstObject();
+          await photoAccessHelper.MediaAssetChangeRequest.deleteAssets(ctx, [photoAsset]);
+        } finally {
+          if (fetchResult !== null) {
+            fetchResult.close();
+          }
+        }
+      } else {
+        // 文件系统文件:用 fs.unlinkSync 删除。
+        const path = uri.startsWith('file://') ? uri.slice(7) : uri;
+        fs.unlinkSync(path);
+      }
+      // 从内存列表中移除。
+      MediaLibrary.videos = MediaLibrary.videos.filter((v: MediaWrapper) => v.uri !== uri);
+      // 清理缩略图缓存文件。
+      if (video.artworkUrl.length > 0 && video.artworkUrl.startsWith('file://')) {
+        try {
+          fs.unlinkSync(video.artworkUrl.slice(7));
+        } catch (e) { /* 缩略图可能不存在,忽略 */ }
+      }
+      HILog(`deleteVideo: deleted ${uri}`);
+      return true;
+    } catch (e) {
+      HILog(`deleteVideo error: ${(e as Error).message ?? String(e)}`);
+      return false;
+    }
   }
 }
 

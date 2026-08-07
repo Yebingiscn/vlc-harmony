@@ -19,6 +19,12 @@ export struct PlaybackSpeedDialog {
 
   @Param currentSpeed: number = 1.0;
 
+  /** 语境:audio 显示"此曲目/所有曲目",video(默认)显示"THIS VIDEO/ALL VIDEOS"。 */
+  @Param mediaKind: 'audio' | 'video' = 'video';
+
+  /** 当前生效作用域(打开时默认选中:全局速度开→所有,否则→此)。 */
+  @Param currentScope: 'this' | 'all' = 'this';
+
   // 主题感知:浅色=白底深字,深色=深底浅字。资源定义见 base/dark element/color.json。
   readonly cPanelBg: Resource = $r('app.color.background_default');
   readonly cHeaderBg: Resource = $r('app.color.background_default');
@@ -34,6 +40,7 @@ export struct PlaybackSpeedDialog {
   aboutToAppear(): void {
     this.speed = this.currentSpeed > 0 ? this.currentSpeed : 1.0;
     this.sliderValue = this.rateToSlider(this.speed);
+    this.scope = this.currentScope;
   }
 
   private rateToSlider(r: number): number {
@@ -95,23 +102,35 @@ export struct PlaybackSpeedDialog {
     .backgroundColor(this.cHeaderBg)
   }
 
-  // ── THIS VIDEO / ALL VIDEOS ────────────────────
+  // ── THIS MEDIA / ALL MEDIA ─────────────────────
+  private scopeTabLabel(isThis: boolean): string {
+    if (this.mediaKind === 'audio') {
+      return isThis ? '此曲目' : '所有曲目';
+    }
+    return isThis ? 'THIS VIDEO' : 'ALL VIDEOS';
+  }
+
   @Builder
   scopeTabs() {
     Row() {
-      this.scopeTab('THIS VIDEO', this.scope === 'this')
-      this.scopeTab('ALL VIDEOS', this.scope === 'all')
+      this.scopeTab('this')
+      this.scopeTab('all')
     }
     .width('100%')
     .padding({ left: 20, right: 20, top: 14, bottom: 6 })
   }
 
+  /** 当前 scope 是否等于 scopeValue(builder 体内直接读 this.scope,保证切换后重渲染)。 */
+  private isScopeSelected(scopeValue: 'this' | 'all'): boolean {
+    return this.scope === scopeValue;
+  }
+
   @Builder
-  scopeTab(label: string, selected: boolean) {
+  scopeTab(scopeValue: 'this' | 'all') {
     Row() {
-      Text(label)
+      Text(this.scopeTabLabel(scopeValue === 'this'))
         .fontSize(12).fontWeight(FontWeight.Medium)
-        .fontColor(selected ? $r('app.color.list_title') : this.cDim)
+        .fontColor(this.isScopeSelected(scopeValue) ? $r('app.color.list_title') : this.cDim)
         .textAlign(TextAlign.Center)
     }
     .layoutWeight(1)
@@ -119,12 +138,12 @@ export struct PlaybackSpeedDialog {
     .height(32)
     .justifyContent(FlexAlign.Center)
     .borderRadius(4)
-    .border({ width: selected ? 0 : 1, color: this.cBorder })
-    .backgroundColor(selected ? '#FF8800' : this.cIconBtn)
+    .border({ width: this.isScopeSelected(scopeValue) ? 0 : 1, color: this.cBorder })
+    .backgroundColor(this.isScopeSelected(scopeValue) ? this.cAccent : this.cIconBtn)
     .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.97 })
     .onClick(() => {
-      if (!selected) {
-        this.scope = this.scope === 'this' ? 'all' : 'this';
+      if (this.scope !== scopeValue) {
+        this.scope = scopeValue;
       }
     })
   }
@@ -237,7 +256,9 @@ export struct PlaybackSpeedDialog {
       Column() {
         this.scopeTabs()
 
-        Text(this.scope === 'this' ? '仅应用于此视频' : '应用于所有视频')
+        Text(this.scope === 'this'
+          ? (this.mediaKind === 'audio' ? '仅应用于此曲目' : '仅应用于此视频')
+          : (this.mediaKind === 'audio' ? '应用于所有曲目' : '应用于所有视频'))
           .fontSize(12).fontColor(this.cDim)
           .width('100%')
           .padding({ left: 24, right: 24, bottom: 12 })

@@ -1,17 +1,21 @@
 import { NavController } from '../common/data/NavController';
 import { AppColors } from '../common/constants/AppConstants';
-import { MediaWrapper, Track } from '../common/models/MediaModels';
+import { MediaWrapper, Track, formatDuration } from '../common/models/MediaModels';
 import { MediaLibrary } from '../common/data/MediaLibrary';
-import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
+import { PlaybackService } from '../common/data/PlaybackService';
 import { VideoParam, VideoPlayItem } from './VideoPlayerPage';
+import { promptAction } from '@kit.ArkUI';
 
-/** HeaderMediaList 入参(album/playlist MediaLibraryItem)。 */
+/** HeaderMediaList 入参(album/playlist/folder MediaLibraryItem)。 */
 export class HeaderMediaListParam {
   title: string = '';
   description: string = '';
   isPlaylist: boolean = false;
   /** 播放列表 ID:传递后按 URI 匹配真实音频/视频轨道,而非加载全部。 */
   playlistId: number = -1;
+  /** 视频文件夹路径:设置后按文件夹过滤视频,进入视频文件夹详情模式。 */
+  folderPath: string = '';
+  isVideoFolder: boolean = false;
 }
 
 function fmtTrackDuration(ms: number): string {
@@ -55,6 +59,7 @@ class HeaderMediaListVM {
   @Trace title: string = '';
   @Trace description: string = '';
   @Trace isPlaylist: boolean = false;
+  @Trace isVideoFolder: boolean = false;
   @Trace tracks: Track[] = [];
   @Trace totalDuration: number = 0;
 
@@ -62,10 +67,22 @@ class HeaderMediaListVM {
     this.title = param.title.length > 0 ? param.title : 'Playlist';
     this.description = param.description;
     this.isPlaylist = param.isPlaylist;
+    this.isVideoFolder = param.isVideoFolder;
     let list: Track[] = [];
     let total = 0;
 
-    if (this.isPlaylist && param.playlistId >= 0) {
+    if (this.isVideoFolder) {
+      // 视频文件夹模式:按 folderPath 过滤视频列表。
+      const videos = MediaLibrary.getVideosByFolder(param.folderPath);
+      for (const v of videos) {
+        const vt = new Track(v.id, v.title, v.uri);
+        vt.length = v.length;
+        vt.artworkPath = v.artworkUrl;
+        vt.seen = v.seen;
+        list.push(vt);
+        total += v.length;
+      }
+    } else if (this.isPlaylist && param.playlistId >= 0) {
       const uriSet = new Set(MediaLibrary.getPlaylistUris(param.playlistId));
       const audios = MediaLibrary.getAudios();
       const videos = MediaLibrary.getVideos();
@@ -111,6 +128,10 @@ export struct HeaderMediaListActivityPage {
   @Local nowPlayingUri: string = '';
   /** 是否处于随机播放模式:由 setInterval 轮询 PlaybackService.isShuffle() 同步,驱动随机按钮背景色。 */
   @Local isShuffle: boolean = false;
+  @Local contextTrack: Track | null = null;
+  @Local contextTrackPosition: number = 0;
+  @Local showContext: boolean = false;
+  @Local contextTrackFav: boolean = false;
   private eqAnimTimer: number = -1;
   private animTick: number = 0;
   /** 动画正在"跟随"播放队列里的哪一首 URI:变化时重置 tick,让竖条"跳"一下。 */
@@ -118,6 +139,10 @@ export struct HeaderMediaListActivityPage {
 
   aboutToAppear(): void {
     this.vm.load(this.param);
+    if (this.vm.isVideoFolder) {
+      // 视频文件夹模式:不自动播放,不启动音频柱动画,等用户点击视频后再跳转播放器。
+      return;
+    }
     // 竖条可视化动画:绑定到 PlaybackService.getCurrent()。
     // - 无播放 → 静止低位
     // - 切歌 → reset tick,柱子从低位跳起来
@@ -164,14 +189,41 @@ export struct HeaderMediaListActivityPage {
       clearInterval(this.eqAnimTimer);
       this.eqAnimTimer = -1;
     }
-    // 离开播放列表详情页时停止播放(只在本页触发的播放,不影响其他来源)。
-    // 此回调仅当用户从本详情页 pop 回主页时触发,推到子播放页不触发。
-    PlaybackService.stop();
+    // 视频文件夹模式:没有在本页启动播放,离开时无需 stop。
+    if (!this.vm.isVideoFolder) {
+      // 离开播放列表详情页时停止播放(只在本页触发的播放,不影响其他来源)。
+      // 此回调仅当用户从本详情页 pop 回主页时触发,推到子播放页不触发。
+      PlaybackService.stop();
+    }
   }
 
-  /** 构建播放队列并在当前页开始播放(不跳转播放页)。同时关掉随机,UI 立即切到"播放全部"高亮。 */
-  private async playAll(startPos: number = 0): Promise<void> {
-    if (this.vm.tracks.length === 0) { return; }
+  /** 视频文件夹模式:点击视频 -> 跳转 VideoPlayerPage,以文件夹内全部视频为播放队列。 */
+  private async playVideoFromFolder(item: Track, position: number): Promise<void> {
+    const videos = MediaLibrary.getVideosByFolder(this.param.folderPath);
+    const list: VideoPlayItem[] = videos.map((v: MediaWrapper) => {
+      const e: VideoPlayItem = { uri: v.uri, title: v.title, artworkUrl: v.artworkUrl };
+      return e;
+    });
+    const idx = videos.findIndex((v: MediaWrapper) => v.uri === item.uri);
+    const param: VideoParam = {
+      uri: item.uri,
+      title: item.title,
+      list: list,
+      index: idx >= 0 ? idx : position,
+    };
+    NavController.push('VideoPlayer', param);
+  }
+
+  /** 更多按钮 -> 打开 ContextSheet(与 VideoGridPage 外层一致)。 */
+  openContext(item: Track, position: number): void {
+    this.contextTrack = item;
+    this.contextTrackPosition = position;
+    this.contextTrackFav = MediaLibrary.isVideoFav(item.uri);
+    this.showContext = true;
+  }
+
+  /** 构建整组曲目的播放队列(按扩展名区分音频/视频类型)。 */
+  private buildQueueItems(): MediaWrapper[] {
     const items: MediaWrapper[] = [];
     for (const t of this.vm.tracks) {
       // 根据扩展名区分音频/视频类型
@@ -180,6 +232,13 @@ export struct HeaderMediaListActivityPage {
       mw.artworkPath = t.artworkPath;
       items.push(mw);
     }
+    return items;
+  }
+
+  /** 构建播放队列并在当前页开始播放(不跳转播放页)。同时关掉随机,UI 立即切到"播放全部"高亮。 */
+  private async playAll(startPos: number = 0): Promise<void> {
+    if (this.vm.tracks.length === 0) { return; }
+    const items = this.buildQueueItems();
     // 始终用同一个播放队列,准备好后调用 play() 触发真实播放。
     // 第一次播放前先 load 队列(等同 append 后再切换到 startPos),后续切换曲目只需 seek + play。
     await PlaybackService.playList(MediaLibrary.toQueueItems(items), startPos, true);
@@ -201,14 +260,14 @@ export struct HeaderMediaListActivityPage {
     this.isShuffle = true;
   }
 
-  /** 点击三点菜单:单曲播放并跳转到对应播放页(音频→AudioPlayer,视频→VideoPlayer)。 */
+  /** 点击三点菜单:单曲播放并跳转到对应播放页(音频→AudioPlayer,视频→VideoPlayer)。
+   *  队列始终是整组曲目,从点击的这首开始,保证随机/循环/上一首/下一首在组内生效。 */
   private async playSingle(item: Track): Promise<void> {
     const isVideo = isVideoUri(item.uri);
-    const mw = new MediaWrapper(0, item.title, item.uri, isVideo ? 0 : 1);
-    mw.artistName = item.artistName;
-    mw.artworkPath = item.artworkPath;
-    const qi = QueueItem.fromMediaWrapper(mw);
-    await PlaybackService.playList([qi], 0, true);
+    const items = this.buildQueueItems();
+    const startPos = this.vm.tracks.findIndex((t: Track) => t.uri === item.uri);
+    const start = startPos >= 0 ? startPos : 0;
+    await PlaybackService.playList(MediaLibrary.toQueueItems(items), start, true);
     await PlaybackService.play();
     this.nowPlayingUri = item.uri;
     this.animTick = 0;
@@ -217,7 +276,7 @@ export struct HeaderMediaListActivityPage {
         uri: item.uri,
         title: item.title,
         list: [{ uri: item.uri, title: item.title } as VideoPlayItem],
-        index: 0,
+        index: start,
       };
       NavController.push('VideoPlayer', param);
     } else {
@@ -290,33 +349,52 @@ export struct HeaderMediaListActivityPage {
         .margin({ right: 2 })
       }
 
+      // 播完对号标识(更多按钮前)
+      if (this.vm.isVideoFolder && item.seen !== 0) {
+        Image($r('app.media.ic_check'))
+          .width(20)
+          .height(20)
+          .fillColor($r('app.color.list_subtitle'))
+          .margin({ right: 4 })
+      }
+
       Image($r('app.media.ic_more'))
-        .width(24).height(24)
+        .width(24)
+        .height(24)
         .fillColor($r('app.color.list_subtitle'))
         .padding(4)
         .onClick(() => {
-          // 三点菜单:单曲播放,不离开当前页(用单元素队列覆盖)
-          void this.playSingle(item);
+          // 三点菜单:视频文件夹模式拉起半模态(与 VideoGridPage 一致);音频模式单曲播放。
+          if (this.vm.isVideoFolder) {
+            this.openContext(item, position);
+          } else {
+            void this.playSingle(item);
+          }
         })
     }
     .width('100%')
     .padding({ left: 16, right: 12, top: 10, bottom: 10 })
     .alignItems(VerticalAlign.Center)
     .onClick(() => {
-      void this.playAll(position);
+      // 行点击:视频文件夹模式跳转播放器;音频模式在当前页播放。
+      if (this.vm.isVideoFolder) {
+        void this.playVideoFromFolder(item, position);
+      } else {
+        void this.playAll(position);
+      }
     })
   }
 
   @Builder
   emptyState() {
     Column() {
-      Image($r('app.media.ic_playlist_big'))
+      Image(this.vm.isVideoFolder ? $r('app.media.ic_video') : $r('app.media.ic_playlist_big'))
         .width(80).height(80)
         .fillColor($r('app.color.font_light'))
         .margin({ bottom: 16 })
-      Text('播放列表为空')
+      Text(this.vm.isVideoFolder ? '文件夹为空' : '播放列表为空')
         .fontSize(16).fontColor($r('app.color.list_subtitle'))
-      Text('从视频或音频页面添加曲目到播放列表')
+      Text(this.vm.isVideoFolder ? '该文件夹下没有视频' : '从视频或音频页面添加曲目到播放列表')
         .fontSize(13).fontColor($r('app.color.font_light'))
         .margin({ top: 6 })
     }
@@ -324,6 +402,123 @@ export struct HeaderMediaListActivityPage {
     .layoutWeight(1)
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
+  }
+
+  /** 视频操作半模态:顶部封面+名称,后续 播放 / 添加到收藏夹 / 视频信息(与 VideoGridPage 一致)。 */
+  @Builder
+  trackContextSheet() {
+    Column() {
+      if (this.contextTrack !== null) {
+        // 头部:封面 + 视频名称
+        Row() {
+          Image(this.contextTrack.artworkPath.length > 0
+            ? this.contextTrack.artworkPath : $r('app.media.ic_no_thumbnail_1610'))
+            .width(80)
+            .height(50)
+            .objectFit(ImageFit.Cover)
+            .borderRadius(4)
+            .margin({ right: 12 })
+            .alt($r('app.media.ic_no_thumbnail_1610'))
+          Text(this.contextTrack.title)
+            .fontSize(16)
+            .fontColor('#212121')
+            .fontWeight(FontWeight.Medium)
+            .layoutWeight(1)
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .width('100%').padding(16).alignItems(VerticalAlign.Center)
+
+        Divider().strokeWidth(0.5).color('#E0E0E0')
+
+        // 播放
+        Row() {
+          Image($r('app.media.ic_play_player')).width(24).height(24).fillColor('#212121').margin({ right: 12 })
+          Text('播放').fontSize(15).fontColor('#212121')
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 14, bottom: 14 })
+        .onClick(() => {
+          const item = this.contextTrack!;
+          const pos = this.contextTrackPosition;
+          this.showContext = false;
+          if (this.vm.isVideoFolder) {
+            void this.playVideoFromFolder(item, pos);
+          } else {
+            void this.playSingle(item);
+          }
+        })
+
+        // 添加到收藏夹 / 取消收藏
+        Row() {
+          Image(this.contextTrackFav ? $r('app.media.ic_fav_remove') : $r('app.media.ic_fav_add'))
+            .width(24).height(24).fillColor('#212121').margin({ right: 12 })
+          Text(this.contextTrackFav ? '取消收藏' : '添加到收藏夹').fontSize(15).fontColor('#212121')
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 14, bottom: 14 })
+        .onClick(() => {
+          const uri = this.contextTrack!.uri;
+          MediaLibrary.toggleVideoFav(uri).then((fav: boolean) => {
+            this.contextTrackFav = fav;
+            promptAction.showToast({ message: fav ? '已收藏' : '已取消收藏' });
+          });
+        })
+
+        // 视频信息
+        Row() {
+          Image($r('app.media.ic_information')).width(24).height(24).fillColor('#212121').margin({ right: 12 })
+          Text('视频信息').fontSize(15).fontColor('#212121')
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 14, bottom: 14 })
+        .onClick(() => {
+          promptAction.showToast({
+            message: `视频: ${this.contextTrack!.title}\n时长: ${this.contextTrack!.length > 0 ? formatDuration(this.contextTrack!.length) : '未知'}`
+          });
+        })
+
+        // 分享
+        Row() {
+          Image($r('app.media.ic_share')).width(24).height(24).fillColor('#212121').margin({ right: 12 })
+          Text('分享').fontSize(15).fontColor('#212121')
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 14, bottom: 14 })
+        .onClick(() => {
+          const item = this.contextTrack!;
+          this.showContext = false;
+          void MediaLibrary.shareVideo(item.uri, item.title);
+        })
+
+        // 删除(MediaAssetChangeRequest.deleteAssets 会弹系统确认框)
+        Row() {
+          Image($r('app.media.ic_delete')).width(24).height(24).fillColor('#F44336').margin({ right: 12 })
+          Text('删除').fontSize(15).fontColor('#F44336')
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 14, bottom: 14 })
+        .onClick(() => {
+          const item = this.contextTrack!;
+          this.showContext = false;
+          const mw = new MediaWrapper(0, item.title, item.uri, 0);
+          mw.artworkUrl = item.artworkPath;
+          MediaLibrary.deleteVideo(mw).then((ok: boolean) => {
+            if (ok) {
+              promptAction.showToast({ message: '已删除' });
+              this.vm.load(this.param);
+            } else {
+              promptAction.showToast({ message: '删除失败,可能缺少权限' });
+            }
+          });
+        })
+
+        Divider().strokeWidth(0.5).color('#E0E0E0')
+        Blank().height(24)
+      }
+    }
+    .width('100%').backgroundColor('#FFFFFF')
+    .borderRadius({ topLeft: 16, topRight: 16 })
   }
 
   build() {
@@ -357,7 +552,7 @@ export struct HeaderMediaListActivityPage {
               // 封面图
               Image(this.vm.tracks.length > 0 && this.vm.tracks[0].artworkPath.length > 0
                 ? this.vm.tracks[0].artworkPath
-                : $r('app.media.ic_playlist_big'))
+                : (this.vm.isVideoFolder ? $r('app.media.ic_video') : $r('app.media.ic_playlist_big')))
                 .width(140).height(140)
                 .objectFit(ImageFit.Cover)
                 .borderRadius(8)
@@ -383,7 +578,15 @@ export struct HeaderMediaListActivityPage {
                 .backgroundColor(this.isShuffle ? $r('app.color.card_background') : AppColors.orange500)
                 .height(38)
                 .layoutWeight(1)
-                .onClick(() => { void this.playAll(); })
+                .onClick(() => {
+                  if (this.vm.isVideoFolder) {
+                    if (this.vm.tracks.length > 0) {
+                      void this.playVideoFromFolder(this.vm.tracks[0], 0);
+                    }
+                  } else {
+                    void this.playAll();
+                  }
+                })
 
                 Button() {
                   Row() {
@@ -402,7 +605,16 @@ export struct HeaderMediaListActivityPage {
                 .backgroundColor(this.isShuffle ? AppColors.orange500 : $r('app.color.card_background'))
                 .height(38)
                 .layoutWeight(1)
-                .onClick(() => { void this.shuffleAll(); })
+                .onClick(() => {
+                  if (this.vm.isVideoFolder) {
+                    if (this.vm.tracks.length > 0) {
+                      const start = Math.floor(Math.random() * this.vm.tracks.length);
+                      void this.playVideoFromFolder(this.vm.tracks[start], start);
+                    }
+                  } else {
+                    void this.shuffleAll();
+                  }
+                })
               }
               .width('100%')
               .margin({ top: 16 })
@@ -425,7 +637,7 @@ export struct HeaderMediaListActivityPage {
                   ListItem() {
                     this.TrackItem(item, idx)
                   }
-                }, (item: Track) => `${item.id}`)
+                }, (item: Track) => item.uri)
               }
               .width('100%')
               .layoutWeight(1)
@@ -449,6 +661,16 @@ export struct HeaderMediaListActivityPage {
     .onBackPressed(() => {
       NavController.pop();
       return true;
+    })
+    .bindSheet(this.showContext, this.trackContextSheet(), {
+      height: SheetSize.FIT_CONTENT,
+      dragBar: true,
+      backgroundColor: '#FFFFFF',
+      showClose: false,
+      onDisappear: () => {
+        this.showContext = false;
+        this.contextTrack = null;
+      },
     })
   }
 }

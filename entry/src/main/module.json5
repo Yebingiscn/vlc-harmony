@@ -70,6 +70,16 @@
 					],
 					"when": "inuse"
 				}
+			},
+			{
+				"name": "ohos.permission.WRITE_IMAGEVIDEO",
+				"reason": "$string:reason_read_media",
+				"usedScene": {
+					"abilities": [
+						"EntryAbility"
+					],
+					"when": "inuse"
+				}
 			}
 		]
 	}

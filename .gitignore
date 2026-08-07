@@ -61,6 +61,8 @@ docs/
 .hvigor
 .idea
 oh_modules
+# AI coding tool local workspace
+.codegenie
 # Signing material (private keys, certs) - never commit
 sign/
 sign/**
