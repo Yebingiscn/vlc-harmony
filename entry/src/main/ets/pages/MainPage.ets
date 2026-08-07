@@ -43,6 +43,10 @@ export struct MainPage {
   @Local goToArtistName: string = '';
   /** "转到艺人"定位请求版本号:自增保证同名艺人连续定位也会触发 @Monitor。 */
   @Local goToArtistVersion: number = 0;
+  @Local selectionMode: boolean = false;
+  @Local selectionCount: number = 0;
+  @Local selectionActionVersion: number = 0;
+  @Local selectionActionType: string = '';
 
   async aboutToAppear(): Promise<void> {
     this.incognitoMode = Settings.incognitoMode;
@@ -60,11 +64,14 @@ export struct MainPage {
 
   onTabChange(id: string): void {
     this.currentTab = id;
-    // 切换 Tab 时退出当前 Tab 内搜索,避免在不支持搜索的 Tab 上残留搜索栏
+    // 切换 Tab 时退出搜索和选择模式
     this.searchMode = false;
     this.searchQuery = '';
+    if (this.selectionMode) {
+      this.selectionActionType = 'exit';
+      this.selectionActionVersion++;
+    }
     Settings.put(Settings.KEY_FRAGMENT_ID, this.indexOfTab(id));
-    // FAB 仅 Video Tab 显示(刷新媒体库)
     this.showFab = id === 'video';
   }
 
@@ -153,16 +160,22 @@ export struct MainPage {
         VlcToolbar({
           title: $r('app.string.app_name'),
           showBack: false,
-          showSearch: !this.searchMode &&
+          showSearch: !this.searchMode && !this.selectionMode &&
             (this.currentTab === 'video' || this.currentTab === 'audio' || this.currentTab === 'playlists'),
-          showMore: true,
+          showMore: !this.selectionMode,
           currentTab: this.currentTab,
           incognitoMode: this.incognitoMode,
           searchMode: this.searchMode,
           searchQuery: this.searchQuery,
+          selectionMode: this.selectionMode,
+          selectionCount: this.selectionCount,
           onSearch: () => { this.searchMode = true; this.searchQuery = ''; },
           onSearchBack: () => { this.searchMode = false; this.searchQuery = ''; },
           onSearchQueryChange: (q: string) => { this.searchQuery = q; },
+          onSelectionBack: () => { this.selectionActionType = 'exit'; this.selectionActionVersion++; },
+          onSelectionPlay: () => { this.selectionActionType = 'play'; this.selectionActionVersion++; },
+          onSelectionFav: () => { this.selectionActionType = 'fav'; this.selectionActionVersion++; },
+          onSelectionDelete: () => { this.selectionActionType = 'delete'; this.selectionActionVersion++; },
           onMoreSettings: () => this.openDisplaySettings(),
           onMoreIncognito: () => this.toggleIncognito(),
           onMoreDisplayAsList: () => this.toggleDisplayAsList(),
@@ -189,7 +202,13 @@ export struct MainPage {
             settingsVersion: this.displaySettingsVersion,
             searchMode: this.searchMode,
             searchQuery: this.searchQuery,
+            selectionActionVersion: this.selectionActionVersion,
+            selectionActionType: this.selectionActionType,
             onSearchGlobal: () => { this.searchMode = false; this.searchQuery = ''; NavController.push('Search'); },
+            onSelectionChange: (active: boolean, count: number) => {
+              this.selectionMode = active;
+              this.selectionCount = count;
+            },
           })
             .visibility(this.currentTab === 'video' ? Visibility.Visible : Visibility.None)
           AudioBrowserPage({
@@ -259,7 +278,12 @@ export struct MainPage {
       }
     })
     .onBackPressed(() => {
-      // 搜索态下返回优先退出搜索,非搜索态返回交给系统(退出 APP)
+      // 选择模式优先退出选择,搜索模式其次退出搜索,最后交给系统
+      if (this.selectionMode) {
+        this.selectionActionType = 'exit';
+        this.selectionActionVersion++;
+        return true;
+      }
       if (this.searchMode) {
         this.searchMode = false;
         this.searchQuery = '';
