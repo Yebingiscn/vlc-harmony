@@ -18,7 +18,9 @@ export type PlayerAdvancedOptionId =
   | 'shareTrack'
   | 'audioControls'
   | 'audioTips'
-  | 'playlistTips';
+  | 'playlistTips'
+  | 'audioInfo'
+  | 'goToArtist';
 
 export class PlayerAdvancedOption {
   id: PlayerAdvancedOptionId;
@@ -65,6 +67,8 @@ export function buildPlayerAdvancedOptions(mode: PlayerAdvancedMenuMode): Player
     new PlayerAdvancedOption('bookmark', '书签', $r('app.media.ic_bookmark')),
     new PlayerAdvancedOption('abRepeat', 'A-B 循环', $r('app.media.ic_abrepeat')),
     new PlayerAdvancedOption('savePlaylist', '保存播放列表', $r('app.media.ic_addtoplaylist')),
+    new PlayerAdvancedOption('audioInfo', '信息展示', $r('app.media.ic_information')),
+    new PlayerAdvancedOption('goToArtist', '转到艺人', $r('app.media.ic_artist_big')),
     // new PlayerAdvancedOption('shareTrack', '分享曲目信息', $r('app.media.ic_share')),
     // new PlayerAdvancedOption('audioControls', '控制设置', $r('app.media.ic_audio_controls')),
     // new PlayerAdvancedOption('audioTips', '音频播放器提示', $r('app.media.ic_audiotips')),

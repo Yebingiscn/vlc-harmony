@@ -4,10 +4,18 @@ import { VideoSeenState } from '../common/data/VideoSeenState';
 import { PermissionCoordinator } from '../common/data/PermissionCoordinator';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { NavController } from '../common/data/NavController';
+import { RouteName } from '../common/constants/AppConstants';
 import { EmptyStateView } from '../common/components/EmptyStateView';
 import { MediaGridCard } from '../common/components/MediaGridCard';
 import { MediaListCard } from '../common/components/MediaListCard';
-import { EmptyLoadingState, MediaWrapper, VideoGroupingType, formatDuration } from '../common/models/MediaModels';
+import {
+  EmptyLoadingState,
+  Folder,
+  formatDuration,
+  MediaWrapper,
+  VideoGroupingType
+} from '../common/models/MediaModels';
+import { HeaderMediaListParam } from './HeaderMediaListActivityPage';
 import { VideoParam, VideoPlayItem } from './VideoPlayerPage';
 import { promptAction } from '@kit.ArkUI';
 
@@ -18,6 +26,7 @@ import { promptAction } from '@kit.ArkUI';
 @ObservedV2
 class VideoGridViewModel {
   @Trace items: MediaWrapper[] = [];
+  @Trace folders: Folder[] = [];
   @Trace loading: boolean = true;
   @Trace refreshing: boolean = false;
   @Trace cardMode: boolean = true; // KEY_VIDEOS_CARDS 默认 true(网格)
@@ -30,6 +39,18 @@ class VideoGridViewModel {
   private onlyFavs: boolean = false;
   private searchQuery: string = '';
 
+  /** 设置项索引(0=按名称,1=按文件夹,2=不分组) -> VideoGroupingType。 */
+  private static toGroupingType(idx: number): VideoGroupingType {
+    switch (idx) {
+      case 1:
+        return VideoGroupingType.FOLDER;
+      case 2:
+        return VideoGroupingType.NONE;
+      default:
+        return VideoGroupingType.NAME;
+    }
+  }
+
   async load(): Promise<void> {
     this.loading = true;
     this.emptyState = EmptyLoadingState.LOADING;
@@ -39,10 +60,17 @@ class VideoGridViewModel {
     this.sortField = await Settings.getInt(Settings.KEY_VIDEO_SORT, 1);
     this.sortDesc = await Settings.getBoolean(Settings.KEY_VIDEO_SORT_DESC, false);
     this.onlyFavs = await Settings.getBoolean(Settings.KEY_VIDEO_ONLY_FAVS, false);
-    // 先确保媒体读权限(首次弹授权框),再扫描 -- 否则扫描在授权完成前跑会返回空。
-    await PermissionCoordinator.askStoragePermission(false, false, true);
-    await MediaLibrary.scan();
+    this.grouping = VideoGridViewModel.toGroupingType(await Settings.getInt(Settings.KEY_GROUP_VIDEOS, 0));
+    // 尊重「自动重新扫描」开关:autoRescan 关闭时不自动扫描。
+    // 手动刷新请走 vm.refresh()(下拉 / FAB / 权限弹窗授权后),不受此门控影响。
+    const autoRescan = await Settings.getBoolean(Settings.KEY_MEDIALIBRARY_AUTO_RESCAN, true);
+    if (autoRescan) {
+      // 先确保媒体读权限(首次弹授权框),再扫描 -- 否则扫描在授权完成前跑会返回空。
+      await PermissionCoordinator.askStoragePermission(false, false, true);
+      await MediaLibrary.scan();
+    }
     await MediaLibrary.loadVideoFavs();
+    await MediaLibrary.loadFolderFavs();
     await this.rebuild();
     this.loading = false;
   }
@@ -60,6 +88,7 @@ class VideoGridViewModel {
     this.sortField = await Settings.getInt(Settings.KEY_VIDEO_SORT, 1);
     this.sortDesc = await Settings.getBoolean(Settings.KEY_VIDEO_SORT_DESC, false);
     this.onlyFavs = await Settings.getBoolean(Settings.KEY_VIDEO_ONLY_FAVS, false);
+    this.grouping = VideoGridViewModel.toGroupingType(await Settings.getInt(Settings.KEY_GROUP_VIDEOS, 0));
     await this.rebuild();
   }
 
@@ -71,11 +100,24 @@ class VideoGridViewModel {
     if (trimmed.length > 0) {
       base = base.filter((v: MediaWrapper) => v.title.toLowerCase().includes(trimmed));
     }
-    // 仅显示收藏:按视频 uri 过滤
-    if (this.onlyFavs) {
-      base = base.filter((v: MediaWrapper) => MediaLibrary.isVideoFav(v.uri));
+
+    if (this.grouping === VideoGroupingType.FOLDER && trimmed.length === 0) {
+      // 按文件夹分组:从全量视频列表派生文件夹卡片。
+      let folders = MediaLibrary.getFoldersFromVideos(base);
+      // 仅显示收藏:按文件夹收藏过滤(而非视频收藏)。
+      if (this.onlyFavs) {
+        folders = folders.filter((f: Folder) => MediaLibrary.isFolderFav(f.path));
+      }
+      this.folders = this.applyFolderSort(folders);
+      this.items = [];
+    } else {
+      // 扁平列表模式:按视频收藏过滤。
+      if (this.onlyFavs) {
+        base = base.filter((v: MediaWrapper) => MediaLibrary.isVideoFav(v.uri));
+      }
+      this.folders = [];
+      this.items = this.applySort(base);
     }
-    this.items = this.applySort(base);
     this.updateEmpty();
   }
 
@@ -112,8 +154,25 @@ class VideoGridViewModel {
     return sorted;
   }
 
+  /** 文件夹排序:sortField=4(轨道编号)按视频数排序,其余按文件夹名。 */
+  applyFolderSort(folders: Folder[]): Folder[] {
+    const sorted = folders.slice();
+    sorted.sort((a: Folder, b: Folder) => {
+      let cmp = 0;
+      if (this.sortField === 4) {
+        cmp = a.mediaCount - b.mediaCount;
+      } else {
+        cmp = a.title.localeCompare(b.title);
+      }
+      return this.sortDesc ? -cmp : cmp;
+    });
+    return sorted;
+  }
+
   updateEmpty(): void {
-    if (this.items.length === 0) {
+    const hasContent = (this.grouping === VideoGroupingType.FOLDER && this.folders.length > 0) ||
+      (this.grouping !== VideoGroupingType.FOLDER && this.items.length > 0);
+    if (!hasContent) {
       if (this.searchQuery.trim().length > 0) {
         this.emptyState = EmptyLoadingState.EMPTY_SEARCH;
       } else if (this.onlyFavs) {
@@ -139,10 +198,12 @@ export struct VideoGridPage {
   @Local contextItem: MediaWrapper | null = null;
   @Local showContext: boolean = false;
   @Local contextItemFav: boolean = false;
+  @Local contextFolder: Folder | null = null;
+  @Local contextFolderFav: boolean = false;
   @Param settingsVersion: number = 0;
-  private removeSettingsListener: (() => void) | null = null;
   @Param searchMode: boolean = false;
   @Param searchQuery: string = '';
+  private removeSettingsListener: (() => void) | null = null;
   @Event onSearchGlobal: () => void = () => {
   };
 
@@ -152,7 +213,7 @@ export struct VideoGridPage {
         if (key === Settings.SHOW_VIDEO_THUMBNAILS) {
           // 开启缩略图时重新扫描以生成缓存；关闭时也立即刷新渲染状态。
           void this.vm.load();
-        } else if (key === Settings.KEY_MEDIA_SEEN) {
+        } else if (key === Settings.KEY_MEDIA_SEEN || key === Settings.KEY_GROUP_VIDEOS) {
           void this.vm.reloadSettings();
         }
       });
@@ -183,6 +244,55 @@ export struct VideoGridPage {
     this.refreshing = false;
   }
 
+  /** 点击文件夹卡片 -> 进入文件夹内视频列表详情页。 */
+  openFolder(folder: Folder): void {
+    const param = new HeaderMediaListParam();
+    param.title = folder.title;
+    param.description = `${folder.mediaCount} 个视频`;
+    param.folderPath = folder.path;
+    param.isVideoFolder = true;
+    NavController.push(RouteName.HeaderMediaList, param);
+  }
+
+  /** 长按/更多 -> 打开文件夹 ContextSheet。 */
+  openFolderContext(folder: Folder): void {
+    this.contextFolder = folder;
+    this.contextItem = null;
+    this.contextFolderFav = MediaLibrary.isFolderFav(folder.path);
+    this.showContext = true;
+  }
+
+  /** 播放全部:以文件夹内全部视频为队列,从第一个开始播放。 */
+  playAllInFolder(folder: Folder): void {
+    const videos = MediaLibrary.getVideosByFolder(folder.path);
+    if (videos.length === 0) {
+      return;
+    }
+    const list: VideoPlayItem[] = videos.map((v: MediaWrapper) => {
+      const e: VideoPlayItem = { uri: v.uri, title: v.title, artworkUrl: v.artworkUrl };
+      return e;
+    });
+    const param: VideoParam = {
+      uri: videos[0].uri,
+      title: videos[0].title,
+      list: list,
+      index: 0,
+    };
+    NavController.push('VideoPlayer', param);
+  }
+
+  /** 全部标记为已播放/未播放。 */
+  markFolderSeen(folder: Folder, seen: boolean): void {
+    const videos = MediaLibrary.getVideosByFolder(folder.path);
+    const tasks: Promise<void>[] = videos.map((v: MediaWrapper) =>
+    seen ? VideoSeenState.markSeen(v.uri) : VideoSeenState.markUnseen(v.uri)
+    );
+    Promise.all(tasks).then(() => {
+      promptAction.showToast({ message: seen ? '已标记为已播放' : '已标记为未播放' });
+      void this.vm.rebuild();
+    });
+  }
+
   async playVideo(item: MediaWrapper): Promise<void> {
     const items = this.vm.items;
     // 设置页返回时可能触发列表重建，卡片事件里保留的 item 与当前
@@ -207,6 +317,7 @@ export struct VideoGridPage {
   /** 长按/更多 → 打开 ContextSheet。 */
   openContext(item: MediaWrapper): void {
     this.contextItem = item;
+    this.contextFolder = null;
     this.contextItemFav = MediaLibrary.isVideoFav(item.uri);
     this.showContext = true;
   }
@@ -217,7 +328,8 @@ export struct VideoGridPage {
         if (this.searchMode) {
           this.searchGlobalButton()
         }
-        if (this.vm.emptyState !== EmptyLoadingState.NONE && this.vm.items.length === 0) {
+        if (this.vm.emptyState !== EmptyLoadingState.NONE && this.vm.items.length === 0 &&
+          this.vm.folders.length === 0) {
           EmptyStateView({
             state: this.vm.emptyState,
             filterQuery: this.searchQuery,
@@ -229,10 +341,18 @@ export struct VideoGridPage {
             .width('100%')
         } else {
           Refresh({ refreshing: this.refreshing }) {
-            if (this.vm.cardMode) {
-              this.gridMode()
+            if (this.vm.grouping === VideoGroupingType.FOLDER && this.vm.folders.length > 0) {
+              if (this.vm.cardMode) {
+                this.folderGridMode()
+              } else {
+                this.folderListMode()
+              }
             } else {
-              this.listMode()
+              if (this.vm.cardMode) {
+                this.gridMode()
+              } else {
+                this.listMode()
+              }
             }
           }
           .onRefreshing(() => this.doRefresh())
@@ -246,7 +366,7 @@ export struct VideoGridPage {
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.background_default'))
-    .bindSheet(this.showContext, this.videoContextSheet(), {
+    .bindSheet(this.showContext, this.contextSheet(), {
       height: SheetSize.FIT_CONTENT,
       dragBar: true,
       backgroundColor: '#FFFFFF',
@@ -254,8 +374,19 @@ export struct VideoGridPage {
       onDisappear: () => {
         this.showContext = false;
         this.contextItem = null;
+        this.contextFolder = null;
       },
     })
+  }
+
+  /** 统一 ContextSheet:根据 contextItem / contextFolder 判断渲染视频或文件夹内容。 */
+  @Builder
+  contextSheet() {
+    if (this.contextFolder !== null) {
+      this.folderContextContent()
+    } else {
+      this.videoContextSheet()
+    }
   }
 
   /** ContextSheet 弹窗内容(自定义组件 → builder 必须 .width('100%'))。 */
@@ -282,14 +413,24 @@ export struct VideoGridPage {
             .maxLines(2)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
         }
-        .width('100%').padding(16).alignItems(VerticalAlign.Center)
+        .width('100%')
+        .padding(16)
+        .alignItems(VerticalAlign.Center)
 
-        Divider().strokeWidth(0.5).color('#E0E0E0')
+        Divider()
+          .strokeWidth(0.5)
+          .color('#E0E0E0')
 
         // 播放
         Row() {
-          Image($r('app.media.ic_play_player')).width(24).height(24).fillColor('#212121').margin({ right: 12 })
-          Text('播放').fontSize(15).fontColor('#212121')
+          Image($r('app.media.ic_play_player'))
+            .width(24)
+            .height(24)
+            .fillColor('#212121')
+            .margin({ right: 12 })
+          Text('播放')
+            .fontSize(15)
+            .fontColor('#212121')
         }
         .width('100%')
         .padding({
@@ -307,8 +448,13 @@ export struct VideoGridPage {
         // 添加到收藏夹 / 取消收藏
         Row() {
           Image(this.contextItemFav ? $r('app.media.ic_fav_remove') : $r('app.media.ic_fav_add'))
-            .width(24).height(24).fillColor('#212121').margin({ right: 12 })
-          Text(this.contextItemFav ? '取消收藏' : '添加到收藏夹').fontSize(15).fontColor('#212121')
+            .width(24)
+            .height(24)
+            .fillColor('#212121')
+            .margin({ right: 12 })
+          Text(this.contextItemFav ? '取消收藏' : '添加到收藏夹')
+            .fontSize(15)
+            .fontColor('#212121')
         }
         .width('100%')
         .padding({
@@ -328,8 +474,14 @@ export struct VideoGridPage {
 
         // 视频信息
         Row() {
-          Image($r('app.media.ic_information')).width(24).height(24).fillColor('#212121').margin({ right: 12 })
-          Text('视频信息').fontSize(15).fontColor('#212121')
+          Image($r('app.media.ic_information'))
+            .width(24)
+            .height(24)
+            .fillColor('#212121')
+            .margin({ right: 12 })
+          Text('视频信息')
+            .fontSize(15)
+            .fontColor('#212121')
         }
         .width('100%')
         .padding({
@@ -340,15 +492,233 @@ export struct VideoGridPage {
         })
         .onClick(() => {
           promptAction.showToast({
-            message: `视频: ${this.contextItem!.title}\n时长: ${this.contextItem!.length > 0 ? formatDuration(this.contextItem!.length) : '未知'}`
+            message: `视频: ${this.contextItem!.title}\n时长: ${this.contextItem!.length > 0 ?
+              formatDuration(this.contextItem!.length) : '未知'}`
           });
         })
 
-        Divider().strokeWidth(0.5).color('#E0E0E0')
-        Blank().height(24)
+        // 分享
+        Row() {
+          Image($r('app.media.ic_share'))
+            .width(24)
+            .height(24)
+            .fillColor('#212121')
+            .margin({ right: 12 })
+          Text('分享')
+            .fontSize(15)
+            .fontColor('#212121')
+        }
+        .width('100%')
+        .padding({
+          left: 16,
+          right: 16,
+          top: 14,
+          bottom: 14
+        })
+        .onClick(() => {
+          const item = this.contextItem!;
+          this.showContext = false;
+          void MediaLibrary.shareVideo(item.uri, item.title);
+        })
+
+        // 删除(MediaAssetChangeRequest.deleteAssets 会弹系统确认框)
+        Row() {
+          Image($r('app.media.ic_delete'))
+            .width(24)
+            .height(24)
+            .fillColor('#F44336')
+            .margin({ right: 12 })
+          Text('删除')
+            .fontSize(15)
+            .fontColor('#F44336')
+        }
+        .width('100%')
+        .padding({
+          left: 16,
+          right: 16,
+          top: 14,
+          bottom: 14
+        })
+        .onClick(() => {
+          const item = this.contextItem!;
+          this.showContext = false;
+          MediaLibrary.deleteVideo(item).then((ok: boolean) => {
+            if (ok) {
+              promptAction.showToast({ message: '已删除' });
+              void this.vm.rebuild();
+            } else {
+              promptAction.showToast({ message: '删除失败,可能缺少权限' });
+            }
+          });
+        })
+
+        Divider()
+          .strokeWidth(0.5)
+          .color('#E0E0E0')
+        Blank()
+          .height(24)
       }
     }
     .width('100%').backgroundColor('#FFFFFF')
+    .borderRadius({ topLeft: 16, topRight: 16 })
+  }
+
+  /** 文件夹操作半模态内容:文件夹名 + 播放 / 打开文件夹 / 收藏 / 全部标记已播放 / 全部标记未播放。 */
+  @Builder
+  folderContextContent() {
+    Column() {
+      if (this.contextFolder !== null) {
+        // 头部:文件夹名称
+        Text(this.contextFolder.title)
+          .fontSize(18)
+          .fontColor('#212121')
+          .fontWeight(FontWeight.Medium)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+          .padding({
+            left: 16,
+            right: 16,
+            top: 20,
+            bottom: 8
+          })
+
+        Divider()
+          .strokeWidth(0.5)
+          .color('#E0E0E0')
+
+        // 播放(播放第一个视频)
+        Row() {
+          Image($r('app.media.ic_play_player'))
+            .width(24)
+            .height(24)
+            .fillColor('#212121')
+            .margin({ right: 12 })
+          Text('播放')
+            .fontSize(15)
+            .fontColor('#212121')
+        }
+        .width('100%')
+        .padding({
+          left: 16,
+          right: 16,
+          top: 14,
+          bottom: 14
+        })
+        .onClick(() => {
+          const folder = this.contextFolder!;
+          this.showContext = false;
+          this.playAllInFolder(folder);
+        })
+
+        // 打开文件夹
+        Row() {
+          Image($r('app.media.ic_folder'))
+            .width(24)
+            .height(24)
+            .fillColor('#212121')
+            .margin({ right: 12 })
+          Text('打开文件夹')
+            .fontSize(15)
+            .fontColor('#212121')
+        }
+        .width('100%')
+        .padding({
+          left: 16,
+          right: 16,
+          top: 14,
+          bottom: 14
+        })
+        .onClick(() => {
+          const folder = this.contextFolder!;
+          this.showContext = false;
+          this.openFolder(folder);
+        })
+
+        // 添加到收藏夹 / 取消收藏
+        Row() {
+          Image(this.contextFolderFav ? $r('app.media.ic_fav_remove') : $r('app.media.ic_fav_add'))
+            .width(24)
+            .height(24)
+            .fillColor('#212121')
+            .margin({ right: 12 })
+          Text(this.contextFolderFav ? '取消收藏' : '添加到收藏夹')
+            .fontSize(15)
+            .fontColor('#212121')
+        }
+        .width('100%')
+        .padding({
+          left: 16,
+          right: 16,
+          top: 14,
+          bottom: 14
+        })
+        .onClick(() => {
+          const path = this.contextFolder!.path;
+          MediaLibrary.toggleFolderFav(path).then((fav: boolean) => {
+            this.contextFolderFav = fav;
+            promptAction.showToast({ message: fav ? '已收藏' : '已取消收藏' });
+            void this.vm.rebuild();
+          });
+        })
+
+        // 全部标记为已播放
+        Row() {
+          Image($r('app.media.ic_check'))
+            .width(24)
+            .height(24)
+            .fillColor('#212121')
+            .margin({ right: 12 })
+          Text('全部标记为已播放')
+            .fontSize(15)
+            .fontColor('#212121')
+        }
+        .width('100%')
+        .padding({
+          left: 16,
+          right: 16,
+          top: 14,
+          bottom: 14
+        })
+        .onClick(() => {
+          const folder = this.contextFolder!;
+          this.showContext = false;
+          this.markFolderSeen(folder, true);
+        })
+
+        // 全部标记为未播放
+        Row() {
+          Image($r('app.media.ic_close_small'))
+            .width(24)
+            .height(24)
+            .fillColor('#212121')
+            .margin({ right: 12 })
+          Text('全部标记为未播放')
+            .fontSize(15)
+            .fontColor('#212121')
+        }
+        .width('100%')
+        .padding({
+          left: 16,
+          right: 16,
+          top: 14,
+          bottom: 14
+        })
+        .onClick(() => {
+          const folder = this.contextFolder!;
+          this.showContext = false;
+          this.markFolderSeen(folder, false);
+        })
+
+        Divider()
+          .strokeWidth(0.5)
+          .color('#E0E0E0')
+        Blank()
+          .height(24)
+      }
+    }
+    .width('100%')
+    .backgroundColor('#FFFFFF')
     .borderRadius({ topLeft: 16, topRight: 16 })
   }
 
@@ -390,7 +760,7 @@ export struct VideoGridPage {
             onItemMoreClick: () => this.openContext(item),
           })
         }
-      }, (item: MediaWrapper) => `${item.id}`)
+      }, (item: MediaWrapper) => item.uri)
     }
     .columnsTemplate('1fr 1fr')
     .columnsGap(8)
@@ -414,7 +784,210 @@ export struct VideoGridPage {
             onItemMoreClick: () => this.openContext(item),
           })
         }
-      }, (item: MediaWrapper) => `${item.id}`)
+      }, (item: MediaWrapper) => item.uri)
+    }
+    .divider({
+      strokeWidth: 0.5,
+      color: $r('app.color.divider'),
+      startMargin: 8,
+      endMargin: 8
+    })
+    .width('100%')
+    .layoutWeight(1)
+  }
+
+  @Builder
+  folderGridMode() {
+    Grid() {
+      ForEach(this.vm.folders, (folder: Folder) => {
+        GridItem() {
+          Column() {
+            Stack({ alignContent: Alignment.Top }) {
+              // 文件夹封面:4+缩略图时用 2x2 拼图,否则单图/图标。
+              if (this.vm.showThumbnails && folder.thumbnailUrls.length >= 4) {
+                Column() {
+                  Row() {
+                    Image(folder.thumbnailUrls[0])
+                      .width('50%')
+                      .height('100%')
+                      .objectFit(ImageFit.Cover)
+                      .draggable(false)
+                    Image(folder.thumbnailUrls[1])
+                      .width('50%')
+                      .height('100%')
+                      .objectFit(ImageFit.Cover)
+                      .draggable(false)
+                  }
+                  .width('100%')
+                  .height('50%')
+
+                  Row() {
+                    Image(folder.thumbnailUrls[2])
+                      .width('50%')
+                      .height('100%')
+                      .objectFit(ImageFit.Cover)
+                      .draggable(false)
+                    Image(folder.thumbnailUrls[3])
+                      .width('50%')
+                      .height('100%')
+                      .objectFit(ImageFit.Cover)
+                      .draggable(false)
+                  }
+                  .width('100%')
+                  .height('50%')
+                }
+                .width('100%')
+                .height('100%')
+              } else {
+                Image(this.vm.showThumbnails && folder.artworkUrl.length > 0 ? folder.artworkUrl :
+                  $r('app.media.ic_folder'))
+                  .width('100%')
+                  .height('100%')
+                  .objectFit(ImageFit.Cover)
+                  .alt($r('app.media.ic_folder'))
+                  .draggable(false)
+                  .backgroundColor($r('app.color.card_background'))
+              }
+              // 右上角:更多按钮(与视频网格卡片完全一致的样式)。
+              Row() {
+                Blank()
+                Image($r('app.media.ic_more'))
+                  .width(16)
+                  .height(16)
+                  .fillColor('#FFFFFF')
+                  .backgroundColor($r('app.color.rounded_corners_black_more_transparent'))
+                  .borderRadius(4)
+                  .onClick(() => this.openFolderContext(folder))
+              }
+              .width('100%')
+              .justifyContent(FlexAlign.SpaceBetween)
+              .padding({ left: 4, right: 4, top: 4 })
+
+              // 左下角:收藏角标(已收藏时显示)。
+              if (MediaLibrary.isFolderFav(folder.path)) {
+                Row() {
+                  Image($r('app.media.ic_emoji_favorite_white'))
+                    .width(16)
+                    .height(16)
+                    .fillColor('#FFFFFF')
+                    .backgroundColor($r('app.color.rounded_corners_black_more_transparent'))
+                    .borderRadius(3)
+                    .padding(3)
+                }
+                .width('100%')
+                .height('100%')
+                .justifyContent(FlexAlign.Start)
+                .alignItems(VerticalAlign.Bottom)
+                .padding({ left: 4, bottom: 4 })
+                .hitTestBehavior(HitTestMode.None)
+              }
+            }
+            .aspectRatio(1.6)
+            .borderRadius(4)
+            .clip(true)
+            .width('100%')
+
+            Text(folder.title)
+              .fontSize(16)
+              .fontColor($r('app.color.list_title'))
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .margin({ top: 6 })
+              .width('100%')
+
+            Text(`${folder.mediaCount} 个视频`)
+              .fontSize(12)
+              .fontColor($r('app.color.list_subtitle'))
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .margin({ top: 2 })
+              .width('100%')
+          }
+          .width('100%')
+          .padding(8)
+          .backgroundColor($r('app.color.video_card_background'))
+          .borderRadius(8)
+          .clip(true)
+          .onClick(() => this.openFolder(folder))
+          .gesture(LongPressGesture().onAction(() => this.openFolderContext(folder)))
+        }
+      }, (folder: Folder) => folder.path.length > 0 ? folder.path : folder.title)
+    }
+    .columnsTemplate('1fr 1fr')
+    .columnsGap(8)
+    .rowsGap(8)
+    .padding(4)
+    .width('100%')
+    .layoutWeight(1)
+  }
+
+  @Builder
+  folderListMode() {
+    List({ space: 0 }) {
+      ForEach(this.vm.folders, (folder: Folder) => {
+        ListItem() {
+          Row() {
+            // 左侧:文件夹缩略图/图标(80x50,与视频列表卡片一致)。
+            Stack() {
+              Image(this.vm.showThumbnails && folder.artworkUrl.length > 0
+                ? folder.artworkUrl : $r('app.media.ic_folder'))
+                .width(80)
+                .height(50)
+                .objectFit(ImageFit.Cover)
+                .alt($r('app.media.ic_folder'))
+                .draggable(false)
+                .borderRadius(4)
+                .backgroundColor($r('app.color.card_background'))
+            }
+            .borderRadius(4)
+            .clip(true)
+            .margin({ right: 16 })
+
+            // 中间:文件夹名 + 视频数。
+            Column() {
+              Text(folder.title)
+                .fontSize(16)
+                .fontColor($r('app.color.list_title'))
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+              Text(`${folder.mediaCount} 个视频`)
+                .fontSize(12)
+                .fontColor($r('app.color.list_subtitle'))
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .margin({ top: 2 })
+            }
+            .layoutWeight(1)
+            .alignItems(HorizontalAlign.Start)
+            .margin({ right: 4 })
+
+            // 收藏指示(已收藏时显示星标)。
+            if (MediaLibrary.isFolderFav(folder.path)) {
+              Image($r('app.media.ic_emoji_favorite'))
+                .width(24).height(24).objectFit(ImageFit.Contain).margin({ right: 4 })
+            }
+
+            // 右侧:更多按钮(与视频列表卡片一致的 44x44 触控区)。
+            Row() {
+              Image($r('app.media.ic_more'))
+                .width(20)
+                .height(20)
+                .fillColor($r('app.color.list_subtitle'))
+            }
+            .width(44)
+            .height(44)
+            .justifyContent(FlexAlign.Center)
+            .alignItems(VerticalAlign.Center)
+            .margin({ right: 4 })
+            .onClick(() => this.openFolderContext(folder))
+          }
+          .width('100%')
+          .padding({ left: 8, top: 8, bottom: 8 })
+          .backgroundColor($r('app.color.video_list_background'))
+          .onClick(() => this.openFolder(folder))
+          .gesture(LongPressGesture().onAction(() => this.openFolderContext(folder)))
+        }
+      }, (folder: Folder) => folder.path.length > 0 ? folder.path : folder.title)
     }
     .divider({
       strokeWidth: 0.5,

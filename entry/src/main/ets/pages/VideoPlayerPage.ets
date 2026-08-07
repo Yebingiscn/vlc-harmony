@@ -1,5 +1,7 @@
 import { promptAction, window } from '@kit.ArkUI';
 import { audio, AVVolumePanel } from '@kit.AudioKit';
+import { picker } from '@kit.CoreFileKit';
+import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import PiPWindow from '@ohos.PiPWindow';
 import { NavController } from '../common/data/NavController';
@@ -17,11 +19,13 @@ import { JumpToTimeDialog } from './JumpToTimeDialog';
 import { SleepTimerDialog } from './SleepTimerDialog';
 import { SelectChapterDialog } from './SelectChapterDialog';
 import { VideoTracksDialog } from './VideoTracksDialog';
+import { AudioSubtitlePanelDialog } from './AudioSubtitlePanelDialog';
 import { RenderersDialog } from './RenderersDialog';
 import { PlaybackSpeedDialog, PlaybackSpeedAction } from './PlaybackSpeedDialog';
 import { VideoControlsSettingsDialog, ControlsState } from './VideoControlsSettingsDialog';
 import { EqualizerDialog } from './EqualizerDialog';
 import { VideoInfoDialog } from './VideoInfoDialog';
+import { SubtitleDownloaderDialog } from './SubtitleDownloaderDialog';
 import { BookmarkDialog } from './BookmarkDialog';
 import { AddToPlaylistDialog, AddToPlaylistAction } from './AddToPlaylistDialog';
 import {
@@ -607,7 +611,16 @@ export struct VideoPlayerPage {
 
   /** 更多选项/二级弹窗的 sheet 状态。sheetKind 空串=主选项列表;否则=对应二级弹窗。 */
   @Local sheetOpen: boolean = false;
-  @Local sheetKind: string = ''; // '' | 'jump' | 'sleep' | 'chapter' | 'tracks' | 'renderer' | 'speed' | 'controls' | 'equalizer' | 'videoInfo' | 'savePlaylist'
+  @Local sheetKind: string = ''; // '' | 'jump' | 'sleep' | 'chapter' | 'tracks' | 'renderer' | 'speed' | 'controls' | 'equalizer' | 'videoInfo' | 'savePlaylist' | 'audioSubInfo' | 'downloadSubtitle'
+  /**
+   * 当前字幕延迟(微秒)。libvlc 没有 get_spu_delay 桥接;
+   * 权威源在 PlaybackService.spuidDelayUs,这里仅镜像用于面板绑定显示。
+   */
+  @Local spuDelayUs: number = 0;
+  /**
+   * 当前音频延迟(微秒)。权威源在 PlaybackService.audioDelayUs。
+   */
+  @Local audioDelayUs: number = 0;
   /** 书签弹框独立走 Stack 覆盖层(不走 bindSheet)以保持半透效果,不遮挡背后视频。 */
   @Local bookmarkOpen: boolean = false;
   /** 当前视频的书签列表（每次变更自动持久化）。 */
@@ -732,6 +745,100 @@ export struct VideoPlayerPage {
     this.closeSheet();
   }
 
+  /**
+   * 切换轨道但保留 sheet:新面板(AudioSubtitlePanelDialog)允许连续切
+   * 多个音频/字幕轨后留存继续选其他项,不必每次关掉。
+   */
+  onTrackChange(id: number, type: string): void {
+    const svc = PlaybackService.getInstance();
+    if (type === 'audio') {
+      svc.setAudioTrack(id);
+    } else if (type === 'spu') {
+      svc.setSpuTrack(id);
+    } else if (type === 'video') {
+      svc.setVideoTrack(id);
+    }
+  }
+
+  /**
+   * 设置字幕延迟并回写本地状态:面板滑块/onSetSpuDelay 回调入口。
+   *
+   * 乐观更新:无论 libvlc 是否接受,this.spuDelayUs 都按用户意图刷新,保证 UI 即时反馈。
+   * 真实播放生效以 libvlc 为准。下次进面板 syncSpuDelayFromService 会反向校准
+   * (回到 libvlc 实际状态),即:用户随便拖也得听 libvlc 的。
+   */
+  onSetSpuDelay(us: number): void {
+    this.spuDelayUs = us;
+    const ok: boolean = PlaybackService.getInstance().setSpuDelay(us);
+    hilog.info(0x0001, 'VLC', '[VLC] spu delay set us=%{public}d ok=%{public}s', us, String(ok));
+  }
+
+  /**
+   * 设置音频延迟并回写本地状态:与 onSetSpuDelay 同构(乐观更新)。
+   */
+  onSetAudioDelay(us: number): void {
+    this.audioDelayUs = us;
+    const ok: boolean = PlaybackService.getInstance().setAudioDelay(us);
+    hilog.info(0x0001, 'VLC', '[VLC] audio delay set us=%{public}d ok=%{public}s', us, String(ok));
+  }
+
+  /** 拉一次 PlaybackService 缓存同步到本地,用于面板打开时显示当前值。 */
+  syncSpuDelayFromService(): void {
+    this.spuDelayUs = PlaybackService.getInstance().getSpuDelay();
+  }
+
+  /** 拉一次音频延迟缓存同步到本地。 */
+  syncAudioDelayFromService(): void {
+    this.audioDelayUs = PlaybackService.getInstance().getAudioDelay();
+  }
+
+  /**
+   * 打开系统 documentViewPicker 选一个字幕文件,挂载为外挂 SPU 轨。
+   * 后缀白名单:.srt / .ass / .ssa / .vtt / .sub。
+   * 成功加载后关闭面板(toast 提示),让用户下次进面板 aboutToAppear 时拉到新轨。
+   * 取消时不报错也不关面板。
+   */
+  async onPickSubtitle(): Promise<void> {
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext;
+      const opts = new picker.DocumentSelectOptions();
+      opts.maxSelectNumber = 1;
+      opts.fileSuffixFilters = ['字幕|.srt,.ass,.ssa,.vtt,.sub'];
+      const docPicker = new picker.DocumentViewPicker(ctx);
+      const uris: string[] = await docPicker.select(opts);
+      if (uris.length > 0) {
+        const ok: boolean = PlaybackService.getInstance().addSubtitleSlave(uris[0]);
+        promptAction.showToast({
+          message: ok ? '字幕已加载' : '字幕加载失败',
+        });
+        hilog.info(0x0001, 'VLC', '[VLC] addSubtitleSlave ok=%{public}s uri=%{public}s',
+          String(ok), uris[0]);
+        this.closeSheet();
+      }
+    } catch (e) {
+      // 用户取消 —— 静默吞掉
+    }
+  }
+
+  /**
+   * 切到「下载字幕」二级 sheet。直接改 sheetKind 复用 bindSheet,不关再开,
+   *   避免 sheet 关闭动画期间再开新 sheet 的抖动。首次打开时 sheetOpen 仍为 false 由 openSub 置 true。
+   * 任务 #10 第一版只接路由,搜索/下载动作仍走 SubtitleDownloaderDialog 内的 TODO 占位。
+   */
+  onDownloadSubtitle(): void {
+    this.openSub('downloadSubtitle');
+  }
+
+  /**
+   * 从「下载字幕」二级 sheet 回到 audioSubInfo 一级 sheet。
+   * 只改 sheetKind,保持 sheetOpen=true —— 走的是 sheetKind 路由切换,
+   *   bindSheet 会重新渲染玩家为 AudioSubtitlePanelDialog。
+   * 任务 #18 修了「← 返回应回上一级」的语义。
+   */
+  onBackFromDownloadSubtitle(): void {
+    this.sheetKind = 'audioSubInfo';
+  }
+
   onRendererConnect(id: number): void {
     PlaybackService.getInstance().setRenderer(id);
     this.closeSheet();
@@ -752,51 +859,79 @@ export struct VideoPlayerPage {
   @Local audioSampleRate: string = '';
   @Local bitrate: string = '';
 
-  /** 刷新视频信息弹框要展示的全部字段:从 libVLC 真实轨道数据填入。 */
+  /**
+   * 刷新视频信息弹框要展示的全部字段:从 libVLC 真实轨道数据填入。
+   *
+   * 字段级乐观更新策略:libvlc 返回的字段是有效值才覆盖,空/undefined 保留旧值。
+   * 重复打开面板时如果 libvlc 处于 transient 状态(返回空 allTracks 或字段为 0/
+   * undefined),面板上已经填好的元数据不会被误清空。换源 / release 时由 setup
+   * 主动调 clearTracksMeta() 显式清空。
+   */
   refreshVideoInfoTracks(): void {
     const svc = PlaybackService.getInstance();
-    this.videoCodecName = svc.getCurrentVideoTrackInfo()?.name ?? '';
-    this.audioCodecName = svc.getCurrentAudioTrackInfo()?.name ?? '';
+    const curAudioInfo = svc.getCurrentAudioTrackInfo();
+    const curVideoInfo = svc.getCurrentVideoTrackInfo();
+    if (curAudioInfo && curAudioInfo.name.length > 0) {
+      this.audioCodecName = curAudioInfo.name;
+    }
+    if (curVideoInfo && curVideoInfo.name.length > 0) {
+      this.videoCodecName = curVideoInfo.name;
+    }
 
-    // 从 media tracks info 取当前选中轨道的 fps / lang / channels / sampleRate / bitrate
     const allTracks = svc.getMediaTracksInfo();
+    // allTracks 全空视为 libvlc transient,跳过字段更新,保留旧值。
+    if (allTracks.length === 0) {
+      return;
+    }
+
     const curVideoId = svc.getVideoTrack();
     const curAudioId = svc.getAudioTrack();
 
     const videoTrack = allTracks.find((t) => t.type === 1 && t.id === curVideoId);
     if (videoTrack) {
-      this.videoLang = videoTrack.language.length > 0 ? videoTrack.language : '';
+      if (videoTrack.language.length > 0) {
+        this.videoLang = videoTrack.language;
+      }
       if (videoTrack.frameRateNum !== undefined && videoTrack.frameRateDen !== undefined &&
           videoTrack.frameRateDen > 0) {
         this.videoFps = (videoTrack.frameRateNum / videoTrack.frameRateDen).toFixed(3);
-      } else {
-        this.videoFps = '';
       }
       if (videoTrack.bitrate > 0) {
         this.bitrate = String(videoTrack.bitrate);
-      } else {
-        this.bitrate = '';
       }
-    } else {
-      this.videoLang = '';
-      this.videoFps = '';
-      this.bitrate = '';
     }
 
     const audioTrack = allTracks.find((t) => t.type === 0 && t.id === curAudioId);
     if (audioTrack) {
-      this.audioLang = audioTrack.language.length > 0 ? audioTrack.language : '';
-      this.audioChannels = audioTrack.channels !== undefined && audioTrack.channels > 0 ? String(audioTrack.channels) : '';
-      this.audioSampleRate = audioTrack.sampleRate !== undefined && audioTrack.sampleRate > 0 ? String(audioTrack.sampleRate) : '';
-      // 如果视频轨道没给码率但音频有,兜底用音频的
+      if (audioTrack.language.length > 0) {
+        this.audioLang = audioTrack.language;
+      }
+      if (audioTrack.channels !== undefined && audioTrack.channels > 0) {
+        this.audioChannels = String(audioTrack.channels);
+      }
+      if (audioTrack.sampleRate !== undefined && audioTrack.sampleRate > 0) {
+        this.audioSampleRate = String(audioTrack.sampleRate);
+      }
+      // 兜底:视频轨道没给码率但音频有,用音频的
       if (this.bitrate.length === 0 && audioTrack.bitrate > 0) {
         this.bitrate = String(audioTrack.bitrate);
       }
-    } else {
-      this.audioLang = '';
-      this.audioChannels = '';
-      this.audioSampleRate = '';
     }
+  }
+
+  /**
+   * 显式清空所有元数据字段:setup / 换源 / release 时调用。
+   * 弥补 refreshVideoInfoTracks 字段级乐观更新不再清空旧值的"留尾巴"问题。
+   */
+  clearTracksMeta(): void {
+    this.videoCodecName = '';
+    this.audioCodecName = '';
+    this.videoLang = '';
+    this.videoFps = '';
+    this.audioLang = '';
+    this.audioChannels = '';
+    this.audioSampleRate = '';
+    this.bitrate = '';
   }
 
   onSpeedConfirm(action: PlaybackSpeedAction): void {
@@ -1439,7 +1574,12 @@ export struct VideoPlayerPage {
       return;
     }
     if (id === 'tracks') {
-      this.openSub('tracks');
+      // 进面板前刷一次音频/视频元数据,此前只在 videoInfo 高级选项里 refresh,
+      // 常规入口进来 audioCodec / audioLang / audioChannels 等都为空。
+      this.refreshVideoInfoTracks();
+      this.syncSpuDelayFromService();
+      this.syncAudioDelayFromService();
+      this.openSub('audioSubInfo');
     } else if (id === 'play') {
       this.vm.toggle();
     } else if (id === 'orientation') {
@@ -1931,6 +2071,27 @@ export struct VideoPlayerPage {
           onClose: () => this.closeSheet(),
           onTrackSelect: (id: number, type: string) => this.onTrackSelect(id, type),
         }).width('100%')
+      } else if (this.sheetKind === 'audioSubInfo') {
+        AudioSubtitlePanelDialog({
+          audioCodec: this.audioCodecName,
+          audioLang: this.audioLang,
+          audioChannels: this.audioChannels,
+          audioSampleRate: this.audioSampleRate,
+          bitrate: this.bitrate,
+          spuDelayUs: this.spuDelayUs,
+          audioDelayUs: this.audioDelayUs,
+          onClose: () => this.closeSheet(),
+          onTrackChange: (id: number, type: string) => this.onTrackChange(id, type),
+          onSetSpuDelay: (us: number) => this.onSetSpuDelay(us),
+          onSetAudioDelay: (us: number) => this.onSetAudioDelay(us),
+          onPickSubtitle: (): void => { void this.onPickSubtitle(); },
+          onDownloadSubtitle: () => this.onDownloadSubtitle(),
+        }).width('100%')
+      } else if (this.sheetKind === 'downloadSubtitle') {
+        SubtitleDownloaderDialog({
+          onClose: () => this.closeSheet(),
+          onBack: () => this.onBackFromDownloadSubtitle(),
+        }).width('100%')
       } else if (this.sheetKind === 'renderer') {
         RenderersDialog({
           onClose: () => this.closeSheet(),
@@ -1997,7 +2158,7 @@ export struct VideoPlayerPage {
       this.optionRow('Playback speed', () => this.openSub('speed'))
       this.optionRow('Sleep timer', () => this.openSub('sleep'))
       this.optionRow($r('app.string.go_to_chapter'), () => this.openSub('chapter'))
-      this.optionRow('Audio & Subtitles tracks', () => this.openSub('tracks'))
+      this.optionRow('Audio & Subtitles tracks', () => this.openSub('audioSubInfo'))
       this.optionRow('Displays', () => this.openSub('renderer'))
     }
     .width('100%')

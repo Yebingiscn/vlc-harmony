@@ -254,11 +254,15 @@ export struct PreferencesPage {
       this.openSleepTimer(item);
       return;
     }
+    if (item.routeName && item.routeName.length > 0) {
+      NavController.push(item.routeName);
+      return;
+    }
     if (item.targetScreen && item.targetScreen.length > 0) {
       const p: PreferencesScreenParam = { screenKey: item.targetScreen };
       NavController.push('Preferences', p);
     } else {
-      // 外部契约跳转(equalizer / directories / parental_control PIN 门 等)。TODO(契约)
+      // 外部契约跳转(directories / equalizer 等)。TODO(契约)
       promptAction.showToast({ message: item.key });
     }
   }
@@ -824,7 +828,7 @@ export struct PreferencesPage {
         new PreferenceItem({ key: 'audio_category', title: 'Audio', type: 'nav', icon: $r('app.media.ic_settings'), targetScreen: 'audio_category' }),
         new PreferenceItem({ key: 'equalizer', title: $r('app.string.equalizer'), type: 'nav', icon: $r('app.media.ic_settings') }),
         new PreferenceItem({ key: 'casting_category', title: 'Casting', type: 'nav', icon: $r('app.media.ic_settings'), targetScreen: 'casting_category' }),
-        new PreferenceItem({ key: 'parental_control', title: 'Parental control', type: 'nav', icon: $r('app.media.ic_settings'), targetScreen: 'parental_control' }),
+        new PreferenceItem({ key: 'parental_control', title: $r('app.string.parental_control'), type: 'nav', icon: $r('app.media.ic_settings') }),
         new PreferenceItem({ key: 'remote_access_category', title: 'Remote access', type: 'nav', icon: $r('app.media.ic_settings'), targetScreen: 'remote_access_category' }),
         new PreferenceItem({ key: 'android_auto_category', title: $r('app.string.android_auto'), type: 'nav', icon: $r('app.media.ic_settings'), targetScreen: 'android_auto_category' }),
         new PreferenceItem({ key: 'adv_category', title: $r('app.string.advanced_prefs_category'), type: 'nav', icon: $r('app.media.ic_settings'), targetScreen: 'adv_category' }),
@@ -991,12 +995,13 @@ export struct PreferencesPage {
 
   // ---- PreferencesParentalControl ----
   static parentalScreen(): PreferenceScreen {
-    const items: PreferenceItem[] = [
-      new PreferenceItem({ key: 'modify_pin_code', title: 'Change your PIN code', type: 'nav' }),
-      new PreferenceItem({ key: 'restrict_settings', title: 'Restrict settings access', type: 'toggle', defaultValue: false }),
-      new PreferenceItem({ key: 'safe_mode', title: 'Safe mode', type: 'toggle', summary: 'When activated, files cannot be deleted or playlist modified without entering the pin', defaultValue: false }),
-    ];
-    return new PreferenceScreen('parental_control', 'Parental control', [new PreferenceGroup('', items)]);
+    return new PreferenceScreen('parental_control', $r('app.string.parental_control'), [
+      new PreferenceGroup('', [
+        new PreferenceItem({ key: 'change_pin', title: $r('app.string.change_password'), type: 'nav', routeName: 'ParentalControl' }),
+        new PreferenceItem({ key: 'restrict_settings', title: $r('app.string.restrict_settings_access'), type: 'checkbox', defaultValue: false }),
+        new PreferenceItem({ key: 'safe_mode', title: $r('app.string.safe_mode'), type: 'checkbox', summary: $r('app.string.safe_mode_summary'), defaultValue: false }),
+      ]),
+    ]);
   }
 
   // ---- PreferencesRemoteAccess ----

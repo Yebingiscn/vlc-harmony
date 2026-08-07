@@ -29,6 +29,8 @@
     { "name": "colorControlNormal", "value": "#E0E0E0" },
     { "name": "dialog_mask", "value": "#99000000" },
     { "name": "sleep_timer_key", "value": "#D6D6D6" },
-    { "name": "sleep_timer_backspace_disabled", "value": "#666666" }
+    { "name": "sleep_timer_backspace_disabled", "value": "#666666" },
+    { "name": "history_selected_bg", "value": "#1AFF8800" },
+    { "name": "delete_red", "value": "#E84026" }
   ]
 }

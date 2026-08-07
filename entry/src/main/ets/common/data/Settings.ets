@@ -62,6 +62,8 @@ export class Settings {
   static readonly KEY_INCLUDE_MISSING: string = 'include_missing';
   // AudioPlayer
   static readonly AUDIO_SHUFFLING: string = 'audio_shuffling';
+  /** 播放循环模式持久化(0=关闭 1=列表循环 2=单曲循环),对齐 Android PLAYLIST_AUDIO_REPEAT_MODE_KEY。 */
+  static readonly KEY_PLAYBACK_REPEAT_MODE: string = 'audio_repeat_mode';
   static readonly SHOW_REMAINING_TIME: string = 'show_remaining_time';
   static readonly PREF_PLAYLIST_TIPS_SHOWN: string = 'playlist_tips_shown';
   static readonly PREF_AUDIOPLAYER_TIPS_SHOWN: string = 'audioplayer_tips_shown';
@@ -113,6 +115,8 @@ export class Settings {
   static readonly KEY_PLAYBACK_SPEED_AUDIO_GLOBAL: string = 'playback_speed_audio_global';
   static readonly KEY_PLAYBACK_SPEED_VIDEO_GLOBAL_VALUE: string = 'playback_speed_video_global_value';
   static readonly KEY_PLAYBACK_SPEED_AUDIO_GLOBAL_VALUE: string = 'playback_speed_audio_global_value';
+  /** 每曲目独立播放速度持久化:{uri: speed} JSON(仅全局速度关闭时生效)。 */
+  static readonly KEY_AUDIO_TRACK_SPEEDS: string = 'audio_track_speeds';
   // Misc
   static readonly PLAYBACK_HISTORY: string = 'playback_history';
   static readonly RESUME_PLAYBACK: string = 'resume_playback';

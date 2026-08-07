@@ -55,14 +55,15 @@ export struct PreferencesActivityPage {
   async aboutToAppear(): Promise<void> {
     this.sections = SettingsHomeCatalog.create();
     const values: Record<string, boolean> = {};
+    // 启动时从 prefs 读 toggle 真值,缺省回退到 item.defaultOn。
+    // 此前直接用 item.defaultOn,导致切换不持久化、重启后回退到硬编码默认。
     for (const section of this.sections) {
       for (const item of section.items) {
         if (item.type === 'toggle') {
-          values[item.key] = item.defaultOn;
+          values[item.key] = await Settings.getBoolean(item.key, item.defaultOn);
         }
       }
     }
-    values[Settings.KEY_INCOGNITO] = await Settings.getBoolean(Settings.KEY_INCOGNITO, false);
     this.toggleValues = values;
     await this.loadOrientationSummary();
   }
@@ -100,7 +101,11 @@ export struct PreferencesActivityPage {
     const next: Record<string, boolean> = this.toggleValues;
     next[item.key] = value;
     this.toggleValues = next;
+    // 落盘:对齐 PreferencesPage/PreferenceRow 的语义,所有 toggle 立即写 prefs,
+    // 否则下次冷启动 aboutToAppear 又会从 defaultOn 重新填充,看似"没保存"。
+    await Settings.put(item.key, value);
     if (item.key === Settings.KEY_INCOGNITO) {
+      // 复用 PlaybackHistory 的通知管道,让订阅方(历史 tab 等)立即刷新。
       await PlaybackHistory.setIncognito(value);
     }
   }

@@ -142,4 +142,5 @@ export class RouteName {
   static readonly History: string = 'History';
   static readonly FileBrowser: string = 'FileBrowser';
   static readonly MrlPanel: string = 'MrlPanel';
+  static readonly ParentalControl: string = 'ParentalControl';
 }

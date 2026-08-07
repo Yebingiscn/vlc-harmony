@@ -146,6 +146,9 @@ export const mediaPlayerSetAudioTrack: (playerHandle: number, id: number) => boo
 export const mediaPlayerSetSpuTrack: (playerHandle: number, id: number) => boolean;
 export const mediaPlayerSetVideoTrack: (playerHandle: number, id: number) => boolean;
 export const mediaPlayerSetSpuDelay: (playerHandle: number, us: number) => boolean;
+export const mediaPlayerGetSpuDelay: (playerHandle: number) => number;
+export const mediaPlayerSetAudioDelay: (playerHandle: number, us: number) => boolean;
+export const mediaPlayerGetAudioDelay: (playerHandle: number) => number;
 
 export const mediaPlayerGetChapters: (playerHandle: number, titleIndex?: number) => VlcChapterInfo[];
 export const mediaPlayerGetChapter: (playerHandle: number) => number;

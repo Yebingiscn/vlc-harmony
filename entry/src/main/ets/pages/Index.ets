@@ -33,6 +33,7 @@ import { AboutFragmentPage } from './AboutFragmentPage';
 import { HistoryFragmentPage } from './HistoryFragmentPage';
 import { FileBrowserPage, BrowserMode } from './FileBrowserPage';
 import { MrlPanelPage } from './MrlPanelPage';
+import { ParentalControlPage, ParentalControlParam } from './ParentalControlPage';
 import { FormatCompatibilityTestPage } from './FormatCompatibilityTestPage';
 
 /**
@@ -117,7 +118,11 @@ struct Index {
     } else if (name === RouteName.Bench) {
       BenchActivityPage()
     } else if (name === RouteName.PreferencesScreen) {
-      PreferencesPage({ screenKey: (param as Record<string, Object>)?.screenKey as string ?? '' })
+      if (((param as Record<string, Object>)?.screenKey as string ?? '') === 'parental_control') {
+        ParentalControlPage()
+      } else {
+        PreferencesPage({ screenKey: (param as Record<string, Object>)?.screenKey as string ?? '' })
+      }
     } else if (name === RouteName.PreferenceSearchScreen) {
       PreferenceSearchPage()
     } else if (name === RouteName.About) {
@@ -128,6 +133,8 @@ struct Index {
       FileBrowserPage({ mode: ((param as Record<string, Object>)?.mode as BrowserMode) ?? 'file' })
     } else if (name === RouteName.MrlPanel) {
       MrlPanelPage()
+    } else if (name === RouteName.ParentalControl) {
+      ParentalControlPage({ param: param as object as ParentalControlParam })
     }
   }
 

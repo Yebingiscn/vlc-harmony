@@ -25,6 +25,14 @@ export class VideoSeenState {
     return Settings.put(VideoSeenState.keyFor(uri), true);
   }
 
+  /** 手动标记为未播放。 */
+  static markUnseen(uri: string): Promise<void> {
+    if (uri.length === 0) {
+      return Promise.resolve();
+    }
+    return Settings.put(VideoSeenState.keyFor(uri), false);
+  }
+
   /** 将持久化状态回填给本次扫描得到的视频列表。 */
   static async hydrate(items: MediaWrapper[]): Promise<void> {
     for (const item of items) {
