@@ -25,6 +25,12 @@ import { VideoInfoDialog } from './VideoInfoDialog';
 import { BookmarkDialog } from './BookmarkDialog';
 import { AddToPlaylistDialog, AddToPlaylistAction } from './AddToPlaylistDialog';
 import {
+  SCREEN_ORIENTATION_DEFAULT,
+  SCREEN_ORIENTATION_LABELS,
+  SCREEN_ORIENTATION_VALUES,
+  ScreenOrientationDialog,
+} from './ScreenOrientationDialog';
+import {
   buildPlayerAdvancedOptions,
   PlayerAdvancedOptionId,
   PlayerAdvancedOptions,
@@ -85,6 +91,23 @@ function fmtSleepSpan(ms: number): string {
     return `${h}小时`;
   }
   return `${m}分钟`;
+}
+
+/** 「视频屏幕方向」设置值 → HarmonyOS 窗口方向。 */
+function windowOrientationFor(value: string): window.Orientation {
+  switch (value) {
+    case '102':
+      return window.Orientation.PORTRAIT;
+    case '101':
+      return window.Orientation.LANDSCAPE;
+    case '103':
+      return window.Orientation.LANDSCAPE_INVERTED;
+    case '98':
+      return window.Orientation.LOCKED;
+    case '99':
+    default:
+      return window.Orientation.AUTO_ROTATION;
+  }
 }
 
 /**
@@ -563,6 +586,9 @@ export struct VideoPlayerPage {
   private sleepMillis: number = 0;
   private sleepWaitMediaEnd: boolean = false;
   private sleepResetOnInteraction: boolean = false;
+  /** 视频屏幕方向弹窗状态。 */
+  @Local orientationValue: string = SCREEN_ORIENTATION_DEFAULT;
+  @Local orientationDialogId: number = -1;
 
   /** 更多选项/二级弹窗的 sheet 状态。sheetKind 空串=主选项列表;否则=对应二级弹窗。 */
   @Local sheetOpen: boolean = false;
@@ -852,6 +878,7 @@ export struct VideoPlayerPage {
   aboutToAppear(): void {
     this.bindTouch();
     void this.initVolumeAndBrightness();
+    void this.applyScreenOrientation();
     void this.touch.refreshPrefs();
     this.resetHudTimer();
   }
@@ -873,6 +900,7 @@ export struct VideoPlayerPage {
       clearTimeout(this.seekHudTimer);
       this.seekHudTimer = -1;
     }
+    void this.restoreScreenOrientation();
     void this.restoreSystemBrightnessIfNeeded();
     this.touch.clearTouchAction();
     this.clearSleepTimer();
@@ -1154,6 +1182,79 @@ export struct VideoPlayerPage {
     }
   }
 
+  /** 依据「视频屏幕方向」设置旋转主窗口(进入播放页时应用,勾选后即可控制视频播放方向)。 */
+  private async applyScreenOrientation(): Promise<void> {
+    try {
+      const value: string = await Settings.getString(Settings.SCREEN_ORIENTATION, SCREEN_ORIENTATION_DEFAULT);
+      this.orientationValue = value;
+      if (this.mainWindow === null) {
+        this.mainWindow = await window.getLastWindow(AppContext.get());
+      }
+      await this.mainWindow.setPreferredOrientation(windowOrientationFor(value));
+    } catch (e) {
+      hilog.warn(0x0001, 'VLC', '[VLC] applyScreenOrientation failed %{public}s', JSON.stringify(e));
+    }
+  }
+
+  /** 离开播放页时恢复系统默认方向,避免设置页等其它页面保持横屏。 */
+  private async restoreScreenOrientation(): Promise<void> {
+    try {
+      if (this.mainWindow === null) {
+        this.mainWindow = await window.getLastWindow(AppContext.get());
+      }
+      await this.mainWindow.setPreferredOrientation(window.Orientation.UNSPECIFIED);
+    } catch (_e) {
+      // ignore
+    }
+  }
+
+  private openOrientationDialog(): void {
+    Settings.getString(Settings.SCREEN_ORIENTATION, SCREEN_ORIENTATION_DEFAULT).then((value: string) => {
+      this.orientationValue = value;
+      this.getUIContext().getPromptAction().openCustomDialog({
+        builder: () => {
+          this.playerOrientationDialogContent();
+        },
+        alignment: DialogAlignment.Center,
+        autoCancel: true,
+        maskColor: $r('app.color.dialog_mask'),
+        backgroundColor: Color.Transparent,
+      }).then((dialogId: number) => {
+        this.orientationDialogId = dialogId;
+      });
+    });
+  }
+
+  private closeOrientationDialog(): void {
+    if (this.orientationDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.orientationDialogId);
+    }
+    this.orientationDialogId = -1;
+  }
+
+  private onOrientationSelect(value: string): void {
+    this.orientationValue = value;
+    Settings.put(Settings.SCREEN_ORIENTATION, value);
+    this.closeOrientationDialog();
+    void this.applyScreenOrientation();
+  }
+
+  @Builder
+  playerOrientationDialogContent() {
+    Column() {
+      ScreenOrientationDialog({
+        title: '视频屏幕方向',
+        labels: SCREEN_ORIENTATION_LABELS,
+        values: SCREEN_ORIENTATION_VALUES,
+        selectedValue: this.orientationValue,
+        onSelect: (value: string) => this.onOrientationSelect(value),
+        onCancel: () => this.closeOrientationDialog(),
+      })
+        .width('100%')
+    }
+    .width('100%')
+  }
+
   private async applyBrightness(value: number): Promise<void> {
     try {
       if (this.mainWindow === null) {
@@ -1263,7 +1364,7 @@ export struct VideoPlayerPage {
     } else if (id === 'play') {
       this.vm.toggle();
     } else if (id === 'orientation') {
-      promptAction.showToast({ message: 'Screen orientation is not available yet' });
+      this.openOrientationDialog();
     } else if (id === 'aspectRatio') {
       promptAction.showToast({ message: 'Aspect ratio is not available yet' });
     }
