@@ -129,6 +129,23 @@ export struct PreferencesPage {
     return this.screenKey === 'ui_category';
   }
 
+  /** 按 screen + item.key 决定该行下方是否显示分割线。 */
+  shouldShowDivider(item: PreferenceItem): boolean {
+    if (this.isInterfaceScreen()) {
+      return false;
+    }
+    if (this.screenKey === 'video_category') {
+      return item.key === 'preferred_resolution';
+    }
+    if (this.screenKey === 'casting_category') {
+      return false;
+    }
+    if (this.screenKey === 'remote_access_category') {
+      return item.key === 'remote_access_status';
+    }
+    return true;
+  }
+
   groupIndex(group: PreferenceGroup): number {
     return this.groups.indexOf(group);
   }
@@ -172,7 +189,7 @@ export struct PreferencesPage {
                     dependencyEnabled: this.dependencyEnabledFor(item),
                     showTrailingIndicator: !this.isInterfaceScreen(),
                     verticalPadding: this.isInterfaceScreen() ? 18 : 14,
-                    showDivider: !this.isInterfaceScreen(),
+                    showDivider: this.shouldShowDivider(item),
                     onNav: (it: PreferenceItem) => this.onNav(it),
                     onListSelect: (it: PreferenceItem) => this.onListSelect(it),
                     onNumberPicker: (it: PreferenceItem) => this.onNumberPicker(it),
@@ -508,6 +525,7 @@ export struct PreferencesPage {
   /** 多选确认 → 把 stringSet 存成「逗号拼接」串(无原生 stringSet,落 Settings string)。 */
   onMultiConfirm(values: string[]): void {
     Settings.put(this.sheetItem.key, values.join(','));
+    this.rowVersion++;
     this.closePreferenceDialog();
   }
 

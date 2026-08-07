@@ -55,10 +55,10 @@ export struct PreferenceMultiSelectDialog {
   build(): void {
     Column() {
       Text(this.title)
-        .fontSize(18)
+        .fontSize(20)
         .fontWeight(FontWeight.Medium)
-        .fontColor('#1F1F1F')
-        .margin({ bottom: 8 })
+        .width('100%')
+        .margin({ bottom: 12 })
 
       List() {
         ForEach(this.item.options ?? [], (entry: ResourceStr, index: number) => {
@@ -66,35 +66,33 @@ export struct PreferenceMultiSelectDialog {
             Row() {
               Text(entry)
                 .fontSize(16)
-                .fontColor('#1F1F1F')
+                .layoutWeight(1)
               Toggle({ type: ToggleType.Checkbox, isOn: this.checked[index] })
+                .selectedColor($r('app.color.orange500'))
                 .onChange((on: boolean) => this.onCheckChange(index, on))
             }
             .width('100%')
-            .height(48)
-            .padding({ right: 8 })
+            .padding({ left: 4, right: 4, top: 16, bottom: 16 })
             .alignItems(VerticalAlign.Center)
-            .justifyContent(FlexAlign.SpaceBetween)
           }
-        })
+        }, (entry: ResourceStr, index: number) => `${index}`)
       }
       .width('100%')
-      .layoutWeight(1)
       .scrollBar(BarState.Off)
 
       Row() {
-        Text($r('app.string.cancel'))
-          .fontSize(14)
-          .fontWeight(FontWeight.Medium)
-          .fontColor('#FF8800')
-          .padding(8)
+        Button($r('app.string.cancel'))
+          .type(ButtonType.Normal)
+          .fontSize(15)
+          .fontColor($r('app.color.orange500'))
+          .backgroundColor(Color.Transparent)
           .onClick(() => this.onDismiss())
-        Text($r('app.string.ok'))
-          .fontSize(14)
-          .fontWeight(FontWeight.Medium)
-          .fontColor('#FF8800')
+        Button($r('app.string.ok'))
+          .type(ButtonType.Normal)
+          .fontSize(15)
+          .fontColor($r('app.color.orange500'))
+          .backgroundColor(Color.Transparent)
           .margin({ left: 8 })
-          .padding(8)
           .onClick(() => {
             if (this.preferenceChanged) {
               this.onConfirm(this.newValues);
@@ -104,14 +102,11 @@ export struct PreferenceMultiSelectDialog {
           })
       }
       .width('100%')
-      .height(52)
-      .padding({ left: 8, right: 8 })
       .justifyContent(FlexAlign.End)
-      .alignItems(VerticalAlign.Center)
+      .margin({ top: 8 })
     }
-    .width(280)
-    .backgroundColor('#FFFFFF')
-    .borderRadius(12)
-    .padding({ top: 24, bottom: 0, left: 0, right: 0 })
+    .width('100%')
+    .padding(20)
+    .borderRadius(16)
   }
 }
