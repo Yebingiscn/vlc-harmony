@@ -5,9 +5,12 @@ import {
   mediaRelease,
   mediaParse,
   mediaGetMeta,
+  mediaGetStats,
+  mediaAddOption,
   mediaGetTracksInfo,
   mediaAddSlave,
   VlcMetaInfo,
+  VlcMediaStats,
   VlcMediaTrackInfo,
 } from 'libvlcnapi.so';
 import { VLCObject } from './VLCObject';
@@ -69,6 +72,20 @@ export class Media extends VLCObject {
       return null;
     }
     return mediaGetMeta(this.handle);
+  }
+
+  getStats(): VlcMediaStats | null {
+    if (this.isReleased()) {
+      return null;
+    }
+    return mediaGetStats(this.handle);
+  }
+
+  addOption(option: string): boolean {
+    if (this.isReleased()) {
+      return false;
+    }
+    return mediaAddOption(this.handle, option);
   }
 
   getTracksInfo(): VlcMediaTrackInfo[] {

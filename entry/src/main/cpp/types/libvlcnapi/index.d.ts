@@ -41,6 +41,30 @@ export interface VlcMetaInfo {
   duration: number;
 }
 
+export interface VlcMediaStats {
+  readBytes: number;
+  inputBitrate: number;
+  demuxReadBytes: number;
+  demuxBitrate: number;
+  demuxCorrupted: number;
+  demuxDiscontinuity: number;
+  decodedVideo: number;
+  decodedAudio: number;
+  displayedPictures: number;
+  lostPictures: number;
+  playedAbuffers: number;
+  lostAbuffers: number;
+  sentPackets: number;
+  sentBytes: number;
+  sendBitrate: number;
+}
+
+export interface ProcessUsage {
+  cpuTicks: number;
+  rssKb: number;
+  clkTck: number;
+}
+
 /** libvlc_media_track_t 解码后的元数据(对应 libvlc_track_type_t: 0=audio, 1=video, 2=text)。 */
 export interface VlcMediaTrackInfo {
   id: number;
@@ -79,12 +103,16 @@ export const mediaCreateFd: (libHandle: number, fd: number) => number;
 export const mediaRelease: (mediaHandle: number) => void;
 export const mediaParse: (mediaHandle: number, timeoutMs?: number) => boolean;
 export const mediaGetMeta: (mediaHandle: number) => VlcMetaInfo | null;
+export const mediaGetStats: (mediaHandle: number) => VlcMediaStats | null;
+export const mediaAddOption: (mediaHandle: number, option: string) => boolean;
 export const mediaGetTracksInfo: (mediaHandle: number) => VlcMediaTrackInfo[];
 export const mediaAddSlave: (mediaHandle: number, type: number, uri: string, priority?: number) => boolean;
+export const getProcessUsage: () => ProcessUsage;
 
 // —— MediaPlayer ——
 export const mediaPlayerCreate: (libHandle: number) => number;
 export const mediaPlayerRelease: (playerHandle: number) => void;
+export const mediaPlayerReleaseAsync: (playerHandle: number) => void;
 export const mediaPlayerSetEventListener: (playerHandle: number, listener: VlcPlayerEventListener) => boolean;
 export const mediaPlayerSetMedia: (playerHandle: number, mediaHandle: number) => boolean;
 export const mediaPlayerSetVideoOut: (playerHandle: number, xcomponentId: string) => boolean;
@@ -95,6 +123,7 @@ export const mediaPlayerPause: (playerHandle: number) => void;
 export const mediaPlayerStop: (playerHandle: number) => void;
 export const mediaPlayerGetTime: (playerHandle: number) => number;
 export const mediaPlayerSetTime: (playerHandle: number, ms: number) => void;
+export const mediaPlayerSetPosition: (playerHandle: number, pos: number) => void;
 export const mediaPlayerGetLength: (playerHandle: number) => number;
 export const mediaPlayerSetRate: (playerHandle: number, rate: number) => void;
 export const mediaPlayerGetRate: (playerHandle: number) => number;
@@ -103,6 +132,7 @@ export const mediaPlayerGetVolume: (playerHandle: number) => number;
 export const mediaPlayerGetState: (playerHandle: number) => number;
 export const mediaPlayerGetPosition: (playerHandle: number) => number;
 export const mediaPlayerGetVideoSize: (playerHandle: number) => VlcVideoSize | null;
+export const mediaPlayerGetFps: (playerHandle: number) => number;
 export const mediaPlayerSetScale: (playerHandle: number, factor: number) => void;
 export const mediaPlayerAddSlave: (playerHandle: number, type: number, uri: string, select?: boolean) => boolean;
 

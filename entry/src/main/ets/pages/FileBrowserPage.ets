@@ -2,14 +2,11 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { NavController } from '../common/data/NavController';
 import { BackTitleBar } from '../common/components/BackTitleBar';
 import { MediaLibrary } from '../common/data/MediaLibrary';
-import { BundledMedia } from '../common/data/BundledMedia';
 import { EmptyStateView } from '../common/components/EmptyStateView';
-import { AppColors, AppDimens } from '../common/constants/AppConstants';
 import { Folder, SheetItem, EmptyLoadingState } from '../common/models/MediaModels';
-import { VideoParam } from './VideoPlayerPage';
 
 /** 浏览模式。 */
-export type BrowserMode = 'file' | 'network' | 'storage' | 'picker' | 'bundled';
+export type BrowserMode = 'file' | 'network' | 'storage' | 'picker';
 
 @ObservedV2
 class BrowserViewModel {
@@ -20,11 +17,7 @@ class BrowserViewModel {
 
   // Folder → SheetItem 转换辅助函数。
   private static folderToSheetItem(f: Folder): SheetItem {
-    return new SheetItem(f.title, `${f.mediaCount} 个视频`, $r('app.media.ic_folder'));
-  }
-
-  isBundledMode(): boolean {
-    return this.mode === 'bundled';
+    return new SheetItem(f.title, `${f.mediaCount} 个视频`, $r('app.media.ic_folder'), f.path);
   }
 
   browseRoot(): void {
@@ -32,13 +25,6 @@ class BrowserViewModel {
     if (this.mode === 'network') {
       this.dataset = [];
       this.emptyState = EmptyLoadingState.EMPTY;
-      this.loading = false;
-      return;
-    }
-    if (this.isBundledMode()) {
-      const folders = BundledMedia.asFolders();
-      this.dataset = folders.map(BrowserViewModel.folderToSheetItem);
-      this.emptyState = folders.length === 0 ? EmptyLoadingState.EMPTY : EmptyLoadingState.NONE;
       this.loading = false;
       return;
     }
@@ -72,7 +58,7 @@ export struct FileBrowserPage {
     NavDestination() {
       Column() {
         BackTitleBar({
-          title: this.mode === 'bundled' ? '应用视频' : (this.mode === 'network' ? '网络' : '存储设备'),
+          title: this.mode === 'network' ? '网络' : '存储设备',
         })
 
         if (this.vm.emptyState !== EmptyLoadingState.NONE) {
@@ -121,8 +107,5 @@ export struct FileBrowserPage {
       .layoutWeight(1).alignItems(HorizontalAlign.Start).margin({ left: 12, right: 8 })
     }
     .width('100%').constraintSize({ minHeight: 56 }).alignItems(VerticalAlign.Center)
-    .onClick(() => {
-      // TODO: 点击进入下层目录或播放目录内媒体
-    })
   }
 }

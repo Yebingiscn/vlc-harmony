@@ -6,6 +6,7 @@ import { InfoPage, InfoParam } from './InfoPage';
 import { SecondaryPage } from './SecondaryPage';
 import { SearchPage } from './SearchPage';
 import { SecondaryParam } from '../common/models/MediaModels';
+import { AppContext } from '../common/data/AppContext';
 import { Settings } from '../common/data/Settings';
 import { AppTheme } from '../common/data/AppTheme';
 import { NavController } from '../common/data/NavController';
@@ -32,6 +33,7 @@ import { AboutFragmentPage } from './AboutFragmentPage';
 import { HistoryFragmentPage } from './HistoryFragmentPage';
 import { FileBrowserPage, BrowserMode } from './FileBrowserPage';
 import { MrlPanelPage } from './MrlPanelPage';
+import { FormatCompatibilityTestPage } from './FormatCompatibilityTestPage';
 
 /**
  * Index —— 应用入口(@Entry)。承载 Navigation + PageMap(所有 NavDestination 路由)。
@@ -48,6 +50,10 @@ struct Index {
   }
 
   async bootstrap(): Promise<void> {
+    if (AppContext.isFormatTestMode()) {
+      this.pathStack.pushPathByName(RouteName.FormatCompat, '');
+      return;
+    }
     await Settings.init();
     // Settings 已就绪后立即应用保存的主题；同名 base/dark 资源由系统自动匹配。
     const appTheme: string = await Settings.getString(Settings.KEY_APP_THEME, AppTheme.FOLLOW_SYSTEM);
@@ -63,7 +69,9 @@ struct Index {
 
   @Builder
   PageMap(name: string, param: object) {
-    if (name === RouteName.Onboarding) {
+    if (name === RouteName.FormatCompat) {
+      FormatCompatibilityTestPage()
+    } else if (name === RouteName.Onboarding) {
       OnboardingPage({ onDone: () => this.pathStack.replacePathByName(RouteName.Main, '') })
     } else if (name === RouteName.Main) {
       MainPage()

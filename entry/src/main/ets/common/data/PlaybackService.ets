@@ -72,6 +72,8 @@ export interface PlaybackState {
   repeatMode: number;
   queueSize: number;
   currentIndex: number;
+  /** 当前播放是否处于"仅播放音频"模式(视频文件当音频播),让 MiniPlayer 也能显示视频。 */
+  playAsAudio: boolean;
 }
 
 export interface PlaybackListener {
@@ -94,6 +96,7 @@ export class PlaybackService {
   private speed: number = 1.0;
   private shuffle: boolean = false;
   private repeatMode: number = 0;
+  private playAsAudio: boolean = false;
   private duration: number = 0;
   private position: number = 0;
   private listeners: PlaybackListener[] = [];
@@ -159,8 +162,23 @@ export class PlaybackService {
     }
   }
 
+  private lastTimeEmit: number = 0;
+
+  /** timeChanged 节流:libVLC 在 seek/定位时会爆发高频 timeChanged,逐条刷新
+   *  position 会触发 ArkUI 渲染风暴并积压 tsfn 队列;合并到 300ms 一刷。 */
+  private onTimeChangedThrottled(ms: number): void {
+    const now = Date.now();
+    if (now - this.lastTimeEmit < 300) {
+      return;
+    }
+    this.lastTimeEmit = now;
+    this.position = ms;
+    this.emitTime();
+  }
+
   private onNativeEvent(event: string, value: number): void {
-    hilog.debug(LOG_DOMAIN, LOG_TAG, '[VLC] event %{public}s value=%{public}s', event, String(value));
+    // 注意:这里不要对每个事件打 hilog —— seek 后 libVLC 会爆发大量 timeChanged,
+    // 逐条打日志会把 hilog socket 写满导致 writev 阻塞,JS 主线程卡死(AppFreeze)。
     switch (event) {
       case 'playing':
         this.state = PlayState.PLAYING;
@@ -185,8 +203,7 @@ export class PlaybackService {
         this.emitState();
         break;
       case 'timeChanged':
-        this.position = value;
-        this.emitTime();
+        this.onTimeChangedThrottled(value);
         break;
       case 'lengthChanged':
         this.duration = value;
@@ -280,6 +297,16 @@ export class PlaybackService {
 
   getRepeatMode(): number {
     return this.repeatMode;
+  }
+
+  getPlayAsAudio(): boolean {
+    return this.playAsAudio;
+  }
+
+  setPlayAsAudio(value: boolean): void {
+    if (this.playAsAudio === value) { return; }
+    this.playAsAudio = value;
+    this.emitQueue();
   }
 
   getVolume(): number {
@@ -500,6 +527,7 @@ export class PlaybackService {
       repeatMode: this.repeatMode,
       queueSize: this.queue.length,
       currentIndex: this.currentIndex,
+      playAsAudio: this.playAsAudio,
     };
   }
 
@@ -584,6 +612,11 @@ export class PlaybackService {
     }
     this.queue = replace ? items.slice() : this.queue.concat(items);
     this.currentIndex = replace ? startIndex : this.queue.length - items.length + startIndex;
+    // 任何"换队列"动作(替换)都意味着重新进入正常播放流程,清掉"仅播放音频"标记,
+    // 避免之前打开的 playAsAudio 状态泄漏到下一首。
+    if (replace) {
+      this.playAsAudio = false;
+    }
     hilog.info(LOG_DOMAIN, LOG_TAG,
       '[VLC] prepareList size=%{public}d index=%{public}d uri=%{public}s',
       this.queue.length, this.currentIndex, this.getCurrent()?.uri ?? '');
@@ -634,11 +667,39 @@ export class PlaybackService {
     return bound;
   }
 
+  /** 按文件名把 .iso 文件 MRL 转换为光盘访问 MRL(dvdnav:// / bluray:// / vcd://)。
+   *  libVLC 无 UDF/iso9660 文件系统插件,直接 file:// 打开 ISO 无法解析 BD 导航结构。 */
+  private static isoToDiscMrl(uri: string): string {
+    if (!uri.toLowerCase().endsWith('.iso')) {
+      return uri;
+    }
+    let path = uri;
+    if (path.startsWith('file://')) {
+      path = path.substring('file://'.length);
+    }
+    const lower = path.toLowerCase();
+    if (lower.indexOf('dvd') >= 0) {
+      return `dvdnav://${path}`;
+    }
+    if (lower.indexOf('bd') >= 0 || lower.indexOf('bluray') >= 0) {
+      return `bluray://${path}`;
+    }
+    if (lower.indexOf('vcd') >= 0) {
+      return `vcd://${path}`;
+    }
+    return uri;
+  }
+
   private async loadCurrent(): Promise<void> {
     const item = this.getCurrent();
     if (!item || !this.lib || !this.player) {
       hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] loadCurrent: empty queue or player');
       return;
+    }
+    // ISO 文件按文件名识别为光盘 MRL(与 Android 对 .iso 强制 demux 一致)
+    const mrl = PlaybackService.isoToDiscMrl(item.uri);
+    if (mrl !== item.uri) {
+      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] iso disc MRL: %{public}s -> %{public}s', item.uri, mrl);
     }
     hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] loadCurrent uri=%{public}s videoOut=%{public}s',
       item.uri, this.videoOutId);
@@ -660,7 +721,7 @@ export class PlaybackService {
           item.uri, (e as Error).message ?? String(e));
       }
     } else {
-      media = Media.fromMrl(this.lib, item.uri);
+      media = Media.fromMrl(this.lib, mrl);
     }
 
     if (!media) {
@@ -668,6 +729,17 @@ export class PlaybackService {
       this.state = PlayState.ERROR;
       this.emitState();
       return;
+    }
+
+    // Blu-ray 主视频为 H.264/HEVC。OHOS 补丁默认优先 h264_ohosavcodec 硬解,
+    // 但该硬解器对部分流(实测 H.264 m2ts)会 "cannot start codec" 导致黑屏且不回退。
+    // 按媒体注入软解选项(必须在 setMedia 前),对齐 Android Media.setHWDecoderEnabled 的 per-media 开关。
+    // 注意: .iso 一律注入 —— libbluray access_demux 会自动探测 ISO(文件名可能被 MediaLibrary
+    // 重命名而失去 bd/bluray 标识),DVD/VCD 的 MPEG-1/2 本就软解,不受 avcodec-hw 影响。
+    if (mrl.startsWith('bluray://') || mrl.toLowerCase().endsWith('.iso')) {
+      media.addOption(':avcodec-hw=none');
+      hilog.info(LOG_DOMAIN, LOG_TAG,
+        '[VLC] iso/bluray MRL: force software decode (:avcodec-hw=none) mrl=%{public}s', mrl);
     }
 
     if (!this.player.setMedia(media)) {
@@ -808,6 +880,15 @@ export class PlaybackService {
     this.player?.setTime(ms);
   }
 
+  /** 按 0.0-1.0 位置 seek(bluray/dvdnav 的 navigator 会覆盖 setTime,position seek 更可靠)。 */
+  seekPosition(pos: number): void {
+    const clamped: number = Math.max(0, Math.min(1, pos));
+    hilog.info(LOG_DOMAIN, LOG_TAG,
+      '[VLC] seekPosition pos=%{public}f clamped=%{public}f duration=%{public}d',
+      pos, clamped, this.duration);
+    this.player?.setPosition(clamped);
+  }
+
   setSpeed(rate: number): void {
     this.speed = rate;
     this.player?.setRate(rate);
@@ -815,6 +896,12 @@ export class PlaybackService {
 
   toggleShuffle(): void {
     this.shuffle = !this.shuffle;
+    this.emitQueue();
+  }
+
+  setShuffle(value: boolean): void {
+    if (this.shuffle === value) { return; }
+    this.shuffle = value;
     this.emitQueue();
   }
 
@@ -921,6 +1008,22 @@ export class PlaybackService {
 
   static toggleShuffle(): void {
     PlaybackService.getInstance().toggleShuffle();
+  }
+
+  static isShuffle(): boolean {
+    return PlaybackService.getInstance().getShuffle();
+  }
+
+  static setShuffle(value: boolean): void {
+    PlaybackService.getInstance().setShuffle(value);
+  }
+
+  static isPlayAsAudio(): boolean {
+    return PlaybackService.getInstance().getPlayAsAudio();
+  }
+
+  static setPlayAsAudio(value: boolean): void {
+    PlaybackService.getInstance().setPlayAsAudio(value);
   }
 
   static cycleRepeat(): void {

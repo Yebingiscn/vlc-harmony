@@ -1,0 +1,165 @@
+--- a/modules/access/vcd/cdrom.c
++++ b/modules/access/vcd/cdrom.c
+@@ -805,6 +805,148 @@
+ /****************************************************************************
+  * OpenVCDImage: try to open a vcd image from a .cue file
+  ****************************************************************************/
++static int ReadIsoSector( int i_fd, uint32_t i_lba, uint8_t *p_buf )
++{
++    if( lseek( i_fd, (off_t)i_lba * 2048, SEEK_SET ) < 0 )
++        return -1;
++    return read( i_fd, p_buf, 2048 ) == 2048 ? 0 : -1;
++}
++
++/* FindIsoDirEntry: 在 ISO9660 目录里查找条目。
++ * b_prefix 为 true 时 psz_name 作前缀匹配(如 "AVSEQ");
++ * b_directory 限定只匹配目录(MPEGAV)或只匹配文件(AVSEQ*.DAT);
++ * 找到后回填 extent/size(逻辑块号/字节数),返回 0;否则 -1。 */
++static int FindIsoDirEntry( int i_fd, uint32_t i_extent, uint32_t i_size,
++                            const char *psz_name, bool b_prefix,
++                            bool b_directory, uint32_t *pi_extent,
++                            uint32_t *pi_size )
++{
++    uint8_t p_sector[2048];
++    uint32_t i_off = 0;
++
++    while( i_off + 33 <= i_size )
++    {
++        uint32_t i_sec_off = i_off % 2048;
++        if( i_sec_off == 0 )
++        {
++            if( ReadIsoSector( i_fd, i_extent + i_off / 2048, p_sector ) )
++                return -1;
++        }
++
++        uint8_t i_rec_len = p_sector[i_sec_off];
++        if( i_rec_len == 0 )
++            break; /* 目录数据结束(剩余为零填充) */
++
++        /* ISO9660 目录记录不得跨 sector 边界;遇边界跳到下一 sector 起始 */
++        if( i_sec_off + i_rec_len > 2048 )
++        {
++            i_off = ( i_off / 2048 + 1 ) * 2048;
++            continue;
++        }
++        if( i_rec_len < 33 )
++        {
++            i_off += i_rec_len;
++            continue;
++        }
++
++        uint32_t i_entry_extent = GetDWLE( &p_sector[i_sec_off + 2] );
++        uint32_t i_entry_size   = GetDWLE( &p_sector[i_sec_off + 10] );
++        uint8_t  i_flags        = p_sector[i_sec_off + 25];
++        uint8_t  i_name_len     = p_sector[i_sec_off + 32];
++        bool     b_is_dir       = ( i_flags & 0x02 ) != 0;
++
++        if( b_is_dir == b_directory && i_name_len > 0 && i_name_len < 64 )
++        {
++            char psz_entry[64];
++            memcpy( psz_entry, &p_sector[i_sec_off + 33], i_name_len );
++            psz_entry[i_name_len] = '\0';
++            char *p_semi = strchr( psz_entry, ';' );
++            if( p_semi ) *p_semi = '\0';
++
++            bool b_match = b_prefix ? !strncasecmp( psz_entry, psz_name,
++                                                    strlen( psz_name ) )
++                                    : !strcasecmp( psz_entry, psz_name );
++            if( b_match )
++            {
++                *pi_extent = i_entry_extent;
++                *pi_size = i_entry_size;
++                return 0;
++            }
++        }
++        i_off += i_rec_len;
++    }
++    return -1;
++}
++
++/* OpenVCDImageIso9660: 无 .cue 时直接解析 ISO9660 映像,把 MPEGAV/AVSEQ*.DAT
++ * 文件的 extent 作为视频轨起点(2048 字节 Mode1 扇区,payload 占满整扇区)。
++ * 成功返回 0 并填充 p_vcddev(含打开的映像句柄与 TOC);失败返回 -1。 */
++static int OpenVCDImageIso9660( vlc_object_t *p_this, const char *psz_vcdfile,
++                                vcddev_t *p_vcddev )
++{
++    uint8_t p_pvd[2048];
++    uint32_t i_root_extent, i_root_size;
++    uint32_t i_mpegav_extent = 0, i_mpegav_size = 0;
++    uint32_t i_avseq_extent = 0, i_avseq_size = 0;
++    vcddev_toc_t *p_toc = &p_vcddev->toc;
++
++    p_vcddev->i_vcdimage_handle = vlc_open( psz_vcdfile,
++                                            O_RDONLY | O_NONBLOCK | O_BINARY );
++    if( p_vcddev->i_vcdimage_handle == -1 )
++        return -1;
++
++    /* PVD 位于逻辑块 16;校验 ISO9660 魔数 */
++    if( ReadIsoSector( p_vcddev->i_vcdimage_handle, 16, p_pvd )
++     || memcmp( p_pvd + 1, "CD001", 5 ) )
++        goto error;
++
++    i_root_extent = GetDWLE( &p_pvd[158] );
++    i_root_size   = GetDWLE( &p_pvd[166] );
++
++    if( FindIsoDirEntry( p_vcddev->i_vcdimage_handle, i_root_extent,
++                         i_root_size, "MPEGAV", false, true,
++                         &i_mpegav_extent, &i_mpegav_size )
++     || FindIsoDirEntry( p_vcddev->i_vcdimage_handle, i_mpegav_extent,
++                         i_mpegav_size, "AVSEQ", true, false,
++                         &i_avseq_extent, &i_avseq_size )
++     || i_avseq_extent == 0 )
++        goto error;
++
++    msg_Dbg( p_this, "no .cue file: ISO9660 MPEGAV dir at sector %u, "
++             "AVSEQ video file at sector %u size %u",
++             i_mpegav_extent, i_avseq_extent, i_avseq_size );
++
++    /* ISO9660(MODE1/2048):payload 占满整个 2048 字节扇区 */
++    p_vcddev->i_sector_size = 2048;
++    p_vcddev->i_data_start = 0;
++    p_vcddev->i_data_size = 2048;
++
++    /* 与 CUE 解析一致的 TOC 布局:[数据轨0, 视频轨起点, 文件末尾]。
++     * 多分配 1 条,与 ioctl_GetTOC 的 memcpy(i_tracks+1) 对齐。 */
++    p_toc->p_sectors = calloc( 4, sizeof( *p_toc->p_sectors ) );
++    if( p_toc->p_sectors == NULL )
++        goto error;
++    p_toc->p_sectors[0].i_lba = 0;
++    p_toc->p_sectors[0].i_control = 0x00;
++    p_toc->p_sectors[1].i_lba = i_avseq_extent;
++    p_toc->p_sectors[1].i_control = 0x00;
++    p_toc->p_sectors[2].i_lba = lseek( p_vcddev->i_vcdimage_handle, 0,
++                                        SEEK_END ) / 2048;
++    p_toc->p_sectors[2].i_control = 0x00;
++    p_toc->i_tracks = 3;
++    p_toc->i_first_track = 1;
++    p_toc->i_last_track = 3; /* 与 CUE 解析一致 */
++
++    msg_Dbg( p_this, "vcd iso9660 tracks: data=0 video=%u end=%u",
++             i_avseq_extent, p_toc->p_sectors[2].i_lba );
++    return 0;
++
++error:
++    vlc_close( p_vcddev->i_vcdimage_handle );
++    p_vcddev->i_vcdimage_handle = -1;
++    return -1;
++}
++
+ static int OpenVCDImage( vlc_object_t * p_this, const char *psz_dev,
+                          vcddev_t *p_vcddev )
+ {
+@@ -855,8 +997,11 @@
+     cuefile = vlc_fopen( psz_cuefile, "rt" );
+     if( cuefile == NULL )
+     {
+-        msg_Dbg( p_this, "could not find .cue file" );
+-        goto error;
++        /* 无 .cue:直接解析 ISO9660 映像,用 MPEGAV/AVSEQ*.DAT 的 extent
++         * 作为视频轨(免 CUE 单文件播放)。 */
++        msg_Dbg( p_this, "could not find .cue file, trying ISO9660 layout" );
++        i_ret = OpenVCDImageIso9660( p_this, psz_vcdfile, p_vcddev );
++        goto end;
+     }
+ 
+     msg_Dbg( p_this,"guessing vcd image file: %s", psz_vcdfile );

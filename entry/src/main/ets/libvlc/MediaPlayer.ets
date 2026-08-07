@@ -1,6 +1,7 @@
 import {
   mediaPlayerCreate,
   mediaPlayerRelease,
+  mediaPlayerReleaseAsync,
   mediaPlayerSetEventListener,
   mediaPlayerSetMedia,
   mediaPlayerSetVideoOut,
@@ -11,6 +12,7 @@ import {
   mediaPlayerStop,
   mediaPlayerGetTime,
   mediaPlayerSetTime,
+  mediaPlayerSetPosition,
   mediaPlayerGetLength,
   mediaPlayerSetRate,
   mediaPlayerGetRate,
@@ -19,6 +21,7 @@ import {
   mediaPlayerGetState,
   mediaPlayerGetPosition,
   mediaPlayerGetVideoSize,
+  mediaPlayerGetFps,
   mediaPlayerSetScale,
   mediaPlayerAddSlave,
   mediaPlayerGetAudioTracks,
@@ -153,6 +156,13 @@ export class MediaPlayer extends VLCObject {
     }
   }
 
+  /** 按 0.0-1.0 位置 seek(bluray/dvdnav 下比 setTime 可靠,避免 navigator 弹回)。 */
+  setPosition(pos: number): void {
+    if (!this.isReleased()) {
+      mediaPlayerSetPosition(this.handle, pos);
+    }
+  }
+
   getLength(): number {
     return this.isReleased() ? -1 : mediaPlayerGetLength(this.handle);
   }
@@ -187,6 +197,10 @@ export class MediaPlayer extends VLCObject {
 
   getVideoSize(): VlcVideoSize | null {
     return this.isReleased() ? null : mediaPlayerGetVideoSize(this.handle);
+  }
+
+  getFps(): number {
+    return this.isReleased() ? 0 : mediaPlayerGetFps(this.handle);
   }
 
   setScale(factor: number): void {
@@ -276,6 +290,18 @@ export class MediaPlayer extends VLCObject {
 
   getLibVLC(): LibVLC {
     return this.lib;
+  }
+
+  /** Non-blocking release: libVLC stop+release runs on a detached native thread. */
+  releaseAsync(): void {
+    if (this.isReleased()) {
+      return;
+    }
+    if (this.handle !== 0) {
+      mediaPlayerReleaseAsync(this.handle);
+    }
+    this.currentMedia = null;
+    this.markReleased();
   }
 
   protected onNativeRelease(): void {

@@ -1,0 +1,234 @@
+diff --git a/modules/access/vcd/cdrom.c b/modules/access/vcd/cdrom.c
+index 83ef438..6febe42 100644
+--- a/modules/access/vcd/cdrom.c
++++ b/modules/access/vcd/cdrom.c
+@@ -166,6 +166,11 @@ vcddev_t *ioctl_Open( vlc_object_t *p_this, const char *psz_dev )
+     p_vcddev->i_vcdimage_handle = -1;
+     p_vcddev->psz_dev = NULL;
+     memset( &p_vcddev->toc, 0, sizeof(p_vcddev->toc) );
++    /* Default to standard VCD Mode2 sector geometry; OpenVCDImage may
++     * override these from the CUE file (MODE1/2048). */
++    p_vcddev->i_sector_size = VCD_SECTOR_SIZE;
++    p_vcddev->i_data_start = VCD_DATA_START;
++    p_vcddev->i_data_size = VCD_DATA_SIZE;
+     b_is_file = 1;
+ 
+     /*
+@@ -584,7 +589,7 @@ int ioctl_ReadSectors( vlc_object_t *p_this, const vcddev_t *p_vcddev,
+     uint8_t *p_block;
+ 
+     if( i_type == VCD_TYPE )
+-        p_block = vlc_alloc( i_nb, VCD_SECTOR_SIZE );
++        p_block = vlc_alloc( i_nb, p_vcddev->i_sector_size );
+     else
+         p_block = p_buffer;
+ 
+@@ -593,15 +598,16 @@ int ioctl_ReadSectors( vlc_object_t *p_this, const vcddev_t *p_vcddev,
+         /*
+          *  vcd image mode
+          */
+-        if( lseek( p_vcddev->i_vcdimage_handle, i_sector * VCD_SECTOR_SIZE,
++        if( lseek( p_vcddev->i_vcdimage_handle,
++                   (off_t)i_sector * p_vcddev->i_sector_size,
+                    SEEK_SET ) == -1 )
+         {
+             msg_Err( p_this, "Could not lseek to sector %d", i_sector );
+             goto error;
+         }
+ 
+-        if( read( p_vcddev->i_vcdimage_handle, p_block, VCD_SECTOR_SIZE * i_nb)
+-            == -1 )
++        if( read( p_vcddev->i_vcdimage_handle, p_block,
++                  p_vcddev->i_sector_size * i_nb ) == -1 )
+         {
+             msg_Err( p_this, "Could not read sector %d", i_sector );
+             goto error;
+@@ -776,9 +782,10 @@ int ioctl_ReadSectors( vlc_object_t *p_this, const vcddev_t *p_vcddev,
+     {
+         for( int i = 0; i < i_nb; i++ )
+         {
+-            memcpy( p_buffer + i * VCD_DATA_SIZE,
+-                    p_block + i * VCD_SECTOR_SIZE + VCD_DATA_START,
+-                    VCD_DATA_SIZE );
++            memcpy( p_buffer + i * p_vcddev->i_data_size,
++                    p_block + i * p_vcddev->i_sector_size
++                            + p_vcddev->i_data_start,
++                    p_vcddev->i_data_size );
+         }
+         free( p_block );
+     }
+@@ -900,11 +907,36 @@ static int OpenVCDImage( vlc_object_t * p_this, const char *psz_dev,
+ 
+     while( fgets( line, 1024, cuefile ) && p_toc->i_tracks < INT_MAX-1 )
+     {
+-        /* look for a TRACK line */
++        /* look for a TRACK line: "TRACK 01 MODE1/2048" (track number
++         * comes before the mode) */
+         char psz_dummy[10];
+-        if( !sscanf( line, "%9s", psz_dummy ) || strcmp(psz_dummy, "TRACK") )
++        char psz_trackno[16] = "";
++        char psz_mode[16] = "";
++        if( sscanf( line, "%9s %15s %15s", psz_dummy, psz_trackno,
++                    psz_mode ) < 1 || strcmp(psz_dummy, "TRACK") )
+             continue;
+ 
++        /* TRACK nn MODE1/2048 describes an ISO9660 image with 2048-byte
++         * Mode1 sectors: the payload starts at offset 0 of each sector and
++         * fills the whole sector (no Mode2 24-byte header, no EDC/ECC tail).
++         * Keep the default VCD Mode2 geometry (2352/24/2324) otherwise. */
++        if( strstr( psz_mode, "MODE1/2048" ) )
++        {
++            p_vcddev->i_sector_size = 2048;
++            p_vcddev->i_data_start = 0;
++            p_vcddev->i_data_size = 2048;
++            msg_Dbg( p_this, "vcd track uses MODE1/2048 sectors "
++                     "(sector=%d data_start=%d data=%d)",
++                     p_vcddev->i_sector_size, p_vcddev->i_data_start,
++                     p_vcddev->i_data_size );
++        }
++        else if( strstr( psz_mode, "MODE2/2352" ) )
++        {
++            p_vcddev->i_sector_size = VCD_SECTOR_SIZE;
++            p_vcddev->i_data_start = VCD_DATA_START;
++            p_vcddev->i_data_size = VCD_DATA_SIZE;
++        }
++
+         /* look for an INDEX line */
+         while( fgets( line, 1024, cuefile ) )
+         {
+@@ -935,7 +967,7 @@ static int OpenVCDImage( vlc_object_t * p_this, const char *psz_dev,
+         goto error;
+     p_toc->p_sectors = buf;
+     p_toc->p_sectors[p_toc->i_tracks].i_lba =
+-            lseek(p_vcddev->i_vcdimage_handle, 0, SEEK_END) / VCD_SECTOR_SIZE;
++            lseek(p_vcddev->i_vcdimage_handle, 0, SEEK_END) / p_vcddev->i_sector_size;
+     p_toc->p_sectors[p_toc->i_tracks].i_control = 0x00;
+     msg_Dbg( p_this, "vcd track %i, begins at sector:%i",
+              p_toc->i_tracks, p_toc->p_sectors[p_toc->i_tracks].i_lba );
+diff --git a/modules/access/vcd/cdrom_internals.h b/modules/access/vcd/cdrom_internals.h
+index a9a1f69..dc908cc 100644
+--- a/modules/access/vcd/cdrom_internals.h
++++ b/modules/access/vcd/cdrom_internals.h
+@@ -32,6 +32,12 @@ struct vcddev_s
+     /* Section used in vcd image mode */
+     int    i_vcdimage_handle;                   /* vcd image file descriptor */
+     vcddev_toc_t toc;                           /* tracks layout on the vcd */
++    /* Image file sector geometry. Default VCD (Mode2): 2352-byte sectors
++     * with 24-byte header and 2324 bytes of payload. ISO9660 images built
++     * with 2048-byte Mode1 sectors (CUE "MODE1/2048") use 2048/0/2048. */
++    int    i_sector_size;                       /* bytes per sector in image */
++    int    i_data_start;                        /* offset of payload in sector */
++    int    i_data_size;                         /* payload bytes per sector */
+ 
+     /* Section used in vcd device mode */
+ 
+diff --git a/modules/access/vcd/vcd.c b/modules/access/vcd/vcd.c
+index 817fc96..862212b 100644
+--- a/modules/access/vcd/vcd.c
++++ b/modules/access/vcd/vcd.c
+@@ -36,6 +36,7 @@
+ #include <vlc_charset.h>
+ 
+ #include "cdrom.h"
++#include "cdrom_internals.h"
+ 
+ /*****************************************************************************
+  * Module descriptor
+@@ -190,7 +191,7 @@ static int Open( vlc_object_t *p_this )
+     p_sys->i_sector = p_sys->p_toc->p_sectors[1+i_title].i_lba;
+     if( i_chapter > 0 )
+         p_sys->i_sector += p_sys->titles[i_title].seekpoints[i_chapter]
+-                           / VCD_DATA_SIZE;
++                           / p_sys->vcddev->i_data_size;
+ 
+     /* p_access */
+     p_access->pf_read    = NULL;
+@@ -201,7 +202,7 @@ static int Open( vlc_object_t *p_this )
+     p_sys->i_current_title = i_title;
+     p_sys->i_current_seekpoint = i_chapter;
+     p_sys->offset = (uint64_t)(p_sys->i_sector - p_sys->p_toc->p_sectors[1+i_title].i_lba) *
+-                               VCD_DATA_SIZE;
++                               p_sys->vcddev->i_data_size;
+ 
+     return VLC_SUCCESS;
+ 
+@@ -252,7 +253,7 @@ static int Control( stream_t *p_access, int i_query, va_list args )
+ 
+             *va_arg( args, uint64_t * ) =
+                 (p_sys->p_toc->p_sectors[i + 2].i_lba -
+-                 p_sys->p_toc->p_sectors[i + 1].i_lba) * (uint64_t)VCD_DATA_SIZE;
++                 p_sys->p_toc->p_sectors[i + 1].i_lba) * (uint64_t)p_sys->vcddev->i_data_size;
+             break;
+         }
+ 
+@@ -316,10 +317,10 @@ static int Control( stream_t *p_access, int i_query, va_list args )
+                 p_sys->i_current_seekpoint = i;
+ 
+                 p_sys->i_sector = p_sys->p_toc->p_sectors[1 + i_title].i_lba +
+-                    p_sys->titles[i_title].seekpoints[i] / VCD_DATA_SIZE;
++                    p_sys->titles[i_title].seekpoints[i] / p_sys->vcddev->i_data_size;
+ 
+                 p_sys->offset = (uint64_t)(p_sys->i_sector -
+-                    p_sys->p_toc->p_sectors[1 + i_title].i_lba) * VCD_DATA_SIZE;
++                    p_sys->p_toc->p_sectors[1 + i_title].i_lba) * p_sys->vcddev->i_data_size;
+             }
+             break;
+         }
+@@ -362,10 +363,10 @@ static block_t *Block( stream_t *p_access, bool *restrict eof )
+     }
+ 
+     /* Do the actual reading */
+-    if( i_blocks < 0 || !( p_block = block_Alloc( i_blocks * VCD_DATA_SIZE ) ) )
++    if( i_blocks < 0 || !( p_block = block_Alloc( i_blocks * p_sys->vcddev->i_data_size ) ) )
+     {
+         msg_Err( p_access, "cannot get a new block of size: %i",
+-                 i_blocks * VCD_DATA_SIZE );
++                 i_blocks * p_sys->vcddev->i_data_size );
+         return NULL;
+     }
+ 
+@@ -376,7 +377,7 @@ static block_t *Block( stream_t *p_access, bool *restrict eof )
+         block_Release( p_block );
+ 
+         /* Try to skip one sector (in case of bad sectors) */
+-        p_sys->offset += VCD_DATA_SIZE;
++        p_sys->offset += p_sys->vcddev->i_data_size;
+         p_sys->i_sector++;
+         return NULL;
+     }
+@@ -388,7 +389,7 @@ static block_t *Block( stream_t *p_access, bool *restrict eof )
+ 
+         if( p_sys->titles[i_title].count > 0 &&
+             p_sys->i_current_seekpoint + 1 < p_sys->titles[i_title].count &&
+-                (p_sys->offset + i_read * VCD_DATA_SIZE) >=
++                (p_sys->offset + i_read * p_sys->vcddev->i_data_size) >=
+             p_sys->titles[i_title].seekpoints[p_sys->i_current_seekpoint + 1] )
+         {
+             msg_Dbg( p_access, "seekpoint change" );
+@@ -415,7 +416,7 @@ static int Seek( stream_t *p_access, uint64_t i_pos )
+ 
+     /* Next sector to read */
+     p_sys->offset = i_pos;
+-    p_sys->i_sector = i_pos / VCD_DATA_SIZE + p_toc->p_sectors[i_title + 1].i_lba;
++    p_sys->i_sector = i_pos / p_sys->vcddev->i_data_size + p_toc->p_sectors[i_title + 1].i_lba;
+ 
+     /* Update current seekpoint */
+     for( i_seekpoint = 0; i_seekpoint < p_sys->titles[i_title].count; i_seekpoint++ )
+@@ -441,7 +442,7 @@ static int EntryPoints( stream_t *p_access )
+ {
+     access_sys_t *p_sys = p_access->p_sys;
+     const vcddev_toc_t *p_toc = p_sys->p_toc;
+-    uint8_t      sector[VCD_DATA_SIZE];
++    uint8_t      sector[VCD_SECTOR_SIZE];
+ 
+     entries_sect_t entries;
+     int i_nb;
+@@ -486,7 +487,7 @@ static int EntryPoints( stream_t *p_access )
+             p_sys->titles[i_title].seekpoints,
+             sizeof( uint64_t ) * (p_sys->titles[i_title].count + 1) );
+         p_sys->titles[i_title].seekpoints[p_sys->titles[i_title].count++] =
+-            (i_sector - p_toc->p_sectors[i_title+1].i_lba) * VCD_DATA_SIZE;
++            (i_sector - p_toc->p_sectors[i_title+1].i_lba) * p_sys->vcddev->i_data_size;
+     }
+ 
+     return VLC_SUCCESS;

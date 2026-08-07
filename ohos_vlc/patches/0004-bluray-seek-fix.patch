@@ -1,0 +1,30 @@
+diff --git a/modules/access/bluray.c b/modules/access/bluray.c
+index 8dcfeee..d9f1469 100644
+--- a/modules/access/bluray.c
++++ b/modules/access/bluray.c
+@@ -2372,9 +2372,12 @@ static int blurayControl(demux_t *p_demux, int query, va_list args)
+     {
+         int64_t i_time = va_arg(args, int64_t);
+         bd_seek_time(p_sys->bluray, TO_TICKS(i_time));
+-        blurayRestartParser(p_demux, true, true);
++        /* Align with DEMUX_SET_SEEKPOINT: random access off + reset PCR so the
++         * restarted TS parser starts on a valid packet boundary. */
++        blurayRestartParser(p_demux, true, false);
+         notifyDiscontinuityToParser(p_sys);
+         p_sys->b_draining = false;
++        es_out_Control(p_demux->out, ES_OUT_RESET_PCR);
+         es_out_Control(p_sys->p_out, BLURAY_ES_OUT_CONTROL_FLAG_DISCONTINUITY);
+         return VLC_SUCCESS;
+     }
+@@ -2402,9 +2405,10 @@ static int blurayControl(demux_t *p_demux, int query, va_list args)
+     {
+         double f_position = va_arg(args, double);
+         bd_seek_time(p_sys->bluray, TO_TICKS(f_position*CUR_LENGTH));
+-        blurayRestartParser(p_demux, true, true);
++        blurayRestartParser(p_demux, true, false);
+         notifyDiscontinuityToParser(p_sys);
+         p_sys->b_draining = false;
++        es_out_Control(p_demux->out, ES_OUT_RESET_PCR);
+         es_out_Control(p_sys->p_out, BLURAY_ES_OUT_CONTROL_FLAG_DISCONTINUITY);
+         return VLC_SUCCESS;
+     }

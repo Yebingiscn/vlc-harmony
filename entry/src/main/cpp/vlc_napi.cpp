@@ -3,12 +3,15 @@
 #include "xcomponent_manager.h"
 
 #include <vlc/vlc.h>
+#include <vlc/deprecated.h>
 #include <ace/xcomponent/native_interface_xcomponent.h>
 #include <hilog/log.h>
 
 #include <dlfcn.h>
 #include <unistd.h>
 #include <chrono>
+#include <cstdio>
+#include <cstdarg>
 #include <cstring>
 #include <map>
 #include <mutex>
@@ -21,6 +24,23 @@
 #undef LOG_TAG
 #define LOG_DOMAIN 0x6C63
 #define LOG_TAG "VlcNapi"
+
+void OnLibvlcLog(void *data, int level, const libvlc_log_t *ctx, const char *fmt, va_list args)
+{
+    (void)data;
+    (void)ctx;
+    char msg[2048] = {0};
+    vsnprintf(msg, sizeof(msg), fmt, args);
+    if (level >= LIBVLC_ERROR) {
+        OH_LOG_ERROR(LOG_APP, "libvlc: %{public}s", msg);
+    } else if (level == LIBVLC_WARNING) {
+        OH_LOG_WARN(LOG_APP, "libvlc: %{public}s", msg);
+    } else if (level == LIBVLC_DEBUG) {
+        OH_LOG_DEBUG(LOG_APP, "libvlc: %{public}s", msg);
+    } else {
+        OH_LOG_INFO(LOG_APP, "libvlc: %{public}s", msg);
+    }
+}
 
 namespace {
 
@@ -430,7 +450,7 @@ napi_value LibvlcCreate(napi_env env, napi_callback_info info)
     argvVlc.push_back("--verbose=2");
     argvVlc.push_back("--no-media-library");
     argvVlc.push_back("--ignore-config");
-    argvVlc.push_back("--no-stats");
+    argvVlc.push_back("--stats");
 
     if (argc >= 1) {
         bool isArray = false;
@@ -454,6 +474,7 @@ napi_value LibvlcCreate(napi_env env, napi_callback_info info)
         OH_LOG_ERROR(LOG_APP, "libvlc_new FAILED");
         return U32(env, 0);
     }
+    libvlc_log_set(inst, OnLibvlcLog, nullptr);
     std::lock_guard<std::mutex> lk(g_mtx);
     uint32_t h = AllocHandleLocked();
     g_libs[h] = LibEntry{inst};
@@ -726,6 +747,111 @@ napi_value MediaGetMeta(napi_env env, napi_callback_info info)
     return obj;
 }
 
+napi_value MediaGetStats(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value argv[1];
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    uint32_t h = 0;
+    if (argc < 1 || !GetU32(env, argv[0], &h)) {
+        return nullptr;
+    }
+    std::lock_guard<std::mutex> lk(g_mtx);
+    MediaEntry *me = FindMediaLocked(h);
+    if (me == nullptr || me->media == nullptr) {
+        return nullptr;
+    }
+    libvlc_media_stats_t st = {0};
+    int rc = libvlc_media_get_stats(me->media, &st);
+    if (rc == 0) {
+        OH_LOG_WARN(LOG_APP, "mediaGetStats failed rc=%{public}d handle=%{public}u", rc, h);
+        return nullptr;
+    }
+    napi_value obj;
+    napi_create_object(env, &obj);
+    napi_set_named_property(env, obj, "readBytes", I64(env, st.i_read_bytes));
+    napi_set_named_property(env, obj, "inputBitrate", F64(env, st.f_input_bitrate));
+    napi_set_named_property(env, obj, "demuxReadBytes", I64(env, st.i_demux_read_bytes));
+    napi_set_named_property(env, obj, "demuxBitrate", F64(env, st.f_demux_bitrate));
+    napi_set_named_property(env, obj, "demuxCorrupted", I64(env, st.i_demux_corrupted));
+    napi_set_named_property(env, obj, "demuxDiscontinuity", I64(env, st.i_demux_discontinuity));
+    napi_set_named_property(env, obj, "decodedVideo", I64(env, st.i_decoded_video));
+    napi_set_named_property(env, obj, "decodedAudio", I64(env, st.i_decoded_audio));
+    napi_set_named_property(env, obj, "displayedPictures", I64(env, st.i_displayed_pictures));
+    napi_set_named_property(env, obj, "lostPictures", I64(env, st.i_lost_pictures));
+    napi_set_named_property(env, obj, "playedAbuffers", I64(env, st.i_played_abuffers));
+    napi_set_named_property(env, obj, "lostAbuffers", I64(env, st.i_lost_abuffers));
+    napi_set_named_property(env, obj, "sentPackets", I64(env, st.i_sent_packets));
+    napi_set_named_property(env, obj, "sentBytes", I64(env, st.i_sent_bytes));
+    napi_set_named_property(env, obj, "sendBitrate", F64(env, st.f_send_bitrate));
+    return obj;
+}
+
+napi_value GetProcessUsage(napi_env env, napi_callback_info info)
+{
+    (void)info;
+    long long cpuTicks = 0;
+    long long rssKb = 0;
+    FILE *f = fopen("/proc/self/stat", "r");
+    if (f != nullptr) {
+        char line[1024] = {0};
+        if (fgets(line, sizeof(line), f) != nullptr) {
+            const char *p = strchr(line, ')');
+            if (p != nullptr) {
+                unsigned long long utime = 0;
+                unsigned long long stime = 0;
+                int n = sscanf(p + 2,
+                    "%*c %*d %*d %*d %*d %*d %*d %*u %*u %*u %*u %llu %llu",
+                    &utime, &stime);
+                if (n == 2) {
+                    cpuTicks = static_cast<long long>(utime + stime);
+                }
+            }
+        }
+        fclose(f);
+    }
+    FILE *f2 = fopen("/proc/self/status", "r");
+    if (f2 != nullptr) {
+        char line[512] = {0};
+        while (fgets(line, sizeof(line), f2) != nullptr) {
+            if (strncmp(line, "VmRSS:", 6) == 0) {
+                sscanf(line + 6, "%lld", &rssKb);
+                break;
+            }
+        }
+        fclose(f2);
+    }
+    long clkTck = sysconf(_SC_CLK_TCK);
+    if (clkTck <= 0) {
+        clkTck = 100;
+    }
+    napi_value obj;
+    napi_create_object(env, &obj);
+    napi_set_named_property(env, obj, "cpuTicks", I64(env, cpuTicks));
+    napi_set_named_property(env, obj, "rssKb", I64(env, rssKb));
+    napi_set_named_property(env, obj, "clkTck", I32(env, static_cast<int32_t>(clkTck)));
+    return obj;
+}
+
+napi_value MediaAddOption(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value argv[2];
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    uint32_t h = 0;
+    if (argc < 2 || !GetU32(env, argv[0], &h)) {
+        return Bool(env, false);
+    }
+    std::string option = GetString(env, argv[1]);
+    std::lock_guard<std::mutex> lk(g_mtx);
+    MediaEntry *me = FindMediaLocked(h);
+    if (me == nullptr || me->media == nullptr || option.empty()) {
+        return Bool(env, false);
+    }
+    libvlc_media_add_option(me->media, option.c_str());
+    return Bool(env, true);
+}
+
 napi_value MediaAddSlave(napi_env env, napi_callback_info info)
 {
     size_t argc = 4;
@@ -864,6 +990,46 @@ napi_value MediaPlayerRelease(napi_env env, napi_callback_info info)
     // release outside lock: may join/stop internally and fire late events
     if (mp != nullptr) {
         libvlc_media_player_release(mp);
+    }
+    return nullptr;
+}
+
+napi_value MediaPlayerReleaseAsync(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value argv[1];
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    uint32_t h = 0;
+    if (argc < 1 || !GetU32(env, argv[0], &h)) {
+        return nullptr;
+    }
+    libvlc_media_player_t *mp = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(g_mtx);
+        auto it = g_players.find(h);
+        if (it == g_players.end()) {
+            return nullptr;
+        }
+        // Do NOT call libvlc_event_detach here: it waits for VLC threads that may be
+        // blocked inside event callbacks, freezing the main thread. The event user
+        // pointer is intentionally leaked for the async test path.
+        if (it->second.tsfn) {
+            napi_release_threadsafe_function(it->second.tsfn, napi_tsfn_release);
+            it->second.tsfn = nullptr;
+        }
+        if (it->second.jsCallbackRef) {
+            napi_delete_reference(env, it->second.jsCallbackRef);
+            it->second.jsCallbackRef = nullptr;
+        }
+        mp = it->second.mp;
+        it->second.mp = nullptr;
+        g_players.erase(it);
+    }
+    if (mp != nullptr) {
+        std::thread([mp]() {
+            libvlc_media_player_stop(mp);
+            libvlc_media_player_release(mp);
+        }).detach();
     }
     return nullptr;
 }
@@ -1135,6 +1301,34 @@ napi_value MediaPlayerSetTime(napi_env env, napi_callback_info info)
     return nullptr;
 }
 
+napi_value MediaPlayerSetPosition(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value argv[2];
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    uint32_t h = 0;
+    double pos = 0.0;
+    if (argc < 2 || !GetU32(env, argv[0], &h) || !GetF64(env, argv[1], &pos)) {
+        return nullptr;
+    }
+    // Same async pattern as set_time: position seek on ISO/DVD can block and
+    // emits events that require g_mtx.
+    std::thread([h, pos]() {
+        libvlc_media_player_t *mp = nullptr;
+        {
+            std::lock_guard<std::mutex> lk(g_mtx);
+            PlayerEntry *pe = FindPlayerLocked(h);
+            if (pe && pe->mp) {
+                mp = pe->mp;
+            }
+        }
+        if (mp != nullptr) {
+            libvlc_media_player_set_position(mp, static_cast<float>(pos));
+        }
+    }).detach();
+    return nullptr;
+}
+
 napi_value MediaPlayerGetLength(napi_env env, napi_callback_info info)
 {
     size_t argc = 1;
@@ -1294,6 +1488,26 @@ napi_value MediaPlayerGetVideoSize(napi_env env, napi_callback_info info)
     napi_set_named_property(env, res, "width", U32(env, px));
     napi_set_named_property(env, res, "height", U32(env, py));
     return res;
+}
+
+napi_value MediaPlayerGetFps(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value argv[1];
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    uint32_t h = 0;
+    if (argc < 1 || !GetU32(env, argv[0], &h)) {
+        return F64(env, 0.0);
+    }
+    libvlc_media_player_t *mp = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(g_mtx);
+        PlayerEntry *pe = FindPlayerLocked(h);
+        if (pe != nullptr) {
+            mp = pe->mp;
+        }
+    }
+    return F64(env, mp != nullptr ? libvlc_media_player_get_fps(mp) : 0.0f);
 }
 
 napi_value MediaPlayerSetScale(napi_env env, napi_callback_info info)
@@ -2472,10 +2686,14 @@ napi_value VlcNapiInit(napi_env env, napi_value exports)
         {"mediaRelease", nullptr, MediaRelease, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaParse", nullptr, MediaParse, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaGetMeta", nullptr, MediaGetMeta, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"mediaGetStats", nullptr, MediaGetStats, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"mediaAddOption", nullptr, MediaAddOption, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaGetTracksInfo", nullptr, MediaGetTracksInfo, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaAddSlave", nullptr, MediaAddSlave, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"getProcessUsage", nullptr, GetProcessUsage, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerCreate", nullptr, MediaPlayerCreate, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerRelease", nullptr, MediaPlayerRelease, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"mediaPlayerReleaseAsync", nullptr, MediaPlayerReleaseAsync, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerSetEventListener", nullptr, MediaPlayerSetEventListener, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerSetMedia", nullptr, MediaPlayerSetMedia, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerSetVideoOut", nullptr, MediaPlayerSetVideoOut, nullptr, nullptr, nullptr, napi_default, nullptr},
@@ -2486,6 +2704,7 @@ napi_value VlcNapiInit(napi_env env, napi_value exports)
         {"mediaPlayerStop", nullptr, MediaPlayerStop, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerGetTime", nullptr, MediaPlayerGetTime, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerSetTime", nullptr, MediaPlayerSetTime, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"mediaPlayerSetPosition", nullptr, MediaPlayerSetPosition, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerGetLength", nullptr, MediaPlayerGetLength, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerSetRate", nullptr, MediaPlayerSetRate, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerGetRate", nullptr, MediaPlayerGetRate, nullptr, nullptr, nullptr, napi_default, nullptr},
@@ -2494,6 +2713,7 @@ napi_value VlcNapiInit(napi_env env, napi_value exports)
         {"mediaPlayerGetState", nullptr, MediaPlayerGetState, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerGetPosition", nullptr, MediaPlayerGetPosition, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerGetVideoSize", nullptr, MediaPlayerGetVideoSize, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"mediaPlayerGetFps", nullptr, MediaPlayerGetFps, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerSetScale", nullptr, MediaPlayerSetScale, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerAddSlave", nullptr, MediaPlayerAddSlave, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerGetAudioTracks", nullptr, MediaPlayerGetAudioTracks, nullptr, nullptr, nullptr, napi_default, nullptr},

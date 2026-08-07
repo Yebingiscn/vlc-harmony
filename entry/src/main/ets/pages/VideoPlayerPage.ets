@@ -5,7 +5,7 @@ import PiPWindow from '@ohos.PiPWindow';
 import { NavController } from '../common/data/NavController';
 import { AppContext } from '../common/data/AppContext';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
-import { PlaybackService, PlaybackListener } from '../common/data/PlaybackService';
+import { PlaybackService, PlaybackListener, QueueItem } from '../common/data/PlaybackService';
 import { VlcChapterInfo } from 'libvlcnapi.so';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { Settings } from '../common/data/Settings';
@@ -169,6 +169,18 @@ class VideoPlayerViewModel implements PlaybackListener {
   /** XComponent onLoad 后调用:准备队列并 bindAndPlay。 */
   async setup(param: VideoParam, xcomponentId: string): Promise<void> {
     hilog.info(0x0001, 'VLC', '[VLC] VideoPlayer setup: uri=%{public}s xc=%{public}s', param.uri, xcomponentId);
+
+    // 如果从"仅播放音频"模式(单元素队列、无 XComponent、player 仍 PLAYING)
+    // 切到新的视频,先把 player 彻底 reset,否则 attachViews 会失败导致
+    // 30 次重试 + 1.5s 卡死 + native crash。
+    // 这次 reset 三步:stop → detachViews(清 videoOutId)→ 清标记,并 await 给 native 100ms 收尾。
+    if (PlaybackService.isPlayAsAudio()) {
+      const svc = PlaybackService.getInstance();
+      svc.stop();
+      svc.detachViews();
+      svc.setPlayAsAudio(false);
+    }
+
     this.leaving = false;
     this.xcomponentId = xcomponentId;
     const incoming: VideoPlayItem[] = param.list !== undefined ? param.list : [];
@@ -405,7 +417,9 @@ class VideoPlayerViewModel implements PlaybackListener {
 
   seekTo(ms: number): void {
     const svc = PlaybackService.getInstance();
-    if (this.isIsoFile && this.isoChapters.length > 0) {
+    // 仅当存在真实章节导航(>1 章)时走章节分支;单章节(如合成 BD 测试盘默认 1 章)的
+    // setChapter(0) 会把任何 seek 都拉回开头,此时改用 position seek。
+    if (this.isIsoFile && this.isoChapters.length > 1) {
       // DVD/BD:按虚拟时间轴定位到对应章节(setTime 会被 navigator 覆盖弹回)。
       let elapsed = 0;
       for (let i = 0; i < this.isoChapters.length; i++) {
@@ -420,7 +434,15 @@ class VideoPlayerViewModel implements PlaybackListener {
         elapsed = chEnd;
       }
     }
-    // 常规文件 / VCD(无章节):时间 seek
+    // 无章节/单章节 ISO(BD/VCD):setTime 会被 bluray/dvdnav navigator 覆盖弹回 0,改用 position seek。
+    if (this.isIsoFile && this.duration > 0) {
+      hilog.info(0x0001, 'VLC',
+        '[VLC] seekTo ISO(position) ms=%{public}d duration=%{public}d isoChapters=%{public}d',
+        ms, this.duration, this.isoChapters.length);
+      svc.seekPosition(Math.max(0, Math.min(1, ms / this.duration)));
+      this.position = ms;
+      return;
+    }
     svc.seek(ms);
     this.position = ms;
   }
@@ -462,7 +484,13 @@ class VideoPlayerViewModel implements PlaybackListener {
     this.abActive = false;
   }
 
-  /** 对齐 Android onPause(isFinishing):尽早 stop。 */
+  /**
+   * 对齐 Android onPause(isFinishing):尽早 stop。
+   * 顺序很关键:先 detach 视频面(对 audio 输出无影响),再决定是否 stop。
+   * 如果先 stop 再 detach,player 已经停了再调 detachViews 在某些 libVLC 版本上会
+   * 把 audio track 一起释放,导致后续 audio playback 失败。
+   * "仅播放音频"模式:detach 后跳过 stop,音频继续在 MiniPlayer 播。
+   */
   leaveEarly(): void {
     if (this.leaving) {
       return;
@@ -472,12 +500,18 @@ class VideoPlayerViewModel implements PlaybackListener {
       PlaybackService.getInstance().removeListener(this);
       this.listening = false;
     }
-    PlaybackService.getInstance().setStopAfterCurrent(false);
-    PlaybackService.getInstance().stop();
-    hilog.info(0x0001, 'VLC', '[VLC] VideoPlayer.leaveEarly/stop');
+    // 先 detach 视频面(总是安全,不影响 audio)
+    PlaybackService.getInstance().detachViews();
+    // 仅播放音频模式下跳过 stop,让音频继续
+    if (!PlaybackService.isPlayAsAudio()) {
+      PlaybackService.getInstance().setStopAfterCurrent(false);
+      PlaybackService.getInstance().stop();
+    }
+    hilog.info(0x0001, 'VLC', '[VLC] VideoPlayer.leaveEarly/detach+stop');
   }
 
   cleanUI(): void {
+    // detachViews 已在 leaveEarly 中调用,这里保持幂等(重复 detach 在 libVLC 是 no-op)
     PlaybackService.getInstance().detachViews();
   }
 
@@ -844,6 +878,52 @@ export struct VideoPlayerPage {
     this.clearSleepTimer();
     void this.stopPopupPlayer();
     this.vm.release();
+  }
+
+  /**
+   * "仅播放音频"模式:把当前视频以音频形式播放,关闭视频渲染,弹回主页让 MiniPlayer 显示。
+   *
+   * 关键:不要在这里手动 stop/leaveEarly —— aboutToDisappear 会按 stop → detachViews 的
+   * 正常顺序清理,中途插入 stop 会让 native 层进入混乱状态(切到下一首时 attachViews 失败导致
+   * 30 次重试 + 卡死 + 闪退)。让 aboutToDisappear 一并处理。
+   */
+  async playAsAudio(): Promise<void> {
+    const cur: QueueItem | null = PlaybackService.getCurrent();
+    const uri: string = cur?.uri ?? this.vm.uri;
+    if (uri.length === 0) {
+      promptAction.showToast({ message: '没有可播放的视频' });
+      return;
+    }
+    const svc = PlaybackService.getInstance();
+    // 保存当前播放进度(stop 之后 position 会清零)
+    const savedPosition: number = svc.getPosition();
+
+    // 1. 先 stop + detach,让 player 进入干净状态(stopped + 无 videoOut)
+    //    这样 leaveEarly 里的 detachViews 就是 no-op,不会"播放中 detach"
+    svc.stop();
+    svc.detachViews();
+
+    // 2. 构建单元素队列并加载(prepareList replace=true 会重置 playAsAudio=false)
+    const qi: QueueItem = new QueueItem(
+      cur?.id ?? 0,
+      cur?.title ?? this.vm.title,
+      uri,
+      cur?.artistName ?? '',
+      cur?.albumName ?? '',
+      cur?.artworkPath ?? ''
+    );
+    await PlaybackService.playList([qi], 0, true);
+    // 把保存的进度 seek 回去(>0 才有意义,且要在 play 之前让 libVLC 准备时间)
+    if (savedPosition > 0) {
+      PlaybackService.seek(savedPosition);
+    }
+    // 重新打开"仅播放音频"标记
+    PlaybackService.setPlayAsAudio(true);
+    // 触发播放(若 loadCurrent 已经启动,这步会保持 PLAYING)
+    await PlaybackService.play();
+    // 现在安全 pop —— aboutToDisappear 会调 vm.release() → leaveEarly(stop) + cleanUI(detachViews)
+    NavController.pop();
+    promptAction.showToast({ message: '已切换为仅播放音频' });
   }
 
   /** 进入画中画模式:用 XComponent 控制器创建 PiPController 并启动。 */
@@ -1536,7 +1616,7 @@ export struct VideoPlayerPage {
         }
         .layoutWeight(1)
         .height(40)
-        Text(fmtTime(this.vm.duration - this.displayPosition()))
+        Text(fmtTime(this.vm.duration))
           .fontSize(12).fontColor('#FFFFFF').width(52).textAlign(TextAlign.End)
       }
       .width('100%')
@@ -1834,6 +1914,10 @@ export struct VideoPlayerPage {
     }
     if (id === 'savePlaylist') {
       this.openSub('savePlaylist');
+      return;
+    }
+    if (id === 'playAsAudio') {
+      void this.playAsAudio();
       return;
     }
     if (id === 'popupPlayer') {
