@@ -142,22 +142,24 @@ export struct MainBrowserPage {
           .width('100%').margin({ top: -8, bottom: 4 })
 
           if (this.vm.storages.length > 0) {
-            // 纵向列表(对齐 Android browser_item.xml 行式布局)
-            List({ space: 0 }) {
-              ForEach(this.vm.storages, (item: SheetItem) => {
-                ListItem() {
-                  this.storageRowItem(item)
+            // 存储设备:直接平铺在 Scroll 内(不能再用纵向 List 嵌套,否则 List 拦截滚动手势,
+            // 外层 Scroll 无法向下滚动),由外层 Scroll 统一滚动。
+            ForEach(this.vm.storages, (item: SheetItem, idx: number) => {
+              Column() {
+                this.storageRowItem(item)
+                if (idx < this.vm.storages.length - 1) {
+                  Divider()
+                    .strokeWidth(0.5)
+                    .color($r('app.color.divider'))
+                    .margin({ left: 60, right: 16 })
                 }
-              }, (item: SheetItem) => item.title)
-            }
-            .width('100%')
-            .divider({ strokeWidth: 0.5, color: $r('app.color.divider'), startMargin: 60, endMargin: 16 })
-            .padding({ left: 0, right: 0 })
-            .margin({ top: 8 })
+              }
+              .width('100%')
+            }, (item: SheetItem) => item.title)
           }
 
         }
-        .width('100%').height('100%').alignItems(HorizontalAlign.Start)
+        .width('100%').alignItems(HorizontalAlign.Start)
       }
       .width('100%').height('100%')
       .backgroundColor($r('app.color.background_default')).scrollBar(BarState.Auto)

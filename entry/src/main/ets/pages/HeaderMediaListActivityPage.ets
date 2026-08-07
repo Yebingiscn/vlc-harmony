@@ -2,7 +2,7 @@ import { NavController } from '../common/data/NavController';
 import { AppColors } from '../common/constants/AppConstants';
 import { MediaWrapper, Track } from '../common/models/MediaModels';
 import { MediaLibrary } from '../common/data/MediaLibrary';
-import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
+import { PlaybackService } from '../common/data/PlaybackService';
 import { VideoParam, VideoPlayItem } from './VideoPlayerPage';
 
 /** HeaderMediaList 入参(album/playlist MediaLibraryItem)。 */
@@ -169,9 +169,8 @@ export struct HeaderMediaListActivityPage {
     PlaybackService.stop();
   }
 
-  /** 构建播放队列并在当前页开始播放(不跳转播放页)。同时关掉随机,UI 立即切到"播放全部"高亮。 */
-  private async playAll(startPos: number = 0): Promise<void> {
-    if (this.vm.tracks.length === 0) { return; }
+  /** 构建整组曲目的播放队列(按扩展名区分音频/视频类型)。 */
+  private buildQueueItems(): MediaWrapper[] {
     const items: MediaWrapper[] = [];
     for (const t of this.vm.tracks) {
       // 根据扩展名区分音频/视频类型
@@ -180,6 +179,13 @@ export struct HeaderMediaListActivityPage {
       mw.artworkPath = t.artworkPath;
       items.push(mw);
     }
+    return items;
+  }
+
+  /** 构建播放队列并在当前页开始播放(不跳转播放页)。同时关掉随机,UI 立即切到"播放全部"高亮。 */
+  private async playAll(startPos: number = 0): Promise<void> {
+    if (this.vm.tracks.length === 0) { return; }
+    const items = this.buildQueueItems();
     // 始终用同一个播放队列,准备好后调用 play() 触发真实播放。
     // 第一次播放前先 load 队列(等同 append 后再切换到 startPos),后续切换曲目只需 seek + play。
     await PlaybackService.playList(MediaLibrary.toQueueItems(items), startPos, true);
@@ -201,14 +207,14 @@ export struct HeaderMediaListActivityPage {
     this.isShuffle = true;
   }
 
-  /** 点击三点菜单:单曲播放并跳转到对应播放页(音频→AudioPlayer,视频→VideoPlayer)。 */
+  /** 点击三点菜单:单曲播放并跳转到对应播放页(音频→AudioPlayer,视频→VideoPlayer)。
+   *  队列始终是整组曲目,从点击的这首开始,保证随机/循环/上一首/下一首在组内生效。 */
   private async playSingle(item: Track): Promise<void> {
     const isVideo = isVideoUri(item.uri);
-    const mw = new MediaWrapper(0, item.title, item.uri, isVideo ? 0 : 1);
-    mw.artistName = item.artistName;
-    mw.artworkPath = item.artworkPath;
-    const qi = QueueItem.fromMediaWrapper(mw);
-    await PlaybackService.playList([qi], 0, true);
+    const items = this.buildQueueItems();
+    const startPos = this.vm.tracks.findIndex((t: Track) => t.uri === item.uri);
+    const start = startPos >= 0 ? startPos : 0;
+    await PlaybackService.playList(MediaLibrary.toQueueItems(items), start, true);
     await PlaybackService.play();
     this.nowPlayingUri = item.uri;
     this.animTick = 0;
@@ -217,7 +223,7 @@ export struct HeaderMediaListActivityPage {
         uri: item.uri,
         title: item.title,
         list: [{ uri: item.uri, title: item.title } as VideoPlayItem],
-        index: 0,
+        index: start,
       };
       NavController.push('VideoPlayer', param);
     } else {
@@ -303,7 +309,8 @@ export struct HeaderMediaListActivityPage {
     .padding({ left: 16, right: 12, top: 10, bottom: 10 })
     .alignItems(VerticalAlign.Center)
     .onClick(() => {
-      void this.playAll(position);
+      // 点击单曲:整组队列从该曲开始播放,并进入播放详情页(AudioPlayer/VideoPlayer)。
+      void this.playSingle(item);
     })
   }
 

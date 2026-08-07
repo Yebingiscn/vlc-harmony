@@ -36,4 +36,11 @@ export class NavController {
       NavController.stack.pop();
     }
   }
+
+  /** 弹出 Main 之上的所有页面,直接落回 Main(用于"回到音频浏览器"类跨页跳转)。 */
+  static popToMain(): void {
+    if (NavController.stack) {
+      NavController.stack.popToName('Main', '');
+    }
+  }
 }

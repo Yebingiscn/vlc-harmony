@@ -9,6 +9,7 @@ import { MorePage } from './MorePage';
 import { Settings } from '../common/data/Settings';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { NavController } from '../common/data/NavController';
+import { AudioBrowserRequest } from '../common/data/AudioBrowserRequest';
 import { PermissionCoordinator } from '../common/data/PermissionCoordinator';
 import { AppColors } from '../common/constants/AppConstants';
 import { DisplaySettingsDialog } from './DisplaySettingsDialog';
@@ -38,6 +39,10 @@ export struct MainPage {
   @Local searchQuery: string = '';
   /** 自增用于通知 PlaylistsPage 重新拉取数据(NavDestination 重新可见时 +1)。 */
   @Local playlistsVersion: number = 0;
+  /** "转到艺人"定位目标(传给 AudioBrowserPage,配合 goToArtistVersion 触发 @Monitor)。 */
+  @Local goToArtistName: string = '';
+  /** "转到艺人"定位请求版本号:自增保证同名艺人连续定位也会触发 @Monitor。 */
+  @Local goToArtistVersion: number = 0;
 
   async aboutToAppear(): Promise<void> {
     this.incognitoMode = Settings.incognitoMode;
@@ -189,6 +194,8 @@ export struct MainPage {
             settingsVersion: this.audioSettingsVersion,
             searchMode: this.searchMode,
             searchQuery: this.searchQuery,
+            goToArtistName: this.goToArtistName,
+            goToArtistVersion: this.goToArtistVersion,
             onSearchGlobal: () => { this.searchMode = false; this.searchQuery = ''; NavController.push('Search'); },
           })
             .visibility(this.currentTab === 'audio' ? Visibility.Visible : Visibility.None)
@@ -241,6 +248,13 @@ export struct MainPage {
       // 从 VideoPlayer/AudioPlayer 等子页面返回时触发,
       // 自增版本号让 PlaylistsPage 通过 @Monitor('playlistsVersion') 重新拉数据。
       this.playlistsVersion++;
+      // 消费 AudioPlayer "转到艺人"请求:切到音频 tab,派发给 AudioBrowserPage 定位到该艺人。
+      const artist = AudioBrowserRequest.consumeArtist();
+      if (artist.length > 0) {
+        this.currentTab = 'audio';
+        this.goToArtistName = artist;
+        this.goToArtistVersion++;
+      }
     })
     .onBackPressed(() => {
       // 搜索态下返回优先退出搜索,非搜索态返回交给系统(退出 APP)

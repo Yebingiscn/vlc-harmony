@@ -212,7 +212,13 @@ export struct AudioBrowserPage {
   @Param settingsVersion: number = 0;
   @Param searchMode: boolean = false;
   @Param searchQuery: string = '';
+  /** "转到艺人"定位目标(配合 goToArtistVersion 触发 @Monitor)。 */
+  @Param goToArtistName: string = '';
+  /** "转到艺人"请求版本号:自增保证同名艺人连续定位也触发 @Monitor。 */
+  @Param goToArtistVersion: number = 0;
   private controller: TabsController = new TabsController();
+  /** 艺术家列表滚动控制器("转到艺人"时 scrollToIndex 到对应歌手分组)。 */
+  private artistScroller: Scroller = new Scroller();
   @Event onSearchGlobal: () => void = () => {
   };
 
@@ -223,6 +229,24 @@ export struct AudioBrowserPage {
   @Monitor('settingsVersion')
   onSettingsVersionChange(): void {
     this.vm.reloadSettings();
+  }
+
+  /** 收到 MainPage "转到艺人"派发:切到"艺术家"子 Tab 并滚动到对应歌手分组。 */
+  @Monitor('goToArtistVersion')
+  onGoToArtistVersion(): void {
+    const artist = this.goToArtistName;
+    if (artist.length === 0) {
+      return;
+    }
+    this.vm.saveTab(0);
+    this.controller.changeIndex(0);
+    // artistNames 下标 = ListItemGroup 下标;等 Tab 切换动画 + 列表渲染后再滚动。
+    const idx = this.vm.artistNames.indexOf(artist);
+    if (idx >= 0) {
+      setTimeout(() => {
+        this.artistScroller.scrollToIndex(idx, true);
+      }, 60);
+    }
   }
 
   async doRefresh(): Promise<void> {
@@ -420,7 +444,7 @@ export struct AudioBrowserPage {
 
   @Builder
   artistList() {
-    List() {
+    List({ space: 0, scroller: this.artistScroller }) {
       ForEach(this.vm.artistAlbums, (albums: AlbumCard[], aIdx: number) => {
         ListItemGroup({ header: this.artistHeader(aIdx) }) {
           ListItem() {
