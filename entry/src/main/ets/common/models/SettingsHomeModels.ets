@@ -72,13 +72,14 @@ export class SettingsHomeCatalog {
       ]),
       new SettingsHomeSection('additional', '附加设置', [
         new SettingsHomeItem('ui_category', '界面', '', 'navigation', false, false, 'ui', 'ui_category'),
-        new SettingsHomeItem('video_category', '视频', '', 'navigation', false, false, 'video', 'video_category'),
+        // 视频入口按需求隐藏(保留底层实现,仅不在此展示):
+        // new SettingsHomeItem('video_category', '视频', '', 'navigation', false, false, 'video', 'video_category'),
         // 以下入口按需求隐藏(保留底层实现,仅不在此展示):
         // new SettingsHomeItem('subtitles_category', '字幕', '', 'navigation', false, false, 'subtitles'),
         // new SettingsHomeItem('audio_category', '音频', '', 'navigation', false, false, 'audio', 'audio_category'),
         // new SettingsHomeItem('equalizer', '均衡器', '', 'navigation', false, false, 'equalizer'),
         // new SettingsHomeItem('casting_category', '投屏', '', 'navigation', false, false, 'casting', 'casting_category'),
-        // new SettingsHomeItem('parental_control', '家长控制', '', 'navigation', false, false, 'parental', 'parental_control'),
+        new SettingsHomeItem('parental_control', '家长控制', '', 'navigation', false, false, 'parental', 'parental_control'),
         // new SettingsHomeItem('remote_access_category', '远程访问', '', 'navigation', false, false, 'remote', 'remote_access_category'),
         // new SettingsHomeItem('android_auto_category', 'Android Auto', '', 'navigation', false, false, 'android_auto'),
         // new SettingsHomeItem('adv_category', '高级', '', 'navigation', false, false, 'advanced'),
