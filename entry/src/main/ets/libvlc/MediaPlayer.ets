@@ -143,9 +143,21 @@ export class MediaPlayer extends VLCObject {
     }
   }
 
+  /**
+   * 停止播放(对标 Android MediaPlayer.stop)。
+   * 注意:libVLC 的 stop 在解码线程卡在输出队列时可能永久阻塞主线程(AppFreeze),
+   * NAPI 侧已改为后台线程异步执行 stop+release 并摘除原生 player。调用后本对象即失效
+   * (isReleased()==true),上层(PlaybackService)在下次加载前通过 ensureLivePlayer 重建。
+   */
   stop(): void {
     if (!this.isReleased()) {
+      const prev = this.currentMedia;
+      this.currentMedia = null;
+      if (prev !== null) {
+        prev.release();
+      }
       mediaPlayerStop(this.handle);
+      this.markReleased();
     }
   }
 

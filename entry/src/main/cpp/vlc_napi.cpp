@@ -1232,6 +1232,15 @@ napi_value MediaPlayerPause(napi_env env, napi_callback_info info)
     return nullptr;
 }
 
+/**
+ * 异步停止 + 释放播放器。
+ * libvlc_media_player_stop 在解码线程卡在输出队列(outputBufferQueue)时可能永久阻塞
+ * (AppFreeze THREAD_BLOCK_6S),绝不能在主线程调用。此处:
+ *  - 把该 player 从 g_players 摘除 —— JS 层不得再复用,晚到的原生事件经 tsfn 查找直接丢弃;
+ *  - stop+release 放到独立后台线程执行,同一 mp 只由这一个线程收尾,与 ReleaseAsync 不并发;
+ *  - 函数立即返回,主线程不等待。
+ * JS 侧 MediaPlayer.stop() 会同步 markReleased,后续加载由 PlaybackService.ensureLivePlayer 重建。
+ */
 napi_value MediaPlayerStop(napi_env env, napi_callback_info info)
 {
     size_t argc = 1;
@@ -1244,14 +1253,27 @@ napi_value MediaPlayerStop(napi_env env, napi_callback_info info)
     libvlc_media_player_t *mp = nullptr;
     {
         std::lock_guard<std::mutex> lk(g_mtx);
-        PlayerEntry *pe = FindPlayerLocked(h);
-        if (pe && pe->mp) {
-            mp = pe->mp;
+        auto it = g_players.find(h);
+        if (it == g_players.end()) {
+            return nullptr;
         }
+        PlayerEntry &pe = it->second;
+        mp = pe.mp;
+        if (pe.tsfn) {
+            napi_release_threadsafe_function(pe.tsfn, napi_tsfn_release);
+            pe.tsfn = nullptr;
+        }
+        if (pe.jsCallbackRef) {
+            napi_delete_reference(env, pe.jsCallbackRef);
+            pe.jsCallbackRef = nullptr;
+        }
+        g_players.erase(it);
     }
-    // Must NOT hold g_mtx: stop waits for VLC threads that fire events needing g_mtx.
     if (mp != nullptr) {
-        libvlc_media_player_stop(mp);
+        std::thread([mp]() {
+            libvlc_media_player_stop(mp);
+            libvlc_media_player_release(mp);
+        }).detach();
     }
     return nullptr;
 }

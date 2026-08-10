@@ -260,6 +260,40 @@ export class PlaybackService {
   }
 
   /**
+   * 确保 player 存活。
+   * stop() 会触发原生异步 stop+release 并使当前 MediaPlayer 失效(isReleased),下次加载前必须重建;
+   * 重建时重挂事件回调、重放音量/速度,并把 videoOutId 的视频面重绑回来(自动接续不经过 bindAndPlay,
+   * 若不重绑,播完切下一首会黑屏只剩音频)。
+   */
+  private async ensureLivePlayer(): Promise<MediaPlayer | null> {
+    await this.ensureInit();
+    if (!this.inited || !this.lib) {
+      return null;
+    }
+    if (this.player !== null && !this.player.isReleased()) {
+      return this.player;
+    }
+    hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] ensureLivePlayer: recreate player after async stop');
+    const np = new MediaPlayer(this.lib);
+    if (np.getHandle() === 0) {
+      np.release();
+      this.player = null;
+      return null;
+    }
+    np.setEventListener((event: string, value: number) => this.onNativeEvent(event, value));
+    np.setVolume(this.volume);
+    np.setRate(this.speed);
+    if (this.videoOutId.length > 0) {
+      const bound = np.attachViews(this.videoOutId);
+      hilog.info(LOG_DOMAIN, LOG_TAG,
+        '[VLC] ensureLivePlayer re-attach videoOut=%{public}s bound=%{public}s',
+        this.videoOutId, String(bound));
+    }
+    this.player = np;
+    return np;
+  }
+
+  /**
    * 音频设置 → libVLC 实例选项(对齐安卓 PreferencesAudio 的 onSharedPreferenceChanged →
    * restartLibVLC,启动时按设置注入 libvlc_new)。仅对接 libvlccore.so 实际编译进库的选项:
    *  - 回放增益 audio-replay-gain-*(mode/preamp/default/peak-protection)已编译 ✓
@@ -1179,6 +1213,13 @@ export class PlaybackService {
       this.emitQueue();
     }
 
+    // 若此前 stop() 已使 player 失效,先重建再走 attach 重试循环,否则循环全打在已释放的 player 上必失败
+    this.player = await this.ensureLivePlayer();
+    if (!this.player) {
+      hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] bindAndPlay aborted: player unavailable');
+      return false;
+    }
+
     let bound = false;
     for (let i = 0; i < 30; i++) {
       const hasWin = this.player.hasNativeWindow(xcomponentId);
@@ -1221,8 +1262,14 @@ export class PlaybackService {
 
   private async loadCurrent(): Promise<void> {
     const item = this.getCurrent();
-    if (!item || !this.lib || !this.player) {
-      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] loadCurrent: empty queue or player');
+    if (!item || !this.lib) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] loadCurrent: empty queue or lib');
+      return;
+    }
+    // stop() 可能已使 player 失效(异步收尾),加载前必须重建,否则 setMedia 落在已释放的原生句柄上
+    this.player = await this.ensureLivePlayer();
+    if (!this.player) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] loadCurrent: player unavailable');
       return;
     }
     // ISO 文件按文件名识别为光盘 MRL(与 Android 对 .iso 强制 demux 一致)
@@ -1501,7 +1548,8 @@ export class PlaybackService {
 
   /**
    * 停止播放(对标 Android PlaybackService.stop(video=true))。
-   * NAPI 侧已保证 stop 不持全局锁,可在返回路径上同步调用。
+   * stop 在 native 侧为后台异步 stop+release(防止解码线程卡死时阻塞主线程 AppFreeze),
+   * 本方法仅做同步簿记,立即返回;player 被标记失效,下次加载由 loadCurrent→ensureLivePlayer 重建。
    */
   stop(): void {
     this.stopSessionSync();
