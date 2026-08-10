@@ -190,7 +190,7 @@ export struct AudioSubtitlePanelDialog {
   @Builder
   private mainView(): void {
     Column() {
-      this.topBar('音频和字幕', () => this.onClose())
+      this.topBar('音频', () => this.onClose())
 
       Scroll() {
         Column() {
@@ -206,51 +206,51 @@ export struct AudioSubtitlePanelDialog {
             label: '码率',
             value: this.bitrate.length > 0 ? `${this.bitrate} bps` : '—',
           })
-          this.divider()
-
-          TrackSection({
-            title: '音频轨道',
-            showMore: false,
-            emptyText: $r('app.string.no_track'),
-            tracks: this.audioTracks,
-            selectedId: this.selectedAudio,
-            onTrackClick: (id: number): void => {
-              this.selectedAudio = id;
-              this.onTrackChange(id, 'audio');
-            },
-          })
-          this.divider()
-
-          this.sectionHeader('当前字幕', $r('app.media.ic_subtitles'))
-          MetaRow({
-            label: '字幕轨',
-            value: this.subtitleName(this.selectedSubtitle),
-          })
-          this.divider()
-
-          TrackSection({
-            title: '字幕轨道',
-            showMore: false,
-            emptyText: $r('app.string.no_track'),
-            tracks: this.subtitleTracks,
-            selectedId: this.selectedSubtitle,
-            onTrackClick: (id: number): void => {
-              this.selectedSubtitle = id;
-              this.onTrackChange(id, 'spu');
-            },
-          })
-          this.divider()
-
-          // 字幕延迟入口行:点击切到 'subtitleDelay' 子视图,显示当前值。
-          this.subtitleDelayEntryRow()
-          this.divider()
-
-          // 音频延迟入口行:点击切到 'audioDelay' 子视图。
-          this.audioDelayEntryRow()
-          this.divider()
-
-          this.actionRow('选择字幕文件', $r('app.media.ic_subtitles_file'), () => this.onPickSubtitle())
-          this.actionRow('下载字幕', $r('app.media.ic_download_subtitles'), () => this.onDownloadSubtitle())
+          // this.divider()
+          //
+          // TrackSection({
+          //   title: '音频轨道',
+          //   showMore: false,
+          //   emptyText: $r('app.string.no_track'),
+          //   tracks: this.audioTracks,
+          //   selectedId: this.selectedAudio,
+          //   onTrackClick: (id: number): void => {
+          //     this.selectedAudio = id;
+          //     this.onTrackChange(id, 'audio');
+          //   },
+          // })
+          // this.divider()
+          //
+          // this.sectionHeader('当前字幕', $r('app.media.ic_subtitles'))
+          // MetaRow({
+          //   label: '字幕轨',
+          //   value: this.subtitleName(this.selectedSubtitle),
+          // })
+          // this.divider()
+          //
+          // TrackSection({
+          //   title: '字幕轨道',
+          //   showMore: false,
+          //   emptyText: $r('app.string.no_track'),
+          //   tracks: this.subtitleTracks,
+          //   selectedId: this.selectedSubtitle,
+          //   onTrackClick: (id: number): void => {
+          //     this.selectedSubtitle = id;
+          //     this.onTrackChange(id, 'spu');
+          //   },
+          // })
+          // this.divider()
+          //
+          // // 字幕延迟入口行:点击切到 'subtitleDelay' 子视图,显示当前值。
+          // this.subtitleDelayEntryRow()
+          // this.divider()
+          //
+          // // 音频延迟入口行:点击切到 'audioDelay' 子视图。
+          // this.audioDelayEntryRow()
+          // this.divider()
+          //
+          // this.actionRow('选择字幕文件', $r('app.media.ic_subtitles_file'), () => this.onPickSubtitle())
+          // this.actionRow('下载字幕', $r('app.media.ic_download_subtitles'), () => this.onDownloadSubtitle())
         }
         .width('100%').padding({ bottom: 32 }).alignItems(HorizontalAlign.Start)
       }

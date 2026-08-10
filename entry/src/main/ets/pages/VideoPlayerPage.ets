@@ -653,6 +653,24 @@ export struct VideoPlayerPage {
     this.sheetKind = '';
   }
 
+  /**
+   * 二级 sheet 高度。
+   * - audioSubInfo 内容较少,固定 1/3 屏,避免 FIT_CONTENT 把面板撑得过高或留大片空白。
+   *   注意:不能靠给 Dialog 根 Column 设百分比高度来实现(FIT_CONTENT 下父高度不确定,
+   *   分数百分比会塌成 0 导致面板闪现即消失),必须在 sheet 的 height 配置里给确定值。
+   * - speed / savePlaylist 半屏(MEDIUM)。
+   * - 其余自适应内容(FIT_CONTENT)。
+   */
+  private sheetHeight(): SheetSize | Length {
+    if (this.sheetKind === 'audioSubInfo') {
+      return '40%';
+    }
+    if (this.sheetKind === 'speed' || this.sheetKind === 'savePlaylist') {
+      return SheetSize.MEDIUM;
+    }
+    return SheetSize.FIT_CONTENT;
+  }
+
   /** Jump to Time 确认 → seek 后关闭。 */
   onJumpConfirm(timeMs: number): void {
     this.vm.seekTo(timeMs);
@@ -1750,9 +1768,7 @@ export struct VideoPlayerPage {
       return true;
     })
     .bindSheet(this.sheetOpen, this.playerSheet(), {
-      height: (this.sheetKind === 'speed' || this.sheetKind === 'savePlaylist')
-        ? SheetSize.MEDIUM
-        : SheetSize.FIT_CONTENT,
+      height: this.sheetHeight(),
       dragBar: true,
       backgroundColor: $r('app.color.background_default'),
       onDisappear: () => {
