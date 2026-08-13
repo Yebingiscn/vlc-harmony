@@ -81,7 +81,6 @@ export struct FormatCompatibilityTestPage {
   @Local current: string = '';
   @Local progress: string = '';
   @Local resultCount: number = 0;
-
   private manifest: FormatCompatEntry[] = [];
   private results: SampleResult[] = [];
   private baseDir: string = '';
@@ -92,6 +91,58 @@ export struct FormatCompatibilityTestPage {
 
   aboutToAppear(): void {
     void this.loadManifest();
+  }
+
+  build() {
+    NavDestination() {
+      Stack() {
+        XComponent({
+          id: XCOMPONENT_ID,
+          type: XComponentType.SURFACE,
+          libraryname: NAPI_LIBRARY,
+        })
+          .width('100%')
+          .height('100%')
+          .onLoad(() => {
+            if (!this.started) {
+              this.started = true;
+              void this.runAll();
+            }
+          })
+
+        Column({ space: 8 }) {
+          Text('VLC Format Compatibility Test')
+            .fontSize(18)
+            .fontWeight(FontWeight.Medium)
+            .fontColor('#FFFFFF')
+          Text(this.status)
+            .fontSize(14)
+            .fontColor('#FFCC66')
+          Text(this.current)
+            .fontSize(14)
+            .fontColor('#FFFFFF')
+          Text(this.progress)
+            .fontSize(14)
+            .fontColor('#FFFFFF')
+          Text(`results: ${this.resultCount}/${this.manifest.length}`)
+            .fontSize(14)
+            .fontColor('#FFFFFF')
+        }
+        .width('100%')
+        .padding(20)
+        .alignItems(HorizontalAlign.Start)
+        .backgroundColor('#99000000')
+        .position({ x: 0, y: 0 })
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor('#000000')
+    }
+    .hideTitleBar(true)
+    .onBackPressed(() => {
+      NavController.pop();
+      return true;
+    })
   }
 
   private async loadManifest(): Promise<void> {
@@ -349,7 +400,8 @@ export struct FormatCompatibilityTestPage {
           clearTimeout(postPlayingTimer);
         }
         clearTimeout(timer);
-        resolve({ state: state, firstFrame: sawVideo && sawTime, firstFrameMs: firstFrameLatencyMs } as PlaybackOutcome);
+        resolve(
+          { state: state, firstFrame: sawVideo && sawTime, firstFrameMs: firstFrameLatencyMs } as PlaybackOutcome);
       };
       const timer = setTimeout(() => finish('timeout'), timeoutMs);
       const finishOnFirstFrame = (): void => {
@@ -435,57 +487,5 @@ export struct FormatCompatibilityTestPage {
       hilog.error(LOG_DOMAIN, LOG_TAG, '[COMPAT] save results error: %{public}s',
         (e as Error).message ?? String(e));
     }
-  }
-
-  build() {
-    NavDestination() {
-      Stack() {
-        XComponent({
-          id: XCOMPONENT_ID,
-          type: XComponentType.SURFACE,
-          libraryname: NAPI_LIBRARY,
-        })
-          .width('100%')
-          .height('100%')
-          .onLoad(() => {
-            if (!this.started) {
-              this.started = true;
-              void this.runAll();
-            }
-          })
-
-        Column({ space: 8 }) {
-          Text('VLC Format Compatibility Test')
-            .fontSize(18)
-            .fontWeight(FontWeight.Medium)
-            .fontColor('#FFFFFF')
-          Text(this.status)
-            .fontSize(14)
-            .fontColor('#FFCC66')
-          Text(this.current)
-            .fontSize(14)
-            .fontColor('#FFFFFF')
-          Text(this.progress)
-            .fontSize(14)
-            .fontColor('#FFFFFF')
-          Text(`results: ${this.resultCount}/${this.manifest.length}`)
-            .fontSize(14)
-            .fontColor('#FFFFFF')
-        }
-        .width('100%')
-        .padding(20)
-        .alignItems(HorizontalAlign.Start)
-        .backgroundColor('#99000000')
-        .position({ x: 0, y: 0 })
-      }
-      .width('100%')
-      .height('100%')
-      .backgroundColor('#000000')
-    }
-    .hideTitleBar(true)
-    .onBackPressed(() => {
-      NavController.pop();
-      return true;
-    })
   }
 }

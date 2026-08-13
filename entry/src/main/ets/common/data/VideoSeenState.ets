@@ -9,14 +9,6 @@ import { MediaWrapper } from '../models/MediaModels';
 export class VideoSeenState {
   private static readonly KEY_PREFIX: string = 'video_seen_';
 
-  private static keyFor(uri: string): string {
-    let hash: number = 0;
-    for (let index: number = 0; index < uri.length; index++) {
-      hash = (hash * 31 + uri.charCodeAt(index)) | 0;
-    }
-    return `${VideoSeenState.KEY_PREFIX}${hash}`;
-  }
-
   /** 播放器收到媒体正常结束事件时调用。 */
   static markSeen(uri: string): Promise<void> {
     if (uri.length === 0) {
@@ -38,5 +30,13 @@ export class VideoSeenState {
     for (const item of items) {
       item.seen = await Settings.getBoolean(VideoSeenState.keyFor(item.uri), false) ? 1 : 0;
     }
+  }
+
+  private static keyFor(uri: string): string {
+    let hash: number = 0;
+    for (let index: number = 0; index < uri.length; index++) {
+      hash = (hash * 31 + uri.charCodeAt(index)) | 0;
+    }
+    return `${VideoSeenState.KEY_PREFIX}${hash}`;
   }
 }

@@ -1,33 +1,71 @@
-import { describe, beforeAll, beforeEach, afterEach, afterAll, it, expect } from '@ohos/hypium';
+import { describe, expect, it } from '@ohos/hypium';
+import {
+  appendSleepDigit,
+  appendSleepMinuteShortcut,
+  sleepDigitsToMillis,
+  sleepDigitsToParts,
+  sleepMillisToDigits,
+} from '../main/ets/common/models/SleepTimerInputModels';
+import {
+  PlaybackHistoryEntry,
+  prependPlaybackHistory,
+  shouldRecordPlaybackHistory,
+  shouldRecordPlaybackStart,
+} from '../main/ets/common/models/PlaybackHistoryModels';
+import { historyPreview } from '../main/ets/common/models/MoreHomeModels';
+import { streamSubmissionMessage } from '../main/ets/common/models/StreamInputModels';
 
 export default function localUnitTest() {
-  describe('localUnitTest', () => {
-    // Defines a test suite. Two parameters are supported: test suite name and test suite function.
-    beforeAll(() => {
-      // Presets an action, which is performed only once before all test cases of the test suite start.
-      // This API supports only one parameter: preset action function.
+  describe('sleepTimerInputModels', () => {
+    it('limitsNumericInputToFourDigits', 0, () => {
+      expect(appendSleepDigit('123', '4')).assertEqual('1234');
+      expect(appendSleepDigit('1234', '5')).assertEqual('1234');
+      expect(appendSleepDigit('12', 'x')).assertEqual('12');
     });
-    beforeEach(() => {
-      // Presets an action, which is performed before each unit test case starts.
-      // The number of execution times is the same as the number of test cases defined by **it**.
-      // This API supports only one parameter: preset action function.
+
+    it('parsesHoursAndMinutes', 0, () => {
+      const parts = sleepDigitsToParts('123');
+      expect(parts.hours).assertEqual(1);
+      expect(parts.minutes).assertEqual(23);
+      expect(sleepDigitsToMillis('123')).assertEqual(4980000);
     });
-    afterEach(() => {
-      // Presets a clear action, which is performed after each unit test case ends.
-      // The number of execution times is the same as the number of test cases defined by **it**.
-      // This API supports only one parameter: clear action function.
+
+    it('handlesMinuteShortcutsAndRoundTrips', 0, () => {
+      expect(appendSleepMinuteShortcut('1', '30')).assertEqual('130');
+      expect(appendSleepMinuteShortcut('1234', '30')).assertEqual('1234');
+      expect(sleepMillisToDigits(5400000)).assertEqual('130');
+      expect(sleepMillisToDigits(0)).assertEqual('');
     });
-    afterAll(() => {
-      // Presets a clear action, which is performed after all test cases of the test suite end.
-      // This API supports only one parameter: clear action function.
+  });
+
+  describe('playbackHistoryModels', () => {
+    it('prependsAndDeduplicatesByUri', 0, () => {
+      const oldA = new PlaybackHistoryEntry('a', 'old a', 10, '', 1);
+      const oldB = new PlaybackHistoryEntry('b', 'b', 20, '', 2);
+      const newA = new PlaybackHistoryEntry('a', 'new a', 30, '', 3);
+      const result = prependPlaybackHistory([oldA, oldB], newA);
+      expect(result.length).assertEqual(2);
+      expect(result[0].title).assertEqual('new a');
+      expect(result[1].uri).assertEqual('b');
     });
-    it('assertContain', 0, () => {
-      // Defines a test case. This API supports three parameters: test case name, filter parameter, and test case function.
-      let a = 'abc';
-      let b = 'b';
-      // Defines a variety of assertion methods, which are used to declare expected boolean conditions.
-      expect(a).assertContain(b);
-      expect(a).assertEqual(a);
+
+    it('honorsHistoryAndPlaybackStartGuards', 0, () => {
+      expect(shouldRecordPlaybackHistory(false)).assertTrue();
+      expect(shouldRecordPlaybackHistory(true)).assertFalse();
+      expect(shouldRecordPlaybackStart('playing', '', 'media')).assertTrue();
+      expect(shouldRecordPlaybackStart('paused', '', 'media')).assertFalse();
+      expect(shouldRecordPlaybackStart('playing', 'media', 'media')).assertFalse();
+    });
+  });
+
+  describe('homeAndStreamModels', () => {
+    it('limitsHistoryPreview', 0, () => {
+      expect(historyPreview([1, 2, 3, 4], 2)).assertDeepEquals([1, 2]);
+    });
+
+    it('validatesStreamSubmissionFeedback', 0, () => {
+      expect(streamSubmissionMessage('   ')).assertEqual('');
+      expect(streamSubmissionMessage('https://example.com/live')).assertEqual('暂不支持');
     });
   });
 }

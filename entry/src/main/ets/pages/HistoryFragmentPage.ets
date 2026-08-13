@@ -1,12 +1,11 @@
+import { UiFeedback } from '../common/utils/UiFeedback';
 import { NavController } from '../common/data/NavController';
 import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
 import { Settings } from '../common/data/Settings';
-import { AppColors, AppDimens } from '../common/constants/AppConstants';
-import { BackTitleBar } from '../common/components/BackTitleBar';
-import { formatDuration, FileBrowserParam, VideoNavParam } from '../common/models/MediaModels';
+import { AppDimens } from '../common/constants/AppConstants';
+import { FileBrowserParam, formatDuration, VideoNavParam } from '../common/models/MediaModels';
 import { PlaybackHistoryEntry } from '../common/models/PlaybackHistoryModels';
-import { promptAction } from '@kit.ArkUI';
 import { ParentalControlAction, ParentalControlParam } from './ParentalControlPage';
 
 /**
@@ -88,185 +87,15 @@ export struct HistoryFragmentPage {
     this.exitSelectionMode();
   }
 
-  private async refreshHistory(forceReload: boolean): Promise<void> {
-    this.isRefreshing = true;
-    await this.vm.refresh(forceReload);
-    this.incognitoMode = await Settings.getBoolean(Settings.KEY_INCOGNITO, false);
-    this.isRefreshing = false;
-  }
-
-  // ── 多选模式 ──────────────────────────────────────────
-
-  private enterSelectionMode(uri: string): void {
-    this.isSelectionMode = true;
-    const s = new Set<string>();
-    s.add(uri);
-    this.selectedUris = s;
-    this.selectedCount = s.size;
-  }
-
-  private exitSelectionMode(): void {
-    this.isSelectionMode = false;
-    this.selectedUris = new Set();
-    this.selectedCount = 0;
-  }
-
-  private toggleSelection(uri: string): void {
-    const s = new Set(this.selectedUris);
-    if (s.has(uri)) {
-      s.delete(uri);
-      if (s.size === 0) {
-        this.exitSelectionMode();
-        return;
-      }
-    } else {
-      s.add(uri);
-    }
-    this.selectedUris = s;
-    this.selectedCount = s.size;
-  }
-
-  private isSelected(uri: string): boolean {
-    return this.selectedUris.has(uri);
-  }
-
-  private selectedEntries(): PlaybackHistoryEntry[] {
-    return this.vm.dataset.filter(e => this.selectedUris.has(e.uri));
-  }
-
-  private playSelected(): void {
-    const entries = this.selectedEntries();
-    if (entries.length === 0) {
-      return;
-    }
-    const queue: QueueItem[] = entries.map((item, index) =>
-      new QueueItem(index, item.title, item.uri, '', '', item.artworkUrl)
-    );
-    PlaybackService.playList(queue, 0, true);
-    const first = entries[0];
-    const lower = first.uri.toLowerCase();
-    const audioExts = ['.mp3', '.flac', '.ogg', '.wav', '.aac', '.m4a', '.wma', '.opus'];
-    if (audioExts.some(e => lower.endsWith(e))) {
-      NavController.push('AudioPlayer');
-    } else {
-      const vp: VideoNavParam = { uri: first.uri, title: first.title, artworkUrl: first.artworkUrl };
-      NavController.push('VideoPlayer', vp);
-    }
-    this.exitSelectionMode();
-  }
-
-  private showFileInfo(): void {
-    const entries = this.selectedEntries();
-    if (entries.length !== 1) {
-      return;
-    }
-    const item = entries[0];
-    this.getUIContext().getPromptAction().openCustomDialog({
-      builder: () => this.fileInfoDialogContent(item),
-      alignment: DialogAlignment.Center,
-      autoCancel: true,
-      maskColor: $r('app.color.dialog_mask'),
-      backgroundColor: Color.Transparent,
-    }).then((dialogId: number) => {
-      this.infoDialogId = dialogId;
-    });
-  }
-
-  private closeInfoDialog(): void {
-    if (this.infoDialogId >= 0) {
-      this.getUIContext().getPromptAction().closeCustomDialog(this.infoDialogId);
-    }
-    this.infoDialogId = -1;
-  }
-
-  private openStorageLocation(): void {
-    const fp: FileBrowserParam = { mode: 'storage' };
-    NavController.push('FileBrowser', fp);
-    this.exitSelectionMode();
-  }
-
-  // ── 原有方法 ──────────────────────────────────────────
-
-  private requestClearHistory(): void {
-    this.getUIContext().getPromptAction().openCustomDialog({
-      builder: () => this.clearHistoryDialogContent(),
-      alignment: DialogAlignment.Center,
-      autoCancel: true,
-      maskColor: $r('app.color.dialog_mask'),
-      backgroundColor: Color.Transparent,
-    }).then((dialogId: number) => {
-      this.clearHistoryDialogId = dialogId;
-    });
-  }
-
-  private closeClearHistoryDialog(): void {
-    if (this.clearHistoryDialogId >= 0) {
-      this.getUIContext().getPromptAction().closeCustomDialog(this.clearHistoryDialogId);
-    }
-    this.clearHistoryDialogId = -1;
-  }
-
-  private async confirmClearHistory(): Promise<void> {
-    this.closeClearHistoryDialog();
-    if (await this.openHistoryDeletePin(ParentalControlAction.CLEAR_HISTORY)) {
-      return;
-    }
-    await PlaybackHistory.clear();
-    promptAction.showToast({ message: $r('app.string.clear_history') });
-  }
-
-  private async openHistoryDeletePin(action: ParentalControlAction, uri: string = ''): Promise<boolean> {
-    const safeModeEnabled = await Settings.getBoolean('safe_mode', false);
-    if (!safeModeEnabled) {
-      return false;
-    }
-    const param = new ParentalControlParam();
-    param.action = action;
-    param.historyUri = uri;
-    NavController.push('ParentalControl', param);
-    return true;
-  }
-
-  private async deleteHistoryEntry(uri: string): Promise<void> {
-    if (await this.openHistoryDeletePin(ParentalControlAction.DELETE_HISTORY_ENTRY, uri)) {
-      return;
-    }
-    await PlaybackHistory.removeEntry(uri);
-  }
-
-  private async setIncognito(enabled: boolean): Promise<void> {
-    await PlaybackHistory.setIncognito(enabled);
-    this.incognitoMode = enabled;
-    promptAction.showToast({ message: enabled ? $r('app.string.incognito_on') : $r('app.string.incognito_off') });
-  }
-
-  private async setHistoryMenuIncognito(enabled: boolean): Promise<void> {
-    await this.setIncognito(enabled);
-    this.historyMenuOpen = false;
-  }
-
-  private onItemClick(item: PlaybackHistoryEntry): void {
-    const lower = item.uri.toLowerCase();
-    const audioExts = ['.mp3', '.flac', '.ogg', '.wav', '.aac', '.m4a', '.wma', '.opus'];
-    const isAudio = audioExts.some(e => lower.endsWith(e));
-    if (isAudio) {
-      const qi = new QueueItem(0, item.title, item.uri, '', '', item.artworkUrl);
-      PlaybackService.playList([qi], 0, true);
-      NavController.push('AudioPlayer');
-    } else {
-      const p: VideoNavParam = { uri: item.uri, title: item.title, artworkUrl: item.artworkUrl };
-      NavController.push('VideoPlayer', p);
-    }
-  }
-
-  // ── Builder: 多选标题栏 ──────────────────────────────
-
   @Builder
   selectionTitleBar() {
     Row() {
       Image($r('app.media.ic_arrow_back'))
-        .width(24).height(24).objectFit(ImageFit.Contain)
-        .fillColor($r('app.color.list_title')).margin({ left: 12 })
+        .width(24)
+        .height(24)
+        .objectFit(ImageFit.Contain)
+        .fillColor($r('app.color.list_title'))
+        .margin({ left: 12 })
         .onClick(() => this.exitSelectionMode())
       Text($r('app.string.selected_items_count', this.selectedCount))
         .fontSize(18)
@@ -277,30 +106,40 @@ export struct HistoryFragmentPage {
         .maxLines(1)
       if (this.selectedUris.size === 1) {
         Image($r('app.media.ic_information'))
-          .width(28).height(28)
+          .width(28)
+          .height(28)
           .fillColor($r('app.color.list_title'))
           .margin({ right: 20 })
           .onClick(() => this.showFileInfo())
       }
       Image($r('app.media.ic_play'))
-        .width(28).height(28)
+        .width(28)
+        .height(28)
         .fillColor($r('app.color.list_title'))
         .margin({ right: 20 })
         .onClick(() => this.playSelected())
       if (this.selectedUris.size === 1) {
         Image($r('app.media.ic_storage'))
-          .width(28).height(28)
+          .width(28)
+          .height(28)
           .fillColor($r('app.color.list_title'))
           .margin({ right: 16 })
           .onClick(() => this.openStorageLocation())
       }
     }
-    .width('100%').height(92).alignItems(VerticalAlign.Center)
-    .padding({ left: 4, right: 4, top: 38, bottom: 4 })
+    .width('100%')
+    .height(92)
+    .alignItems(VerticalAlign.Center)
+    .padding({
+      left: 4,
+      right: 4,
+      top: 38,
+      bottom: 4
+    })
     .backgroundColor($r('app.color.background_default'))
   }
 
-  // ── Builder: 选择圆(多选勾选) ────────────────────────
+  // ── 多选模式 ──────────────────────────────────────────
 
   @Builder
   selectionDot(uri: string) {
@@ -314,7 +153,8 @@ export struct HistoryFragmentPage {
           .fillColor($r('app.color.white'))
       } else {
         Circle()
-          .width(22).height(22)
+          .width(22)
+          .height(22)
           .fill(Color.Transparent)
           .stroke($r('app.color.list_subtitle'))
           .strokeWidth(2)
@@ -322,8 +162,6 @@ export struct HistoryFragmentPage {
     }
     .width(22).height(22)
   }
-
-  // ── Builder: 历史菜单 ─────────────────────────────────
 
   @Builder
   historyMenu() {
@@ -342,6 +180,7 @@ export struct HistoryFragmentPage {
       .height(52)
       .padding({ left: 16, right: 12 })
       .alignItems(VerticalAlign.Center)
+
       Divider()
         .color($r('app.color.divider'))
         .strokeWidth(1)
@@ -349,7 +188,12 @@ export struct HistoryFragmentPage {
         .fontSize(16)
         .fontColor($r('app.color.list_title'))
         .width('100%')
-        .padding({ left: 16, right: 16, top: 16, bottom: 16 })
+        .padding({
+          left: 16,
+          right: 16,
+          top: 16,
+          bottom: 16
+        })
         .onClick(() => {
           this.historyMenuOpen = false;
           void this.refreshHistory(true);
@@ -358,8 +202,6 @@ export struct HistoryFragmentPage {
     .width(220)
     .borderRadius(12)
   }
-
-  // ── Builder: 清空历史确认弹窗 ────────────────────────
 
   @Builder
   clearHistoryDialogContent() {
@@ -397,8 +239,6 @@ export struct HistoryFragmentPage {
     .padding(24)
     .alignItems(HorizontalAlign.Start)
   }
-
-  // ── Builder: 文件信息弹窗 ─────────────────────────────
 
   @Builder
   fileInfoDialogContent(item: PlaybackHistoryEntry) {
@@ -453,8 +293,6 @@ export struct HistoryFragmentPage {
     .alignItems(HorizontalAlign.Start)
   }
 
-  // ── Builder: 滑动删除按钮 ─────────────────────────────
-
   @Builder
   swipeDeleteButton(item: PlaybackHistoryEntry) {
     Row() {
@@ -476,8 +314,6 @@ export struct HistoryFragmentPage {
     })
   }
 
-  // ── Build ──────────────────────────────────────────────
-
   build() {
     NavDestination() {
       Stack({ alignContent: Alignment.TopStart }) {
@@ -488,13 +324,19 @@ export struct HistoryFragmentPage {
           } else {
             Row() {
               Image($r('app.media.ic_arrow_back'))
-                .width(24).height(24).objectFit(ImageFit.Contain)
-                .fillColor($r('app.color.list_title')).margin({ left: 12 })
+                .width(24)
+                .height(24)
+                .objectFit(ImageFit.Contain)
+                .fillColor($r('app.color.list_title'))
+                .margin({ left: 12 })
                 .onClick(() => NavController.pop())
               Text($r('app.string.history'))
-                .fontSize(20).fontWeight(FontWeight.Bold).fontColor($r('app.color.orange500'))
+                .fontSize(20)
+                .fontWeight(FontWeight.Bold)
+                .fontColor($r('app.color.orange500'))
                 .margin({ left: AppDimens.kl_half })
-                .layoutWeight(1).maxLines(1)
+                .layoutWeight(1)
+                .maxLines(1)
               Image($r('app.media.ic_search'))
                 .width(28).height(28).fillColor($r('app.color.list_title')).margin({ right: 24 })
               Button({ type: ButtonType.Normal, stateEffect: true }) {
@@ -502,11 +344,15 @@ export struct HistoryFragmentPage {
               }
               .width(56).height(56).backgroundColor(Color.Transparent)
               .onClick(() => this.requestClearHistory())
+
               Button({ type: ButtonType.Normal, stateEffect: true }) {
                 SymbolGlyph($r('sys.symbol.dot_grid_1x2'))
                   .fontSize(28).fontColor([$r('sys.color.icon_primary')])
               }
-              .width(52).height(56).backgroundColor(Color.Transparent).margin({ right: 4 })
+              .width(52)
+              .height(56)
+              .backgroundColor(Color.Transparent)
+              .margin({ right: 4 })
               .onClick(() => this.historyMenuOpen = !this.historyMenuOpen)
               .bindMenu(this.historyMenuOpen, this.historyMenu(), {
                 placement: Placement.BottomRight,
@@ -514,8 +360,15 @@ export struct HistoryFragmentPage {
                 onDisappear: () => this.historyMenuOpen = false,
               })
             }
-            .width('100%').height(92).alignItems(VerticalAlign.Center)
-            .padding({ left: 4, right: 4, top: 38, bottom: 4 })
+            .width('100%')
+            .height(92)
+            .alignItems(VerticalAlign.Center)
+            .padding({
+              left: 4,
+              right: 4,
+              top: 38,
+              bottom: 4
+            })
             .backgroundColor($r('app.color.background_default'))
           }
 
@@ -548,7 +401,8 @@ export struct HistoryFragmentPage {
 
                       // 缩略图区(16:10 比例占位,40vp 高)
                       Stack() {
-                        Image(this.showVideoThumbnails && item.artworkUrl.length > 0 ? item.artworkUrl : $r('app.media.tv_channel_default'))
+                        Image(this.showVideoThumbnails && item.artworkUrl.length > 0 ? item.artworkUrl :
+                          $r('app.media.tv_channel_default'))
                           .width('100%')
                           .height('100%')
                           .objectFit(ImageFit.Cover)
@@ -557,7 +411,11 @@ export struct HistoryFragmentPage {
                       .width(96)
                       .height(60)
                       .backgroundColor($r('app.color.card_background'))
-                      .margin({ left: this.isSelectionMode ? 12 : AppDimens.kl_normal, top: AppDimens.kl_half, bottom: AppDimens.kl_half })
+                      .margin({
+                        left: this.isSelectionMode ? 12 : AppDimens.kl_normal,
+                        top: AppDimens.kl_half,
+                        bottom: AppDimens.kl_half
+                      })
 
                       // 中间文字区
                       Column() {
@@ -582,7 +440,9 @@ export struct HistoryFragmentPage {
                     }
                     .width('100%')
                     .alignItems(VerticalAlign.Center)
-                    .backgroundColor(this.isSelectionMode && this.isSelected(item.uri) ? $r('app.color.history_selected_bg') : Color.Transparent)
+                    .backgroundColor(
+                      this.isSelectionMode && this.isSelected(item.uri) ? $r('app.color.history_selected_bg') :
+                        Color.Transparent)
                     .onClick(() => {
                       if (this.isSelectionMode) {
                         this.toggleSelection(item.uri);
@@ -637,5 +497,208 @@ export struct HistoryFragmentPage {
       NavController.pop();
       return true;
     })
+  }
+
+  private async refreshHistory(forceReload: boolean): Promise<void> {
+    this.isRefreshing = true;
+    await this.vm.refresh(forceReload);
+    this.incognitoMode = await Settings.getBoolean(Settings.KEY_INCOGNITO, false);
+    this.isRefreshing = false;
+  }
+
+  private enterSelectionMode(uri: string): void {
+    this.isSelectionMode = true;
+    const s = new Set<string>();
+    s.add(uri);
+    this.selectedUris = s;
+    this.selectedCount = s.size;
+  }
+
+  // ── 原有方法 ──────────────────────────────────────────
+
+  private exitSelectionMode(): void {
+    this.isSelectionMode = false;
+    this.selectedUris = new Set();
+    this.selectedCount = 0;
+  }
+
+  private toggleSelection(uri: string): void {
+    const s = new Set(this.selectedUris);
+    if (s.has(uri)) {
+      s.delete(uri);
+      if (s.size === 0) {
+        this.exitSelectionMode();
+        return;
+      }
+    } else {
+      s.add(uri);
+    }
+    this.selectedUris = s;
+    this.selectedCount = s.size;
+  }
+
+  private isSelected(uri: string): boolean {
+    return this.selectedUris.has(uri);
+  }
+
+  private selectedEntries(): PlaybackHistoryEntry[] {
+    return this.vm.dataset.filter(e => this.selectedUris.has(e.uri));
+  }
+
+  private playSelected(): void {
+    const entries = this.selectedEntries();
+    if (entries.length === 0) {
+      return;
+    }
+    const queue: QueueItem[] = entries.map((item, index) =>
+    new QueueItem(index, item.title, item.uri, '', '', item.artworkUrl)
+    );
+    PlaybackService.playList(queue, 0, true);
+    const first = entries[0];
+    const lower = first.uri.toLowerCase();
+    const audioExts = ['.mp3', '.flac', '.ogg', '.wav', '.aac', '.m4a', '.wma', '.opus'];
+    if (audioExts.some(e => lower.endsWith(e))) {
+      NavController.push('AudioPlayer');
+    } else {
+      const vp: VideoNavParam = { uri: first.uri, title: first.title, artworkUrl: first.artworkUrl };
+      NavController.push('VideoPlayer', vp);
+    }
+    this.exitSelectionMode();
+  }
+
+  private showFileInfo(): void {
+    const entries = this.selectedEntries();
+    if (entries.length !== 1) {
+      return;
+    }
+    const item = entries[0];
+    try {
+      this.getUIContext().getPromptAction().openCustomDialog({
+        builder: () => this.fileInfoDialogContent(item),
+        alignment: DialogAlignment.Center,
+        autoCancel: true,
+        maskColor: $r('app.color.dialog_mask'),
+        backgroundColor: Color.Transparent,
+      }).then((dialogId: number) => {
+        this.infoDialogId = dialogId;
+      }).catch(() => {
+        this.infoDialogId = -1;
+      });
+    } catch (error) {
+      this.infoDialogId = -1;
+    }
+  }
+
+  private closeInfoDialog(): void {
+    if (this.infoDialogId >= 0) {
+      try {
+        this.getUIContext().getPromptAction().closeCustomDialog(this.infoDialogId);
+      } catch (error) {
+        // The dialog may already have been dismissed by the system.
+      }
+    }
+    this.infoDialogId = -1;
+  }
+
+  private openStorageLocation(): void {
+    const fp: FileBrowserParam = { mode: 'storage' };
+    NavController.push('FileBrowser', fp);
+    this.exitSelectionMode();
+  }
+
+  // ── Builder: 多选标题栏 ──────────────────────────────
+
+  private requestClearHistory(): void {
+    try {
+      this.getUIContext().getPromptAction().openCustomDialog({
+        builder: () => this.clearHistoryDialogContent(),
+        alignment: DialogAlignment.Center,
+        autoCancel: true,
+        maskColor: $r('app.color.dialog_mask'),
+        backgroundColor: Color.Transparent,
+      }).then((dialogId: number) => {
+        this.clearHistoryDialogId = dialogId;
+      }).catch(() => {
+        this.clearHistoryDialogId = -1;
+      });
+    } catch (error) {
+      this.clearHistoryDialogId = -1;
+    }
+  }
+
+  // ── Builder: 选择圆(多选勾选) ────────────────────────
+
+  private closeClearHistoryDialog(): void {
+    if (this.clearHistoryDialogId >= 0) {
+      try {
+        this.getUIContext().getPromptAction().closeCustomDialog(this.clearHistoryDialogId);
+      } catch (error) {
+        // The dialog may already have been dismissed by the system.
+      }
+    }
+    this.clearHistoryDialogId = -1;
+  }
+
+  // ── Builder: 历史菜单 ─────────────────────────────────
+
+  private async confirmClearHistory(): Promise<void> {
+    this.closeClearHistoryDialog();
+    if (await this.openHistoryDeletePin(ParentalControlAction.CLEAR_HISTORY)) {
+      return;
+    }
+    await PlaybackHistory.clear();
+    UiFeedback.showToast({ message: $r('app.string.clear_history') });
+  }
+
+  // ── Builder: 清空历史确认弹窗 ────────────────────────
+
+  private async openHistoryDeletePin(action: ParentalControlAction, uri: string = ''): Promise<boolean> {
+    const safeModeEnabled = await Settings.getBoolean('safe_mode', false);
+    if (!safeModeEnabled) {
+      return false;
+    }
+    const param = new ParentalControlParam();
+    param.action = action;
+    param.historyUri = uri;
+    NavController.push('ParentalControl', param);
+    return true;
+  }
+
+  // ── Builder: 文件信息弹窗 ─────────────────────────────
+
+  private async deleteHistoryEntry(uri: string): Promise<void> {
+    if (await this.openHistoryDeletePin(ParentalControlAction.DELETE_HISTORY_ENTRY, uri)) {
+      return;
+    }
+    await PlaybackHistory.removeEntry(uri);
+  }
+
+  private async setIncognito(enabled: boolean): Promise<void> {
+    await PlaybackHistory.setIncognito(enabled);
+    this.incognitoMode = enabled;
+    UiFeedback.showToast({ message: enabled ? $r('app.string.incognito_on') : $r('app.string.incognito_off') });
+  }
+
+  // ── Builder: 滑动删除按钮 ─────────────────────────────
+
+  private async setHistoryMenuIncognito(enabled: boolean): Promise<void> {
+    await this.setIncognito(enabled);
+    this.historyMenuOpen = false;
+  }
+
+  // ── Build ──────────────────────────────────────────────
+
+  private onItemClick(item: PlaybackHistoryEntry): void {
+    const lower = item.uri.toLowerCase();
+    const audioExts = ['.mp3', '.flac', '.ogg', '.wav', '.aac', '.m4a', '.wma', '.opus'];
+    const isAudio = audioExts.some(e => lower.endsWith(e));
+    if (isAudio) {
+      const qi = new QueueItem(0, item.title, item.uri, '', '', item.artworkUrl);
+      PlaybackService.playList([qi], 0, true);
+      NavController.push('AudioPlayer');
+    } else {
+      const p: VideoNavParam = { uri: item.uri, title: item.title, artworkUrl: item.artworkUrl };
+      NavController.push('VideoPlayer', p);
+    }
   }
 }

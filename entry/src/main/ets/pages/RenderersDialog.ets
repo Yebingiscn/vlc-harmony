@@ -8,19 +8,26 @@ struct RendererItemRow {
   @Param displayName: string = '';
   @Param type: string = '';
   @Param isCurrent: boolean = false;
-  @Event onItemClick: () => void = () => {};
+  @Event onItemClick: () => void = () => {
+  };
 
   build() {
     Row() {
       Image(this.type === 'chromecast' ? $r('app.media.ic_dialog_renderer') : $r('app.media.ic_dialog_unknown'))
-        .width(36).height(36)
+        .width(36)
+        .height(36)
         .objectFit(ImageFit.Contain)
         .fillColor(this.isCurrent ? AppColors.orange500 : $r('app.color.list_title'))
         .margin({ left: 24 })
       Text(this.displayName)
         .fontSize(16)
         .fontColor(this.isCurrent ? AppColors.orange500 : $r('app.color.list_title'))
-        .margin({ left: 16, top: 16, bottom: 16, right: 16 })
+        .margin({
+          left: 16,
+          top: 16,
+          bottom: 16,
+          right: 16
+        })
         .layoutWeight(1)
         .onClick(() => this.onItemClick())
     }
@@ -38,13 +45,18 @@ struct RendererItemRow {
  */
 @ComponentV2
 export struct RenderersDialog {
-  @Event onClose: () => void = () => {};
-  @Event onConnect: (id: number) => void = () => {};
-  @Event onDisconnect: () => void = () => {};
-
   @Local renderers: RendererEntry[] = [];
   @Local currentId: number = -1;
   @Local hasRenderer: boolean = false;
+
+  @Event onClose: () => void = () => {
+  };
+
+  @Event onConnect: (id: number) => void = () => {
+  };
+
+  @Event onDisconnect: () => void = () => {
+  };
 
   aboutToAppear(): void {
     const svc = PlaybackService.getInstance();
@@ -52,7 +64,7 @@ export struct RenderersDialog {
     this.hasRenderer = svc.hasRenderer();
     svc.startRendererDiscovery().then((items: VlcRendererInfo[]) => {
       this.renderers = items.map((it: VlcRendererInfo) =>
-        new RendererEntry(it.handle, it.name, it.type));
+      new RendererEntry(it.handle, it.name, it.type));
       this.currentId = svc.getCurrentRendererHandle();
       this.hasRenderer = svc.hasRenderer();
     });
@@ -111,6 +123,7 @@ export class RendererEntry {
   id: number;
   displayName: string;
   type: string;
+
   constructor(id: number, displayName: string, type: string) {
     this.id = id;
     this.displayName = displayName;

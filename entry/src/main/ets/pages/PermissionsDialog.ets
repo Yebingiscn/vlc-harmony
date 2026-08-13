@@ -23,8 +23,6 @@ import { PermissionCoordinator } from '../common/data/PermissionCoordinator';
  */
 @ComponentV2
 export struct PermissionsDialog {
-  @Event onClose: () => void = () => {};
-
   /** 当前选中:0=没有文件权限,1=仅有常规媒体权限,2=完整访问权限。 */
   @Local selected: number = 0;
   /** 音频读取权限(READ_AUDIO)。 */
@@ -42,12 +40,146 @@ export struct PermissionsDialog {
   /** 阻止变更次数:每次 showWarning 自增,强制重渲染回弹 Radio 内部选中态。 */
   @Local blockVersion: number = 0;
 
+  private get hasMedia(): boolean {
+    return this.audioGranted || this.videoGranted;
+  }
+
+  @Event onClose: () => void = () => {
+  };
+
   async aboutToAppear(): Promise<void> {
     await this.refresh();
   }
 
-  private get hasMedia(): boolean {
-    return this.audioGranted || this.videoGranted;
+  build() {
+    Scroll() {
+      Column() {
+        // 主标题
+        Text($r('app.string.permissions'))
+          .fontSize(18)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.list_title'))
+          .width('100%')
+          .margin({ left: 16, top: 16 })
+
+        // ── 文件权限小节 ──
+        Text($r('app.string.manage_storage_permission'))
+          .fontSize(16)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(AppColors.orange500)
+          .width('100%')
+          .margin({ left: 16, top: 24 })
+
+        // 文件访问说明框(图标 + 文案按授权状态三态切换)
+        Row() {
+          Image(this.explanationState === 0
+            ? $r('app.media.ic_perm_all')
+            : (this.explanationState === 1 ? $r('app.media.ic_perm_media') : $r('app.media.ic_perm_none')))
+            .width(28).height(28)
+            .fillColor($r('app.color.list_title'))
+            .margin({ right: 16 })
+          Text(this.explanationState === 0
+            ? $r('app.string.permission_onboarding_perm_all')
+            : (this.explanationState === 1
+              ? $r('app.string.permission_onboarding_perm_media')
+              : $r('app.string.permission_expanation_no_allow')))
+            .fontSize(14)
+            .fontColor($r('app.color.list_title'))
+            .layoutWeight(1)
+            .lineHeight(20)
+        }
+        .width('100%')
+        .padding(16)
+        .alignItems(VerticalAlign.Center)
+        .backgroundColor($r('app.color.card_background'))
+        .borderRadius(8)
+        .margin({ left: 16, right: 16, top: 8 })
+
+        // 警告框(变更被阻止时滑入,对齐安卓 rounded_corners_permissions_warning + showWarning)
+        if (this.warnVisible) {
+          Text(this.warnText)
+            .fontSize(16)
+            .fontColor($r('app.color.list_title'))
+            .width('100%')
+            .padding(12)
+            .backgroundColor('#40ff0000')
+            .borderRadius(8)
+            .margin({
+              left: 16,
+              right: 16,
+              top: 16,
+              bottom: 8
+            })
+            .transition(TransitionEffect.translate({ y: 40 })
+              .combine(TransitionEffect.opacity(0))
+              .animation({ duration: 300, curve: Curve.EaseOut }))
+        }
+
+        // 单选:没有文件权限
+        // key 含 blockVersion:被阻止(showWarning)时强制重建 Radio,回弹选中态。
+        Row() {
+          Radio({ value: 'no', group: `perms_${this.blockVersion}` })
+            .checked(this.selected === 0)
+            .radioStyle({ checkedBackgroundColor: AppColors.orange500 })
+            .onChange((on: boolean) => {
+              if (on) {
+                this.onNoAccessClick();
+              }
+            })
+          Text($r('app.string.permission_no_access'))
+            .fontSize(16).fontColor($r('app.color.list_title')).margin({ left: 8 }).layoutWeight(1)
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 16 })
+        .alignItems(VerticalAlign.Center)
+
+        // 单选:仅有常规媒体权限
+        Row() {
+          Radio({ value: 'media', group: `perms_${this.blockVersion}` })
+            .checked(this.selected === 1)
+            .radioStyle({ checkedBackgroundColor: AppColors.orange500 })
+            .onChange((on: boolean) => {
+              if (on) {
+                this.onMediaClick();
+              }
+            })
+          Text($r('app.string.permission_media_title'))
+            .fontSize(16).fontColor($r('app.color.list_title')).margin({ left: 8 }).layoutWeight(1)
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 4 })
+        .alignItems(VerticalAlign.Center)
+
+        // 单选:完整访问权限
+        Row() {
+          Radio({ value: 'all', group: `perms_${this.blockVersion}` })
+            .checked(this.selected === 2)
+            .radioStyle({ checkedBackgroundColor: AppColors.orange500 })
+            .onChange((on: boolean) => {
+              if (on) {
+                this.onAllClick();
+              }
+            })
+          Text($r('app.string.permission_all_title'))
+            .fontSize(16).fontColor($r('app.color.list_title')).margin({ left: 8 }).layoutWeight(1)
+        }
+        .width('100%')
+        .padding({
+          left: 16,
+          right: 16,
+          top: 4,
+          bottom: 16
+        })
+        .alignItems(VerticalAlign.Center)
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .layoutWeight(1)
+    .scrollBar(BarState.Auto)
+    .backgroundColor($r('app.color.background_default'))
+    .borderRadius({ topLeft: 16, topRight: 16 })
   }
 
   /** 刷新所有权限状态并推导 选中态 / 说明框 / 警告文案。 */
@@ -117,117 +249,5 @@ export struct PermissionsDialog {
     } else {
       this.selected = 2;
     }
-  }
-
-  build() {
-    Scroll() {
-      Column() {
-        // 主标题
-        Text($r('app.string.permissions'))
-          .fontSize(18)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.list_title'))
-          .width('100%')
-          .margin({ left: 16, top: 16 })
-
-        // ── 文件权限小节 ──
-        Text($r('app.string.manage_storage_permission'))
-          .fontSize(16)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(AppColors.orange500)
-          .width('100%')
-          .margin({ left: 16, top: 24 })
-
-        // 文件访问说明框(图标 + 文案按授权状态三态切换)
-        Row() {
-          Image(this.explanationState === 0
-            ? $r('app.media.ic_perm_all')
-            : (this.explanationState === 1 ? $r('app.media.ic_perm_media') : $r('app.media.ic_perm_none')))
-            .width(28).height(28)
-            .fillColor($r('app.color.list_title'))
-            .margin({ right: 16 })
-          Text(this.explanationState === 0
-            ? $r('app.string.permission_onboarding_perm_all')
-            : (this.explanationState === 1
-              ? $r('app.string.permission_onboarding_perm_media')
-              : $r('app.string.permission_expanation_no_allow')))
-            .fontSize(14)
-            .fontColor($r('app.color.list_title'))
-            .layoutWeight(1)
-            .lineHeight(20)
-        }
-        .width('100%')
-        .padding(16)
-        .alignItems(VerticalAlign.Center)
-        .backgroundColor($r('app.color.card_background'))
-        .borderRadius(8)
-        .margin({ left: 16, right: 16, top: 8 })
-
-        // 警告框(变更被阻止时滑入,对齐安卓 rounded_corners_permissions_warning + showWarning)
-        if (this.warnVisible) {
-          Text(this.warnText)
-            .fontSize(16)
-            .fontColor($r('app.color.list_title'))
-            .width('100%')
-            .padding(12)
-            .backgroundColor('#40ff0000')
-            .borderRadius(8)
-            .margin({ left: 16, right: 16, top: 16, bottom: 8 })
-            .transition(TransitionEffect.translate({ y: 40 })
-              .combine(TransitionEffect.opacity(0))
-              .animation({ duration: 300, curve: Curve.EaseOut }))
-        }
-
-        // 单选:没有文件权限
-        // key 含 blockVersion:被阻止(showWarning)时强制重建 Radio,回弹选中态。
-        Row() {
-          Radio({ value: 'no', group: 'perms_no' })
-            .key(`radio_no_${this.blockVersion}`)
-            .checked(this.selected === 0)
-            .radioStyle({ checkedBackgroundColor: AppColors.orange500 })
-            .onChange((on: boolean) => { if (on) { this.onNoAccessClick(); } })
-          Text($r('app.string.permission_no_access'))
-            .fontSize(16).fontColor($r('app.color.list_title')).margin({ left: 8 }).layoutWeight(1)
-        }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 16 })
-        .alignItems(VerticalAlign.Center)
-
-        // 单选:仅有常规媒体权限
-        Row() {
-          Radio({ value: 'media', group: 'perms_media' })
-            .key(`radio_media_${this.blockVersion}`)
-            .checked(this.selected === 1)
-            .radioStyle({ checkedBackgroundColor: AppColors.orange500 })
-            .onChange((on: boolean) => { if (on) { this.onMediaClick(); } })
-          Text($r('app.string.permission_media_title'))
-            .fontSize(16).fontColor($r('app.color.list_title')).margin({ left: 8 }).layoutWeight(1)
-        }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 4 })
-        .alignItems(VerticalAlign.Center)
-
-        // 单选:完整访问权限
-        Row() {
-          Radio({ value: 'all', group: 'perms_all' })
-            .key(`radio_all_${this.blockVersion}`)
-            .checked(this.selected === 2)
-            .radioStyle({ checkedBackgroundColor: AppColors.orange500 })
-            .onChange((on: boolean) => { if (on) { this.onAllClick(); } })
-          Text($r('app.string.permission_all_title'))
-            .fontSize(16).fontColor($r('app.color.list_title')).margin({ left: 8 }).layoutWeight(1)
-        }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 4, bottom: 16 })
-        .alignItems(VerticalAlign.Center)
-      }
-      .width('100%')
-      .alignItems(HorizontalAlign.Start)
-    }
-    .width('100%')
-    .layoutWeight(1)
-    .scrollBar(BarState.Auto)
-    .backgroundColor($r('app.color.background_default'))
-    .borderRadius({ topLeft: 16, topRight: 16 })
   }
 }

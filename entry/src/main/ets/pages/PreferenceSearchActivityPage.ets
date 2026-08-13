@@ -28,7 +28,6 @@ export class PreferenceSearchVM {
   @Trace showTranslations: boolean = false;
   @Trace filteredItems: PreferenceItem[] = [];
   @Trace isEnglish: boolean = true;
-
   private dataset: PreferenceItem[] = [];
 
   load(): void {
@@ -36,7 +35,8 @@ export class PreferenceSearchVM {
     // PreferenceVisibilityManager.isPreferenceVisible 过滤。鸿蒙侧需等价偏好元数据源,这里用样例数据占位。
     this.dataset = [
       new PreferenceItem('auto_rescan', 'Auto rescan', 'Scan device for new media', 'Media library'),
-      new PreferenceItem('hardware_acceleration', 'Hardware Acceleration', 'Decoding: may improve performance', 'Video'),
+      new PreferenceItem('hardware_acceleration', 'Hardware Acceleration', 'Decoding: may improve performance',
+        'Video'),
       new PreferenceItem('equalizer', 'Equalizer', 'Audio equalizer presets', 'Extra settings'),
       new PreferenceItem('enable_playback_history', 'Playback history', 'Save all media played in History', 'History'),
       new PreferenceItem('screen_orientation', 'Video screen orientation', 'Screen orientation', 'Video'),

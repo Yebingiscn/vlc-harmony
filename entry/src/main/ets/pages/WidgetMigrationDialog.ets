@@ -1,4 +1,3 @@
-import { AppColors } from '../common/constants/AppConstants';
 
 /**
  * WidgetMigrationDialog —— 旧版小组件迁移提示静态信息 BottomSheet。
@@ -8,15 +7,20 @@ import { AppColors } from '../common/constants/AppConstants';
  */
 @ComponentV2
 export struct WidgetMigrationDialog {
-  @Event onClose: () => void = () => {};
+  @Event onClose: () => void = () => {
+  };
 
   build() {
     Scroll() {
       Column() {
         // 标题1
         Text($r('app.string.widget_old_text'))
-          .fontSize(18).fontWeight(FontWeight.Medium).fontColor('#FFFFFF')
-          .constraintSize({ minHeight: 56 }).padding({ left: 16, right: 16 }).width('100%')
+          .fontSize(18)
+          .fontWeight(FontWeight.Medium)
+          .fontColor('#FFFFFF')
+          .constraintSize({ minHeight: 56 })
+          .padding({ left: 16, right: 16 })
+          .width('100%')
 
         // 说明文1
         Text($r('app.string.widget_old_description_start'))
@@ -29,17 +33,28 @@ export struct WidgetMigrationDialog {
 
         // 标题2
         Text($r('app.string.whats_next'))
-          .fontSize(18).fontWeight(FontWeight.Medium).fontColor('#FFFFFF')
-          .constraintSize({ minHeight: 56 }).padding({ left: 16, right: 16 }).width('100%')
+          .fontSize(18)
+          .fontWeight(FontWeight.Medium)
+          .fontColor('#FFFFFF')
+          .constraintSize({ minHeight: 56 })
+          .padding({ left: 16, right: 16 })
+          .width('100%')
 
         // 说明文2
         Text($r('app.string.widget_old_description_end'))
           .fontSize(14).fontColor('#FFFFFF')
-          .margin({ left: 16, top: 8, right: 16, bottom: 16 }).width('100%')
+          .margin({
+            left: 16,
+            top: 8,
+            right: 16,
+            bottom: 16
+          }).width('100%')
       }
       .width('100%').alignItems(HorizontalAlign.Start)
     }
-    .width('100%').layoutWeight(1).scrollBar(BarState.Auto)
+    .width('100%')
+    .layoutWeight(1)
+    .scrollBar(BarState.Auto)
     .backgroundColor($r('app.color.background_default'))
     .borderRadius({ topLeft: 16, topRight: 16 })
   }

@@ -7,17 +7,18 @@ import { AppColors } from '../common/constants/AppConstants';
  */
 @ComponentV2
 export struct AutoInfoDialog {
-  @Event onClose: () => void = () => {};
-
   @Local podcastHelpText: string = '';
+
+  @Event onClose: () => void = () => {
+  };
 
   aboutToAppear(): void {
     // podcast_mode_help 的 %s 用 podcast_mode_genres("audiobook(s), podcast, speech, or vocal")格式化。
     this.podcastHelpText =
       'Podcast controls appear when playing a single track which meets one of the following criteria:\n' +
-      '\t• Length greater than 60 min\n' +
-      '\t• Length greater than 15 min with no album name\n' +
-      '\t• Genre is audiobook(s), podcast, speech, or vocal';
+        '\t• Length greater than 60 min\n' +
+        '\t• Length greater than 15 min with no album name\n' +
+        '\t• Genre is audiobook(s), podcast, speech, or vocal';
   }
 
   @Builder

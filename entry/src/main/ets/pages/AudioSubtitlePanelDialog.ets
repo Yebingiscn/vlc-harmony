@@ -26,6 +26,7 @@ import { VlcTrackInfo } from 'libvlcnapi.so';
 class VlcTrack {
   id: number;
   name: string;
+
   constructor(id: number, name: string) {
     this.id = id;
     this.name = name;
@@ -36,7 +37,8 @@ class VlcTrack {
 struct TrackRow {
   @Param name: ResourceStr = '';
   @Param selected: boolean = false;
-  @Event onRowClick: () => void = () => {};
+  @Event onRowClick: () => void = () => {
+  };
 
   build() {
     Row() {
@@ -44,12 +46,16 @@ struct TrackRow {
         .fontSize(14)
         .fontColor(this.selected ? AppColors.orange500 : $r('app.color.list_title'))
         .layoutWeight(1)
-        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
       if (this.selected) {
         Image($r('app.media.ic_check_large')).width(20).height(20).fillColor(AppColors.orange500)
       }
     }
-    .width('100%').height(44).padding({ left: 24, right: 16 }).alignItems(VerticalAlign.Center)
+    .width('100%')
+    .height(44)
+    .padding({ left: 24, right: 16 })
+    .alignItems(VerticalAlign.Center)
     .onClick(() => this.onRowClick())
   }
 }
@@ -61,8 +67,10 @@ struct TrackSection {
   @Param emptyText: ResourceStr = '';
   @Param tracks: VlcTrack[] = [];
   @Param selectedId: number = -1;
-  @Event onTrackClick: (id: number) => void = () => {};
   @Local collapsed: boolean = true;
+
+  @Event onTrackClick: (id: number) => void = () => {
+  };
 
   build() {
     Column() {
@@ -70,9 +78,12 @@ struct TrackSection {
         Text(this.title).fontSize(16).fontColor($r('app.color.list_title'))
           .margin({ left: 16, top: 16, right: 8 }).layoutWeight(1)
         if (this.showMore && this.tracks.length > 0) {
-          Image($r('app.media.ic_collapse_arrow')).width(24).height(24)
+          Image($r('app.media.ic_collapse_arrow'))
+            .width(24)
+            .height(24)
             .fillColor($r('app.color.list_title'))
-            .padding(8).margin({ right: 8 })
+            .padding(8)
+            .margin({ right: 8 })
             .rotate({ angle: this.collapsed ? 0 : 180 })
             .onClick(() => this.collapsed = !this.collapsed)
         }
@@ -109,7 +120,13 @@ struct MetaRow {
       Text(this.value).fontSize(13).fontColor($r('app.color.list_title'))
         .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
     }
-    .width('100%').padding({ left: 24, right: 24, top: 6, bottom: 6 })
+    .width('100%')
+    .padding({
+      left: 24,
+      right: 24,
+      top: 6,
+      bottom: 6
+    })
   }
 }
 
@@ -130,16 +147,6 @@ const STEP_10_MS_US: number = 10_000;
 
 @ComponentV2
 export struct AudioSubtitlePanelDialog {
-  @Event onClose: () => void = () => {};
-  /** 切换轨道但保留 sheet(让用户多次试听)。 */
-  @Event onTrackChange: (id: number, type: string) => void = () => {};
-  /** 设置字幕延迟(单位:微秒)。host 应调用 PlaybackService.setSpuDelay 并回写 spuDelayUs。 */
-  @Event onSetSpuDelay: (us: number) => void = () => {};
-  /** 设置音频延迟(单位:微秒)。host 应调用 PlaybackService.setAudioDelay 并回写 audioDelayUs。 */
-  @Event onSetAudioDelay: (us: number) => void = () => {};
-  @Event onPickSubtitle: () => void = () => {};
-  @Event onDownloadSubtitle: () => void = () => {};
-
   // 当前音频元数据(由 VideoPlayerPage 注入,与 VideoInfoDialog 同源)。
   @Require @Param audioCodec: string = '';
   @Require @Param audioLang: string = '';
@@ -150,13 +157,33 @@ export struct AudioSubtitlePanelDialog {
   @Param spuDelayUs: number = 0;
   /** 当前音频延迟(微秒)。 */
   @Param audioDelayUs: number = 0;
-
   @Local audioTracks: VlcTrack[] = [];
   @Local subtitleTracks: VlcTrack[] = [];
   @Local selectedAudio: number = -1;
   @Local selectedSubtitle: number = -1;
   /** 子视图切换;默认在主视图。 */
   @Local view: 'main' | 'subtitleDelay' | 'audioDelay' = 'main';
+
+  @Event onClose: () => void = () => {
+  };
+
+  /** 切换轨道但保留 sheet(让用户多次试听)。 */
+  @Event onTrackChange: (id: number, type: string) => void = () => {
+  };
+
+  /** 设置字幕延迟(单位:微秒)。host 应调用 PlaybackService.setSpuDelay 并回写 spuDelayUs。 */
+  @Event onSetSpuDelay: (us: number) => void = () => {
+  };
+
+  /** 设置音频延迟(单位:微秒)。host 应调用 PlaybackService.setAudioDelay 并回写 audioDelayUs。 */
+  @Event onSetAudioDelay: (us: number) => void = () => {
+  };
+
+  @Event onPickSubtitle: () => void = () => {
+  };
+
+  @Event onDownloadSubtitle: () => void = () => {
+  };
 
   aboutToAppear(): void {
     // 防御：bindSheet 可能在某些场景下复用 Dialog 实例(而非销毁重建),
@@ -278,7 +305,8 @@ export struct AudioSubtitlePanelDialog {
             .fontColor(this.spuDelayUs === 0 ? $r('app.color.list_title') : AppColors.orange500)
           Blank().layoutWeight(1)
         }
-        .width('100%').height(110)
+        .width('100%')
+        .height(110)
         .backgroundColor($r('app.color.card_background'))
         .borderRadius(12)
         .margin({ left: 20, right: 20, top: 24 })
@@ -308,31 +336,48 @@ export struct AudioSubtitlePanelDialog {
         // 步进按钮 — 直接 inline 4 个 Button,每个 .onClick 闭包捕获 this。
         Row({ space: 12 }) {
           Button('-100ms')
-            .type(ButtonType.Normal).borderRadius(8)
-            .backgroundColor($r('app.color.card_background')).fontColor($r('app.color.list_title'))
-            .fontSize(13).height(40).layoutWeight(1)
+            .type(ButtonType.Normal)
+            .borderRadius(8)
+            .backgroundColor($r('app.color.card_background'))
+            .fontColor($r('app.color.list_title'))
+            .fontSize(13)
+            .height(40)
+            .layoutWeight(1)
             .onClick((): void => this.onSetSpuDelay(this.clampDelay(this.spuDelayUs - STEP_100_MS_US)))
           Button('-10ms')
-            .type(ButtonType.Normal).borderRadius(8)
-            .backgroundColor($r('app.color.card_background')).fontColor($r('app.color.list_title'))
-            .fontSize(13).height(40).layoutWeight(1)
+            .type(ButtonType.Normal)
+            .borderRadius(8)
+            .backgroundColor($r('app.color.card_background'))
+            .fontColor($r('app.color.list_title'))
+            .fontSize(13)
+            .height(40)
+            .layoutWeight(1)
             .onClick((): void => this.onSetSpuDelay(this.clampDelay(this.spuDelayUs - STEP_10_MS_US)))
           Button('+10ms')
-            .type(ButtonType.Normal).borderRadius(8)
-            .backgroundColor($r('app.color.card_background')).fontColor($r('app.color.list_title'))
-            .fontSize(13).height(40).layoutWeight(1)
+            .type(ButtonType.Normal)
+            .borderRadius(8)
+            .backgroundColor($r('app.color.card_background'))
+            .fontColor($r('app.color.list_title'))
+            .fontSize(13)
+            .height(40)
+            .layoutWeight(1)
             .onClick((): void => this.onSetSpuDelay(this.clampDelay(this.spuDelayUs + STEP_10_MS_US)))
           Button('+100ms')
-            .type(ButtonType.Normal).borderRadius(8)
-            .backgroundColor($r('app.color.card_background')).fontColor($r('app.color.list_title'))
-            .fontSize(13).height(40).layoutWeight(1)
+            .type(ButtonType.Normal)
+            .borderRadius(8)
+            .backgroundColor($r('app.color.card_background'))
+            .fontColor($r('app.color.list_title'))
+            .fontSize(13)
+            .height(40)
+            .layoutWeight(1)
             .onClick((): void => this.onSetSpuDelay(this.clampDelay(this.spuDelayUs + STEP_100_MS_US)))
         }
         .width('100%').padding({ left: 20, right: 20, top: 24 })
 
         // 重置
         Button('重置')
-          .width(120).height(40)
+          .width(120)
+          .height(40)
           .type(ButtonType.Capsule)
           .backgroundColor($r('app.color.card_background'))
           .fontColor($r('app.color.list_title'))
@@ -365,7 +410,8 @@ export struct AudioSubtitlePanelDialog {
             .fontColor(this.audioDelayUs === 0 ? $r('app.color.list_title') : AppColors.orange500)
           Blank().layoutWeight(1)
         }
-        .width('100%').height(110)
+        .width('100%')
+        .height(110)
         .backgroundColor($r('app.color.card_background'))
         .borderRadius(12)
         .margin({ left: 20, right: 20, top: 24 })
@@ -395,31 +441,48 @@ export struct AudioSubtitlePanelDialog {
         // 步进按钮 — 直接 inline 4 个 Button,每个 .onClick 闭包捕获 this。
         Row({ space: 12 }) {
           Button('-100ms')
-            .type(ButtonType.Normal).borderRadius(8)
-            .backgroundColor($r('app.color.card_background')).fontColor($r('app.color.list_title'))
-            .fontSize(13).height(40).layoutWeight(1)
+            .type(ButtonType.Normal)
+            .borderRadius(8)
+            .backgroundColor($r('app.color.card_background'))
+            .fontColor($r('app.color.list_title'))
+            .fontSize(13)
+            .height(40)
+            .layoutWeight(1)
             .onClick((): void => this.onSetAudioDelay(this.clampDelay(this.audioDelayUs - STEP_100_MS_US)))
           Button('-10ms')
-            .type(ButtonType.Normal).borderRadius(8)
-            .backgroundColor($r('app.color.card_background')).fontColor($r('app.color.list_title'))
-            .fontSize(13).height(40).layoutWeight(1)
+            .type(ButtonType.Normal)
+            .borderRadius(8)
+            .backgroundColor($r('app.color.card_background'))
+            .fontColor($r('app.color.list_title'))
+            .fontSize(13)
+            .height(40)
+            .layoutWeight(1)
             .onClick((): void => this.onSetAudioDelay(this.clampDelay(this.audioDelayUs - STEP_10_MS_US)))
           Button('+10ms')
-            .type(ButtonType.Normal).borderRadius(8)
-            .backgroundColor($r('app.color.card_background')).fontColor($r('app.color.list_title'))
-            .fontSize(13).height(40).layoutWeight(1)
+            .type(ButtonType.Normal)
+            .borderRadius(8)
+            .backgroundColor($r('app.color.card_background'))
+            .fontColor($r('app.color.list_title'))
+            .fontSize(13)
+            .height(40)
+            .layoutWeight(1)
             .onClick((): void => this.onSetAudioDelay(this.clampDelay(this.audioDelayUs + STEP_10_MS_US)))
           Button('+100ms')
-            .type(ButtonType.Normal).borderRadius(8)
-            .backgroundColor($r('app.color.card_background')).fontColor($r('app.color.list_title'))
-            .fontSize(13).height(40).layoutWeight(1)
+            .type(ButtonType.Normal)
+            .borderRadius(8)
+            .backgroundColor($r('app.color.card_background'))
+            .fontColor($r('app.color.list_title'))
+            .fontSize(13)
+            .height(40)
+            .layoutWeight(1)
             .onClick((): void => this.onSetAudioDelay(this.clampDelay(this.audioDelayUs + STEP_100_MS_US)))
         }
         .width('100%').padding({ left: 20, right: 20, top: 24 })
 
         // 重置
         Button('重置')
-          .width(120).height(40)
+          .width(120)
+          .height(40)
           .type(ButtonType.Capsule)
           .backgroundColor($r('app.color.card_background'))
           .fontColor($r('app.color.list_title'))
@@ -439,12 +502,14 @@ export struct AudioSubtitlePanelDialog {
   private topBar(title: string, onBack: () => void): void {
     Row() {
       Image($r('app.media.ic_arrow_back'))
-        .width(28).height(28)
+        .width(28)
+        .height(28)
         .fillColor($r('app.color.list_title'))
         .padding(2)
         .onClick(() => onBack())
       Text(title)
-        .fontSize(18).fontWeight(600)
+        .fontSize(18)
+        .fontWeight(600)
         .fontColor($r('app.color.list_title'))
         .layoutWeight(1)
         .textAlign(TextAlign.Center)
@@ -467,7 +532,9 @@ export struct AudioSubtitlePanelDialog {
         Image($r('app.media.ic_arrow_right')).width(20).height(20)
           .fillColor('#9E9E9E').margin({ left: 8 })
       }
-      .width('100%').height(44).padding({ left: 24, right: 16 })
+      .width('100%')
+      .height(44)
+      .padding({ left: 24, right: 16 })
       .alignItems(VerticalAlign.Center)
       .onClick(() => {
         this.view = 'subtitleDelay';
@@ -489,7 +556,9 @@ export struct AudioSubtitlePanelDialog {
         Image($r('app.media.ic_arrow_right')).width(20).height(20)
           .fillColor('#9E9E9E').margin({ left: 8 })
       }
-      .width('100%').height(44).padding({ left: 24, right: 16 })
+      .width('100%')
+      .height(44)
+      .padding({ left: 24, right: 16 })
       .alignItems(VerticalAlign.Center)
       .onClick(() => {
         this.view = 'audioDelay';
@@ -514,7 +583,13 @@ export struct AudioSubtitlePanelDialog {
       Text(title).fontSize(15).fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.list_title'))
     }
-    .width('100%').padding({ left: 24, top: 16, bottom: 4, right: 16 })
+    .width('100%')
+    .padding({
+      left: 24,
+      top: 16,
+      bottom: 4,
+      right: 16
+    })
   }
 
   @Builder
@@ -525,7 +600,9 @@ export struct AudioSubtitlePanelDialog {
       Text(title).fontSize(15).fontColor($r('app.color.list_title')).layoutWeight(1)
       Image($r('app.media.ic_arrow_right')).width(20).height(20).fillColor('#9E9E9E')
     }
-    .width('100%').height(52).padding({ left: 24, right: 16 })
+    .width('100%')
+    .height(52)
+    .padding({ left: 24, right: 16 })
     .alignItems(VerticalAlign.Center)
     .onClick(() => onTap())
   }

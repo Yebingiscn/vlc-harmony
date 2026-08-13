@@ -1,8 +1,8 @@
 import {
   appendSleepDigit,
   appendSleepMinuteShortcut,
-  sleepDigitsToParts,
   sleepDigitsToMillis,
+  sleepDigitsToParts,
   sleepMillisToDigits,
 } from '../common/models/SleepTimerInputModels';
 
@@ -25,14 +25,9 @@ import {
  */
 @ComponentV2
 export struct SleepTimerDialog {
-  @Event onClose: () => void = () => {};
-  @Event onClear: () => void = () => {};
-  @Event onConfirm: (millis: number, waitForMediaEnd: boolean, resetOnInteraction: boolean) => void = () => {};
-
   @Param initialMillis: number = 0;
   @Param initialWaitMediaEnd: boolean = false;
   @Param initialResetOnInteraction: boolean = false;
-
   /** 原始数字缓冲；显示值与总毫秒数均由它推导，避免两份状态不同步。 */
   @Local digits: string = '';
   @Local totalMillis: number = 0;
@@ -40,63 +35,21 @@ export struct SleepTimerDialog {
   @Local waitChecked: boolean = false;
   @Local resetChecked: boolean = false;
 
+  @Event onClose: () => void = () => {
+  };
+
+  @Event onClear: () => void = () => {
+  };
+
+  @Event onConfirm: (millis: number, waitForMediaEnd: boolean, resetOnInteraction: boolean) => void = () => {
+  };
+
   /** 每次打开均从设置页传入的保存值初始化，避免沿用上一次抽屉的临时输入。 */
   aboutToAppear(): void {
     this.waitChecked = this.initialWaitMediaEnd;
     this.resetChecked = this.initialResetOnInteraction;
     this.digits = sleepMillisToDigits(this.initialMillis);
     this.recompute();
-  }
-
-  /** 根据数字缓冲同步刷新格式化时间和供父组件持久化的毫秒值。 */
-  private recompute(): void {
-    this.totalMillis = sleepDigitsToMillis(this.digits);
-    this.hasInput = this.digits.length > 0;
-  }
-
-  /** 追加一个普通数字；达到四位时 appendSleepDigit 会保留原输入。 */
-  private pressDigit(digit: string): void {
-    this.digits = appendSleepDigit(this.digits, digit);
-    this.recompute();
-  }
-
-  /** 追加 `00` 或 `30` 分钟快捷键，不会替换已输入的分钟。 */
-  private pressMinutes(minute: string): void {
-    this.digits = appendSleepMinuteShortcut(this.digits, minute);
-    this.recompute();
-  }
-
-  /** 与 Android 的退格键一致：一次只移除最后一个数字。 */
-  private deleteLast(): void {
-    if (!this.hasInput) {
-      return;
-    }
-    this.digits = this.digits.substring(0, this.digits.length - 1);
-    this.recompute();
-  }
-
-  /**
-   * 使用资源模板输出时间；VLC 的计时器单位固定采用 h/m 缩写，
-   * 不随应用语言写成“小时/分钟”或“hour/minute”。
-   */
-  private displayTime(): ResourceStr {
-    const parts = sleepDigitsToParts(this.digits);
-    if (parts.hours === 0) {
-      return $r('app.string.sleep_timer_minutes', parts.minutes);
-    }
-    return $r('app.string.sleep_timer_hours_minutes', parts.hours, parts.minutes);
-  }
-
-  /**
-   * Sheet 内部直接修改 @Local 状态。不要把闭包穿过 @Builder 再作为 onClick 回调，
-   * 否则部分 ArkUI 版本不会把这次点击绑定到当前组件实例。
-   */
-  private toggleOption(option: number): void {
-    if (option === 0) {
-      this.waitChecked = !this.waitChecked;
-      return;
-    }
-    this.resetChecked = !this.resetChecked;
   }
 
   /** 数字和分钟快捷键共用的键盘单元；minute 非空时走快捷键逻辑。 */
@@ -175,10 +128,29 @@ export struct SleepTimerDialog {
 
       // 四行三列的 Android 时间键盘；:00/:30 仍占用最后一行两侧的位置。
       Column() {
-        Row() { this.digitKey('1'); this.digitKey('2'); this.digitKey('3'); }.width('100%')
-        Row() { this.digitKey('4'); this.digitKey('5'); this.digitKey('6'); }.width('100%')
-        Row() { this.digitKey('7'); this.digitKey('8'); this.digitKey('9'); }.width('100%')
-        Row() { this.digitKey(':00', '00'); this.digitKey('0'); this.digitKey(':30', '30'); }.width('100%')
+        Row() {
+          this.digitKey('1');
+          this.digitKey('2');
+          this.digitKey('3');
+        }.width('100%')
+
+        Row() {
+          this.digitKey('4');
+          this.digitKey('5');
+          this.digitKey('6');
+        }.width('100%')
+
+        Row() {
+          this.digitKey('7');
+          this.digitKey('8');
+          this.digitKey('9');
+        }.width('100%')
+
+        Row() {
+          this.digitKey(':00', '00');
+          this.digitKey('0');
+          this.digitKey(':30', '30');
+        }.width('100%')
       }
       .width('100%')
       .margin({ bottom: 22 })
@@ -211,5 +183,56 @@ export struct SleepTimerDialog {
     .backgroundColor($r('sys.color.background_primary'))
     .borderRadius({ topLeft: 36, topRight: 36 })
     .alignItems(HorizontalAlign.Center)
+  }
+
+  /** 根据数字缓冲同步刷新格式化时间和供父组件持久化的毫秒值。 */
+  private recompute(): void {
+    this.totalMillis = sleepDigitsToMillis(this.digits);
+    this.hasInput = this.digits.length > 0;
+  }
+
+  /** 追加一个普通数字；达到四位时 appendSleepDigit 会保留原输入。 */
+  private pressDigit(digit: string): void {
+    this.digits = appendSleepDigit(this.digits, digit);
+    this.recompute();
+  }
+
+  /** 追加 `00` 或 `30` 分钟快捷键，不会替换已输入的分钟。 */
+  private pressMinutes(minute: string): void {
+    this.digits = appendSleepMinuteShortcut(this.digits, minute);
+    this.recompute();
+  }
+
+  /** 与 Android 的退格键一致：一次只移除最后一个数字。 */
+  private deleteLast(): void {
+    if (!this.hasInput) {
+      return;
+    }
+    this.digits = this.digits.substring(0, this.digits.length - 1);
+    this.recompute();
+  }
+
+  /**
+   * 使用资源模板输出时间；VLC 的计时器单位固定采用 h/m 缩写，
+   * 不随应用语言写成“小时/分钟”或“hour/minute”。
+   */
+  private displayTime(): ResourceStr {
+    const parts = sleepDigitsToParts(this.digits);
+    if (parts.hours === 0) {
+      return $r('app.string.sleep_timer_minutes', parts.minutes);
+    }
+    return $r('app.string.sleep_timer_hours_minutes', parts.hours, parts.minutes);
+  }
+
+  /**
+   * Sheet 内部直接修改 @Local 状态。不要把闭包穿过 @Builder 再作为 onClick 回调，
+   * 否则部分 ArkUI 版本不会把这次点击绑定到当前组件实例。
+   */
+  private toggleOption(option: number): void {
+    if (option === 0) {
+      this.waitChecked = !this.waitChecked;
+      return;
+    }
+    this.resetChecked = !this.resetChecked;
   }
 }

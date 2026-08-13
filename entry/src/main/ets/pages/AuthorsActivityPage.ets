@@ -5,6 +5,7 @@ import { AppColors, AppDimens } from '../common/constants/AppConstants';
 /** 作者列表项(对应 authors.json 的 String,样例数据)。 */
 export class AuthorEntry {
   name: string;
+
   constructor(name: string) {
     this.name = name;
   }

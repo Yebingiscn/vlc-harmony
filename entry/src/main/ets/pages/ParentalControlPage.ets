@@ -68,6 +68,224 @@ export struct ParentalControlPage {
     this.state = this.param.action === ParentalControlAction.MANAGE ? PageState.SETTINGS : PageState.VERIFY_PIN;
   }
 
+  build() {
+    NavDestination() {
+      Column() {
+        Row() {
+          Image($r('app.media.ic_arrow_back'))
+            .width(24)
+            .height(24)
+            .objectFit(ImageFit.Contain)
+            .fillColor($r('app.color.list_title'))
+            .margin({ left: 12 })
+            .onClick(() => NavController.pop())
+          Text($r('app.string.parental_control'))
+            .fontSize(20)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('app.color.orange500'))
+            .margin({ left: AppDimens.kl_half })
+            .layoutWeight(1)
+            .maxLines(1)
+          Image($r('app.media.ic_search'))
+            .width(28).height(28)
+            .fillColor($r('app.color.list_title'))
+            .margin({ right: 16 })
+        }
+        .width('100%')
+        .height(92)
+        .alignItems(VerticalAlign.Center)
+        .padding({
+          left: 4,
+          right: 4,
+          top: 38,
+          bottom: 4
+        })
+        .backgroundColor($r('app.color.background_default'))
+
+        if (this.isPinState()) {
+          Column() {
+            Text(this.getReasonText())
+              .fontSize(16)
+              .fontColor($r('app.color.list_subtitle'))
+              .textAlign(TextAlign.Center)
+              .margin({ top: 32, left: 32, right: 32 })
+
+            Text(this.getInstruction())
+              .fontSize(22)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.list_title'))
+              .textAlign(TextAlign.Center)
+              .margin({ top: 12, left: 32, right: 32 })
+
+            Stack({ alignContent: Alignment.Center }) {
+              Row({ space: 12 }) {
+                Text(this.vm.pin1.length > 0 ? '•' : '')
+                  .textAlign(TextAlign.Center)
+                  .fontSize(30)
+                  .fontColor($r('app.color.list_title'))
+                  .layoutWeight(1)
+                  .aspectRatio(1)
+                  .backgroundColor($r('app.color.card_background'))
+                  .borderRadius(8)
+                Text(this.vm.pin2.length > 0 ? '•' : '')
+                  .textAlign(TextAlign.Center)
+                  .fontSize(30)
+                  .fontColor($r('app.color.list_title'))
+                  .layoutWeight(1)
+                  .aspectRatio(1)
+                  .backgroundColor($r('app.color.card_background'))
+                  .borderRadius(8)
+                Text(this.vm.pin3.length > 0 ? '•' : '')
+                  .textAlign(TextAlign.Center)
+                  .fontSize(30)
+                  .fontColor($r('app.color.list_title'))
+                  .layoutWeight(1)
+                  .aspectRatio(1)
+                  .backgroundColor($r('app.color.card_background'))
+                  .borderRadius(8)
+                Text(this.vm.pin4.length > 0 ? '•' : '')
+                  .textAlign(TextAlign.Center)
+                  .fontSize(30)
+                  .fontColor($r('app.color.list_title'))
+                  .layoutWeight(1)
+                  .aspectRatio(1)
+                  .backgroundColor($r('app.color.card_background'))
+                  .borderRadius(8)
+              }
+              .width('100%')
+              .padding({ left: 16, right: 16 })
+
+              TextInput({ text: this.pinInput })
+                .id('pin-input')
+                .type(InputType.NUMBER_PASSWORD)
+                .maxLength(4)
+                .showPasswordIcon(false)
+                .defaultFocus(true)
+                .width('100%')
+                .height('100%')
+                .opacity(0.01)
+                .backgroundColor(Color.Transparent)
+                .onAppear(() => this.focusPinInput())
+                .onChange((value: string) => this.onPinInput(value))
+            }
+            .width('100%')
+            .height(72)
+            .margin({ top: 48 })
+
+            Blank()
+
+            Row() {
+              Button($r('app.string.cancel'))
+                .type(ButtonType.Normal)
+                .backgroundColor(Color.Transparent)
+                .fontColor($r('app.color.orange500'))
+                .margin({ left: 16 })
+                .onClick(() => NavController.pop())
+              if (this.state === PageState.VERIFY_PIN || this.state === PageState.VERIFY_WRONG) {
+                Button($r('app.string.skip'))
+                  .type(ButtonType.Normal)
+                  .backgroundColor(Color.Transparent)
+                  .fontColor($r('app.color.orange500'))
+                  .margin({ right: 16 })
+                  .onClick(() => {
+                    this.state = PageState.SETTINGS;
+                  })
+              }
+            }
+            .width('100%')
+            .justifyContent(FlexAlign.SpaceBetween)
+            .padding({ bottom: 16 })
+          }
+          .width('100%')
+          .layoutWeight(1)
+        } else {
+          Column() {
+            // 更改密码
+            Row() {
+              Text($r('app.string.change_password'))
+                .fontSize(16)
+                .fontColor($r('app.color.list_title'))
+                .layoutWeight(1)
+            }
+            .width('100%')
+            .padding({
+              left: 16,
+              right: 16,
+              top: 32,
+              bottom: 32
+            })
+            .onClick(async () => {
+              const stored = await Settings.getString(Settings.KEY_SAFE_MODE_PIN, '');
+              this.state = stored.length > 0 ? PageState.CHANGE_VERIFY : PageState.CREATE_PIN;
+              this.clearPinInput();
+            })
+
+            Row() {
+              Text($r('app.string.restrict_settings_access'))
+                .fontSize(16)
+                .fontColor($r('app.color.list_title'))
+                .layoutWeight(1)
+              Toggle({ type: ToggleType.Checkbox, isOn: this.restrictSettings })
+                .selectedColor($r('app.color.orange500'))
+                .onChange((on: boolean) => {
+                  this.restrictSettings = on;
+                  Settings.put('restrict_settings', on);
+                })
+            }
+            .width('100%')
+            .padding({
+              left: 16,
+              right: 12,
+              top: 24,
+              bottom: 32
+            })
+            .alignItems(VerticalAlign.Center)
+
+            Row() {
+              Column() {
+                Text($r('app.string.safe_mode'))
+                  .fontSize(16)
+                  .fontColor($r('app.color.list_title'))
+                Text($r('app.string.safe_mode_summary'))
+                  .fontSize(13)
+                  .fontColor($r('app.color.list_subtitle'))
+                  .margin({ top: 4 })
+                  .maxLines(2)
+              }
+              .layoutWeight(1)
+              .alignItems(HorizontalAlign.Start)
+
+              Toggle({ type: ToggleType.Checkbox, isOn: this.safeMode })
+                .selectedColor($r('app.color.orange500'))
+                .margin({ left: 16 })
+                .onChange((on: boolean) => {
+                  this.safeMode = on;
+                  Settings.put('safe_mode', on);
+                })
+            }
+            .width('100%')
+            .padding({
+              left: 16,
+              right: 12,
+              top: 24,
+              bottom: 16
+            })
+            .alignItems(VerticalAlign.Center)
+          }
+          .width('100%')
+        }
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor($r('app.color.background_default'))
+    }
+    .hideTitleBar(true)
+    .onBackPressed(() => {
+      NavController.pop();
+      return true;
+    })
+  }
+
   private isPinState(): boolean {
     return this.state !== PageState.SETTINGS;
   }
@@ -83,23 +301,37 @@ export struct ParentalControlPage {
   }
 
   private getReasonText(): Resource {
-    if (this.isCreateFlow()) return $r('app.string.pin_code_reason_create');
-    if (this.isChangeFlow()) return $r('app.string.pin_code_reason_modify');
+    if (this.isCreateFlow()) {
+      return $r('app.string.pin_code_reason_create');
+    }
+    if (this.isChangeFlow()) {
+      return $r('app.string.pin_code_reason_modify');
+    }
     return $r('app.string.pin_code_reason_check');
   }
 
   private getInstruction(): Resource {
     switch (this.state) {
-      case PageState.CREATE_PIN: return $r('app.string.safe_mode_new_pin');
-      case PageState.CREATE_CONFIRM: return $r('app.string.safe_mode_re_pin');
-      case PageState.CREATE_NO_MATCH: return $r('app.string.safe_mode_no_match');
-      case PageState.VERIFY_PIN: return $r('app.string.safe_mode_pin');
-      case PageState.VERIFY_WRONG: return $r('app.string.safe_mode_invalid_pin');
-      case PageState.CHANGE_VERIFY: return $r('app.string.safe_mode_pin');
-      case PageState.CHANGE_NEW: return $r('app.string.safe_mode_new_pin');
-      case PageState.CHANGE_CONFIRM: return $r('app.string.safe_mode_re_pin');
-      case PageState.CHANGE_NO_MATCH: return $r('app.string.safe_mode_no_match');
-      default: return $r('app.string.safe_mode_pin');
+      case PageState.CREATE_PIN:
+        return $r('app.string.safe_mode_new_pin');
+      case PageState.CREATE_CONFIRM:
+        return $r('app.string.safe_mode_re_pin');
+      case PageState.CREATE_NO_MATCH:
+        return $r('app.string.safe_mode_no_match');
+      case PageState.VERIFY_PIN:
+        return $r('app.string.safe_mode_pin');
+      case PageState.VERIFY_WRONG:
+        return $r('app.string.safe_mode_invalid_pin');
+      case PageState.CHANGE_VERIFY:
+        return $r('app.string.safe_mode_pin');
+      case PageState.CHANGE_NEW:
+        return $r('app.string.safe_mode_new_pin');
+      case PageState.CHANGE_CONFIRM:
+        return $r('app.string.safe_mode_re_pin');
+      case PageState.CHANGE_NO_MATCH:
+        return $r('app.string.safe_mode_no_match');
+      default:
+        return $r('app.string.safe_mode_pin');
     }
   }
 
@@ -107,7 +339,9 @@ export struct ParentalControlPage {
     let digits = '';
     for (let i = 0; i < value.length && digits.length < 4; i++) {
       const char = value.charAt(i);
-      if (char >= '0' && char <= '9') digits += char;
+      if (char >= '0' && char <= '9') {
+        digits += char;
+      }
     }
     this.pinInput = digits;
     this.vm.pin1 = digits.charAt(0);
@@ -177,7 +411,9 @@ export struct ParentalControlPage {
         } else {
           this.state = PageState.CREATE_NO_MATCH;
           this.pendingPin = '';
-          setTimeout(() => { this.state = PageState.CREATE_PIN; }, 1500);
+          setTimeout(() => {
+            this.state = PageState.CREATE_PIN;
+          }, 1500);
         }
         break;
       case PageState.VERIFY_PIN:
@@ -186,7 +422,11 @@ export struct ParentalControlPage {
           await this.completeProtectedAction();
         } else {
           this.state = PageState.VERIFY_WRONG;
-          setTimeout(() => { if (this.state === PageState.VERIFY_WRONG) this.state = PageState.VERIFY_PIN; }, 1500);
+          setTimeout(() => {
+            if (this.state === PageState.VERIFY_WRONG) {
+              this.state = PageState.VERIFY_PIN;
+            }
+          }, 1500);
         }
         break;
       case PageState.CHANGE_VERIFY:
@@ -194,7 +434,9 @@ export struct ParentalControlPage {
           this.state = PageState.CHANGE_NEW;
         } else {
           this.state = PageState.VERIFY_WRONG;
-          setTimeout(() => { this.state = PageState.CHANGE_VERIFY; }, 1500);
+          setTimeout(() => {
+            this.state = PageState.CHANGE_VERIFY;
+          }, 1500);
         }
         break;
       case PageState.CHANGE_NEW:
@@ -208,7 +450,9 @@ export struct ParentalControlPage {
         } else {
           this.state = PageState.CHANGE_NO_MATCH;
           this.pendingPin = '';
-          setTimeout(() => { this.state = PageState.CHANGE_NEW; }, 1500);
+          setTimeout(() => {
+            this.state = PageState.CHANGE_NEW;
+          }, 1500);
         }
         break;
     }
@@ -219,13 +463,15 @@ export struct ParentalControlPage {
     await Settings.put(Settings.KEY_SAFE_MODE_PIN, hash);
   }
 
+  // ── SHA-256 (同 PinCodeActivityPage) ─────────────────
+
   private async verifyPin(pinValue: string): Promise<boolean> {
     const stored = await Settings.getString(Settings.KEY_SAFE_MODE_PIN, '');
     const hash = await this.sha256Hex(pinValue);
     return hash === stored;
   }
 
-  // ── SHA-256 (同 PinCodeActivityPage) ─────────────────
+  // ── Builder ──────────────────────────────────────────
 
   private async sha256Hex(input: string): Promise<string> {
     const bytes = new Uint8Array(input.length);
@@ -275,13 +521,23 @@ export struct ParentalControlPage {
         const S0 = (rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) >>> 0;
         const maj = ((a & b) ^ (a & c) ^ (b & c)) >>> 0;
         const t2 = ((S0 + maj) >>> 0);
-        hh = g; g = f; f = e;
+        hh = g;
+        g = f;
+        f = e;
         e = ((d + t1) >>> 0);
-        d = c; c = b; b = a;
+        d = c;
+        c = b;
+        b = a;
         a = ((t1 + t2) >>> 0);
       }
-      h0 = ((h0 + a) >>> 0); h1 = ((h1 + b) >>> 0); h2 = ((h2 + c) >>> 0); h3 = ((h3 + d) >>> 0);
-      h4 = ((h4 + e) >>> 0); h5 = ((h5 + f) >>> 0); h6 = ((h6 + g) >>> 0); h7 = ((h7 + hh) >>> 0);
+      h0 = ((h0 + a) >>> 0);
+      h1 = ((h1 + b) >>> 0);
+      h2 = ((h2 + c) >>> 0);
+      h3 = ((h3 + d) >>> 0);
+      h4 = ((h4 + e) >>> 0);
+      h5 = ((h5 + f) >>> 0);
+      h6 = ((h6 + g) >>> 0);
+      h7 = ((h7 + hh) >>> 0);
     }
     const H = [h0, h1, h2, h3, h4, h5, h6, h7];
     let hex = '';
@@ -293,178 +549,5 @@ export struct ParentalControlPage {
       hex += part;
     }
     return hex;
-  }
-
-  // ── Builder ──────────────────────────────────────────
-
-  build() {
-    NavDestination() {
-      Column() {
-        Row() {
-          Image($r('app.media.ic_arrow_back'))
-            .width(24).height(24).objectFit(ImageFit.Contain)
-            .fillColor($r('app.color.list_title')).margin({ left: 12 })
-            .onClick(() => NavController.pop())
-          Text($r('app.string.parental_control'))
-            .fontSize(20).fontWeight(FontWeight.Bold)
-            .fontColor($r('app.color.orange500'))
-            .margin({ left: AppDimens.kl_half })
-            .layoutWeight(1).maxLines(1)
-          Image($r('app.media.ic_search'))
-            .width(28).height(28)
-            .fillColor($r('app.color.list_title'))
-            .margin({ right: 16 })
-        }
-        .width('100%').height(92).alignItems(VerticalAlign.Center)
-        .padding({ left: 4, right: 4, top: 38, bottom: 4 })
-        .backgroundColor($r('app.color.background_default'))
-
-        if (this.isPinState()) {
-          Column() {
-            Text(this.getReasonText())
-              .fontSize(16)
-              .fontColor($r('app.color.list_subtitle'))
-              .textAlign(TextAlign.Center)
-              .margin({ top: 32, left: 32, right: 32 })
-
-            Text(this.getInstruction())
-              .fontSize(22)
-              .fontWeight(FontWeight.Medium)
-              .fontColor($r('app.color.list_title'))
-              .textAlign(TextAlign.Center)
-              .margin({ top: 12, left: 32, right: 32 })
-
-            Stack({ alignContent: Alignment.Center }) {
-              Row({ space: 12 }) {
-                Text(this.vm.pin1.length > 0 ? '•' : '')
-                  .textAlign(TextAlign.Center).fontSize(30)
-                  .fontColor($r('app.color.list_title'))
-                  .layoutWeight(1).aspectRatio(1)
-                  .backgroundColor($r('app.color.card_background')).borderRadius(8)
-                Text(this.vm.pin2.length > 0 ? '•' : '')
-                  .textAlign(TextAlign.Center).fontSize(30)
-                  .fontColor($r('app.color.list_title'))
-                  .layoutWeight(1).aspectRatio(1)
-                  .backgroundColor($r('app.color.card_background')).borderRadius(8)
-                Text(this.vm.pin3.length > 0 ? '•' : '')
-                  .textAlign(TextAlign.Center).fontSize(30)
-                  .fontColor($r('app.color.list_title'))
-                  .layoutWeight(1).aspectRatio(1)
-                  .backgroundColor($r('app.color.card_background')).borderRadius(8)
-                Text(this.vm.pin4.length > 0 ? '•' : '')
-                  .textAlign(TextAlign.Center).fontSize(30)
-                  .fontColor($r('app.color.list_title'))
-                  .layoutWeight(1).aspectRatio(1)
-                  .backgroundColor($r('app.color.card_background')).borderRadius(8)
-              }
-              .width('100%')
-              .padding({ left: 16, right: 16 })
-
-              TextInput({ text: this.pinInput })
-                .id('pin-input').type(InputType.NUMBER_PASSWORD).maxLength(4)
-                .showPasswordIcon(false).defaultFocus(true)
-                .width('100%').height('100%').opacity(0.01)
-                .backgroundColor(Color.Transparent)
-                .onAppear(() => this.focusPinInput())
-                .onChange((value: string) => this.onPinInput(value))
-            }
-            .width('100%')
-            .height(72)
-            .margin({ top: 48 })
-
-            Blank()
-
-            Row() {
-              Button($r('app.string.cancel'))
-                .type(ButtonType.Normal)
-                .backgroundColor(Color.Transparent)
-                .fontColor($r('app.color.orange500'))
-                .margin({ left: 16 })
-                .onClick(() => NavController.pop())
-              if (this.state === PageState.VERIFY_PIN || this.state === PageState.VERIFY_WRONG) {
-                Button($r('app.string.skip'))
-                  .type(ButtonType.Normal)
-                  .backgroundColor(Color.Transparent)
-                  .fontColor($r('app.color.orange500'))
-                  .margin({ right: 16 })
-                  .onClick(() => { this.state = PageState.SETTINGS; })
-              }
-            }
-            .width('100%')
-            .justifyContent(FlexAlign.SpaceBetween)
-            .padding({ bottom: 16 })
-          }
-          .width('100%')
-          .layoutWeight(1)
-        } else {
-          Column() {
-            // 更改密码
-            Row() {
-              Text($r('app.string.change_password'))
-                .fontSize(16)
-                .fontColor($r('app.color.list_title'))
-                .layoutWeight(1)
-            }
-            .width('100%')
-            .padding({ left: 16, right: 16, top: 32, bottom: 32 })
-            .onClick(async () => {
-              const stored = await Settings.getString(Settings.KEY_SAFE_MODE_PIN, '');
-              this.state = stored.length > 0 ? PageState.CHANGE_VERIFY : PageState.CREATE_PIN;
-              this.clearPinInput();
-            })
-
-            Row() {
-              Text($r('app.string.restrict_settings_access'))
-                .fontSize(16)
-                .fontColor($r('app.color.list_title'))
-                .layoutWeight(1)
-              Toggle({ type: ToggleType.Checkbox, isOn: this.restrictSettings })
-                .selectedColor($r('app.color.orange500'))
-                .onChange((on: boolean) => {
-                  this.restrictSettings = on;
-                  Settings.put('restrict_settings', on);
-                })
-            }
-            .width('100%')
-            .padding({ left: 16, right: 12, top: 24, bottom: 32 })
-            .alignItems(VerticalAlign.Center)
-
-            Row() {
-              Column() {
-                Text($r('app.string.safe_mode'))
-                  .fontSize(16)
-                  .fontColor($r('app.color.list_title'))
-                Text($r('app.string.safe_mode_summary'))
-                  .fontSize(13)
-                  .fontColor($r('app.color.list_subtitle'))
-                  .margin({ top: 4 })
-                  .maxLines(2)
-              }
-              .layoutWeight(1)
-              .alignItems(HorizontalAlign.Start)
-              Toggle({ type: ToggleType.Checkbox, isOn: this.safeMode })
-                .selectedColor($r('app.color.orange500'))
-                .margin({ left: 16 })
-                .onChange((on: boolean) => {
-                  this.safeMode = on;
-                  Settings.put('safe_mode', on);
-                })
-            }
-            .width('100%')
-            .padding({ left: 16, right: 12, top: 24, bottom: 16 })
-            .alignItems(VerticalAlign.Center)
-          }
-          .width('100%')
-        }
-      }
-      .width('100%')
-      .height('100%')
-      .backgroundColor($r('app.color.background_default'))
-    }
-    .hideTitleBar(true)
-    .onBackPressed(() => {
-      NavController.pop();
-      return true;
-    })
   }
 }

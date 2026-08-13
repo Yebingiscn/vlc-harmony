@@ -1,4 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 30 30">
-<path d="M15,15m-14,0a14,14 0,1 1,28 0a14,14 0,1 1,-28 0" fill="#ffffff" fill-opacity="0.338616" stroke="#00000000" stroke-width="2.33332" fill-rule="nonZero"/>
-<path d="M15,15m-7,0a7,7 0,1 1,14 0a7,7 0,1 1,-14 0" fill="currentColor" stroke="#00000000" stroke-width="1.16666" fill-rule="nonZero"/>
+    <path d="M15,15m-14,0a14,14 0,1 1,28 0a14,14 0,1 1,-28 0" fill="#ffffff" fill-opacity="0.338616" stroke="#00000000"
+          stroke-width="2.33332" fill-rule="nonZero"/>
+    <path d="M15,15m-7,0a7,7 0,1 1,14 0a7,7 0,1 1,-14 0" fill="currentColor" stroke="#00000000" stroke-width="1.16666"
+          fill-rule="nonZero"/>
 </svg>

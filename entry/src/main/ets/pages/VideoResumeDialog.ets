@@ -9,24 +9,34 @@ import { AppColors } from '../common/constants/AppConstants';
 @ComponentV2
 export struct VideoResumeDialog {
   @Param mediaTitle: string = '';
-  @Event onClose: () => void = () => {};
-  @Event onResume: () => void = () => {};
-  @Event onCancel: () => void = () => {};
-
   @Local applyForAllQueue: boolean = false;
+
+  @Event onClose: () => void = () => {
+  };
+
+  @Event onResume: () => void = () => {
+  };
+
+  @Event onCancel: () => void = () => {
+  };
 
   build() {
     Column() {
       // AlertDialog 标题(媒体标题)
       Text(this.mediaTitle)
-        .fontSize(18).fontWeight(FontWeight.Medium).fontColor('#FFFFFF')
+        .fontSize(18)
+        .fontWeight(FontWeight.Medium)
+        .fontColor('#FFFFFF')
         .width('100%')
         .margin({ left: 24, top: 24, right: 16 })
-        .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
 
       // 提示横幅
       Text($r('app.string.confirm_resume'))
-        .fontSize(16).fontWeight(FontWeight.Medium).fontColor('#FFFFFF')
+        .fontSize(16)
+        .fontWeight(FontWeight.Medium)
+        .fontColor('#FFFFFF')
         .width('100%')
         .margin({ left: 24, top: 24, right: 16 })
 
@@ -38,19 +48,34 @@ export struct VideoResumeDialog {
           .fontSize(14).fontColor('#CCCCCC').margin({ left: 8 })
       }
       .width('100%')
-      .margin({ left: 16, top: 8, right: 16, bottom: 8 })
+      .margin({
+        left: 16,
+        top: 8,
+        right: 16,
+        bottom: 8
+      })
       .alignItems(VerticalAlign.Center)
 
       // 按钮行
       Row() {
         Button($r('app.string.no'))
-          .type(ButtonType.Normal).fontColor(AppColors.orange500).backgroundColor(AppColors.transparent)
+          .type(ButtonType.Normal)
+          .fontColor(AppColors.orange500)
+          .backgroundColor(AppColors.transparent)
           .margin({ right: 8, bottom: 8 })
-          .onClick(() => { this.onCancel(); this.onClose(); })
+          .onClick(() => {
+            this.onCancel();
+            this.onClose();
+          })
         Button($r('app.string.resume'))
-          .type(ButtonType.Normal).fontColor(AppColors.orange500).backgroundColor(AppColors.transparent)
+          .type(ButtonType.Normal)
+          .fontColor(AppColors.orange500)
+          .backgroundColor(AppColors.transparent)
           .margin({ right: 8, bottom: 8 })
-          .onClick(() => { this.onResume(); this.onClose(); })
+          .onClick(() => {
+            this.onResume();
+            this.onClose();
+          })
       }
       .width('100%').justifyContent(FlexAlign.End).alignItems(VerticalAlign.Center)
     }
@@ -58,6 +83,7 @@ export struct VideoResumeDialog {
     .backgroundColor($r('app.color.background_default'))
     .borderRadius(12)
     .alignItems(HorizontalAlign.Start)
+
     // 注:居中浮层内容卡;由调用方 Stack 居中承载 + #80000000 遮罩(setCancelable=false,点击外部不关闭)。
   }
 }

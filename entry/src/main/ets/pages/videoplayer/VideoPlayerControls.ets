@@ -1,9 +1,9 @@
 export type VideoPlayerBottomActionId =
   | 'tracks'
-  | 'orientation'
-  | 'play'
-  | 'aspectRatio'
-  | 'advanced';
+    | 'orientation'
+    | 'play'
+    | 'aspectRatio'
+    | 'advanced';
 
 export class VideoPlayerBottomAction {
   id: VideoPlayerBottomActionId;

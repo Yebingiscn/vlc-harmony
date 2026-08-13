@@ -1,9 +1,10 @@
+import { UiFeedback } from '../common/utils/UiFeedback';
 import { PlaybackService, PlaybackState } from '../common/data/PlaybackService';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
 import { NavController } from '../common/data/NavController';
 import { AudioBrowserRequest } from '../common/data/AudioBrowserRequest';
-import { PlayState, Track, formatDuration } from '../common/models/MediaModels';
-import { PlaybackSpeedDialog, PlaybackSpeedAction } from './PlaybackSpeedDialog';
+import { formatDuration, PlayState, Track } from '../common/models/MediaModels';
+import { PlaybackSpeedAction, PlaybackSpeedDialog } from './PlaybackSpeedDialog';
 import { EqualizerDialog } from './EqualizerDialog';
 import { AudioInfoDialog, AudioInfoParams } from './AudioInfoDialog';
 
@@ -11,9 +12,8 @@ import { SleepTimerDialog } from './SleepTimerDialog';
 import { JumpToTimeDialog } from './JumpToTimeDialog';
 import { BookmarkDialog } from './BookmarkDialog';
 import { BookMark } from '../common/models/BookmarkModels';
-import { AddToPlaylistDialog, AddToPlaylistAction } from './AddToPlaylistDialog';
+import { AddToPlaylistAction, AddToPlaylistDialog } from './AddToPlaylistDialog';
 import { MediaLibrary } from '../common/data/MediaLibrary';
-import { promptAction } from '@kit.ArkUI';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import {
   buildPlayerAdvancedOptions,
@@ -39,12 +39,10 @@ class AudioPlayerViewModel {
   @Trace speed: number = 1.0;
   @Trace globalSpeedEnabled: boolean = false;
   @Trace locked: boolean = false;
-
-  private listenerId: number = 0;
-  private lastRecordedUri: string = '';
-
   /** A-B 循环回调：到 B 点时跳回 A。由 Page 层注入。 */
   onAbLoopCheck: (() => void) | null = null;
+  private listenerId: number = 0;
+  private lastRecordedUri: string = '';
 
   attach(): void {
     this.listenerId = setInterval(() => {
@@ -100,29 +98,17 @@ export struct AudioPlayerPage {
   @Local infoOpen: boolean = false;
   /** 信息弹窗打开时的一次性数据快照(打开时组装,避免每帧轮询做媒体库反查)。 */
   @Local infoParams: AudioInfoParams = new AudioInfoParams();
-  private pendingAdvancedAction: PlayerAdvancedOptionId | null = null;
-
-  /** 带动画打开覆盖层。 */
-  private animateOpen(fn: () => void): void {
-    animateTo({ duration: 300, curve: Curve.EaseOut }, fn);
-  }
-  /** 带动画关闭覆盖层。 */
-  private animateClose(fn: () => void): void {
-    animateTo({ duration: 250, curve: Curve.EaseIn }, fn);
-  }
-
-  // 睡眠定时器状态
-  private sleepTimer: number = -1;
-  private sleepMillis: number = 0;
-
   // 书签
   @Local bookmarks: BookMark[] = [];
-  private bookmarkIdSeq: number = 1;
-
   // A-B 循环
   @Local abPointA: number = -1;
   @Local abPointB: number = -1;
   @Local abActive: boolean = false;
+  private pendingAdvancedAction: PlayerAdvancedOptionId | null = null;
+  // 睡眠定时器状态
+  private sleepTimer: number = -1;
+  private sleepMillis: number = 0;
+  private bookmarkIdSeq: number = 1;
 
   aboutToAppear(): void {
     const s = PlaybackService.snapshot();
@@ -156,26 +142,49 @@ export struct AudioPlayerPage {
           Row() {
             Image($r('app.media.ic_arrow_back')).width(24).height(24).fillColor($r('app.color.list_title'))
               .onClick(() => NavController.pop())
-            Text(this.vm.title).fontSize(16).fontColor($r('app.color.list_title')).layoutWeight(1).margin({ left: 8 })
-              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+            Text(this.vm.title)
+              .fontSize(16)
+              .fontColor($r('app.color.list_title'))
+              .layoutWeight(1)
+              .margin({ left: 8 })
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
             if (this.abPointA >= 0) {
               Text('A-B')
-                .fontSize(11).fontColor('#FFFFFF')
-                .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+                .fontSize(11)
+                .fontColor('#FFFFFF')
+                .padding({
+                  left: 6,
+                  right: 6,
+                  top: 2,
+                  bottom: 2
+                })
                 .borderRadius(8)
                 .backgroundColor('#FF8800')
                 .margin({ right: 8 })
                 .onClick(() => this.resetAb())
             }
-            Image($r('app.media.ic_player_more')).width(24).height(24).fillColor($r('app.color.list_title'))
-              .onClick(() => { this.advancedOptionsOpen = true; })
+            Image($r('app.media.ic_player_more'))
+              .width(24)
+              .height(24)
+              .fillColor($r('app.color.list_title'))
+              .onClick(() => {
+                this.advancedOptionsOpen = true;
+              })
               .bindMenu(this.advancedOptionsOpen!!, this.advancedOptionsMenu(), {
                 placement: Placement.BottomLeft,
                 showInSubWindow: true,
                 backgroundColor: $r('app.color.background_default'),
               })
           }
-          .width('100%').padding({ left: 12, right: 12, top: 44, bottom: 8 }).alignItems(VerticalAlign.Center)
+          .width('100%')
+          .padding({
+            left: 12,
+            right: 12,
+            top: 44,
+            bottom: 8
+          })
+          .alignItems(VerticalAlign.Center)
           .linearGradient({ angle: 180, colors: [['#66000000', 0.0], ['#00000000', 1.0]] })
 
           // 睡眠定时器指示灯
@@ -187,7 +196,12 @@ export struct AudioPlayerPage {
                 .fontSize(12).fontColor('#FF8800')
             }
             .width('100%')
-            .padding({ left: 12, right: 12, top: 2, bottom: 2 })
+            .padding({
+              left: 12,
+              right: 12,
+              top: 2,
+              bottom: 2
+            })
             .onClick(() => this.clearSleepTimer())
           }
 
@@ -209,8 +223,11 @@ export struct AudioPlayerPage {
           // 曲目标题 + 艺术家
           Column() {
             Text(this.vm.title)
-              .fontSize(18).fontColor($r('app.color.list_title')).fontWeight(FontWeight.Medium)
-              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+              .fontSize(18)
+              .fontColor($r('app.color.list_title'))
+              .fontWeight(FontWeight.Medium)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
               .margin({ bottom: 4 })
             Text(this.vm.artist.length > 0 ? this.vm.artist : '未知艺术家')
               .fontSize(14).fontColor($r('app.color.list_subtitle'))
@@ -223,28 +240,46 @@ export struct AudioPlayerPage {
           if (this.abPointA >= 0) {
             Row() {
               Text(`A ${this.fmtAbPoint(this.abPointA)} → B ${this.abActive ? this.fmtAbPoint(this.abPointB) : '???'}`)
-                .fontSize(12).fontColor('#FF8800')
+                .fontSize(12)
+                .fontColor('#FF8800')
                 .layoutWeight(1)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
               if (this.abActive) {
                 Text('关闭')
-                  .fontSize(12).fontColor('#FFFFFF')
-                  .padding({ left: 12, right: 12, top: 4, bottom: 4 })
+                  .fontSize(12)
+                  .fontColor('#FFFFFF')
+                  .padding({
+                    left: 12,
+                    right: 12,
+                    top: 4,
+                    bottom: 4
+                  })
                   .borderRadius(12)
                   .backgroundColor('#33FFFFFF')
                   .onClick(() => this.resetAb())
               } else {
                 Text('设置 B')
-                  .fontSize(12).fontColor('#FFFFFF')
-                  .padding({ left: 12, right: 12, top: 4, bottom: 4 })
+                  .fontSize(12)
+                  .fontColor('#FFFFFF')
+                  .padding({
+                    left: 12,
+                    right: 12,
+                    top: 4,
+                    bottom: 4
+                  })
                   .borderRadius(12)
                   .backgroundColor('#FF8800')
                   .onClick(() => this.setAbPointB())
               }
             }
             .width('100%')
-            .padding({ left: 12, right: 12, top: 4, bottom: 4 })
+            .padding({
+              left: 12,
+              right: 12,
+              top: 4,
+              bottom: 4
+            })
           }
 
           // 时间轴
@@ -252,7 +287,10 @@ export struct AudioPlayerPage {
             Text(formatDuration(this.vm.position)).fontSize(12).fontColor($r('app.color.list_subtitle')).width(48)
             Slider({
               value: this.vm.duration > 0 ? this.vm.position * 100 / this.vm.duration : 0,
-              min: 0, max: 100, step: 1, style: SliderStyle.OutSet,
+              min: 0,
+              max: 100,
+              step: 1,
+              style: SliderStyle.OutSet,
             })
               .layoutWeight(1)
               .blockColor($r('app.color.orange500'))
@@ -265,7 +303,11 @@ export struct AudioPlayerPage {
                   PlaybackService.seek(seekMs);
                 }
               })
-            Text(formatDuration(this.vm.duration)).fontSize(12).fontColor($r('app.color.list_subtitle')).width(48).textAlign(TextAlign.End)
+            Text(formatDuration(this.vm.duration))
+              .fontSize(12)
+              .fontColor($r('app.color.list_subtitle'))
+              .width(48)
+              .textAlign(TextAlign.End)
           }
           .width('100%').padding({ left: 12, right: 12, bottom: 12 }).alignItems(VerticalAlign.Center)
 
@@ -278,7 +320,8 @@ export struct AudioPlayerPage {
             Image($r('app.media.ic_player_previous')).width(40).height(40).fillColor($r('app.color.list_title'))
               .onClick(() => PlaybackService.prev())
             Blank()
-            Image(this.vm.state === PlayState.PLAYING ? $r('app.media.ic_pause_player') : $r('app.media.ic_play_player'))
+            Image(
+              this.vm.state === PlayState.PLAYING ? $r('app.media.ic_pause_player') : $r('app.media.ic_play_player'))
               .width(64).height(64).fillColor($r('app.color.orange500'))
               .onClick(() => PlaybackService.togglePlay())
             Blank()
@@ -291,7 +334,14 @@ export struct AudioPlayerPage {
               .fillColor(this.vm.repeatMode > 0 ? $r('app.color.orange500') : $r('app.color.list_title'))
               .onClick(() => PlaybackService.cycleRepeat())
           }
-          .width('100%').padding({ left: 24, right: 24, top: 8, bottom: 32 }).alignItems(VerticalAlign.Center)
+          .width('100%')
+          .padding({
+            left: 24,
+            right: 24,
+            top: 8,
+            bottom: 32
+          })
+          .alignItems(VerticalAlign.Center)
         }
         .width('100%')
         .height('100%')
@@ -307,7 +357,8 @@ export struct AudioPlayerPage {
               .width(28).height(28)
               .fillColor('#FFFFFF')
           }
-          .width(52).height(52)
+          .width(52)
+          .height(52)
           .borderRadius(26)
           .backgroundColor(Color.Transparent)
           .justifyContent(FlexAlign.Center)
@@ -315,7 +366,9 @@ export struct AudioPlayerPage {
           .hitTestBehavior(HitTestMode.Default)
           .position({ x: 16, y: '50%' })
           .translate({ x: 0, y: -26 })
-          .onClick(() => { this.vm.toggleLock(); })
+          .onClick(() => {
+            this.vm.toggleLock();
+          })
         }
 
         // 书签覆盖层
@@ -324,12 +377,16 @@ export struct AudioPlayerPage {
             Column()
               .width('100%').layoutWeight(1)
               .backgroundColor(Color.Transparent)
-              .onClick(() => this.animateClose(() => { this.bookmarkOpen = false; }))
+              .onClick(() => this.animateClose(() => {
+                this.bookmarkOpen = false;
+              }))
             BookmarkDialog({
               bookmarks: this.bookmarks,
               currentTimeMs: this.vm.position,
               durationMs: this.vm.duration,
-              onClose: () => this.animateClose(() => { this.bookmarkOpen = false; }),
+              onClose: () => this.animateClose(() => {
+                this.bookmarkOpen = false;
+              }),
               onSeek: (timeMs: number) => PlaybackService.seek(timeMs),
               onAddAtCurrent: () => this.addBookmarkAtCurrent(),
               onDelete: (id: number) => this.deleteBookmark(id),
@@ -349,12 +406,16 @@ export struct AudioPlayerPage {
             Column()
               .width('100%').layoutWeight(1)
               .backgroundColor(Color.Transparent)
-              .onClick(() => this.animateClose(() => { this.speedOpen = false; }))
+              .onClick(() => this.animateClose(() => {
+                this.speedOpen = false;
+              }))
             PlaybackSpeedDialog({
               currentSpeed: this.vm.speed,
               mediaKind: 'audio',
               currentScope: this.vm.globalSpeedEnabled ? 'all' : 'this',
-              onClose: () => this.animateClose(() => { this.speedOpen = false; }),
+              onClose: () => this.animateClose(() => {
+                this.speedOpen = false;
+              }),
               onConfirm: (action: PlaybackSpeedAction) => this.onSpeedConfirm(action),
             }).width('100%').height('50%')
           }
@@ -369,9 +430,13 @@ export struct AudioPlayerPage {
             Column()
               .width('100%').layoutWeight(1)
               .backgroundColor(Color.Transparent)
-              .onClick(() => this.animateClose(() => { this.eqOpen = false; }))
+              .onClick(() => this.animateClose(() => {
+                this.eqOpen = false;
+              }))
             EqualizerDialog({
-              onClose: () => this.animateClose(() => { this.eqOpen = false; }),
+              onClose: () => this.animateClose(() => {
+                this.eqOpen = false;
+              }),
             }).width('100%')
           }
           .width('100%')
@@ -385,10 +450,14 @@ export struct AudioPlayerPage {
             Column()
               .width('100%').layoutWeight(1)
               .backgroundColor(Color.Transparent)
-              .onClick(() => this.animateClose(() => { this.sleepOpen = false; }))
+              .onClick(() => this.animateClose(() => {
+                this.sleepOpen = false;
+              }))
             SleepTimerDialog({
               initialMillis: this.sleepMillis,
-              onClose: () => this.animateClose(() => { this.sleepOpen = false; }),
+              onClose: () => this.animateClose(() => {
+                this.sleepOpen = false;
+              }),
               onConfirm: (millis: number, waitForMediaEnd: boolean, resetOnInteraction: boolean) => {
                 this.onSleepConfirm(millis, waitForMediaEnd, resetOnInteraction);
               },
@@ -405,9 +474,13 @@ export struct AudioPlayerPage {
             Column()
               .width('100%').layoutWeight(1)
               .backgroundColor(Color.Transparent)
-              .onClick(() => this.animateClose(() => { this.jumpOpen = false; }))
+              .onClick(() => this.animateClose(() => {
+                this.jumpOpen = false;
+              }))
             JumpToTimeDialog({
-              onClose: () => this.animateClose(() => { this.jumpOpen = false; }),
+              onClose: () => this.animateClose(() => {
+                this.jumpOpen = false;
+              }),
               onConfirm: (timeMs: number) => this.onJumpConfirm(timeMs),
             }).width('100%')
           }
@@ -422,10 +495,14 @@ export struct AudioPlayerPage {
             Column()
               .width('100%').layoutWeight(1)
               .backgroundColor(Color.Transparent)
-              .onClick(() => this.animateClose(() => { this.savePlaylistOpen = false; }))
+              .onClick(() => this.animateClose(() => {
+                this.savePlaylistOpen = false;
+              }))
             AddToPlaylistDialog({
               mediaCount: 1,
-              onClose: () => this.animateClose(() => { this.savePlaylistOpen = false; }),
+              onClose: () => this.animateClose(() => {
+                this.savePlaylistOpen = false;
+              }),
               onConfirm: (action: AddToPlaylistAction) => {
                 void this.onSavePlaylistConfirm(action);
               },
@@ -442,7 +519,9 @@ export struct AudioPlayerPage {
             Column()
               .width('100%').layoutWeight(1)
               .backgroundColor(Color.Transparent)
-              .onClick(() => this.animateClose(() => { this.infoOpen = false; }))
+              .onClick(() => this.animateClose(() => {
+                this.infoOpen = false;
+              }))
             AudioInfoDialog({
               title: this.infoParams.title,
               artist: this.infoParams.artist,
@@ -453,7 +532,9 @@ export struct AudioPlayerPage {
               durationMs: this.infoParams.durationMs,
               uri: this.infoParams.uri,
               fileSize: this.infoParams.fileSize,
-              onClose: () => this.animateClose(() => { this.infoOpen = false; }),
+              onClose: () => this.animateClose(() => {
+                this.infoOpen = false;
+              }),
             }).width('100%').height('60%')
           }
           .width('100%')
@@ -510,23 +591,33 @@ export struct AudioPlayerPage {
       return;
     }
     if (id === 'sleep') {
-      this.animateOpen(() => { this.sleepOpen = true; });
+      this.animateOpen(() => {
+        this.sleepOpen = true;
+      });
       return;
     }
     if (id === 'speed') {
-      this.animateOpen(() => { this.speedOpen = true; });
+      this.animateOpen(() => {
+        this.speedOpen = true;
+      });
       return;
     }
     if (id === 'jumpToTime') {
-      this.animateOpen(() => { this.jumpOpen = true; });
+      this.animateOpen(() => {
+        this.jumpOpen = true;
+      });
       return;
     }
     if (id === 'equalizer') {
-      this.animateOpen(() => { this.eqOpen = true; });
+      this.animateOpen(() => {
+        this.eqOpen = true;
+      });
       return;
     }
     if (id === 'bookmark') {
-      this.animateOpen(() => { this.bookmarkOpen = true; });
+      this.animateOpen(() => {
+        this.bookmarkOpen = true;
+      });
       return;
     }
     if (id === 'abRepeat') {
@@ -536,19 +627,23 @@ export struct AudioPlayerPage {
         this.abPointA = Math.max(0, Math.floor(this.vm.position));
         this.abPointB = -1;
         this.abActive = false;
-        promptAction.showToast({ message: '已设置 A 点，拖动进度条后再次点击 A-B 循环设 B 点' });
+        UiFeedback.showToast({ message: '已设置 A 点，拖动进度条后再次点击 A-B 循环设 B 点' });
       } else {
         this.setAbPointB();
       }
       return;
     }
     if (id === 'savePlaylist') {
-      this.animateOpen(() => { this.savePlaylistOpen = true; });
+      this.animateOpen(() => {
+        this.savePlaylistOpen = true;
+      });
       return;
     }
     if (id === 'audioInfo') {
       this.infoParams = this.buildInfoParams();
-      this.animateOpen(() => { this.infoOpen = true; });
+      this.animateOpen(() => {
+        this.infoOpen = true;
+      });
       return;
     }
     if (id === 'goToArtist') {
@@ -559,14 +654,12 @@ export struct AudioPlayerPage {
         AudioBrowserRequest.requestGoToArtist(cur.artistName);
         NavController.popToMain();
       } else {
-        promptAction.showToast({ message: '当前曲目没有艺术家信息' });
+        UiFeedback.showToast({ message: '当前曲目没有艺术家信息' });
       }
       return;
     }
-    promptAction.showToast({ message: '该功能暂未实现' });
+    UiFeedback.showToast({ message: '该功能暂未实现' });
   }
-
-  // ── 信息展示 ──
 
   /**
    * 组装「信息展示」弹窗数据:当前曲目(MediaWrapper)字段 + 媒体库 Track 反查
@@ -594,6 +687,160 @@ export struct AudioPlayerPage {
     return p;
   }
 
+  /**
+   * 「回放速度」确认回调。
+   * - scope=all:所有曲目统一速度(开全局开关 + 持久化 + 清空独立速度)。
+   * - scope=this:仅当前曲目生效(关全局开关 + 该 URI 独立速度持久化)。
+   */
+  onSpeedConfirm(action: PlaybackSpeedAction): void {
+    const cur = PlaybackService.getCurrent();
+    if (action.scope === 'all') {
+      PlaybackService.setGlobalSpeed(action.speed);
+    } else if (cur !== null) {
+      PlaybackService.setTrackSpeed(cur.uri, action.speed);
+    } else {
+      PlaybackService.getInstance().setSpeed(action.speed);
+    }
+    UiFeedback.showToast({ message: `播放速度已设为 ${action.speed.toFixed(2)}x` });
+    this.animateClose(() => {
+      this.speedOpen = false;
+    });
+  }
+
+  // ── 信息展示 ──
+
+  /** 标记终点 B(仿视频端 setAbPointB)。B 必须在 A 之后,否则忽略。 */
+  setAbPointB(): void {
+    if (this.abPointA < 0) {
+      return;
+    }
+    const b: number = Math.max(0, Math.floor(this.vm.position));
+    if (b <= this.abPointA) {
+      UiFeedback.showToast({ message: 'B 点需在 A 点之后' });
+      return;
+    }
+    this.abPointB = b;
+    this.abActive = true;
+    UiFeedback.showToast({ message: 'A-B 循环已开启' });
+  }
+
+  /** 关闭并重置 A-B 循环(仿视频端 resetAb)。 */
+  resetAb(): void {
+    this.abPointA = -1;
+    this.abPointB = -1;
+    this.abActive = false;
+    UiFeedback.showToast({ message: '已关闭 A-B 循环' });
+  }
+
+  fmtAbPoint(ms: number): string {
+    const safe = ms > 0 ? ms : 0;
+    const totalSec = Math.floor(safe / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    const mm = m < 10 ? `0${m}` : `${m}`;
+    const ss = s < 10 ? `0${s}` : `${s}`;
+    return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+  }
+
+  // ── A-B 循环 ──
+
+  onSleepConfirm(millis: number, _waitForMediaEnd: boolean, _resetOnInteraction: boolean): void {
+    this.clearSleepTimer();
+    this.sleepMillis = millis;
+    if (this.sleepMillis <= 0) {
+      return;
+    }
+    this.sleepTimer = setTimeout(() => {
+      this.sleepTimer = -1;
+      PlaybackService.pause();
+      UiFeedback.showToast({ message: '睡眠定时器：播放已暂停' });
+    }, this.sleepMillis);
+    const totalMin = Math.floor(millis / 60000);
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    const span = h > 0 && m > 0 ? `${h}小时${m}分` : (h > 0 ? `${h}小时` : `${m}分钟`);
+    UiFeedback.showToast({ message: `睡眠定时器已设为 ${span}` });
+    this.animateClose(() => {
+      this.sleepOpen = false;
+    });
+  }
+
+  clearSleepTimer(): void {
+    if (this.sleepTimer !== -1) {
+      clearTimeout(this.sleepTimer);
+      this.sleepTimer = -1;
+    }
+  }
+
+  // ── 格式化 ──
+
+  onJumpConfirm(timeMs: number): void {
+    PlaybackService.seek(timeMs);
+    this.animateClose(() => {
+      this.jumpOpen = false;
+    });
+  }
+
+  // ── 睡眠定时器 ──
+
+  addBookmarkAtCurrent(): void {
+    const timeMs = Math.max(0, Math.floor(this.vm.position));
+    const bm = new BookMark(this.bookmarkIdSeq++, -1, timeMs, '');
+    this.bookmarks = [...this.bookmarks, bm].sort((a, b) => a.timeMs - b.timeMs);
+    UiFeedback.showToast({ message: '已保存书签' });
+  }
+
+  deleteBookmark(id: number): void {
+    this.bookmarks = this.bookmarks.filter((b) => b.id !== id);
+  }
+
+  // ── 跳转至时间 ──
+
+  renameBookmark(_id: number): void {
+    UiFeedback.showToast({ message: '书签重命名功能开发中' });
+  }
+
+  // ── 书签 ──
+
+  async onSavePlaylistConfirm(action: AddToPlaylistAction): Promise<void> {
+    const svc = PlaybackService.getInstance();
+    const cur = svc.getCurrent();
+    const uri = cur?.uri ?? '';
+    if (uri.length === 0) {
+      UiFeedback.showToast({ message: '当前没有可保存的曲目' });
+      this.animateClose(() => {
+        this.savePlaylistOpen = false;
+      });
+      return;
+    }
+    await MediaLibrary.initPlaylistCache();
+    for (const playlistId of action.selectedIds) {
+      if (action.replace) {
+        await MediaLibrary.replacePlaylist(playlistId, [uri]);
+      } else {
+        await MediaLibrary.addToPlaylist(playlistId, uri);
+      }
+    }
+    const count = action.selectedIds.length;
+    UiFeedback.showToast({ message: count === 1 ? '已保存到播放列表' : `已保存到 ${count} 个播放列表` });
+    this.animateClose(() => {
+      this.savePlaylistOpen = false;
+    });
+  }
+
+  /** 带动画打开覆盖层。 */
+  private animateOpen(fn: () => void): void {
+    this.getUIContext().animateTo({ duration: 300, curve: Curve.EaseOut }, fn);
+  }
+
+  /** 带动画关闭覆盖层。 */
+  private animateClose(fn: () => void): void {
+    this.getUIContext().animateTo({ duration: 250, curve: Curve.EaseIn }, fn);
+  }
+
+  // ── 保存到播放列表 ──
+
   /** 解析本地文件大小(file:// 沙箱路径可直接 stat;其它 URI 返回 0)。 */
   private resolveFileSize(uri: string): number {
     if (uri.length === 0) {
@@ -610,137 +857,4 @@ export struct AudioPlayerPage {
       return 0;
     }
   }
-
-  /**
-   * 「回放速度」确认回调。
-   * - scope=all:所有曲目统一速度(开全局开关 + 持久化 + 清空独立速度)。
-   * - scope=this:仅当前曲目生效(关全局开关 + 该 URI 独立速度持久化)。
-   */
-  onSpeedConfirm(action: PlaybackSpeedAction): void {
-    const cur = PlaybackService.getCurrent();
-    if (action.scope === 'all') {
-      PlaybackService.setGlobalSpeed(action.speed);
-    } else if (cur !== null) {
-      PlaybackService.setTrackSpeed(cur.uri, action.speed);
-    } else {
-      PlaybackService.getInstance().setSpeed(action.speed);
-    }
-    promptAction.showToast({ message: `播放速度已设为 ${action.speed.toFixed(2)}x` });
-    this.animateClose(() => { this.speedOpen = false; });
-  }
-
-  // ── A-B 循环 ──
-
-  /** 标记终点 B(仿视频端 setAbPointB)。B 必须在 A 之后,否则忽略。 */
-  setAbPointB(): void {
-    if (this.abPointA < 0) {
-      return;
-    }
-    const b: number = Math.max(0, Math.floor(this.vm.position));
-    if (b <= this.abPointA) {
-      promptAction.showToast({ message: 'B 点需在 A 点之后' });
-      return;
-    }
-    this.abPointB = b;
-    this.abActive = true;
-    promptAction.showToast({ message: 'A-B 循环已开启' });
-  }
-
-  /** 关闭并重置 A-B 循环(仿视频端 resetAb)。 */
-  resetAb(): void {
-    this.abPointA = -1;
-    this.abPointB = -1;
-    this.abActive = false;
-    promptAction.showToast({ message: '已关闭 A-B 循环' });
-  }
-
-  // ── 格式化 ──
-
-  fmtAbPoint(ms: number): string {
-    const safe = ms > 0 ? ms : 0;
-    const totalSec = Math.floor(safe / 1000);
-    const h = Math.floor(totalSec / 3600);
-    const m = Math.floor((totalSec % 3600) / 60);
-    const s = totalSec % 60;
-    const mm = m < 10 ? `0${m}` : `${m}`;
-    const ss = s < 10 ? `0${s}` : `${s}`;
-    return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
-  }
-
-  // ── 睡眠定时器 ──
-
-  onSleepConfirm(millis: number, _waitForMediaEnd: boolean, _resetOnInteraction: boolean): void {
-    this.clearSleepTimer();
-    this.sleepMillis = millis;
-    if (this.sleepMillis <= 0) {
-      return;
-    }
-    this.sleepTimer = setTimeout(() => {
-      this.sleepTimer = -1;
-      PlaybackService.pause();
-      promptAction.showToast({ message: '睡眠定时器：播放已暂停' });
-    }, this.sleepMillis);
-    const totalMin = Math.floor(millis / 60000);
-    const h = Math.floor(totalMin / 60);
-    const m = totalMin % 60;
-    const span = h > 0 && m > 0 ? `${h}小时${m}分` : (h > 0 ? `${h}小时` : `${m}分钟`);
-    promptAction.showToast({ message: `睡眠定时器已设为 ${span}` });
-    this.animateClose(() => { this.sleepOpen = false; });
-  }
-
-  clearSleepTimer(): void {
-    if (this.sleepTimer !== -1) {
-      clearTimeout(this.sleepTimer);
-      this.sleepTimer = -1;
-    }
-  }
-
-  // ── 跳转至时间 ──
-
-  onJumpConfirm(timeMs: number): void {
-    PlaybackService.seek(timeMs);
-    this.animateClose(() => { this.jumpOpen = false; });
-  }
-
-  // ── 书签 ──
-
-  addBookmarkAtCurrent(): void {
-    const timeMs = Math.max(0, Math.floor(this.vm.position));
-    const bm = new BookMark(this.bookmarkIdSeq++, -1, timeMs, '');
-    this.bookmarks = [...this.bookmarks, bm].sort((a, b) => a.timeMs - b.timeMs);
-    promptAction.showToast({ message: '已保存书签' });
-  }
-
-  deleteBookmark(id: number): void {
-    this.bookmarks = this.bookmarks.filter((b) => b.id !== id);
-  }
-
-  renameBookmark(_id: number): void {
-    promptAction.showToast({ message: '书签重命名功能开发中' });
-  }
-
-  // ── 保存到播放列表 ──
-
-  async onSavePlaylistConfirm(action: AddToPlaylistAction): Promise<void> {
-    const svc = PlaybackService.getInstance();
-    const cur = svc.getCurrent();
-    const uri = cur?.uri ?? '';
-    if (uri.length === 0) {
-      promptAction.showToast({ message: '当前没有可保存的曲目' });
-      this.animateClose(() => { this.savePlaylistOpen = false; });
-      return;
-    }
-    await MediaLibrary.initPlaylistCache();
-    for (const playlistId of action.selectedIds) {
-      if (action.replace) {
-        await MediaLibrary.replacePlaylist(playlistId, [uri]);
-      } else {
-        await MediaLibrary.addToPlaylist(playlistId, uri);
-      }
-    }
-    const count = action.selectedIds.length;
-    promptAction.showToast({ message: count === 1 ? '已保存到播放列表' : `已保存到 ${count} 个播放列表` });
-    this.animateClose(() => { this.savePlaylistOpen = false; });
-  }
-
 }

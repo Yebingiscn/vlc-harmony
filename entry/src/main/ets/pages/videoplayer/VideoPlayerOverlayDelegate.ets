@@ -1,3 +1,4 @@
+import { UiFeedback } from '../../common/utils/UiFeedback';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { NavController } from '../../common/data/NavController';
 import { PlaybackService } from '../../common/data/PlaybackService';
@@ -8,7 +9,6 @@ import { SleepTimerDialog } from '../SleepTimerDialog';
 import { SelectChapterDialog } from '../SelectChapterDialog';
 import { VideoTracksDialog } from '../VideoTracksDialog';
 import { RenderersDialog } from '../RenderersDialog';
-import { promptAction } from '@kit.ArkUI';
 import {
   buildPlayerAdvancedOptions,
   PlayerAdvancedOptionId,
@@ -19,7 +19,8 @@ import {
   VideoPlayerBottomAction,
   VideoPlayerBottomActionId,
 } from './VideoPlayerControls';
-import { fmtTime, VideoPlayerViewModel } from './VideoPlayerViewModel';
+import { VideoPlayerViewModel } from './VideoPlayerViewModel';
+import { fmtTime } from './VideoPlayerModels';
 
 /** Page 注入的底部动作扩展（orientation / aspectRatio）。 */
 export interface VideoPlayerOverlayActions {
@@ -56,24 +57,18 @@ export class VideoPlayerOverlayDelegate {
   @Trace sheetOpen: boolean = false;
   @Trace sheetKind: string = '';
   @Trace advancedOptionsOpen: boolean = false;
-
-  private hudTimer: number = -1;
-  private sleepTimer: number = -1;
   sleepMillis: number = 0;
   sleepWaitMediaEnd: boolean = false;
   sleepResetOnInteraction: boolean = false;
+  private hudTimer: number = -1;
+  private sleepTimer: number = -1;
   private pendingAdvancedAction: PlayerAdvancedOptionId | null = null;
-
   private vm: VideoPlayerViewModel | null = null;
   private actions: VideoPlayerOverlayActions | null = null;
 
   bind(vm: VideoPlayerViewModel, actions: VideoPlayerOverlayActions): void {
     this.vm = vm;
     this.actions = actions;
-  }
-
-  private requireVm(): VideoPlayerViewModel {
-    return this.vm as VideoPlayerViewModel;
   }
 
   /** 对齐 Android showOverlay。 */
@@ -131,7 +126,7 @@ export class VideoPlayerOverlayDelegate {
     hilog.info(0x0001, 'VLC', '[VLC] sleep timer armed: %{public}d ms wait=%{public}s reset=%{public}s',
       millis, String(waitForMediaEnd), String(resetOnInteraction));
     const span: string = fmtSleepSpan(millis);
-    promptAction.showToast({
+    UiFeedback.showToast({
       message: waitForMediaEnd
         ? $r('app.string.sleep_timer_set_wait', span)
         : $r('app.string.sleep_timer_set', span),
@@ -154,7 +149,7 @@ export class VideoPlayerOverlayDelegate {
       } else {
         this.requireVm().pauseForSleep();
         this.sleepArmed = false;
-        promptAction.showToast({ message: $r('app.string.sleep_timer_fired') });
+        UiFeedback.showToast({ message: $r('app.string.sleep_timer_fired') });
       }
     }, this.sleepMillis);
   }
@@ -170,7 +165,7 @@ export class VideoPlayerOverlayDelegate {
       this.vm.setStopAfterCurrent(false);
     }
     if (fromUser && wasArmed) {
-      promptAction.showToast({ message: $r('app.string.sleep_timer_cancelled') });
+      UiFeedback.showToast({ message: $r('app.string.sleep_timer_cancelled') });
     }
   }
 
@@ -263,7 +258,7 @@ export class VideoPlayerOverlayDelegate {
       this.openSub('sleep');
       return;
     }
-    promptAction.showToast({ message: '该功能暂未实现' });
+    UiFeedback.showToast({ message: '该功能暂未实现' });
   }
 
   setPendingAdvancedAction(id: PlayerAdvancedOptionId): void {
@@ -282,6 +277,10 @@ export class VideoPlayerOverlayDelegate {
   leaveAndPop(): void {
     this.requireVm().leaveEarly();
     NavController.pop();
+  }
+
+  private requireVm(): VideoPlayerViewModel {
+    return this.vm as VideoPlayerViewModel;
   }
 }
 
@@ -313,11 +312,18 @@ export struct VideoPlayerOverlayHud {
         .width(24).height(24).fillColor('#FFFFFF')
         .onClick(() => this.overlayDelegate.leaveAndPop())
       Text(this.vm.title)
-        .fontSize(18).fontColor('#FFFFFF').layoutWeight(1).margin({ left: 12, right: 12 })
-        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+        .fontSize(18)
+        .fontColor('#FFFFFF')
+        .layoutWeight(1)
+        .margin({ left: 12, right: 12 })
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
       if (this.overlayDelegate.sleepArmed) {
         Image($r('app.media.ic_sleep'))
-          .width(22).height(22).fillColor('#FF8800').margin({ right: 16 })
+          .width(22)
+          .height(22)
+          .fillColor('#FF8800')
+          .margin({ right: 16 })
           .onClick(() => {
             this.overlayDelegate.clearSleepTimer(true);
             this.overlayDelegate.resetHudTimer();
@@ -331,7 +337,12 @@ export struct VideoPlayerOverlayHud {
         })
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 44, bottom: 16 })
+    .padding({
+      left: 16,
+      right: 16,
+      top: 44,
+      bottom: 16
+    })
     .alignItems(VerticalAlign.Center)
     .linearGradient({ angle: 180, colors: [['#cb000000', 0.0], ['#00000000', 1.0]] })
     // 顶栏必须 Default，否则 Transparent 父层会把返回/菜单点透下去
@@ -402,7 +413,12 @@ export struct VideoPlayerOverlayHud {
         }, (action: VideoPlayerBottomAction): string => action.id)
       }
       .width('100%')
-      .padding({ left: 18, right: 18, top: 12, bottom: 12 })
+      .padding({
+        left: 18,
+        right: 18,
+        top: 12,
+        bottom: 12
+      })
       .justifyContent(FlexAlign.SpaceBetween)
       .alignItems(VerticalAlign.Center)
     }
@@ -446,7 +462,7 @@ export struct VideoPlayerOverlaySheet {
           initialResetOnInteraction: this.overlayDelegate.sleepResetOnInteraction,
           onClose: () => this.overlayDelegate.closeSheet(),
           onConfirm: (millis: number, waitForMediaEnd: boolean, resetOnInteraction: boolean) =>
-            this.overlayDelegate.onSleepConfirm(millis, waitForMediaEnd, resetOnInteraction),
+          this.overlayDelegate.onSleepConfirm(millis, waitForMediaEnd, resetOnInteraction),
         }).width('100%')
       } else if (this.overlayDelegate.sheetKind === 'chapter') {
         SelectChapterDialog({

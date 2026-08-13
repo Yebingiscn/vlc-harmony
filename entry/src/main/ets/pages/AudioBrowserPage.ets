@@ -1,3 +1,4 @@
+import { UiFeedback } from '../common/utils/UiFeedback';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
 import { NavController } from '../common/data/NavController';
@@ -6,7 +7,6 @@ import { EmptyLoadingState, formatDuration, Track } from '../common/models/Media
 import { Settings } from '../common/data/Settings';
 import { picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
-import { promptAction } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 
 const TAG = 'VLC-Audio';
@@ -64,10 +64,7 @@ class AudioBrowserVM {
     this.onlyFavs = await Settings.getBoolean(Settings.KEY_AUDIO_ONLY_FAVS, false);
     // 尊重「自动重新扫描」开关:autoRescan 关闭时不自动扫描。
     // 手动刷新请走 vm.reload()(下拉刷新),不受此门控影响。
-    const autoRescan = await Settings.getBoolean(Settings.KEY_MEDIALIBRARY_AUTO_RESCAN, true);
-    if (autoRescan) {
-      await MediaLibrary.scan();
-    }
+    await MediaLibrary.scan();
     await MediaLibrary.loadMediaFavs();
     this.syncData();
     this.loading = false;
@@ -222,12 +219,16 @@ export struct AudioBrowserPage {
   /** "转到艺人"请求版本号:自增保证同名艺人连续定位也触发 @Monitor。 */
   @Param goToArtistVersion: number = 0;
   private controller: TabsController = new TabsController();
+  /** 防止播放器首次初始化期间连续点击同一专辑，重复压入 AudioPlayer 页面。 */
+  private audioPlayerOpening: boolean = false;
   /** 艺术家列表滚动控制器("转到艺人"时 scrollToIndex 到对应歌手分组)。 */
   private artistScroller: Scroller = new Scroller();
   @Event onSearchGlobal: () => void = () => {
   };
 
   aboutToAppear(): void {
+    // 从播放器返回后允许再次进入；成功 push 后则一直保持锁定到页面重新显示。
+    this.audioPlayerOpening = false;
     this.vm.load();
   }
 
@@ -267,10 +268,11 @@ export struct AudioBrowserPage {
 
   async pickAudioFiles(): Promise<void> {
     try {
-      const ctx = getContext(this) as common.UIAbilityContext;
+      const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
       const opts = new picker.DocumentSelectOptions();
       opts.maxSelectNumber = 200;
       opts.fileSuffixFilters = ['音频 (.mp3, .flac, .ogg, .wav, .aac, .m4a)|.mp3,.flac,.ogg,.wav,.aac,.m4a'];
+      opts.mergeMode = picker.MergeTypeMode.AUDIO;
       const docPicker = new picker.DocumentViewPicker(ctx);
       const uris: string[] = await docPicker.select(opts);
       if (uris.length > 0) {
@@ -288,10 +290,23 @@ export struct AudioBrowserPage {
     this.playTrack(tracks[0], tracks);
   }
 
-  async playTrack(t: Track, list: Track[]): Promise<void> {
+  playTrack(t: Track, list: Track[]): void {
+    if (this.audioPlayerOpening || list.length === 0) {
+      return;
+    }
+    this.audioPlayerOpening = true;
     const queue = list.map(tk => new QueueItem(tk.id, tk.title, tk.uri, tk.artistName, tk.albumName, tk.artworkPath));
-    await PlaybackService.playList(queue, list.indexOf(t), true);
+    // 播放器首次初始化可能耗时，页面先响应点击；播放队列在后台准备。
+    void PlaybackService.playList(queue, list.indexOf(t), true).catch(() => {
+      this.audioPlayerOpening = false;
+      UiFeedback.showToast({ message: '无法播放该音频' });
+    });
     NavController.push('AudioPlayer');
+    // MainPage 会常驻并仅切换可见性，返回时本组件不保证再次触发 aboutToAppear。
+    // 因此锁只覆盖导航动画窗口，不能一直等生命周期回调释放。
+    setTimeout(() => {
+      this.audioPlayerOpening = false;
+    }, 800);
   }
 
   /** 打开专辑操作半模态,并按当前收藏状态初始化图标/文案。 */
@@ -331,6 +346,8 @@ export struct AudioBrowserPage {
                 EmptyStateView(
                   { state: this.vm.emptyState, filterQuery: this.searchQuery, onPickFile: () => this.pickAudioFiles() })
                   .layoutWeight(1).width('100%')
+              } else if (this.vm.displayAsList) {
+                this.albumList()
               } else {
                 this.albumGrid()
               }
@@ -453,18 +470,27 @@ export struct AudioBrowserPage {
       ForEach(this.vm.artistAlbums, (albums: AlbumCard[], aIdx: number) => {
         ListItemGroup({ header: this.artistHeader(aIdx) }) {
           ListItem() {
-            Grid() {
-              ForEach(albums, (card: AlbumCard) => {
-                GridItem() {
-                  this.albumCard(card)
-                }
-              }, (card: AlbumCard) => `artist_${this.vm.artistNames[aIdx]}_${card.name}`)
+            if (this.vm.displayAsList) {
+              Column() {
+                ForEach(albums, (card: AlbumCard) => {
+                  this.albumRow(card)
+                }, (card: AlbumCard) => `artist_list_${this.vm.artistNames[aIdx]}_${card.name}`)
+              }
+              .width('100%')
+            } else {
+              Grid() {
+                ForEach(albums, (card: AlbumCard) => {
+                  GridItem() {
+                    this.albumCard(card)
+                  }
+                }, (card: AlbumCard) => `artist_grid_${this.vm.artistNames[aIdx]}_${card.name}`)
+              }
+              .columnsTemplate('1fr 1fr')
+              .columnsGap(10)
+              .rowsGap(10)
+              .padding({ left: 12, right: 12, bottom: 12 })
+              .width('100%')
             }
-            .columnsTemplate('1fr 1fr')
-            .columnsGap(10)
-            .rowsGap(10)
-            .padding({ left: 12, right: 12, bottom: 12 })
-            .width('100%')
           }
         }
       }, (_: AlbumCard[], idx: number) => this.vm.artistNames[idx])
@@ -529,6 +555,63 @@ export struct AudioBrowserPage {
   }
 
   // ---- 专辑网格 ----
+
+  @Builder
+  albumList() {
+    List() {
+      ForEach(this.vm.albums, (card: AlbumCard) => {
+        ListItem() {
+          this.albumRow(card)
+        }
+      }, (card: AlbumCard) => `album_list_${card.name}|${card.artist}`)
+    }
+    .divider({
+      strokeWidth: 0.5,
+      color: $r('app.color.divider'),
+      startMargin: 76,
+      endMargin: 8
+    })
+    .alignListItem(ListItemAlign.Start)
+    .width('100%')
+    .height('100%')
+  }
+
+  @Builder
+  albumRow(card: AlbumCard) {
+    Row() {
+      Image(card.artwork.length > 0 ? card.artwork : $r('app.media.ic_album_big'))
+        .width(52)
+        .height(52)
+        .objectFit(ImageFit.Cover)
+        .borderRadius(6)
+        .margin({ right: 12 })
+      Column() {
+        Text(card.name)
+          .fontSize(16)
+          .fontColor($r('app.color.list_title'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(`${card.trackCount} 首 · ${card.artist}`)
+          .fontSize(13)
+          .fontColor($r('app.color.list_subtitle'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .margin({ top: 3 })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+      Image($r('app.media.ic_more'))
+        .width(22)
+        .height(22)
+        .fillColor($r('app.color.list_title'))
+        .margin({ left: 8 })
+        .onClick(() => this.openAlbumSheet(card))
+    }
+    .width('100%')
+    .padding({ left: 12, right: 16, top: 8, bottom: 8 })
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => this.playAll(card.tracks))
+  }
 
   @Builder
   albumGrid() {
@@ -753,7 +836,7 @@ export struct AudioBrowserPage {
         const key = MediaLibrary.albumFavKey(this.sheetAlbum!.name, this.sheetAlbum!.artist);
         MediaLibrary.toggleMediaFav(key).then((fav: boolean) => {
           this.sheetAlbumFav = fav;
-          promptAction.showToast({ message: fav ? '已收藏' : '已取消收藏' });
+          UiFeedback.showToast({ message: fav ? '已收藏' : '已取消收藏' });
           this.vm.syncData();
         });
       })
@@ -775,7 +858,7 @@ export struct AudioBrowserPage {
         bottom: 14
       })
       .onClick(() => {
-        promptAction.showToast({
+        UiFeedback.showToast({
           message: `专辑: ${this.sheetAlbum!.name}\n歌手: ${this.sheetAlbum!.artist}\n曲目: ${this.sheetAlbum!.trackCount} 首`
         });
       })

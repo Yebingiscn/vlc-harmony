@@ -1591,6 +1591,10 @@
     {
       "name": "safe_mode_summary",
       "value": "启用时，必须输入密码才能删除文件或修改播放列表"
+    },
+    {
+      "name": "reason_file_access_persist",
+      "value": "用于在应用重启后继续访问您主动导入的音视频文件"
     }
   ]
 }

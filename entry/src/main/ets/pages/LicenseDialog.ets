@@ -12,8 +12,10 @@ export struct LicenseDialog {
   @Param copyright: string = '';
   @Param licenseDescription: string = '';
   @Param licenseLink: string = '';
-  @Event onClose: () => void = () => {};
-  @Event onOpenLink: () => void = () => {};
+  @Event onClose: () => void = () => {
+  };
+  @Event onOpenLink: () => void = () => {
+  };
 
   build() {
     Column() {
@@ -30,7 +32,8 @@ export struct LicenseDialog {
               .textOverflow({ overflow: TextOverflow.Ellipsis })
             if (this.licenseLink.length > 0) {
               Image($r('app.media.ic_website'))
-                .width(24).height(24)
+                .width(24)
+                .height(24)
                 .fillColor('#FFFFFF')
                 .padding(8)
                 .margin({ top: 8 })
@@ -56,7 +59,12 @@ export struct LicenseDialog {
             .margin({ top: 16 })
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: 16, bottom: 16 })
+        .padding({
+          left: 16,
+          right: 16,
+          top: 16,
+          bottom: 16
+        })
         .alignItems(HorizontalAlign.Start)
       }
       .width('100%')

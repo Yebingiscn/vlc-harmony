@@ -1,3 +1,4 @@
+import { UiFeedback } from '../utils/UiFeedback';
 /**
  * PlaybackService —— 全局单例播放业务层。
  * 通过 ArkTS LibVLC/Media/MediaPlayer 对接 libVLC(不再直接 import libvlcnapi.so)。
@@ -7,7 +8,6 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { wantAgent, WantAgent } from '@kit.AbilityKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
-import { promptAction } from '@kit.ArkUI';
 import { audio } from '@kit.AudioKit';
 import { call, observer as telephonyObserver } from '@kit.TelephonyKit';
 import { MediaWrapper, PlayState } from '../models/MediaModels';
@@ -15,8 +15,8 @@ import { Settings } from './Settings';
 import { AppContext } from './AppContext';
 import { MediaSessionManager } from './MediaSessionManager';
 import { NetworkConnectionManager } from './NetworkConnectionManager';
-import { LibVLC, Media, MediaPlayer, Equalizer, RendererDiscoverer, MediaSlaveType } from '../../libvlc';
-import { VlcTrackInfo, VlcChapterInfo, VlcRendererInfo, VlcMediaTrackInfo } from 'libvlcnapi.so';
+import { Equalizer, LibVLC, Media, MediaPlayer, MediaSlaveType, RendererDiscoverer } from '../../libvlc';
+import { VlcChapterInfo, VlcMediaTrackInfo, VlcRendererInfo, VlcTrackInfo } from 'libvlcnapi.so';
 import { PlaybackQueueHistory, PlaybackQueueHistoryType } from './PlaybackQueueHistory';
 
 const LOG_DOMAIN: number = 0x0001;
@@ -61,16 +61,16 @@ export class QueueItem {
     this.artworkPath = artworkPath;
   }
 
+  static fromMediaWrapper(mw: MediaWrapper): QueueItem {
+    return new QueueItem(mw.id, mw.title, mw.uri, mw.artistName, mw.albumName, mw.artworkPath);
+  }
+
   toMediaWrapper(type: number = 1): MediaWrapper {
     const mw = new MediaWrapper(this.id, this.title, this.uri, type);
     mw.artistName = this.artistName;
     mw.albumName = this.albumName;
     mw.artworkPath = this.artworkPath;
     return mw;
-  }
-
-  static fromMediaWrapper(mw: MediaWrapper): QueueItem {
-    return new QueueItem(mw.id, mw.title, mw.uri, mw.artistName, mw.albumName, mw.artworkPath);
   }
 }
 
@@ -86,22 +86,30 @@ export interface PlaybackState {
   speed: number;
   shuffle: boolean;
   repeatMode: number;
+
   /** 全局音频播放速度是否开启(速度弹窗默认作用域:开→所有曲目,关→此曲目)。 */
   globalSpeedEnabled: boolean;
   queueSize: number;
   currentIndex: number;
+
   /** 当前播放是否处于"仅播放音频"模式(视频文件当音频播),让 MiniPlayer 也能显示视频。 */
   playAsAudio: boolean;
 }
 
 export interface PlaybackListener {
   onStateChange?(state: PlayState): void;
+
   /** LibVLC 发出 ended 时触发，早于队列切换，适合保存当前媒体的完成状态。 */
   onMediaEnded?(): void;
+
   onTimeUpdate?(current: number, duration: number): void;
+
   onQueueChanged?(): void;
+
   onVideoSize?(width: number, height: number): void;
+
   onTracksChanged?(): void;
+
   /** 兼容 origin/dev:一次推送完整快照。 */
   onChange?(s: PlaybackState): void;
 }
@@ -125,8 +133,6 @@ export class PlaybackService {
   private continuousTaskActive: boolean = false;
   /** 长时任务通知点击使用的 WantAgent(复用,避免重复构建)。 */
   private wantAgentObj: WantAgent | null = null;
-  /** 网络计费变化监听(init 注册,release 注销)。 */
-  private meteredChangeListener: (metered: boolean) => void = () => {};
   private duration: number = 0;
   private position: number = 0;
   private listeners: PlaybackListener[] = [];
@@ -143,18 +149,15 @@ export class PlaybackService {
   private shuffleHistory: number[] = [];
   /** Identifies the current queue's history bucket, so index changes are persisted too. */
   private queueHistoryType: PlaybackQueueHistoryType | null = null;
-
   private lib: LibVLC | null = null;
   private player: MediaPlayer | null = null;
   private equalizer: Equalizer | null = null;
   private rendererDiscoverer: RendererDiscoverer | null = null;
   private currentRendererHandle: number = -1;
-
   // ── 音频环境监听(耳机侦测 / 通知闪避 / 通话恢复)──
   private audioManager: audio.AudioManager | null = null;
   private routingManager: audio.AudioRoutingManager | null = null;
-  /** 通知闪避的 legacy 焦点模式(AudioManager.on('interrupt') 的第二个参数,off 时需要复用)。 */
-  private interruptFocusMode: audio.AudioInterrupt | null = null;
+  private audioSessionManager: audio.AudioSessionManager | null = null;
   /** 耳机拔出时是否正在播放(对齐安卓 ACTION_AUDIO_BECOMING_NOISY 的 wasPlaying)。 */
   private headsetWasPlaying: boolean = false;
   /** 通知/打断是否处于「临时让出」(对齐安卓 AudioFocusHelper.lossTransient)。 */
@@ -165,6 +168,17 @@ export class PlaybackService {
   /** 通话期间是否暂停了播放(通话结束按 resume_playback 恢复)。 */
   private pausedByCall: boolean = false;
   private audioEnvSubscribed: boolean = false;
+  private lastTimeEmit: number = 0;
+  /** AVSession 播放中进度同步定时器(确保通知栏进度条持续推进)。 */
+  private sessionSyncTimer: number = -1;
+  /**
+   * SPU / 音频延迟的本地缓存。
+   * libvlc 已桥接 set/get_spu_delay 与 set/get_audio_delay(任务 #8);本字段保留
+   * 作为快速 UI 显示路径,仅由 set* 回写,避免每次 getter 过 native 桥。
+   * 切换媒体/release 时外部需将两值重置为 0。
+   */
+  private spuDelayUs: number = 0;
+  private audioDelayUs: number = 0;
 
   static getInstance(): PlaybackService {
     if (!PlaybackService.instance) {
@@ -173,168 +187,8 @@ export class PlaybackService {
     return PlaybackService.instance;
   }
 
-  private async ensureInit(): Promise<void> {
-    if (this.inited) {
-      return;
-    }
-    if (this.initializing) {
-      while (this.initializing) {
-        await new Promise<void>((r: () => void) => setTimeout(r, 20));
-      }
-      return;
-    }
-    this.initializing = true;
-    try {
-      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] PlaybackService.init start');
-      this.lib = new LibVLC(await this.buildLibVlcAudioOptions());
-      if (this.lib.getHandle() === 0) {
-        hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] LibVLC create FAILED');
-        this.lib.release();
-        this.lib = null;
-        return;
-      }
-      this.player = new MediaPlayer(this.lib);
-      if (this.player.getHandle() === 0) {
-        hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] MediaPlayer create FAILED');
-        this.player.release();
-        this.player = null;
-        this.lib.release();
-        this.lib = null;
-        return;
-      }
-      this.player.setEventListener((event: string, value: number) => this.onNativeEvent(event, value));
-      this.inited = true;
-      // 订阅音频环境事件(耳机/通知闪避/通话),各回调内动态读设置,开关即时生效
-      this.setupAudioEnvironment();
-      // 恢复上次会话持久化的随机/循环状态(对齐 Android setRepeatTypeFromSettings)
-      this.shuffle = await Settings.getBoolean(Settings.AUDIO_SHUFFLING, false);
-      this.repeatMode = await Settings.getInt(Settings.KEY_PLAYBACK_REPEAT_MODE, 0);
-      // 恢复全局音频播放速度(对齐 Android 设置项 Use the global playback speed)
-      this.globalSpeedEnabled = await Settings.getBoolean(Settings.KEY_PLAYBACK_SPEED_AUDIO_GLOBAL, false);
-      this.globalSpeedValue = await Settings.getFloat(Settings.KEY_PLAYBACK_SPEED_AUDIO_GLOBAL_VALUE, 1.0);
-      if (this.globalSpeedValue < 0.25 || this.globalSpeedValue > 8.0) {
-        this.globalSpeedValue = 1.0;
-      }
-      // 恢复每曲目独立速度 {uri: speed}
-      const savedSpeeds = await Settings.getString(Settings.KEY_AUDIO_TRACK_SPEEDS, '');
-      if (savedSpeeds.length > 0) {
-        try {
-          const obj = JSON.parse(savedSpeeds) as Record<string, number>;
-          this.trackSpeeds = new Map();
-          for (const k of Object.keys(obj)) {
-            const v = Number(obj[k]);
-            if (v >= 0.25 && v <= 8.0) {
-              this.trackSpeeds.set(k, v);
-            }
-          }
-        } catch (e) {
-          hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] trackSpeeds parse failed: %{public}s',
-            (e as Error).message ?? String(e));
-        }
-      }
-      MediaSessionManager.setCallbacks({
-        onPlay: () => { void this.play(); },
-        onPause: () => { this.pause(); },
-        onStop: () => { this.stop(); },
-        onNext: () => { void this.next(); },
-        onPrevious: () => { void this.prev(); },
-        onSeek: (ms: number) => { this.seek(ms); },
-        onSetSpeed: (rate: number) => { this.setSpeed(rate); },
-      });
-      void MediaSessionManager.ensure();
-      this.meteredChangeListener = (metered: boolean) => {
-        void this.checkMeteredNetwork(metered);
-      };
-      NetworkConnectionManager.onMeteredChange(this.meteredChangeListener);
-      NetworkConnectionManager.start();
-      hilog.info(LOG_DOMAIN, LOG_TAG,
-        '[VLC] PlaybackService.init ok shuffle=%{public}s repeatMode=%{public}d globalSpeed=%{public}s speed=%{public}f tracks=%{public}d',
-        this.shuffle ? 'on' : 'off', this.repeatMode,
-        this.globalSpeedEnabled ? 'on' : 'off', this.speed, this.trackSpeeds.size);
-    } catch (e) {
-      hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] PlaybackService.init exception: %{public}s',
-        (e as Error).message ?? String(e));
-    } finally {
-      this.initializing = false;
-    }
-  }
-
-  /**
-   * 确保 player 存活。
-   * stop() 会触发原生异步 stop+release 并使当前 MediaPlayer 失效(isReleased),下次加载前必须重建;
-   * 重建时重挂事件回调、重放音量/速度,并把 videoOutId 的视频面重绑回来(自动接续不经过 bindAndPlay,
-   * 若不重绑,播完切下一首会黑屏只剩音频)。
-   */
-  private async ensureLivePlayer(): Promise<MediaPlayer | null> {
-    await this.ensureInit();
-    if (!this.inited || !this.lib) {
-      return null;
-    }
-    if (this.player !== null && !this.player.isReleased()) {
-      return this.player;
-    }
-    hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] ensureLivePlayer: recreate player after async stop');
-    const np = new MediaPlayer(this.lib);
-    if (np.getHandle() === 0) {
-      np.release();
-      this.player = null;
-      return null;
-    }
-    np.setEventListener((event: string, value: number) => this.onNativeEvent(event, value));
-    np.setVolume(this.volume);
-    np.setRate(this.speed);
-    if (this.videoOutId.length > 0) {
-      const bound = np.attachViews(this.videoOutId);
-      hilog.info(LOG_DOMAIN, LOG_TAG,
-        '[VLC] ensureLivePlayer re-attach videoOut=%{public}s bound=%{public}s',
-        this.videoOutId, String(bound));
-    }
-    this.player = np;
-    return np;
-  }
-
-  /**
-   * 音频设置 → libVLC 实例选项(对齐安卓 PreferencesAudio 的 onSharedPreferenceChanged →
-   * restartLibVLC,启动时按设置注入 libvlc_new)。仅对接 libvlccore.so 实际编译进库的选项:
-   *  - 回放增益 audio-replay-gain-*(mode/preamp/default/peak-protection)已编译 ✓
-   *  - 偏好的音频语言 --audio-language 已编译 ✓
-   *  aout(opensles/audiotrack)/soundfont/audio-passthrough 未编译进库,不注入。
-   * 生效时机:下次播放服务创建 libVLC 实例时(设置变更后重启应用/播放器)。
-   */
-  private async buildLibVlcAudioOptions(): Promise<string[]> {
-    const opts: string[] = [];
-    try {
-      // ── 回放增益(对齐安卓 replaygain 分组)──
-      const rgEnabled: boolean = await Settings.getBoolean('audio-replay-gain-enable', false);
-      const rgMode: string = await Settings.getString('audio-replay-gain-mode', 'track');
-      // enable 关 → mode=none(不处理增益);开 → 使用 track/album
-      const mode: string = (rgEnabled && (rgMode === 'track' || rgMode === 'album')) ? rgMode : 'none';
-      opts.push(`--audio-replay-gain-mode=${mode}`);
-      const rgPreamp: string = await Settings.getString('audio-replay-gain-preamp', '0.0');
-      const rgDefault: string = await Settings.getString('audio-replay-gain-default', '-7.0');
-      this.pushFloatOption(opts, '--audio-replay-gain-preamp', rgPreamp);
-      this.pushFloatOption(opts, '--audio-replay-gain-default', rgDefault);
-      const peakProtection: boolean = await Settings.getBoolean('audio-replay-gain-peak-protection', true);
-      opts.push(peakProtection ? '--audio-replay-gain-peak-protection' : '--no-audio-replay-gain-peak-protection');
-      // ── 偏好的音频语言(对齐安卓 audio_preferred_language,BCP-47,空=无偏好)──
-      const lang: string = await Settings.getString('audio_preferred_language', '');
-      if (lang.length > 0) {
-        opts.push(`--audio-language=${lang}`);
-      }
-      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] libvlc audio options: %{public}s', JSON.stringify(opts));
-    } catch (e) {
-      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] buildLibVlcAudioOptions fallback: %{public}s',
-        (e as Error).message ?? String(e));
-    }
-    return opts;
-  }
-
-  /** 浮点文本选项(回放增益 preamp/default):仅当值可解析为有限数字时注入,否则跳过。 */
-  private pushFloatOption(opts: string[], flag: string, raw: string): void {
-    const v = Number.parseFloat(raw);
-    if (Number.isFinite(v)) {
-      opts.push(`${flag}=${v}`);
-    }
+  static getState(): PlayState {
+    return PlaybackService.getInstance().getState();
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -349,395 +203,138 @@ export class PlaybackService {
   // try/catch 兜底,耳机/通话两条路径不依赖它。
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /** 订阅音频环境事件。无权限要求,设备/系统事件。 */
-  private setupAudioEnvironment(): void {
-    if (this.audioEnvSubscribed) {
-      return;
-    }
-    try {
-      const mgr: audio.AudioManager = audio.getAudioManager();
-      const routing: audio.AudioRoutingManager = mgr.getRoutingManager();
-      this.audioManager = mgr;
-      this.routingManager = routing;
-      routing.on('deviceChange', audio.DeviceFlag.OUTPUT_DEVICES_FLAG, this.onDeviceChange);
-      // 通知闪避:注册媒体焦点,收到打断时自行处理(暂停/闪避),不做系统自动暂停
-      const focusMode: audio.AudioInterrupt = {
-        streamUsage: audio.StreamUsage.STREAM_USAGE_MEDIA,
-        contentType: audio.ContentType.CONTENT_TYPE_MUSIC,
-        pauseWhenDucked: false,
-      };
-      this.interruptFocusMode = focusMode;
-      mgr.on('interrupt', focusMode, this.onAudioInterrupt);
-      telephonyObserver.on('callStateChange', this.onCallStateChange);
-      this.audioEnvSubscribed = true;
-      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] audio environment listeners subscribed');
-    } catch (e) {
-      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] setupAudioEnvironment: %{public}s',
-        (e as Error).message ?? String(e));
-      this.audioManager = null;
-      this.routingManager = null;
-      this.interruptFocusMode = null;
-    }
+  static getQueue(): QueueItem[] {
+    return PlaybackService.getInstance().getQueue().map((mw: MediaWrapper) => QueueItem.fromMediaWrapper(mw));
   }
 
-  private teardownAudioEnvironment(): void {
-    if (!this.audioEnvSubscribed) {
-      return;
-    }
-    try {
-      this.routingManager?.off('deviceChange', this.onDeviceChange);
-      if (this.audioManager && this.interruptFocusMode) {
-        this.audioManager.off('interrupt', this.interruptFocusMode, this.onAudioInterrupt);
-      }
-      telephonyObserver.off('callStateChange', this.onCallStateChange);
-    } catch (e) {
-      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] teardownAudioEnvironment: %{public}s',
-        (e as Error).message ?? String(e));
-    }
-    this.audioManager = null;
-    this.routingManager = null;
-    this.interruptFocusMode = null;
-    this.audioEnvSubscribed = false;
-    this.headsetWasPlaying = false;
-    this.lossTransient = false;
-    this.lossTransientWasPlaying = false;
-    this.duckedVolume = -1;
-    this.pausedByCall = false;
+  static getCurrentIndex(): number {
+    return PlaybackService.getInstance().getCurrentIndex();
   }
 
-  /** 有线/无线耳机设备类型(WIRED/BT/USB)。 */
-  private isHeadsetDeviceType(t: audio.DeviceType): boolean {
-    return t === audio.DeviceType.WIRED_HEADSET
-      || t === audio.DeviceType.WIRED_HEADPHONES
-      || t === audio.DeviceType.BLUETOOTH_SCO
-      || t === audio.DeviceType.BLUETOOTH_A2DP
-      || t === audio.DeviceType.USB_HEADSET;
+  static getCurrent(): QueueItem | null {
+    const cur = PlaybackService.getInstance().getCurrent();
+    return cur ? QueueItem.fromMediaWrapper(cur) : null;
   }
 
-  private onDeviceChange = (action: audio.DeviceChangeAction): void => {
-    void this.handleDeviceChange(action);
-  };
-
-  /** 耳机侦测:拔出 → 暂停(记住 wasPlaying);插入 → 按 enable_play_on_headset_insertion 恢复。
-   *  对齐安卓 ACTION_AUDIO_BECOMING_NOISY / ACTION_HEADSET_PLUG。 */
-  private async handleDeviceChange(action: audio.DeviceChangeAction): Promise<void> {
-    try {
-      const enabled: boolean = await Settings.getBoolean('enable_headset_detection', true);
-      if (!enabled) {
-        return;
-      }
-      const devices: audio.AudioDeviceDescriptor[] = action.deviceDescriptors ?? [];
-      // 变化后设备列表是否仍含耳机:拔出后不含 → 音频路由被移除(对齐 Becoming Noisy)。
-      const headsetPresent: boolean = devices.some((d: audio.AudioDeviceDescriptor) =>
-        this.isHeadsetDeviceType(d.deviceType));
-      if (action.type === audio.DeviceChangeType.CONNECT) {
-        if (headsetPresent && this.headsetWasPlaying && this.getCurrent() !== null) {
-          const resume: boolean = await Settings.getBoolean('enable_play_on_headset_insertion', false);
-          if (resume) {
-            hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] headset inserted -> resume playback');
-            this.headsetWasPlaying = false;
-            this.play();
-          }
-        }
-      } else if (action.type === audio.DeviceChangeType.DISCONNECT) {
-        if (!headsetPresent) {
-          this.headsetWasPlaying = this.state === PlayState.PLAYING;
-          if (this.headsetWasPlaying && this.getCurrent() !== null) {
-            hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] headset removed -> pause playback');
-            this.pause();
-          }
-        }
-      }
-    } catch (e) {
-      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] handleDeviceChange: %{public}s',
-        (e as Error).message ?? String(e));
-    }
+  static snapshot(): PlaybackState {
+    return PlaybackService.getInstance().snapshot();
   }
 
-  private onAudioInterrupt = (action: audio.InterruptAction): void => {
-    void this.handleAudioInterrupt(action);
-  };
-
-  /** 通知/来电打断(对齐安卓 VLCAudioFocusHelper.onAudioFocusChange):
-   *  INTERRUPT_HINT_PAUSE/STOP → 临时暂停;RESUME → 恢复音量 + 按 resume_playback 恢复播放;
-   *  INTERRUPT_HINT_DUCK → 按 audio_ducking 降为 1/3;UNDUCK → 恢复原音量。 */
-  private async handleAudioInterrupt(action: audio.InterruptAction): Promise<void> {
-    try {
-      const hint: audio.InterruptHint = action.hint ?? audio.InterruptHint.INTERRUPT_HINT_NONE;
-      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] audioInterrupt actionType=%{public}d type=%{public}d hint=%{public}d',
-        action.actionType, action.type ?? 0, hint);
-      if (hint === audio.InterruptHint.INTERRUPT_HINT_PAUSE
-        || hint === audio.InterruptHint.INTERRUPT_HINT_STOP) {
-        if (!this.lossTransient) {
-          this.lossTransient = true;
-          this.lossTransientWasPlaying = this.state === PlayState.PLAYING;
-          if (this.lossTransientWasPlaying) {
-            this.pause();
-          }
-        }
-      } else if (hint === audio.InterruptHint.INTERRUPT_HINT_RESUME) {
-        // 先恢复被闪避降低的音量
-        if (this.duckedVolume >= 0) {
-          this.setVolume(this.duckedVolume);
-          this.duckedVolume = -1;
-        }
-        if (this.lossTransient) {
-          const resume: boolean = await Settings.getBoolean(Settings.RESUME_PLAYBACK, true);
-          if (this.lossTransientWasPlaying && resume && this.state !== PlayState.PLAYING) {
-            hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] audioInterrupt resume playback');
-            this.play();
-          }
-          this.lossTransient = false;
-          this.lossTransientWasPlaying = false;
-        }
-      } else if (hint === audio.InterruptHint.INTERRUPT_HINT_DUCK) {
-        if (this.state === PlayState.PLAYING && this.duckedVolume < 0) {
-          const duck: boolean = await Settings.getBoolean(Settings.AUDIO_DUCKING, true);
-          if (duck) {
-            this.duckedVolume = this.getVolume();
-            const ducked: number = Math.max(1, Math.floor(this.duckedVolume / 3));
-            this.setVolume(ducked);
-            hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] audioInterrupt duck %{public}d -> %{public}d',
-              this.duckedVolume, ducked);
-          }
-        }
-      } else if (hint === audio.InterruptHint.INTERRUPT_HINT_UNDUCK) {
-        if (this.duckedVolume >= 0) {
-          this.setVolume(this.duckedVolume);
-          this.duckedVolume = -1;
-        }
-      }
-    } catch (e) {
-      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] handleAudioInterrupt: %{public}s',
-        (e as Error).message ?? String(e));
-    }
+  static addListener(l: PlaybackListener): void {
+    PlaybackService.getInstance().addListener(l);
   }
 
-  private onCallStateChange = (info: telephonyObserver.CallStateInfo): void => {
-    void this.handleCallStateChange(info);
-  };
-
-  /** 通话状态:进入通话(RINGING/OFFHOOK/ANSWERED) → 暂停;结束(IDLE) → 按 resume_playback 恢复。
-   *  对齐安卓 来电打断 + RESUME_PLAYBACK 设置(通话结束继续播放)。 */
-  private async handleCallStateChange(info: telephonyObserver.CallStateInfo): Promise<void> {
-    try {
-      const inCall: boolean = info.state !== call.CallState.CALL_STATE_IDLE
-        && info.state !== call.CallState.CALL_STATE_UNKNOWN;
-      if (inCall) {
-        if (this.state === PlayState.PLAYING) {
-          this.pausedByCall = true;
-          hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] call state=%{public}d -> pause playback', info.state);
-          this.pause();
-        }
-      } else {
-        if (this.pausedByCall) {
-          const resume: boolean = await Settings.getBoolean(Settings.RESUME_PLAYBACK, true);
-          if (resume && this.state !== PlayState.PLAYING) {
-            hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] call ended -> resume playback');
-            this.play();
-          }
-          this.pausedByCall = false;
-        }
-      }
-    } catch (e) {
-      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] handleCallStateChange: %{public}s',
-        (e as Error).message ?? String(e));
-    }
+  static removeListener(l: PlaybackListener): void {
+    PlaybackService.getInstance().removeListener(l);
   }
 
-  private lastTimeEmit: number = 0;
-  /** AVSession 播放中进度同步定时器(确保通知栏进度条持续推进)。 */
-  private sessionSyncTimer: number = -1;
-
-  /** timeChanged 节流:libVLC 在 seek/定位时会爆发高频 timeChanged,逐条刷新
-   *  position 会触发 ArkUI 渲染风暴并积压 tsfn 队列;合并到 300ms 一刷。 */
-  private onTimeChangedThrottled(ms: number): void {
-    const now = Date.now();
-    if (now - this.lastTimeEmit < 300) {
-      return;
-    }
-    this.lastTimeEmit = now;
-    this.position = ms;
-    this.emitTime();
-    void MediaSessionManager.updatePlaybackState(this.state, ms, this.duration, this.speed);
+  static async playList(items: QueueItem[], startIndex: number, replace: boolean): Promise<void> {
+    await PlaybackService.getInstance().playQueueItems(items, startIndex, replace);
   }
 
-  private startSessionSync(): void {
-    if (this.sessionSyncTimer !== -1) {
-      return;
-    }
-    this.sessionSyncTimer = setInterval(() => {
-      void MediaSessionManager.updatePlaybackState(this.state, this.position, this.duration, this.speed);
-    }, 1000);
+  static async append(items: QueueItem[]): Promise<void> {
+    await PlaybackService.getInstance().appendQueueItems(items);
   }
 
-  private stopSessionSync(): void {
-    if (this.sessionSyncTimer !== -1) {
-      clearInterval(this.sessionSyncTimer);
-      this.sessionSyncTimer = -1;
-    }
+  static async play(): Promise<void> {
+    await PlaybackService.getInstance().play();
   }
 
-  /** 构建长时任务通知的 WantAgent(点击通知回到应用)。 */
-  private async getContinuousWantAgent(): Promise<WantAgent | null> {
-    if (this.wantAgentObj !== null) {
-      return this.wantAgentObj;
-    }
-    try {
-      const ctx = AppContext.get();
-      const info: wantAgent.WantAgentInfo = {
-        wants: [{
-          bundleName: ctx.abilityInfo.bundleName,
-          abilityName: 'EntryAbility',
-        }],
-        operationType: wantAgent.OperationType.START_ABILITY,
-        requestCode: 0,
-        wantAgentFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG],
-      };
-      this.wantAgentObj = await wantAgent.getWantAgent(info);
-    } catch (e) {
-      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] build continuous-task wantAgent failed: %{public}s',
-        (e as Error).message ?? String(e));
-    }
-    return this.wantAgentObj;
+  static async pause(): Promise<void> {
+    PlaybackService.getInstance().pause();
   }
 
-  /** 申请 AUDIO_PLAYBACK 长时任务,保证退后台后音频不被系统静音/挂起。 */
-  private async startContinuousTask(): Promise<void> {
-    if (this.continuousTaskActive || !AppContext.isReady()) {
-      return;
-    }
-    const agent: WantAgent | null = await this.getContinuousWantAgent();
-    if (agent === null) {
-      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] startBackgroundRunning skipped: wantAgent unavailable');
-      return;
-    }
-    try {
-      await backgroundTaskManager.startBackgroundRunning(
-        AppContext.get(), backgroundTaskManager.BackgroundMode.AUDIO_PLAYBACK, agent);
-      this.continuousTaskActive = true;
-      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] continuous task started (AUDIO_PLAYBACK)');
-    } catch (e) {
-      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] startBackgroundRunning failed: %{public}s',
-        (e as Error).message ?? String(e));
-    }
+  static async togglePlay(): Promise<void> {
+    PlaybackService.getInstance().togglePlay();
   }
 
-  /** 取消长时任务(暂停/停止/出错/释放时)。 */
-  private async stopContinuousTask(): Promise<void> {
-    if (!this.continuousTaskActive) {
-      return;
-    }
-    this.continuousTaskActive = false;
-    if (!AppContext.isReady()) {
-      return;
-    }
-    try {
-      await backgroundTaskManager.stopBackgroundRunning(AppContext.get());
-      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] continuous task stopped');
-    } catch (e) {
-      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] stopBackgroundRunning failed: %{public}s',
-        (e as Error).message ?? String(e));
-    }
+  static async stop(): Promise<void> {
+    PlaybackService.getInstance().stop();
   }
 
-  /** 按流量计费的网络下对串流的处理(对齐 Android checkMetered)。 */
-  private async checkMeteredNetwork(meteredOverride?: boolean): Promise<void> {
-    if (this.state !== PlayState.PLAYING && this.state !== PlayState.PREPARED) {
-      return;
-    }
-    const action: string = await Settings.getString(Settings.KEY_METERED_CONNECTION, '0');
-    if (action === '0') {
-      return;
-    }
-    const cur: MediaWrapper | null = this.getCurrent();
-    const uri: string = cur?.uri ?? '';
-    if (!isStreamingUri(uri)) {
-      return;
-    }
-    let metered: boolean;
-    if (meteredOverride !== undefined) {
-      metered = meteredOverride;
-    } else {
-      metered = await NetworkConnectionManager.isMetered();
-    }
-    if (!metered) {
-      return;
-    }
-    hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] metered stream action=%{public}s uri=%{public}s',
-      action, uri);
-    if (action === '1') {
-      this.stop();
-      promptAction.showToast({ message: '已停止播放（按流量计费的网络上的串流）' });
-    } else {
-      promptAction.showToast({ message: '警告：正在按流量计费的网络上播放串流，可能产生流量费用' });
-    }
+  static async seek(ms: number): Promise<void> {
+    PlaybackService.getInstance().seek(ms);
   }
 
-  private onNativeEvent(event: string, value: number): void {
-    // 注意:这里不要对每个事件打 hilog —— seek 后 libVLC 会爆发大量 timeChanged,
-    // 逐条打日志会把 hilog socket 写满导致 writev 阻塞,JS 主线程卡死(AppFreeze)。
-    switch (event) {
-      case 'playing':
-        this.state = PlayState.PLAYING;
-        this.emitState();
-        this.refreshVideoSize();
-        this.startSessionSync();
-        void this.startContinuousTask();
-        void this.checkMeteredNetwork();
-        void MediaSessionManager.updatePlaybackState(PlayState.PLAYING, this.position, this.duration, this.speed);
-        break;
-      case 'paused':
-        this.state = PlayState.PAUSED;
-        this.emitState();
-        this.stopSessionSync();
-        void this.stopContinuousTask();
-        void MediaSessionManager.updatePlaybackState(PlayState.PAUSED, this.position, this.duration, this.speed);
-        break;
-      case 'stopped':
-        this.state = PlayState.STOPPED;
-        this.emitState();
-        this.stopSessionSync();
-        void this.stopContinuousTask();
-        void MediaSessionManager.updatePlaybackState(PlayState.STOPPED, this.position, this.duration, this.speed);
-        break;
-      case 'ended':
-        this.emitMediaEnded();
-        this.onComplete();
-        this.stopSessionSync();
-        void this.stopContinuousTask();
-        void MediaSessionManager.updatePlaybackState(PlayState.STOPPED, this.position, this.duration, this.speed);
-        break;
-      case 'error':
-        hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] MediaPlayerEncounteredError');
-        this.state = PlayState.ERROR;
-        this.emitState();
-        this.stopSessionSync();
-        void this.stopContinuousTask();
-        void MediaSessionManager.updatePlaybackState(PlayState.ERROR, this.position, this.duration, this.speed);
-        break;
-      case 'timeChanged':
-        this.onTimeChangedThrottled(value);
-        break;
-      case 'lengthChanged':
-        this.duration = value;
-        this.emitTime();
-        void MediaSessionManager.updateMetadataDuration(value);
-        void MediaSessionManager.updatePlaybackState(this.state, this.position, this.duration, this.speed);
-        break;
-      case 'vout':
-        hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] vout count=%{public}s videoOutId=%{public}s',
-          String(value), this.videoOutId);
-        this.refreshVideoSize();
-        break;
-      case 'esAdded':
-      case 'esDeleted':
-      case 'esSelected':
-        this.emitTracksChanged();
-        break;
-      default:
-        break;
+  static async setSpeed(rate: number): Promise<void> {
+    PlaybackService.getInstance().setSpeed(rate);
+  }
+
+  /** 仅当前曲目生效的速度(关全局开关)。 */
+  static setTrackSpeed(uri: string, rate: number): void {
+    PlaybackService.getInstance().setTrackSpeed(uri, rate);
+  }
+
+  /** 所有曲目统一的速度(开全局开关)。 */
+  static setGlobalSpeed(rate: number): void {
+    PlaybackService.getInstance().setGlobalSpeed(rate);
+  }
+
+  static isGlobalSpeedEnabled(): boolean {
+    return PlaybackService.getInstance().isGlobalSpeedEnabled();
+  }
+
+  static async next(auto: boolean = false): Promise<void> {
+    await PlaybackService.getInstance().next(auto);
+  }
+
+  static async prev(): Promise<void> {
+    await PlaybackService.getInstance().prev();
+  }
+
+  static toggleShuffle(): void {
+    PlaybackService.getInstance().toggleShuffle();
+  }
+
+  static isShuffle(): boolean {
+    return PlaybackService.getInstance().getShuffle();
+  }
+
+  static setShuffle(value: boolean): void {
+    PlaybackService.getInstance().setShuffle(value);
+  }
+
+  static isPlayAsAudio(): boolean {
+    return PlaybackService.getInstance().getPlayAsAudio();
+  }
+
+  static setPlayAsAudio(value: boolean): void {
+    PlaybackService.getInstance().setPlayAsAudio(value);
+  }
+
+  static cycleRepeat(): void {
+    PlaybackService.getInstance().cycleRepeat();
+  }
+
+  static speedToNumber(): number {
+    return PlaybackService.getInstance().getSpeed();
+  }
+
+  static async release(): Promise<void> {
+    PlaybackService.getInstance().release();
+  }
+
+  /** 按文件名把 .iso 文件 MRL 转换为光盘访问 MRL(dvdnav:// / bluray:// / vcd://)。
+   *  libVLC 无 UDF/iso9660 文件系统插件,直接 file:// 打开 ISO 无法解析 BD 导航结构。 */
+  private static isoToDiscMrl(uri: string): string {
+    if (!uri.toLowerCase().endsWith('.iso')) {
+      return uri;
     }
+    let path = uri;
+    if (path.startsWith('file://')) {
+      path = path.substring('file://'.length);
+    }
+    const lower = path.toLowerCase();
+    if (lower.indexOf('dvd') >= 0) {
+      return `dvdnav://${path}`;
+    }
+    if (lower.indexOf('bd') >= 0 || lower.indexOf('bluray') >= 0) {
+      return `bluray://${path}`;
+    }
+    if (lower.indexOf('vcd') >= 0) {
+      return `vcd://${path}`;
+    }
+    return uri;
   }
 
   refreshVideoSize(): void {
@@ -745,7 +342,6 @@ export class PlaybackService {
       return;
     }
     try {
-      this.player.setScale(0);
       const size = this.player.getVideoSize();
       if (size && size.width > 0 && size.height > 0) {
         if (size.width !== this.videoWidth || size.height !== this.videoHeight) {
@@ -769,6 +365,16 @@ export class PlaybackService {
       hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] refreshVideoSize: %{public}s',
         (e as Error).message ?? String(e));
     }
+  }
+
+  /** Applies libVLC's decoder-side display aspect ratio. Empty string restores the media value. */
+  setVideoAspectRatio(aspect: string): void {
+    this.player?.setAspectRatio(aspect);
+  }
+
+  /** Applies libVLC video scaling. Zero enables automatic scaling; one keeps source pixel size. */
+  setVideoScale(scale: number): void {
+    this.player?.setScale(scale);
   }
 
   getVideoWidth(): number {
@@ -820,7 +426,9 @@ export class PlaybackService {
   }
 
   setPlayAsAudio(value: boolean): void {
-    if (this.playAsAudio === value) { return; }
+    if (this.playAsAudio === value) {
+      return;
+    }
     this.playAsAudio = value;
     this.emitQueue();
   }
@@ -931,15 +539,6 @@ export class PlaybackService {
   addSubtitleSlave(uri: string): boolean {
     return this.player ? this.player.addSlave(MediaSlaveType.Subtitle, uri, true) : false;
   }
-
-  /**
-   * SPU / 音频延迟的本地缓存。
-   * libvlc 已桥接 set/get_spu_delay 与 set/get_audio_delay(任务 #8);本字段保留
-   * 作为快速 UI 显示路径,仅由 set* 回写,避免每次 getter 过 native 桥。
-   * 切换媒体/release 时外部需将两值重置为 0。
-   */
-  private spuDelayUs: number = 0;
-  private audioDelayUs: number = 0;
 
   setSpuDelay(us: number): boolean {
     const ok: boolean = this.player ? this.player.setSpuDelay(us) : false;
@@ -1081,66 +680,6 @@ export class PlaybackService {
     };
   }
 
-  private notifyChange(): void {
-    const s = this.snapshot();
-    for (const l of this.listeners) {
-      if (l.onChange) {
-        l.onChange(s);
-      }
-    }
-  }
-
-  private emitState(): void {
-    for (const l of this.listeners) {
-      if (l.onStateChange) {
-        l.onStateChange(this.state);
-      }
-    }
-    this.notifyChange();
-  }
-
-  private emitMediaEnded(): void {
-    for (const l of this.listeners) {
-      if (l.onMediaEnded) {
-        l.onMediaEnded();
-      }
-    }
-  }
-
-  private emitTime(): void {
-    for (const l of this.listeners) {
-      if (l.onTimeUpdate) {
-        l.onTimeUpdate(this.position, this.duration);
-      }
-    }
-    this.notifyChange();
-  }
-
-  private emitQueue(): void {
-    for (const l of this.listeners) {
-      if (l.onQueueChanged) {
-        l.onQueueChanged();
-      }
-    }
-    this.notifyChange();
-  }
-
-  private emitVideoSize(): void {
-    for (const l of this.listeners) {
-      if (l.onVideoSize) {
-        l.onVideoSize(this.videoWidth, this.videoHeight);
-      }
-    }
-  }
-
-  private emitTracksChanged(): void {
-    for (const l of this.listeners) {
-      if (l.onTracksChanged) {
-        l.onTracksChanged();
-      }
-    }
-  }
-
   /** QueueItem[] → MediaWrapper[] 后播放(音频列表入口)。 */
   async playQueueItems(items: QueueItem[], startIndex: number = 0, replace: boolean = true): Promise<void> {
     const mws = items.map((q: QueueItem) => q.toMediaWrapper(1));
@@ -1192,12 +731,6 @@ export class PlaybackService {
     return this.playList(items, 0, false);
   }
 
-  private saveQueueHistory(): void {
-    if (this.queueHistoryType !== null) {
-      void PlaybackQueueHistory.save(this.queueHistoryType, this.queue, this.currentIndex);
-    }
-  }
-
   async bindAndPlay(xcomponentId: string, fallbackUri?: string, fallbackTitle?: string): Promise<boolean> {
     await this.ensureInit();
     if (!this.inited || !this.player) {
@@ -1237,162 +770,6 @@ export class PlaybackService {
     return bound;
   }
 
-  /** 按文件名把 .iso 文件 MRL 转换为光盘访问 MRL(dvdnav:// / bluray:// / vcd://)。
-   *  libVLC 无 UDF/iso9660 文件系统插件,直接 file:// 打开 ISO 无法解析 BD 导航结构。 */
-  private static isoToDiscMrl(uri: string): string {
-    if (!uri.toLowerCase().endsWith('.iso')) {
-      return uri;
-    }
-    let path = uri;
-    if (path.startsWith('file://')) {
-      path = path.substring('file://'.length);
-    }
-    const lower = path.toLowerCase();
-    if (lower.indexOf('dvd') >= 0) {
-      return `dvdnav://${path}`;
-    }
-    if (lower.indexOf('bd') >= 0 || lower.indexOf('bluray') >= 0) {
-      return `bluray://${path}`;
-    }
-    if (lower.indexOf('vcd') >= 0) {
-      return `vcd://${path}`;
-    }
-    return uri;
-  }
-
-  private async loadCurrent(): Promise<void> {
-    const item = this.getCurrent();
-    if (!item || !this.lib) {
-      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] loadCurrent: empty queue or lib');
-      return;
-    }
-    // stop() 可能已使 player 失效(异步收尾),加载前必须重建,否则 setMedia 落在已释放的原生句柄上
-    this.player = await this.ensureLivePlayer();
-    if (!this.player) {
-      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] loadCurrent: player unavailable');
-      return;
-    }
-    // ISO 文件按文件名识别为光盘 MRL(与 Android 对 .iso 强制 demux 一致)
-    const mrl = PlaybackService.isoToDiscMrl(item.uri);
-    if (mrl !== item.uri) {
-      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] iso disc MRL: %{public}s -> %{public}s', item.uri, mrl);
-    }
-    hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] loadCurrent uri=%{public}s videoOut=%{public}s',
-      item.uri, this.videoOutId);
-
-    let media: Media | null = null;
-    if (needsFdOpen(item.uri)) {
-      try {
-        const file = fs.openSync(item.uri, fs.OpenMode.READ_ONLY);
-        hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] openSync ok fd=%{public}d uri=%{public}s', file.fd, item.uri);
-        media = Media.fromFd(this.lib, file.fd);
-        try {
-          fs.closeSync(file);
-        } catch (closeErr) {
-          hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] closeSync after fromFd: %{public}s',
-            (closeErr as Error).message ?? String(closeErr));
-        }
-      } catch (e) {
-        hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] openSync FAILED uri=%{public}s err=%{public}s',
-          item.uri, (e as Error).message ?? String(e));
-      }
-    } else {
-      media = Media.fromMrl(this.lib, mrl);
-    }
-
-    if (!media) {
-      hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] Media create FAILED uri=%{public}s', item.uri);
-      this.state = PlayState.ERROR;
-      this.emitState();
-      return;
-    }
-
-    // 硬件加速(对应 Android VLCOptions.setMediaOptions):-1 自动不干预(OHOS 默认优先硬解,
-    // 失败自动回退软解);0 禁用强制软解;1 解码加速=硬解+关闭直渲;2 完全加速=硬解+直渲。
-    // iso/bluray 光碟不进此分支,保持下方强制软解(对应 Android MEDIA_NO_HWACCEL)。
-    const isDiscMrl: boolean = mrl.startsWith('bluray://') || mrl.toLowerCase().endsWith('.iso');
-    if (!isDiscMrl) {
-      const hwAccel: string = await Settings.getString(
-        Settings.KEY_HARDWARE_ACCELERATION, Settings.HARDWARE_ACCELERATION_DEFAULT);
-      if (hwAccel === '0') {
-        media.addOption(':avcodec-hw=disabled');
-        hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] hardware acceleration: disabled (software decode)');
-      } else if (hwAccel === '1') {
-        media.addOption(':avcodec-hw=any');
-        media.addOption(':no-avcodec-dr');
-        hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] hardware acceleration: decoding (hw decode, no direct render)');
-      } else if (hwAccel === '2') {
-        media.addOption(':avcodec-hw=any');
-        hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] hardware acceleration: full (hw decode + direct render)');
-      }
-    }
-
-    // Blu-ray 主视频为 H.264/HEVC。OHOS 补丁默认优先 h264_ohosavcodec 硬解,
-    // 但该硬解器对部分流(实测 H.264 m2ts)会 "cannot start codec" 导致黑屏且不回退。
-    // 按媒体注入软解选项(必须在 setMedia 前),对齐 Android Media.setHWDecoderEnabled 的 per-media 开关。
-    // 注意: .iso 一律注入 —— libbluray access_demux 会自动探测 ISO(文件名可能被 MediaLibrary
-    // 重命名而失去 bd/bluray 标识),DVD/VCD 的 MPEG-1/2 本就软解,不受 avcodec-hw 影响。
-    if (mrl.startsWith('bluray://') || mrl.toLowerCase().endsWith('.iso')) {
-      media.addOption(':avcodec-hw=none');
-      hilog.info(LOG_DOMAIN, LOG_TAG,
-        '[VLC] iso/bluray MRL: force software decode (:avcodec-hw=none) mrl=%{public}s', mrl);
-    }
-
-    if (!this.player.setMedia(media)) {
-      hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] setMedia FAILED uri=%{public}s', item.uri);
-      media.release();
-      this.state = PlayState.ERROR;
-      this.emitState();
-      return;
-    }
-
-    this.duration = 0;
-    this.position = 0;
-    this.videoWidth = 0;
-    this.videoHeight = 0;
-    if (item.width > 0 && item.height > 0) {
-      this.videoWidth = item.width;
-      this.videoHeight = item.height;
-      this.emitVideoSize();
-    }
-    // 按当前媒体的音视频语境应用速度:音频按 全局/单曲 优先级,视频沿用 this.speed(视频页自行管理)
-    this.applyEffectiveSpeed();
-    this.player.setScale(0);
-    this.player.setVolume(this.volume);
-    this.player.play();
-    this.state = PlayState.PREPARED;
-    this.emitState();
-    void MediaSessionManager.updateMetadata(item.title, item.artistName, this.duration);
-    void MediaSessionManager.updatePlaybackState(this.state, this.position, this.duration, this.speed);
-  }
-
-  /**
-   * 计算并应用当前媒体的有效播放速度。
-   * - 音频(或仅播放音频):全局开关开 → 全局值;否则该曲目独立速度,没有则 1.0。
-   * - 视频:沿用 this.speed(视频播放页通过 setSpeed 自行管理,不受音频全局/单曲速度影响)。
-   */
-  private applyEffectiveSpeed(): void {
-    const item = this.getCurrent();
-    if (!item || !this.player) {
-      return;
-    }
-    let eff: number = 1.0;
-    if (item.type === 1 || this.playAsAudio) {
-      if (this.globalSpeedEnabled) {
-        eff = this.globalSpeedValue;
-      } else {
-        eff = this.trackSpeeds.get(item.uri) ?? 1.0;
-      }
-    } else {
-      eff = this.speed;
-    }
-    eff = Math.max(0.25, Math.min(8.0, eff));
-    if (Math.abs(eff - this.speed) > 0.001) {
-      this.speed = eff;
-    }
-    this.player.setRate(eff);
-  }
-
   /** 设置单曲速度:关闭全局开关,为该 URI 写入独立速度(仅当前曲目生效)。 */
   setTrackSpeed(uri: string, rate: number): void {
     const r: number = Math.max(0.25, Math.min(8.0, rate));
@@ -1419,15 +796,6 @@ export class PlaybackService {
     hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] setGlobalSpeed rate=%{public}f', r);
   }
 
-  /** 持久化每曲目独立速度 {uri: speed}。 */
-  private persistTrackSpeeds(): void {
-    const obj: Record<string, number> = {};
-    this.trackSpeeds.forEach((v: number, k: string) => {
-      obj[k] = v;
-    });
-    void Settings.put(Settings.KEY_AUDIO_TRACK_SPEEDS, JSON.stringify(obj));
-  }
-
   /** 全局音频速度开关当前状态(供弹窗默认作用域)。 */
   isGlobalSpeedEnabled(): boolean {
     return this.globalSpeedEnabled;
@@ -1435,91 +803,6 @@ export class PlaybackService {
 
   setStopAfterCurrent(v: boolean): void {
     this.stopAfterCurrent = v;
-  }
-
-  private onComplete(): void {
-    hilog.info(LOG_DOMAIN, LOG_TAG,
-      '[VLC] onComplete stopAfterCurrent=%{public}s repeatMode=%{public}d currentIndex=%{public}d queueLen=%{public}d',
-      String(this.stopAfterCurrent), this.repeatMode, this.currentIndex, this.queue.length);
-    if (this.stopAfterCurrent) {
-      this.stopAfterCurrent = false;
-      this.stop();
-      return;
-    }
-    // 对齐 Android PlaylistManager.EndReached → determinePrevAndNextIndices + next():
-    // 自动播完时 repeat-one 重播当前,其余按队列/随机继续或停止。
-    const nextIdx = this.computeNextIndex(false);
-    hilog.info(LOG_DOMAIN, LOG_TAG,
-      '[VLC] onComplete -> nextIdx=%{public}d (cur=%{public}d len=%{public}d shuffle=%{public}s repeat=%{public}d)',
-      nextIdx, this.currentIndex, this.queue.length,
-      this.shuffle ? 'on' : 'off', this.repeatMode);
-    if (nextIdx < 0) {
-      // 没有下一首(随机全部播完且未开循环 / 顺序到队尾且未开循环)→ 停止
-      this.stop();
-      return;
-    }
-    // libVLC 在 EndReached 后 player 进入 Ended 终止态,直接 setMedia+play 在本 port
-    // 不保证重启(旧版 setTime(0)+play 同样无效)。先复位 native player 状态机,
-    // 再 setMedia+play 重载,对齐 Android 播放完自动接续的标准做法。
-    this.player?.stop();
-    if (nextIdx === this.currentIndex) {
-      // 单曲循环:重播当前(重新加载媒体最可靠,避免 ended 后 setTime 无效)
-      void this.loadCurrent();
-      return;
-    }
-    this.currentIndex = nextIdx;
-    this.emitQueue();
-    this.saveQueueHistory();
-    void this.loadCurrent();
-  }
-
-  /**
-   * 计算下一首索引(对齐 Android PlaylistManager.determinePrevAndNextIndices + next)。
-   * @param forceManual 是否用户手动点“下一首”。单曲循环(repeatMode===2)时无论手动还是自动
-   *                    都重播当前(IndexPair(currentIndex,currentIndex));其余模式 forceManual
-   *                    只影响队尾是否回卷(手动永不停止)。
-   * @returns 下一首索引;返回 -1 表示应停止(队列空 / 随机播完未循环 / 顺序队尾未循环)。
-   */
-  private computeNextIndex(forceManual: boolean): number {
-    const size = this.queue.length;
-    if (size === 0) {
-      return -1;
-    }
-    // 单曲循环:手动下一曲与自动播完都重播当前(对齐 Android REPEAT_ONE → IndexPair(currentIndex,currentIndex)),
-    // 不切换曲目、不复位模式。
-    if (this.repeatMode === 2) {
-      return this.currentIndex;
-    }
-    if (this.shuffle) {
-      // 随机不重复:shuffleHistory 记录已播放过的索引。全部播完一轮后,
-      // 手动跳过永不停止(清空重洗);自动播完且未开循环时停止。
-      if (this.shuffleHistory.length + 1 >= size) {
-        if (!forceManual && this.repeatMode === 0) {
-          this.shuffleHistory = [];
-          return -1;
-        }
-        this.shuffleHistory = [];
-      }
-      let idx: number = this.currentIndex;
-      let guard: number = 0;
-      do {
-        idx = Math.floor(Math.random() * size);
-        guard++;
-      } while ((idx === this.currentIndex || this.shuffleHistory.includes(idx)) && guard < 200);
-      this.shuffleHistory.push(this.currentIndex);
-      return idx;
-    }
-    // 顺序播放
-    const nextIdx: number = this.currentIndex + 1;
-    if (nextIdx < size) {
-      return nextIdx;
-    }
-    // 已到队尾:手动跳转永远回卷到第 0 首(不暂停);
-    // 自动播完仅在开循环(全部/单曲)时回卷,否则停止。
-    if (forceManual || this.repeatMode !== 0) {
-      return 0;
-    }
-    return -1;
   }
 
   async play(): Promise<void> {
@@ -1663,7 +946,9 @@ export class PlaybackService {
   }
 
   setShuffle(value: boolean): void {
-    if (this.shuffle === value) { return; }
+    if (this.shuffle === value) {
+      return;
+    }
     this.shuffle = value;
     this.shuffleHistory = [];
     void Settings.put(Settings.AUDIO_SHUFFLING, this.shuffle);
@@ -1709,120 +994,873 @@ export class PlaybackService {
     void MediaSessionManager.release();
   }
 
+  /** 网络计费变化监听(init 注册,release 注销)。 */
+  private meteredChangeListener: (metered: boolean) => void = () => {
+  };
+
+  private async ensureInit(): Promise<void> {
+    if (this.inited) {
+      return;
+    }
+    if (this.initializing) {
+      while (this.initializing) {
+        await new Promise<void>((r: () => void) => setTimeout(r, 20));
+      }
+      return;
+    }
+    this.initializing = true;
+    try {
+      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] PlaybackService.init start');
+      this.lib = new LibVLC(await this.buildLibVlcAudioOptions());
+      if (this.lib.getHandle() === 0) {
+        hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] LibVLC create FAILED');
+        this.lib.release();
+        this.lib = null;
+        return;
+      }
+      this.player = new MediaPlayer(this.lib);
+      if (this.player.getHandle() === 0) {
+        hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] MediaPlayer create FAILED');
+        this.player.release();
+        this.player = null;
+        this.lib.release();
+        this.lib = null;
+        return;
+      }
+      this.player.setEventListener((event: string, value: number) => this.onNativeEvent(event, value));
+      this.inited = true;
+      // 订阅音频环境事件(耳机/通知闪避/通话),各回调内动态读设置,开关即时生效
+      this.setupAudioEnvironment();
+      // 恢复上次会话持久化的随机/循环状态(对齐 Android setRepeatTypeFromSettings)
+      this.shuffle = await Settings.getBoolean(Settings.AUDIO_SHUFFLING, false);
+      this.repeatMode = await Settings.getInt(Settings.KEY_PLAYBACK_REPEAT_MODE, 0);
+      // 恢复全局音频播放速度(对齐 Android 设置项 Use the global playback speed)
+      this.globalSpeedEnabled = await Settings.getBoolean(Settings.KEY_PLAYBACK_SPEED_AUDIO_GLOBAL, false);
+      this.globalSpeedValue = await Settings.getFloat(Settings.KEY_PLAYBACK_SPEED_AUDIO_GLOBAL_VALUE, 1.0);
+      if (this.globalSpeedValue < 0.25 || this.globalSpeedValue > 8.0) {
+        this.globalSpeedValue = 1.0;
+      }
+      // 恢复每曲目独立速度 {uri: speed}
+      const savedSpeeds = await Settings.getString(Settings.KEY_AUDIO_TRACK_SPEEDS, '');
+      if (savedSpeeds.length > 0) {
+        try {
+          const obj = JSON.parse(savedSpeeds) as Record<string, number>;
+          this.trackSpeeds = new Map();
+          for (const k of Object.keys(obj)) {
+            const v = Number(obj[k]);
+            if (v >= 0.25 && v <= 8.0) {
+              this.trackSpeeds.set(k, v);
+            }
+          }
+        } catch (e) {
+          hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] trackSpeeds parse failed: %{public}s',
+            (e as Error).message ?? String(e));
+        }
+      }
+      MediaSessionManager.setCallbacks({
+        onPlay: () => {
+          void this.play();
+        },
+        onPause: () => {
+          this.pause();
+        },
+        onStop: () => {
+          this.stop();
+        },
+        onNext: () => {
+          void this.next();
+        },
+        onPrevious: () => {
+          void this.prev();
+        },
+        onSeek: (ms: number) => {
+          this.seek(ms);
+        },
+        onSetSpeed: (rate: number) => {
+          this.setSpeed(rate);
+        },
+      });
+      // 等待播控会话完成创建，避免首次音频的 metadata 在创建竞态中丢失。
+      await MediaSessionManager.ensure();
+      this.meteredChangeListener = (metered: boolean) => {
+        void this.checkMeteredNetwork(metered);
+      };
+      NetworkConnectionManager.onMeteredChange(this.meteredChangeListener);
+      NetworkConnectionManager.start();
+      hilog.info(LOG_DOMAIN, LOG_TAG,
+        '[VLC] PlaybackService.init ok shuffle=%{public}s repeatMode=%{public}d globalSpeed=%{public}s speed=%{public}f tracks=%{public}d',
+        this.shuffle ? 'on' : 'off', this.repeatMode,
+        this.globalSpeedEnabled ? 'on' : 'off', this.speed, this.trackSpeeds.size);
+    } catch (e) {
+      hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] PlaybackService.init exception: %{public}s',
+        (e as Error).message ?? String(e));
+    } finally {
+      this.initializing = false;
+    }
+  }
+
+  /**
+   * 确保 player 存活。
+   * stop() 会触发原生异步 stop+release 并使当前 MediaPlayer 失效(isReleased),下次加载前必须重建;
+   * 重建时重挂事件回调、重放音量/速度,并把 videoOutId 的视频面重绑回来(自动接续不经过 bindAndPlay,
+   * 若不重绑,播完切下一首会黑屏只剩音频)。
+   */
+  private async ensureLivePlayer(): Promise<MediaPlayer | null> {
+    await this.ensureInit();
+    if (!this.inited || !this.lib) {
+      return null;
+    }
+    if (this.player !== null && !this.player.isReleased()) {
+      return this.player;
+    }
+    hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] ensureLivePlayer: recreate player after async stop');
+    const np = new MediaPlayer(this.lib);
+    if (np.getHandle() === 0) {
+      np.release();
+      this.player = null;
+      return null;
+    }
+    np.setEventListener((event: string, value: number) => this.onNativeEvent(event, value));
+    np.setVolume(this.volume);
+    np.setRate(this.speed);
+    if (this.videoOutId.length > 0) {
+      const bound = np.attachViews(this.videoOutId);
+      hilog.info(LOG_DOMAIN, LOG_TAG,
+        '[VLC] ensureLivePlayer re-attach videoOut=%{public}s bound=%{public}s',
+        this.videoOutId, String(bound));
+    }
+    this.player = np;
+    return np;
+  }
+
+  /**
+   * 音频设置 → libVLC 实例选项(对齐安卓 PreferencesAudio 的 onSharedPreferenceChanged →
+   * restartLibVLC,启动时按设置注入 libvlc_new)。仅对接 libvlccore.so 实际编译进库的选项:
+   *  - 回放增益 audio-replay-gain-*(mode/preamp/default/peak-protection)已编译 ✓
+   *  - 偏好的音频语言 --audio-language 已编译 ✓
+   *  aout(opensles/audiotrack)/soundfont/audio-passthrough 未编译进库,不注入。
+   * 生效时机:下次播放服务创建 libVLC 实例时(设置变更后重启应用/播放器)。
+   */
+  private async buildLibVlcAudioOptions(): Promise<string[]> {
+    const opts: string[] = [];
+    try {
+      // ── 回放增益(对齐安卓 replaygain 分组)──
+      const rgEnabled: boolean = await Settings.getBoolean('audio-replay-gain-enable', false);
+      const rgMode: string = await Settings.getString('audio-replay-gain-mode', 'track');
+      // enable 关 → mode=none(不处理增益);开 → 使用 track/album
+      const mode: string = (rgEnabled && (rgMode === 'track' || rgMode === 'album')) ? rgMode : 'none';
+      opts.push(`--audio-replay-gain-mode=${mode}`);
+      const rgPreamp: string = await Settings.getString('audio-replay-gain-preamp', '0.0');
+      const rgDefault: string = await Settings.getString('audio-replay-gain-default', '-7.0');
+      this.pushFloatOption(opts, '--audio-replay-gain-preamp', rgPreamp);
+      this.pushFloatOption(opts, '--audio-replay-gain-default', rgDefault);
+      const peakProtection: boolean = await Settings.getBoolean('audio-replay-gain-peak-protection', true);
+      opts.push(peakProtection ? '--audio-replay-gain-peak-protection' : '--no-audio-replay-gain-peak-protection');
+      // ── 偏好的音频语言(对齐安卓 audio_preferred_language,BCP-47,空=无偏好)──
+      const lang: string = await Settings.getString('audio_preferred_language', '');
+      if (lang.length > 0) {
+        opts.push(`--audio-language=${lang}`);
+      }
+      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] libvlc audio options: %{public}s', JSON.stringify(opts));
+    } catch (e) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] buildLibVlcAudioOptions fallback: %{public}s',
+        (e as Error).message ?? String(e));
+    }
+    return opts;
+  }
+
+  /** 浮点文本选项(回放增益 preamp/default):仅当值可解析为有限数字时注入,否则跳过。 */
+  private pushFloatOption(opts: string[], flag: string, raw: string): void {
+    const v = Number.parseFloat(raw);
+    if (Number.isFinite(v)) {
+      opts.push(`${flag}=${v}`);
+    }
+  }
+
+  /** 订阅音频环境事件。无权限要求,设备/系统事件。 */
+  private setupAudioEnvironment(): void {
+    if (this.audioEnvSubscribed) {
+      return;
+    }
+    try {
+      const mgr: audio.AudioManager = audio.getAudioManager();
+      const routing: audio.AudioRoutingManager = mgr.getRoutingManager();
+      const session: audio.AudioSessionManager = mgr.getSessionManager();
+      this.audioManager = mgr;
+      this.routingManager = routing;
+      this.audioSessionManager = session;
+      routing.on('deviceChange', audio.DeviceFlag.OUTPUT_DEVICES_FLAG, this.onDeviceChange);
+      session.setAudioSessionScene(audio.AudioSessionScene.AUDIO_SESSION_SCENE_MEDIA);
+      session.on('audioSessionStateChanged', this.onAudioSessionStateChanged);
+      session.activateAudioSession({
+        concurrencyMode: audio.AudioConcurrencyMode.CONCURRENCY_DEFAULT,
+      }).catch((error: Error) => {
+        hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] activateAudioSession: %{public}s', error.message);
+      });
+      telephonyObserver.on('callStateChange', this.onCallStateChange);
+      this.audioEnvSubscribed = true;
+      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] audio environment listeners subscribed');
+    } catch (e) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] setupAudioEnvironment: %{public}s',
+        (e as Error).message ?? String(e));
+      this.audioManager = null;
+      this.routingManager = null;
+      this.audioSessionManager = null;
+    }
+  }
+
+  private teardownAudioEnvironment(): void {
+    if (!this.audioEnvSubscribed) {
+      return;
+    }
+    try {
+      this.routingManager?.off('deviceChange', this.onDeviceChange);
+      if (this.audioSessionManager) {
+        this.audioSessionManager.off('audioSessionStateChanged', this.onAudioSessionStateChanged);
+        this.audioSessionManager.deactivateAudioSession().catch((error: Error) => {
+          hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] deactivateAudioSession: %{public}s', error.message);
+        });
+      }
+      telephonyObserver.off('callStateChange', this.onCallStateChange);
+    } catch (e) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] teardownAudioEnvironment: %{public}s',
+        (e as Error).message ?? String(e));
+    }
+    this.audioManager = null;
+    this.routingManager = null;
+    this.audioSessionManager = null;
+    this.audioEnvSubscribed = false;
+    this.headsetWasPlaying = false;
+    this.lossTransient = false;
+    this.lossTransientWasPlaying = false;
+    this.duckedVolume = -1;
+    this.pausedByCall = false;
+  }
+
   // ---- 静态门面(兼容 origin/dev 页面调用;底层仍是 libVLC 单例) ----
 
-  static getState(): PlayState {
-    return PlaybackService.getInstance().getState();
+  /** 有线/无线耳机设备类型(WIRED/BT/USB)。 */
+  private isHeadsetDeviceType(t: audio.DeviceType): boolean {
+    return t === audio.DeviceType.WIRED_HEADSET
+      || t === audio.DeviceType.WIRED_HEADPHONES
+      || t === audio.DeviceType.BLUETOOTH_SCO
+      || t === audio.DeviceType.BLUETOOTH_A2DP
+      || t === audio.DeviceType.USB_HEADSET;
   }
 
-  static getQueue(): QueueItem[] {
-    return PlaybackService.getInstance().getQueue().map((mw: MediaWrapper) => QueueItem.fromMediaWrapper(mw));
+  private onDeviceChange = (action: audio.DeviceChangeAction): void => {
+    void this.handleDeviceChange(action);
+  };
+
+  /** 耳机侦测:拔出 → 暂停(记住 wasPlaying);插入 → 按 enable_play_on_headset_insertion 恢复。
+   *  对齐安卓 ACTION_AUDIO_BECOMING_NOISY / ACTION_HEADSET_PLUG。 */
+  private async handleDeviceChange(action: audio.DeviceChangeAction): Promise<void> {
+    try {
+      const enabled: boolean = await Settings.getBoolean('enable_headset_detection', true);
+      if (!enabled) {
+        return;
+      }
+      const devices: audio.AudioDeviceDescriptor[] = action.deviceDescriptors ?? [];
+      // 变化后设备列表是否仍含耳机:拔出后不含 → 音频路由被移除(对齐 Becoming Noisy)。
+      const headsetPresent: boolean = devices.some((d: audio.AudioDeviceDescriptor) =>
+      this.isHeadsetDeviceType(d.deviceType));
+      if (action.type === audio.DeviceChangeType.CONNECT) {
+        if (headsetPresent && this.headsetWasPlaying && this.getCurrent() !== null) {
+          const resume: boolean = await Settings.getBoolean('enable_play_on_headset_insertion', false);
+          if (resume) {
+            hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] headset inserted -> resume playback');
+            this.headsetWasPlaying = false;
+            this.play();
+          }
+        }
+      } else if (action.type === audio.DeviceChangeType.DISCONNECT) {
+        if (!headsetPresent) {
+          this.headsetWasPlaying = this.state === PlayState.PLAYING;
+          if (this.headsetWasPlaying && this.getCurrent() !== null) {
+            hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] headset removed -> pause playback');
+            this.pause();
+          }
+        }
+      }
+    } catch (e) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] handleDeviceChange: %{public}s',
+        (e as Error).message ?? String(e));
+    }
   }
 
-  static getCurrentIndex(): number {
-    return PlaybackService.getInstance().getCurrentIndex();
+  private onAudioSessionStateChanged = (event: audio.AudioSessionStateChangedEvent): void => {
+    void this.handleAudioInterrupt(event.stateChangeHint);
+  };
+
+  /** 通知/来电打断(对齐安卓 VLCAudioFocusHelper.onAudioFocusChange):
+   *  INTERRUPT_HINT_PAUSE/STOP → 临时暂停;RESUME → 恢复音量 + 按 resume_playback 恢复播放;
+   *  INTERRUPT_HINT_DUCK → 按 audio_ducking 降为 1/3;UNDUCK → 恢复原音量。 */
+  private async handleAudioInterrupt(hint: audio.AudioSessionStateChangeHint): Promise<void> {
+    try {
+      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] audioSessionStateChanged hint=%{public}d', hint);
+      if (hint === audio.AudioSessionStateChangeHint.AUDIO_SESSION_STATE_CHANGE_HINT_PAUSE
+        || hint === audio.AudioSessionStateChangeHint.AUDIO_SESSION_STATE_CHANGE_HINT_STOP
+        || hint === audio.AudioSessionStateChangeHint.AUDIO_SESSION_STATE_CHANGE_HINT_TIME_OUT_STOP) {
+        if (!this.lossTransient) {
+          this.lossTransient = true;
+          this.lossTransientWasPlaying = this.state === PlayState.PLAYING;
+          if (this.lossTransientWasPlaying) {
+            this.pause();
+          }
+        }
+      } else if (hint === audio.AudioSessionStateChangeHint.AUDIO_SESSION_STATE_CHANGE_HINT_RESUME) {
+        // 先恢复被闪避降低的音量
+        if (this.duckedVolume >= 0) {
+          this.setVolume(this.duckedVolume);
+          this.duckedVolume = -1;
+        }
+        if (this.lossTransient) {
+          const resume: boolean = await Settings.getBoolean(Settings.RESUME_PLAYBACK, true);
+          if (this.lossTransientWasPlaying && resume && this.state !== PlayState.PLAYING) {
+            hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] audioInterrupt resume playback');
+            this.play();
+          }
+          this.lossTransient = false;
+          this.lossTransientWasPlaying = false;
+        }
+      } else if (hint === audio.AudioSessionStateChangeHint.AUDIO_SESSION_STATE_CHANGE_HINT_DUCK) {
+        if (this.state === PlayState.PLAYING && this.duckedVolume < 0) {
+          const duck: boolean = await Settings.getBoolean(Settings.AUDIO_DUCKING, true);
+          if (duck) {
+            this.duckedVolume = this.getVolume();
+            const ducked: number = Math.max(1, Math.floor(this.duckedVolume / 3));
+            this.setVolume(ducked);
+            hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] audioInterrupt duck %{public}d -> %{public}d',
+              this.duckedVolume, ducked);
+          }
+        }
+      } else if (hint === audio.AudioSessionStateChangeHint.AUDIO_SESSION_STATE_CHANGE_HINT_UNDUCK) {
+        if (this.duckedVolume >= 0) {
+          this.setVolume(this.duckedVolume);
+          this.duckedVolume = -1;
+        }
+      }
+    } catch (e) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] handleAudioInterrupt: %{public}s',
+        (e as Error).message ?? String(e));
+    }
   }
 
-  static getCurrent(): QueueItem | null {
-    const cur = PlaybackService.getInstance().getCurrent();
-    return cur ? QueueItem.fromMediaWrapper(cur) : null;
+  private onCallStateChange = (info: telephonyObserver.CallStateInfo): void => {
+    void this.handleCallStateChange(info);
+  };
+
+  /** 通话状态:进入通话(RINGING/OFFHOOK/ANSWERED) → 暂停;结束(IDLE) → 按 resume_playback 恢复。
+   *  对齐安卓 来电打断 + RESUME_PLAYBACK 设置(通话结束继续播放)。 */
+  private async handleCallStateChange(info: telephonyObserver.CallStateInfo): Promise<void> {
+    try {
+      const inCall: boolean = info.state !== call.CallState.CALL_STATE_IDLE
+        && info.state !== call.CallState.CALL_STATE_UNKNOWN;
+      if (inCall) {
+        if (this.state === PlayState.PLAYING) {
+          this.pausedByCall = true;
+          hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] call state=%{public}d -> pause playback', info.state);
+          this.pause();
+        }
+      } else {
+        if (this.pausedByCall) {
+          const resume: boolean = await Settings.getBoolean(Settings.RESUME_PLAYBACK, true);
+          if (resume && this.state !== PlayState.PLAYING) {
+            hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] call ended -> resume playback');
+            this.play();
+          }
+          this.pausedByCall = false;
+        }
+      }
+    } catch (e) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] handleCallStateChange: %{public}s',
+        (e as Error).message ?? String(e));
+    }
   }
 
-  static snapshot(): PlaybackState {
-    return PlaybackService.getInstance().snapshot();
+  /** timeChanged 节流:libVLC 在 seek/定位时会爆发高频 timeChanged,逐条刷新
+   *  position 会触发 ArkUI 渲染风暴并积压 tsfn 队列;合并到 300ms 一刷。 */
+  private onTimeChangedThrottled(ms: number): void {
+    const now = Date.now();
+    if (now - this.lastTimeEmit < 300) {
+      return;
+    }
+    this.lastTimeEmit = now;
+    this.position = ms;
+    this.emitTime();
+    void MediaSessionManager.updatePlaybackState(this.state, ms, this.duration, this.speed);
   }
 
-  static addListener(l: PlaybackListener): void {
-    PlaybackService.getInstance().addListener(l);
+  private startSessionSync(): void {
+    if (this.sessionSyncTimer !== -1) {
+      return;
+    }
+    this.sessionSyncTimer = setInterval(() => {
+      void MediaSessionManager.updatePlaybackState(this.state, this.position, this.duration, this.speed);
+    }, 1000);
   }
 
-  static removeListener(l: PlaybackListener): void {
-    PlaybackService.getInstance().removeListener(l);
+  private stopSessionSync(): void {
+    if (this.sessionSyncTimer !== -1) {
+      clearInterval(this.sessionSyncTimer);
+      this.sessionSyncTimer = -1;
+    }
   }
 
-  static async playList(items: QueueItem[], startIndex: number, replace: boolean): Promise<void> {
-    await PlaybackService.getInstance().playQueueItems(items, startIndex, replace);
+  /** 构建长时任务通知的 WantAgent(点击通知回到应用)。 */
+  private async getContinuousWantAgent(): Promise<WantAgent | null> {
+    if (this.wantAgentObj !== null) {
+      return this.wantAgentObj;
+    }
+    try {
+      const ctx = AppContext.get();
+      const info: wantAgent.WantAgentInfo = {
+        wants: [{
+          bundleName: ctx.abilityInfo.bundleName,
+          abilityName: 'EntryAbility',
+        }],
+        operationType: wantAgent.OperationType.START_ABILITY,
+        requestCode: 0,
+        wantAgentFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG],
+      };
+      this.wantAgentObj = await wantAgent.getWantAgent(info);
+    } catch (e) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] build continuous-task wantAgent failed: %{public}s',
+        (e as Error).message ?? String(e));
+    }
+    return this.wantAgentObj;
   }
 
-  static async append(items: QueueItem[]): Promise<void> {
-    await PlaybackService.getInstance().appendQueueItems(items);
+  /** 申请 AUDIO_PLAYBACK 长时任务,保证退后台后音频不被系统静音/挂起。 */
+  private async startContinuousTask(): Promise<void> {
+    if (this.continuousTaskActive || !AppContext.isReady()) {
+      return;
+    }
+    const agent: WantAgent | null = await this.getContinuousWantAgent();
+    if (agent === null) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] startBackgroundRunning skipped: wantAgent unavailable');
+      return;
+    }
+    try {
+      await backgroundTaskManager.startBackgroundRunning(
+        AppContext.get(), backgroundTaskManager.BackgroundMode.AUDIO_PLAYBACK, agent);
+      this.continuousTaskActive = true;
+      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] continuous task started (AUDIO_PLAYBACK)');
+    } catch (e) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] startBackgroundRunning failed: %{public}s',
+        (e as Error).message ?? String(e));
+    }
   }
 
-  static async play(): Promise<void> {
-    await PlaybackService.getInstance().play();
+  /** 取消长时任务(暂停/停止/出错/释放时)。 */
+  private async stopContinuousTask(): Promise<void> {
+    if (!this.continuousTaskActive) {
+      return;
+    }
+    this.continuousTaskActive = false;
+    if (!AppContext.isReady()) {
+      return;
+    }
+    try {
+      await backgroundTaskManager.stopBackgroundRunning(AppContext.get());
+      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] continuous task stopped');
+    } catch (e) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] stopBackgroundRunning failed: %{public}s',
+        (e as Error).message ?? String(e));
+    }
   }
 
-  static async pause(): Promise<void> {
-    PlaybackService.getInstance().pause();
+  /** 按流量计费的网络下对串流的处理(对齐 Android checkMetered)。 */
+  private async checkMeteredNetwork(meteredOverride?: boolean): Promise<void> {
+    if (this.state !== PlayState.PLAYING && this.state !== PlayState.PREPARED) {
+      return;
+    }
+    const action: string = await Settings.getString(Settings.KEY_METERED_CONNECTION, '0');
+    if (action === '0') {
+      return;
+    }
+    const cur: MediaWrapper | null = this.getCurrent();
+    const uri: string = cur?.uri ?? '';
+    if (!isStreamingUri(uri)) {
+      return;
+    }
+    let metered: boolean;
+    if (meteredOverride !== undefined) {
+      metered = meteredOverride;
+    } else {
+      metered = await NetworkConnectionManager.isMetered();
+    }
+    if (!metered) {
+      return;
+    }
+    hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] metered stream action=%{public}s uri=%{public}s',
+      action, uri);
+    if (action === '1') {
+      this.stop();
+      UiFeedback.showToast({ message: '已停止播放（按流量计费的网络上的串流）' });
+    } else {
+      UiFeedback.showToast({ message: '警告：正在按流量计费的网络上播放串流，可能产生流量费用' });
+    }
   }
 
-  static async togglePlay(): Promise<void> {
-    PlaybackService.getInstance().togglePlay();
+  private onNativeEvent(event: string, value: number): void {
+    // 注意:这里不要对每个事件打 hilog —— seek 后 libVLC 会爆发大量 timeChanged,
+    // 逐条打日志会把 hilog socket 写满导致 writev 阻塞,JS 主线程卡死(AppFreeze)。
+    switch (event) {
+      case 'playing':
+        this.state = PlayState.PLAYING;
+        this.emitState();
+        this.refreshVideoSize();
+        this.startSessionSync();
+        void this.startContinuousTask();
+        void this.checkMeteredNetwork();
+        void MediaSessionManager.updatePlaybackState(PlayState.PLAYING, this.position, this.duration, this.speed);
+        break;
+      case 'paused':
+        this.state = PlayState.PAUSED;
+        this.emitState();
+        this.stopSessionSync();
+        void this.stopContinuousTask();
+        void MediaSessionManager.updatePlaybackState(PlayState.PAUSED, this.position, this.duration, this.speed);
+        break;
+      case 'stopped':
+        this.state = PlayState.STOPPED;
+        this.emitState();
+        this.stopSessionSync();
+        void this.stopContinuousTask();
+        void MediaSessionManager.updatePlaybackState(PlayState.STOPPED, this.position, this.duration, this.speed);
+        break;
+      case 'ended':
+        this.emitMediaEnded();
+        this.onComplete();
+        this.stopSessionSync();
+        void this.stopContinuousTask();
+        void MediaSessionManager.updatePlaybackState(PlayState.STOPPED, this.position, this.duration, this.speed);
+        break;
+      case 'error':
+        hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] MediaPlayerEncounteredError');
+        this.state = PlayState.ERROR;
+        this.emitState();
+        this.stopSessionSync();
+        void this.stopContinuousTask();
+        void MediaSessionManager.updatePlaybackState(PlayState.ERROR, this.position, this.duration, this.speed);
+        break;
+      case 'timeChanged':
+        this.onTimeChangedThrottled(value);
+        break;
+      case 'lengthChanged':
+        this.duration = value;
+        this.emitTime();
+        void MediaSessionManager.updateMetadataDuration(value);
+        void MediaSessionManager.updatePlaybackState(this.state, this.position, this.duration, this.speed);
+        break;
+      case 'vout':
+        hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] vout count=%{public}s videoOutId=%{public}s',
+          String(value), this.videoOutId);
+        this.refreshVideoSize();
+        break;
+      case 'esAdded':
+      case 'esDeleted':
+      case 'esSelected':
+        this.emitTracksChanged();
+        break;
+      default:
+        break;
+    }
   }
 
-  static async stop(): Promise<void> {
-    PlaybackService.getInstance().stop();
+  private notifyChange(): void {
+    const s = this.snapshot();
+    for (const l of this.listeners) {
+      if (l.onChange) {
+        l.onChange(s);
+      }
+    }
   }
 
-  static async seek(ms: number): Promise<void> {
-    PlaybackService.getInstance().seek(ms);
+  private emitState(): void {
+    for (const l of this.listeners) {
+      if (l.onStateChange) {
+        l.onStateChange(this.state);
+      }
+    }
+    this.notifyChange();
   }
 
-  static async setSpeed(rate: number): Promise<void> {
-    PlaybackService.getInstance().setSpeed(rate);
+  private emitMediaEnded(): void {
+    for (const l of this.listeners) {
+      if (l.onMediaEnded) {
+        l.onMediaEnded();
+      }
+    }
   }
 
-  /** 仅当前曲目生效的速度(关全局开关)。 */
-  static setTrackSpeed(uri: string, rate: number): void {
-    PlaybackService.getInstance().setTrackSpeed(uri, rate);
+  private emitTime(): void {
+    for (const l of this.listeners) {
+      if (l.onTimeUpdate) {
+        l.onTimeUpdate(this.position, this.duration);
+      }
+    }
+    this.notifyChange();
   }
 
-  /** 所有曲目统一的速度(开全局开关)。 */
-  static setGlobalSpeed(rate: number): void {
-    PlaybackService.getInstance().setGlobalSpeed(rate);
+  private emitQueue(): void {
+    for (const l of this.listeners) {
+      if (l.onQueueChanged) {
+        l.onQueueChanged();
+      }
+    }
+    this.notifyChange();
   }
 
-  static isGlobalSpeedEnabled(): boolean {
-    return PlaybackService.getInstance().isGlobalSpeedEnabled();
+  private emitVideoSize(): void {
+    for (const l of this.listeners) {
+      if (l.onVideoSize) {
+        l.onVideoSize(this.videoWidth, this.videoHeight);
+      }
+    }
   }
 
-  static async next(auto: boolean = false): Promise<void> {
-    await PlaybackService.getInstance().next(auto);
+  private emitTracksChanged(): void {
+    for (const l of this.listeners) {
+      if (l.onTracksChanged) {
+        l.onTracksChanged();
+      }
+    }
   }
 
-  static async prev(): Promise<void> {
-    await PlaybackService.getInstance().prev();
+  private saveQueueHistory(): void {
+    if (this.queueHistoryType !== null) {
+      void PlaybackQueueHistory.save(this.queueHistoryType, this.queue, this.currentIndex);
+    }
   }
 
-  static toggleShuffle(): void {
-    PlaybackService.getInstance().toggleShuffle();
+  private async loadCurrent(): Promise<void> {
+    const item = this.getCurrent();
+    if (!item || !this.lib) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] loadCurrent: empty queue or lib');
+      return;
+    }
+    // stop() 可能已使 player 失效(异步收尾),加载前必须重建,否则 setMedia 落在已释放的原生句柄上
+    this.player = await this.ensureLivePlayer();
+    if (!this.player) {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] loadCurrent: player unavailable');
+      return;
+    }
+    // ISO 文件按文件名识别为光盘 MRL(与 Android 对 .iso 强制 demux 一致)
+    const mrl = PlaybackService.isoToDiscMrl(item.uri);
+    if (mrl !== item.uri) {
+      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] iso disc MRL: %{public}s -> %{public}s', item.uri, mrl);
+    }
+    hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] loadCurrent uri=%{public}s videoOut=%{public}s',
+      item.uri, this.videoOutId);
+
+    let media: Media | null = null;
+    if (needsFdOpen(item.uri)) {
+      try {
+        const file = fs.openSync(item.uri, fs.OpenMode.READ_ONLY);
+        hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] openSync ok fd=%{public}d uri=%{public}s', file.fd, item.uri);
+        media = Media.fromFd(this.lib, file.fd);
+        try {
+          fs.closeSync(file);
+        } catch (closeErr) {
+          hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] closeSync after fromFd: %{public}s',
+            (closeErr as Error).message ?? String(closeErr));
+        }
+      } catch (e) {
+        hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] openSync FAILED uri=%{public}s err=%{public}s',
+          item.uri, (e as Error).message ?? String(e));
+      }
+    } else {
+      media = Media.fromMrl(this.lib, mrl);
+    }
+
+    if (!media) {
+      hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] Media create FAILED uri=%{public}s', item.uri);
+      this.state = PlayState.ERROR;
+      this.emitState();
+      return;
+    }
+
+    // 硬件加速(对应 Android VLCOptions.setMediaOptions):-1 自动不干预(OHOS 默认优先硬解,
+    // 失败自动回退软解);0 禁用强制软解;1 解码加速=硬解+关闭直渲;2 完全加速=硬解+直渲。
+    // iso/bluray 光碟不进此分支,保持下方强制软解(对应 Android MEDIA_NO_HWACCEL)。
+    const isDiscMrl: boolean = mrl.startsWith('bluray://') || mrl.toLowerCase().endsWith('.iso');
+    if (!isDiscMrl) {
+      const hwAccel: string = await Settings.getString(
+        Settings.KEY_HARDWARE_ACCELERATION, Settings.HARDWARE_ACCELERATION_DEFAULT);
+      if (hwAccel === '0') {
+        media.addOption(':avcodec-hw=disabled');
+        hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] hardware acceleration: disabled (software decode)');
+      } else if (hwAccel === '1') {
+        media.addOption(':avcodec-hw=any');
+        media.addOption(':no-avcodec-dr');
+        hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] hardware acceleration: decoding (hw decode, no direct render)');
+      } else if (hwAccel === '2') {
+        media.addOption(':avcodec-hw=any');
+        hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] hardware acceleration: full (hw decode + direct render)');
+      }
+    }
+
+    // Blu-ray 主视频为 H.264/HEVC。OHOS 补丁默认优先 h264_ohosavcodec 硬解,
+    // 但该硬解器对部分流(实测 H.264 m2ts)会 "cannot start codec" 导致黑屏且不回退。
+    // 按媒体注入软解选项(必须在 setMedia 前),对齐 Android Media.setHWDecoderEnabled 的 per-media 开关。
+    // 注意: .iso 一律注入 —— libbluray access_demux 会自动探测 ISO(文件名可能被 MediaLibrary
+    // 重命名而失去 bd/bluray 标识),DVD/VCD 的 MPEG-1/2 本就软解,不受 avcodec-hw 影响。
+    if (mrl.startsWith('bluray://') || mrl.toLowerCase().endsWith('.iso')) {
+      media.addOption(':avcodec-hw=none');
+      hilog.info(LOG_DOMAIN, LOG_TAG,
+        '[VLC] iso/bluray MRL: force software decode (:avcodec-hw=none) mrl=%{public}s', mrl);
+    }
+
+    if (!this.player.setMedia(media)) {
+      hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] setMedia FAILED uri=%{public}s', item.uri);
+      media.release();
+      this.state = PlayState.ERROR;
+      this.emitState();
+      return;
+    }
+
+    this.duration = 0;
+    this.position = 0;
+    this.videoWidth = 0;
+    this.videoHeight = 0;
+    if (item.width > 0 && item.height > 0) {
+      this.videoWidth = item.width;
+      this.videoHeight = item.height;
+      this.emitVideoSize();
+    }
+    // 按当前媒体的音视频语境应用速度:音频按 全局/单曲 优先级,视频沿用 this.speed(视频页自行管理)
+    this.applyEffectiveSpeed();
+    this.player.setScale(0);
+    this.player.setVolume(this.volume);
+    this.player.play();
+    this.state = PlayState.PREPARED;
+    this.emitState();
+    const artwork: string = item.artworkPath.length > 0 ? item.artworkPath : item.artworkUrl;
+    // metadata 先于播放状态写入，保证播控中心第一次出现时就带完整曲目信息和封面。
+    await MediaSessionManager.updateMetadata(item.title, item.artistName, this.duration, artwork, item.albumName);
+    await MediaSessionManager.updatePlaybackState(this.state, this.position, this.duration, this.speed);
   }
 
-  static isShuffle(): boolean {
-    return PlaybackService.getInstance().getShuffle();
+  /**
+   * 计算并应用当前媒体的有效播放速度。
+   * - 音频(或仅播放音频):全局开关开 → 全局值;否则该曲目独立速度,没有则 1.0。
+   * - 视频:沿用 this.speed(视频播放页通过 setSpeed 自行管理,不受音频全局/单曲速度影响)。
+   */
+  private applyEffectiveSpeed(): void {
+    const item = this.getCurrent();
+    if (!item || !this.player) {
+      return;
+    }
+    let eff: number = 1.0;
+    if (item.type === 1 || this.playAsAudio) {
+      if (this.globalSpeedEnabled) {
+        eff = this.globalSpeedValue;
+      } else {
+        eff = this.trackSpeeds.get(item.uri) ?? 1.0;
+      }
+    } else {
+      eff = this.speed;
+    }
+    eff = Math.max(0.25, Math.min(8.0, eff));
+    if (Math.abs(eff - this.speed) > 0.001) {
+      this.speed = eff;
+    }
+    this.player.setRate(eff);
   }
 
-  static setShuffle(value: boolean): void {
-    PlaybackService.getInstance().setShuffle(value);
+  /** 持久化每曲目独立速度 {uri: speed}。 */
+  private persistTrackSpeeds(): void {
+    const obj: Record<string, number> = {};
+    this.trackSpeeds.forEach((v: number, k: string) => {
+      obj[k] = v;
+    });
+    void Settings.put(Settings.KEY_AUDIO_TRACK_SPEEDS, JSON.stringify(obj));
   }
 
-  static isPlayAsAudio(): boolean {
-    return PlaybackService.getInstance().getPlayAsAudio();
+  private onComplete(): void {
+    hilog.info(LOG_DOMAIN, LOG_TAG,
+      '[VLC] onComplete stopAfterCurrent=%{public}s repeatMode=%{public}d currentIndex=%{public}d queueLen=%{public}d',
+      String(this.stopAfterCurrent), this.repeatMode, this.currentIndex, this.queue.length);
+    if (this.stopAfterCurrent) {
+      this.stopAfterCurrent = false;
+      this.stop();
+      return;
+    }
+    // 对齐 Android PlaylistManager.EndReached → determinePrevAndNextIndices + next():
+    // 自动播完时 repeat-one 重播当前,其余按队列/随机继续或停止。
+    const nextIdx = this.computeNextIndex(false);
+    hilog.info(LOG_DOMAIN, LOG_TAG,
+      '[VLC] onComplete -> nextIdx=%{public}d (cur=%{public}d len=%{public}d shuffle=%{public}s repeat=%{public}d)',
+      nextIdx, this.currentIndex, this.queue.length,
+      this.shuffle ? 'on' : 'off', this.repeatMode);
+    if (nextIdx < 0) {
+      // 没有下一首(随机全部播完且未开循环 / 顺序到队尾且未开循环)→ 停止
+      this.stop();
+      return;
+    }
+    // libVLC 在 EndReached 后 player 进入 Ended 终止态,直接 setMedia+play 在本 port
+    // 不保证重启(旧版 setTime(0)+play 同样无效)。先复位 native player 状态机,
+    // 再 setMedia+play 重载,对齐 Android 播放完自动接续的标准做法。
+    this.player?.stop();
+    if (nextIdx === this.currentIndex) {
+      // 单曲循环:重播当前(重新加载媒体最可靠,避免 ended 后 setTime 无效)
+      void this.loadCurrent();
+      return;
+    }
+    this.currentIndex = nextIdx;
+    this.emitQueue();
+    this.saveQueueHistory();
+    void this.loadCurrent();
   }
 
-  static setPlayAsAudio(value: boolean): void {
-    PlaybackService.getInstance().setPlayAsAudio(value);
-  }
-
-  static cycleRepeat(): void {
-    PlaybackService.getInstance().cycleRepeat();
-  }
-
-  static speedToNumber(): number {
-    return PlaybackService.getInstance().getSpeed();
-  }
-
-  static async release(): Promise<void> {
-    PlaybackService.getInstance().release();
+  /**
+   * 计算下一首索引(对齐 Android PlaylistManager.determinePrevAndNextIndices + next)。
+   * @param forceManual 是否用户手动点“下一首”。单曲循环(repeatMode===2)时无论手动还是自动
+   *                    都重播当前(IndexPair(currentIndex,currentIndex));其余模式 forceManual
+   *                    只影响队尾是否回卷(手动永不停止)。
+   * @returns 下一首索引;返回 -1 表示应停止(队列空 / 随机播完未循环 / 顺序队尾未循环)。
+   */
+  private computeNextIndex(forceManual: boolean): number {
+    const size = this.queue.length;
+    if (size === 0) {
+      return -1;
+    }
+    // 单曲循环:手动下一曲与自动播完都重播当前(对齐 Android REPEAT_ONE → IndexPair(currentIndex,currentIndex)),
+    // 不切换曲目、不复位模式。
+    if (this.repeatMode === 2) {
+      return this.currentIndex;
+    }
+    if (this.shuffle) {
+      // 随机不重复:shuffleHistory 记录已播放过的索引。全部播完一轮后,
+      // 手动跳过永不停止(清空重洗);自动播完且未开循环时停止。
+      if (this.shuffleHistory.length + 1 >= size) {
+        if (!forceManual && this.repeatMode === 0) {
+          this.shuffleHistory = [];
+          return -1;
+        }
+        this.shuffleHistory = [];
+      }
+      let idx: number = this.currentIndex;
+      let guard: number = 0;
+      do {
+        idx = Math.floor(Math.random() * size);
+        guard++;
+      } while ((idx === this.currentIndex || this.shuffleHistory.includes(idx)) && guard < 200);
+      this.shuffleHistory.push(this.currentIndex);
+      return idx;
+    }
+    // 顺序播放
+    const nextIdx: number = this.currentIndex + 1;
+    if (nextIdx < size) {
+      return nextIdx;
+    }
+    // 已到队尾:手动跳转永远回卷到第 0 首(不暂停);
+    // 自动播完仅在开循环(全部/单曲)时回卷,否则停止。
+    if (forceManual || this.repeatMode !== 0) {
+      return 0;
+    }
+    return -1;
   }
 }

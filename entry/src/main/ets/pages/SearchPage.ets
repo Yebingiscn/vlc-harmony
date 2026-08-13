@@ -1,17 +1,10 @@
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { NavController } from '../common/data/NavController';
-import { BackTitleBar } from '../common/components/BackTitleBar';
 import { SearchItem } from '../common/components/SearchItem';
 import { EmptyStateView } from '../common/components/EmptyStateView';
-import {
-  MediaWrapper,
-  Track,
-  EmptyLoadingState,
-  MediaLibraryItem,
-} from '../common/models/MediaModels';
+import { EmptyLoadingState, MediaLibraryItem, MediaWrapper, Track, } from '../common/models/MediaModels';
 import { PlaybackService } from '../common/data/PlaybackService';
 import { VideoParam } from './VideoPlayerPage';
-
 /**
  * SearchPage —— SearchActivity(全屏搜索页,push,无 Tab 栏)。
  * 顶部固定搜索栏(返回 + TextInput + 清空)+ 内容区互斥渲染结果滚动区(6 分组)或空态。
@@ -76,7 +69,10 @@ export struct SearchPage {
                 this.vm.search(v);
               })
             if (this.input.length > 0) {
-              Image($r('app.media.ic_close_small')).width(20).height(20).fillColor($r('app.color.list_subtitle'))
+              Image($r('app.media.ic_close_small'))
+                .width(20)
+                .height(20)
+                .fillColor($r('app.color.list_subtitle'))
                 .margin({ right: 12 })
                 .onClick(() => {
                   this.input = '';
@@ -84,7 +80,8 @@ export struct SearchPage {
                 })
             }
           }
-          .layoutWeight(1).height(40)
+          .layoutWeight(1)
+          .height(40)
           .backgroundColor($r('app.color.card_background'))
           .borderRadius(20)
           .border({ width: 1, color: $r('app.color.card_border') })
@@ -101,7 +98,10 @@ export struct SearchPage {
         if (this.vm.query.trim().length === 0) {
           Column() {
             Image($r('app.media.ic_search')).width(96).height(96).fillColor($r('app.color.grey800'))
-            Text($r('app.string.search_global')).fontSize(14).fontColor($r('app.color.list_subtitle')).margin({ top: 12 })
+            Text($r('app.string.search_global'))
+              .fontSize(14)
+              .fontColor($r('app.color.list_subtitle'))
+              .margin({ top: 12 })
           }
           .width('100%').height('100%').justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
         } else if (this.vm.results.length === 0) {
@@ -130,7 +130,12 @@ export struct SearchPage {
               }
             }, (item: MediaLibraryItem) => `${item.id}-${item.title}`)
           }
-          .divider({ strokeWidth: 0.5, color: $r('app.color.divider'), startMargin: 76, endMargin: 16 })
+          .divider({
+            strokeWidth: 0.5,
+            color: $r('app.color.divider'),
+            startMargin: 76,
+            endMargin: 16
+          })
           .width('100%')
           .layoutWeight(1)
         }

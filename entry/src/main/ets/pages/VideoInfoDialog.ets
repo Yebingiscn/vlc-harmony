@@ -1,4 +1,3 @@
-import { AppColors } from '../common/constants/AppConstants';
 
 /**
  * VideoInfoDialog —— 「视频信息」全屏弹窗。
@@ -15,19 +14,19 @@ interface VideoInfoState {
   durationMs: number;
   width: number;
   height: number;
+
   /** 解码码率(蓝)序列,数值单位 kb/s,数组长度 = 曲线点数。 */
   decodedSeries: number[];
+
   /** 输入码率(红)序列。 */
   inputSeries: number[];
 }
 
 @ComponentV2
 export struct VideoInfoDialog {
-  @Event onClose: () => void = () => {};
-
-  // ── 视觉常量(与 BookmarkDialog 对齐) ───────────────
   // 主题感知:浅色=白底深字,深色=深底浅字。资源定义见 base/dark element/color.json。
   readonly cPanelBg: Resource = $r('app.color.background_default');
+  // ── 视觉常量(与 BookmarkDialog 对齐) ───────────────
   readonly cHeaderBg: Resource = $r('app.color.background_default');
   readonly cTimelineBg: Resource = $r('app.color.card_background');
   readonly cDivider: Resource = $r('app.color.divider');
@@ -36,10 +35,9 @@ export struct VideoInfoDialog {
   readonly cAccent: string = '#FF8800';
   readonly cBlue: string = '#3FA9F5';
   readonly cRed: string = '#FF3B30';
-
-  // ── 真值数据(从外面传进来) ──────────────────────────
   // 注:不能用 width/height 作 @Param 名,会与 ComponentV2 内置的 width/height 通用属性冲突。
   @Param title: string = '';
+  // ── 真值数据(从外面传进来) ──────────────────────────
   @Param durationMs: number = 0;
   @Param videoWidth: number = 0;
   @Param videoHeight: number = 0;
@@ -60,9 +58,6 @@ export struct VideoInfoDialog {
   /** 总码率(bits/s),空='—' */
   @Param bitrate: string = '';
 
-  // 折线图相关字段(bitrateGraph)已删 —— 那部分是假数据,本轮不展示。
-  // 等接 libVLC 真实 stats 后再加。
-
   /** 分辨率字符串:0 宽高时返回 --。 */
   private get resolution(): string {
     if (this.videoWidth <= 0 || this.videoHeight <= 0) {
@@ -71,43 +66,26 @@ export struct VideoInfoDialog {
     return `${this.videoWidth}x${this.videoHeight}`;
   }
 
-  /** 时长字符串 mm:ss / h:mm:ss。 */
-  private fmtDuration(ms: number): string {
-    if (ms <= 0) {
-      return '--:--';
-    }
-    const totalSec: number = Math.floor(ms / 1000);
-    const h: number = Math.floor(totalSec / 3600);
-    const m: number = Math.floor((totalSec % 3600) / 60);
-    const s: number = totalSec % 60;
-    const mm: string = m < 10 ? `0${m}` : `${m}`;
-    const ss: string = s < 10 ? `0${s}` : `${s}`;
-    return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
-  }
+  // 折线图相关字段(bitrateGraph)已删 —— 那部分是假数据,本轮不展示。
+  // 等接 libVLC 真实 stats 后再加。
 
-  /** 码率格式化:bits/s → kb/s / Mb/s;空串返回 '—'。 */
-  private fmtBitrate(raw: string): string {
-    if (raw.length === 0) {
-      return '—';
-    }
-    const bps: number = parseInt(raw);
-    if (isNaN(bps) || bps <= 0) {
-      return '—';
-    }
-    if (bps >= 1000000) {
-      return `${(bps / 1000000).toFixed(1)} Mb/s`;
-    }
-    return `${Math.round(bps / 1000)} kb/s`;
-  }
+  @Event onClose: () => void = () => {
+  };
 
   // ── 视觉子组件 ─────────────────────────────────────
   @Builder
   sectionHeader(text: string) {
     Text(text)
-      .fontSize(15).fontWeight(FontWeight.Medium)
+      .fontSize(15)
+      .fontWeight(FontWeight.Medium)
       .fontColor(this.cAccent)
       .width('100%')
-      .padding({ left: 20, right: 20, top: 18, bottom: 6 })
+      .padding({
+        left: 20,
+        right: 20,
+        top: 18,
+        bottom: 6
+      })
   }
 
   @Builder
@@ -125,16 +103,15 @@ export struct VideoInfoDialog {
     .padding({ left: 20, right: 20 })
   }
 
-  /** 单条折线 SVG。points 是归一化后的像素坐标(基于 320x180 画布)。 */
-  // bitrateGraph 整段删除 —— 等接 libVLC 真实 stats 后再加。
-
   @Builder
   panelHeader() {
     Row() {
       // 左 40 容器(对称,让标题视觉居中)
       Row() {
         Image($r('app.media.ic_arrow_back'))
-          .width(28).height(28).fillColor($r('app.color.list_title'))
+          .width(28)
+          .height(28)
+          .fillColor($r('app.color.list_title'))
           .padding(2)
           .onClick(() => this.onClose())
       }
@@ -142,7 +119,9 @@ export struct VideoInfoDialog {
       .justifyContent(FlexAlign.Start)
 
       Text(this.title.length > 0 ? this.title : '视频信息')
-        .fontSize(17).fontWeight(600).fontColor($r('app.color.list_title'))
+        .fontSize(17)
+        .fontWeight(600)
+        .fontColor($r('app.color.list_title'))
         .layoutWeight(1)
         .textAlign(TextAlign.Center)
         .maxLines(1)
@@ -197,5 +176,37 @@ export struct VideoInfoDialog {
     .backgroundColor(this.cPanelBg)
     .alignItems(HorizontalAlign.Start)
     .justifyContent(FlexAlign.Start)
+  }
+
+  /** 单条折线 SVG。points 是归一化后的像素坐标(基于 320x180 画布)。 */
+  // bitrateGraph 整段删除 —— 等接 libVLC 真实 stats 后再加。
+
+  /** 时长字符串 mm:ss / h:mm:ss。 */
+  private fmtDuration(ms: number): string {
+    if (ms <= 0) {
+      return '--:--';
+    }
+    const totalSec: number = Math.floor(ms / 1000);
+    const h: number = Math.floor(totalSec / 3600);
+    const m: number = Math.floor((totalSec % 3600) / 60);
+    const s: number = totalSec % 60;
+    const mm: string = m < 10 ? `0${m}` : `${m}`;
+    const ss: string = s < 10 ? `0${s}` : `${s}`;
+    return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+  }
+
+  /** 码率格式化:bits/s → kb/s / Mb/s;空串返回 '—'。 */
+  private fmtBitrate(raw: string): string {
+    if (raw.length === 0) {
+      return '—';
+    }
+    const bps: number = parseInt(raw);
+    if (isNaN(bps) || bps <= 0) {
+      return '—';
+    }
+    if (bps >= 1000000) {
+      return `${(bps / 1000000).toFixed(1)} Mb/s`;
+    }
+    return `${Math.round(bps / 1000)} kb/s`;
   }
 }

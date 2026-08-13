@@ -34,8 +34,6 @@ struct OutlinedInput {
  */
 @ComponentV2
 export struct NetworkServerDialog {
-  @Event onClose: () => void = () => {
-  };
   readonly protocols: string[] = ['FTP', 'FTPS', 'FTPES', 'SFTP', 'SMB', 'NFS'];
   @Local protocolIndex: number = 0;
   @Local protocolMenuOpen: boolean = false;
@@ -57,6 +55,9 @@ export struct NetworkServerDialog {
     const p: string = this.protocols[this.protocolIndex];
     return p === 'SMB' || p === 'NFS' ? $r('app.string.server_share_hint') : $r('app.string.server_domain_hint');
   }
+
+  @Event onClose: () => void = () => {
+  };
 
   getDefaultPort(p: string): string {
     if (p === 'FTP') {

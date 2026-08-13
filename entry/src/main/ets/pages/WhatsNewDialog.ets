@@ -8,15 +8,19 @@ struct FeatureCard {
   @Param title: Resource = $r('app.string.equalizer');
   @Param body: string = '';
   @Param btnText: Resource = $r('app.string.show_in_settings');
-  @Event onClickBtn: () => void = () => {};
+  @Event onClickBtn: () => void = () => {
+  };
 
   build() {
     Column() {
       Row() {
         Image(this.icon).width(24).height(24).fillColor('#FFFFFF')
         Text(this.title)
-          .fontSize(16).fontWeight(FontWeight.Medium).fontColor('#FFFFFF')
-          .margin({ left: 12 }).layoutWeight(1)
+          .fontSize(16)
+          .fontWeight(FontWeight.Medium)
+          .fontColor('#FFFFFF')
+          .margin({ left: 12 })
+          .layoutWeight(1)
       }
       .width('100%').alignItems(VerticalAlign.Center)
 
@@ -26,7 +30,9 @@ struct FeatureCard {
 
       Row() {
         Text(this.btnText)
-          .fontSize(14).fontWeight(FontWeight.Medium).fontColor(AppColors.orange500)
+          .fontSize(14)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(AppColors.orange500)
           .padding({ top: 8, bottom: 8 })
           .onClick(() => this.onClickBtn())
       }
@@ -49,8 +55,10 @@ struct FeatureCard {
  */
 @ComponentV2
 export struct WhatsNewDialog {
-  @Event onClose: () => void = () => {};
   @Local neverAgainChecked: boolean = false;
+
+  @Event onClose: () => void = () => {
+  };
 
   build() {
     Scroll() {
@@ -59,8 +67,12 @@ export struct WhatsNewDialog {
         Row() {
           Image($r('app.media.ic_whats_new')).width(28).height(28).margin({ left: 16 })
           Text("What's new in VLC for Android")
-            .fontSize(18).fontWeight(FontWeight.Medium).fontColor('#FFFFFF')
-            .layoutWeight(1).margin({ left: 16, right: 16 }).maxLines(1)
+            .fontSize(18)
+            .fontWeight(FontWeight.Medium)
+            .fontColor('#FFFFFF')
+            .layoutWeight(1)
+            .margin({ left: 16, right: 16 })
+            .maxLines(1)
         }
         .width('100%').height(56).alignItems(VerticalAlign.Center)
 
@@ -70,7 +82,9 @@ export struct WhatsNewDialog {
           title: $r('app.string.equalizer'),
           body: 'A new equalizer is now available with presets and custom bands.',
           btnText: $r('app.string.show_in_settings'),
-          onClickBtn: () => { this.onClose(); },
+          onClickBtn: () => {
+            this.onClose();
+          },
         }).margin({ top: 24, left: 16, right: 16 })
 
         FeatureCard({
@@ -78,7 +92,9 @@ export struct WhatsNewDialog {
           title: $r('app.string.export_settings'),
           body: 'You can now export and import your settings between devices.',
           btnText: $r('app.string.show_in_settings'),
-          onClickBtn: () => { this.onClose(); },
+          onClickBtn: () => {
+            this.onClose();
+          },
         }).margin({ top: 24, left: 16, right: 16 })
 
         FeatureCard({
@@ -86,7 +102,9 @@ export struct WhatsNewDialog {
           title: $r('app.string.android_auto'),
           body: 'Improved Android Auto support with a redesigned interface.',
           btnText: $r('app.string.show_in_settings'),
-          onClickBtn: () => { this.onClose(); },
+          onClickBtn: () => {
+            this.onClose();
+          },
         }).margin({ top: 24, left: 16, right: 16 })
 
         // 底部复选框
@@ -99,11 +117,20 @@ export struct WhatsNewDialog {
           Text($r('app.string.never_show_again'))
             .fontSize(14).fontColor('#FFFFFF').margin({ left: 8 }).layoutWeight(1)
         }
-        .width('100%').margin({ top: 24, left: 16, right: 16, bottom: 16 }).alignItems(VerticalAlign.Center)
+        .width('100%')
+        .margin({
+          top: 24,
+          left: 16,
+          right: 16,
+          bottom: 16
+        })
+        .alignItems(VerticalAlign.Center)
       }
       .width('100%').alignItems(HorizontalAlign.Start)
     }
-    .width('100%').layoutWeight(1).scrollBar(BarState.Auto)
+    .width('100%')
+    .layoutWeight(1)
+    .scrollBar(BarState.Auto)
     .backgroundColor($r('app.color.background_default'))
     .borderRadius({ topLeft: 16, topRight: 16 })
   }

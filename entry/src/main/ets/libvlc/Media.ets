@@ -1,17 +1,17 @@
 import {
+  mediaAddOption,
+  mediaAddSlave,
+  mediaCreateFd,
   mediaCreateLocation,
   mediaCreatePath,
-  mediaCreateFd,
-  mediaRelease,
-  mediaParse,
   mediaGetMeta,
   mediaGetStats,
-  mediaAddOption,
   mediaGetTracksInfo,
-  mediaAddSlave,
-  VlcMetaInfo,
+  mediaParse,
+  mediaRelease,
   VlcMediaStats,
   VlcMediaTrackInfo,
+  VlcMetaInfo,
 } from 'libvlcnapi.so';
 import { VLCObject } from './VLCObject';
 import { LibVLC } from './LibVLC';

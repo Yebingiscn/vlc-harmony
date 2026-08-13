@@ -11,8 +11,10 @@ export struct PreferenceConfirmDialog {
   @Param preferenceKey: string = '';
   @Param titleText: ResourceStr = '';
   @Param warningText: ResourceStr = '';
-  @Event onAccept: () => void = () => {};
-  @Event onCancel: () => void = () => {};
+  @Event onAccept: () => void = () => {
+  };
+  @Event onCancel: () => void = () => {
+  };
 
   build(): void {
     Stack({ alignContent: Alignment.Bottom }) {
@@ -74,7 +76,12 @@ export struct PreferenceConfirmDialog {
       }
       .width('100%')
       .backgroundColor('#FFFFFF')
-      .borderRadius({ topLeft: 16, topRight: 16, bottomLeft: 0, bottomRight: 0 })
+      .borderRadius({
+        topLeft: 16,
+        topRight: 16,
+        bottomLeft: 0,
+        bottomRight: 0
+      })
       .padding({ bottom: 16 })
     }
     .width('100%')

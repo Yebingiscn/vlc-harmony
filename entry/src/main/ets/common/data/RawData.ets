@@ -39,23 +39,6 @@ export class LicenseInfo {
  * 读取流程:getRawFileContent(name) → TextDecoder('utf-8').decode → JSON.parse as Record<string,Object> → 防御式取字段。
  */
 export class RawData {
-  /** 防御式字符串取值:非 string 一律回退默认值。 */
-  private static str(v: Object, fallback: string = ''): string {
-    return typeof v === 'string' ? v : fallback;
-  }
-
-  /** 读 rawfile 文本文件返回字符串(vlc_license.txt 等)。 */
-  private static async readText(name: string): Promise<string> {
-    const ua: Uint8Array = await AppContext.get().resourceManager.getRawFileContent(name);
-    return new util.TextDecoder('utf-8').decode(ua);
-  }
-
-  /** 读 rawfile JSON 并解析为通用对象树。 */
-  private static async readJson(name: string): Promise<Record<string, Object>> {
-    const text: string = await RawData.readText(name);
-    return JSON.parse(text) as Record<string, Object>;
-  }
-
   /** authors.json:30 项 String 数组 → string[]。 */
   static async loadAuthors(): Promise<string[]> {
     try {
@@ -140,5 +123,26 @@ export class RawData {
     } catch (e) {
       return '';
     }
+  }
+
+  /** 防御式字符串取值:非 string 一律回退默认值。 */
+  private static str(v: Object, fallback: string = ''): string {
+    return typeof v === 'string' ? v : fallback;
+  }
+
+  /** 读 rawfile 文本文件返回字符串(vlc_license.txt 等)。 */
+  private static async readText(name: string): Promise<string> {
+    try {
+      const ua: Uint8Array = await AppContext.get().resourceManager.getRawFileContent(name);
+      return util.TextDecoder.create('utf-8').decodeToString(ua);
+    } catch (error) {
+      return '';
+    }
+  }
+
+  /** 读 rawfile JSON 并解析为通用对象树。 */
+  private static async readJson(name: string): Promise<Record<string, Object>> {
+    const text: string = await RawData.readText(name);
+    return JSON.parse(text) as Record<string, Object>;
   }
 }

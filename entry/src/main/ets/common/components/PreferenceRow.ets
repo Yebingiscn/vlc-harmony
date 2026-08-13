@@ -1,6 +1,5 @@
 import { PreferenceItem } from '../models/PreferenceModels';
 import { Settings } from '../data/Settings';
-import { promptAction } from '@kit.ArkUI';
 
 /**
  * PreferenceRow —— 通用偏好项单行渲染(@ComponentV2)。
@@ -21,18 +20,36 @@ export struct PreferenceRow {
   @Param verticalPadding: number = 14;
   /** Android 的界面设置页只在分组之间显示分隔线。 */
   @Param showDivider: boolean = true;
+  @Local boolValue: boolean = false;
+  @Local strValue: string = '';
+  @Local numValue: number = 0;
+  @Local multiselectValues: string[] = [];
+  @Local initialized: boolean = false;
+
   /** 行点击统一回调(用于 nav/click 等非值切换)。 */
-  @Event onNav: (item: PreferenceItem) => void = () => {};
+  @Event onNav: (item: PreferenceItem) => void = () => {
+  };
+
   /** list 类型点击回调(由父页弹单选,回写后刷新)。 */
-  @Event onListSelect: (item: PreferenceItem) => void = () => {};
+  @Event onListSelect: (item: PreferenceItem) => void = () => {
+  };
+
   /** numberpicker 类型点击回调。 */
-  @Event onNumberPicker: (item: PreferenceItem) => void = () => {};
+  @Event onNumberPicker: (item: PreferenceItem) => void = () => {
+  };
+
   /** multiselect 类型点击回调。 */
-  @Event onMultiselect: (item: PreferenceItem) => void = () => {};
+  @Event onMultiselect: (item: PreferenceItem) => void = () => {
+  };
+
   /** text 类型点击回调。 */
-  @Event onTextEdit: (item: PreferenceItem) => void = () => {};
+  @Event onTextEdit: (item: PreferenceItem) => void = () => {
+  };
+
   /** color 类型点击回调。 */
-  @Event onColorPick: (item: PreferenceItem) => void = () => {};
+  @Event onColorPick: (item: PreferenceItem) => void = () => {
+  };
+
   /**
    * toggle/checkbox 切换前的拦截回调(由父页实现)。
    * 返回 true 表示父页已接管此次切换(自行决定是否写 Settings,通常是先弹确认框),本行不再自动 put;
@@ -41,12 +58,6 @@ export struct PreferenceRow {
    */
   @Event onToggleChange: (item: PreferenceItem, newValue: boolean) => boolean = () => false;
 
-  @Local boolValue: boolean = false;
-  @Local strValue: string = '';
-  @Local numValue: number = 0;
-  @Local multiselectValues: string[] = [];
-  @Local initialized: boolean = false;
-
   aboutToAppear(): void {
     this.loadValue();
   }
@@ -54,7 +65,8 @@ export struct PreferenceRow {
   async loadValue(): Promise<void> {
     const it = this.item;
     if (it.type === 'toggle' || it.type === 'checkbox') {
-      this.boolValue = await Settings.getBoolean(it.key, typeof it.defaultValue === 'boolean' ? it.defaultValue : false);
+      this.boolValue =
+        await Settings.getBoolean(it.key, typeof it.defaultValue === 'boolean' ? it.defaultValue : false);
     } else if (it.type === 'list' || it.type === 'text') {
       this.strValue = await Settings.getString(it.key, typeof it.defaultValue === 'string' ? it.defaultValue : '');
     } else if (it.type === 'seekbar') {
@@ -107,14 +119,6 @@ export struct PreferenceRow {
     const e = enabled.length > 0 ? enabled.join(', ') : '-';
     const d = disabled.length > 0 ? disabled.join(', ') : '-';
     return `Enabled: ${e}\nDisabled: ${d}`;
-  }
-
-  /** 将 ResourceStr(可能为 string 或 $r() Resource)转为可拼接的纯字符串。 */
-  private resourceStrToString(s: ResourceStr): string {
-    if (typeof s === 'string') {
-      return s;
-    }
-    return getContext(this).resourceManager.getStringSync(s.id);
   }
 
   onToggle(on: boolean): void {
@@ -233,11 +237,11 @@ export struct PreferenceRow {
           }
         } else if ((
           this.item.type === 'list' ||
-          this.item.type === 'nav' ||
-          this.item.type === 'numberpicker' ||
-          this.item.type === 'multiselect' ||
-          this.item.type === 'text' ||
-          this.item.type === 'click'
+            this.item.type === 'nav' ||
+            this.item.type === 'numberpicker' ||
+            this.item.type === 'multiselect' ||
+            this.item.type === 'text' ||
+            this.item.type === 'click'
         ) && this.showTrailingIndicator) {
           Image($r('app.media.ic_arrow_right'))
             .width(20)
@@ -246,9 +250,15 @@ export struct PreferenceRow {
         }
       }
       .width('100%')
-      .padding({ left: 16, right: 16, top: this.verticalPadding, bottom: this.verticalPadding })
+      .padding({
+        left: 16,
+        right: 16,
+        top: this.verticalPadding,
+        bottom: this.verticalPadding
+      })
       .alignItems(VerticalAlign.Center)
       .opacity(this.dependencyEnabled ? 1.0 : 0.4)
+
       if (this.showDivider) {
         Divider()
           .color($r('app.color.divider'))
@@ -257,5 +267,18 @@ export struct PreferenceRow {
       }
     }
     .width('100%')
+  }
+
+  /** 将 ResourceStr(可能为 string 或 $r() Resource)转为可拼接的纯字符串。 */
+  private resourceStrToString(s: ResourceStr): string {
+    if (typeof s === 'string') {
+      return s;
+    }
+    try {
+      const context = this.getUIContext().getHostContext();
+      return context?.resourceManager.getStringSync(s.id) ?? '';
+    } catch (error) {
+      return '';
+    }
   }
 }

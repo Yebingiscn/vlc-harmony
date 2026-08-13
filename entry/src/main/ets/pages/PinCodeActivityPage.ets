@@ -97,6 +97,117 @@ export struct PinCodeActivityPage {
     this.initStep();
   }
 
+  @Builder
+  PinCell(text: string, onChange: (v: string) => void) {
+    TextInput({ text: text })
+      .type(InputType.Number)
+      .maxLength(1)
+      .textAlign(TextAlign.Center)
+      .fontSize(22)
+      .fontColor(AppColors.grey900)
+      .layoutWeight(1)
+      .aspectRatio(1)
+      .backgroundColor(AppColors.transparent)
+      .onChange((v: string) => onChange(v))
+  }
+
+  build() {
+    NavDestination() {
+      Column() {
+        if (this.vm.uiState !== 'SUCCESS') {
+          // pin_group:reason + title + 4 格 PIN 框
+          Column() {
+            Text(this.vm.reasonText)
+              .fontSize(16)
+              .fontColor(AppColors.grey900)
+              .textAlign(TextAlign.Center)
+              .margin({ top: 16, left: 32, right: 32 })
+
+            Text(this.vm.titleText)
+              .fontSize(22)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(AppColors.white)
+              .textAlign(TextAlign.Center)
+              .margin({ top: 16, left: 32, right: 32 })
+
+            // 4 格 PIN 输入框(1:1 正方形等宽,间隙 8vp,顶距 title 48vp)
+            Row({ space: AppDimens.default_margin }) {
+              this.PinCell(this.vm.pin1, (v: string) => {
+                this.vm.pin1 = v;
+                this.onPinChanged();
+              })
+              this.PinCell(this.vm.pin2, (v: string) => {
+                this.vm.pin2 = v;
+                this.onPinChanged();
+              })
+              this.PinCell(this.vm.pin3, (v: string) => {
+                this.vm.pin3 = v;
+                this.onPinChanged();
+              })
+              this.PinCell(this.vm.pin4, (v: string) => {
+                this.vm.pin4 = v;
+                this.onPinChanged();
+              })
+            }
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
+            .margin({ top: 48, left: 32, right: 32 })
+          }
+          .width('100%')
+        } else {
+          // sucess_group:锁图标 + 解锁成功文案
+          Column() {
+            Text($r('app.string.pin_unlock_success'))
+              .fontSize(16)
+              .fontColor(AppColors.grey900)
+              .textAlign(TextAlign.Center)
+              .margin({ left: 16, right: 16 })
+            Image($r('app.media.ic_pin_lock'))
+              .width(24)
+              .height(24)
+              .fillColor(AppColors.grey600)
+              .margin({ top: 16 })
+          }
+          .width('100%')
+          .layoutWeight(1)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+        }
+
+        // 底部按钮栏(锁底,左 cancel 右 next)
+        Row() {
+          if (this.vm.uiState !== 'SUCCESS') {
+            Button($r('app.string.cancel'))
+              .type(ButtonType.Normal)
+              .backgroundColor(AppColors.transparent)
+              .fontColor(AppColors.grey700)
+              .margin({ left: 16 })
+              .onClick(() => NavController.pop())
+          }
+          Button(this.nextLabel())
+            .type(ButtonType.Normal)
+            .backgroundColor(AppColors.transparent)
+            .fontColor(AppColors.orange800)
+            .enabled(this.vm.uiState === 'SUCCESS' || this.vm.canSubmit)
+            .margin({ right: 16 })
+            .onClick(() => this.next())
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.SpaceBetween)
+        .padding({ bottom: 16 })
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor(AppColors.white)
+      .alignItems(HorizontalAlign.Start)
+    }
+    .hideTitleBar(true)
+    .onBackPressed(() => {
+      NavController.pop();
+      return true;
+    })
+  }
+
   private async initStep(): Promise<void> {
     const stored: string = await Settings.getString(Settings.KEY_SAFE_MODE_PIN, '');
     // 首次创建 或 MODIFY/CHECK/UNLOCK 且已有 PIN → 输入既有 PIN。
@@ -164,13 +275,23 @@ export struct PinCodeActivityPage {
         const S0: number = (rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) >>> 0;
         const maj: number = ((a & b) ^ (a & c) ^ (b & c)) >>> 0;
         const t2: number = ((S0 + maj) >>> 0);
-        hh = g; g = f; f = e;
+        hh = g;
+        g = f;
+        f = e;
         e = ((d + t1) >>> 0);
-        d = c; c = b; b = a;
+        d = c;
+        c = b;
+        b = a;
         a = ((t1 + t2) >>> 0);
       }
-      h0 = ((h0 + a) >>> 0); h1 = ((h1 + b) >>> 0); h2 = ((h2 + c) >>> 0); h3 = ((h3 + d) >>> 0);
-      h4 = ((h4 + e) >>> 0); h5 = ((h5 + f) >>> 0); h6 = ((h6 + g) >>> 0); h7 = ((h7 + hh) >>> 0);
+      h0 = ((h0 + a) >>> 0);
+      h1 = ((h1 + b) >>> 0);
+      h2 = ((h2 + c) >>> 0);
+      h3 = ((h3 + d) >>> 0);
+      h4 = ((h4 + e) >>> 0);
+      h5 = ((h5 + f) >>> 0);
+      h6 = ((h6 + g) >>> 0);
+      h7 = ((h7 + hh) >>> 0);
     }
     const H: number[] = [h0, h1, h2, h3, h4, h5, h6, h7];
     let hex: string = '';
@@ -267,104 +388,5 @@ export struct PinCodeActivityPage {
       return $r('app.string.done');
     }
     return $r('app.string.next');
-  }
-
-  @Builder
-  PinCell(text: string, onChange: (v: string) => void) {
-    TextInput({ text: text })
-      .type(InputType.Number)
-      .maxLength(1)
-      .textAlign(TextAlign.Center)
-      .fontSize(22)
-      .fontColor(AppColors.grey900)
-      .layoutWeight(1)
-      .aspectRatio(1)
-      .backgroundColor(AppColors.transparent)
-      .onChange((v: string) => onChange(v))
-  }
-
-  build() {
-    NavDestination() {
-      Column() {
-        if (this.vm.uiState !== 'SUCCESS') {
-          // pin_group:reason + title + 4 格 PIN 框
-          Column() {
-            Text(this.vm.reasonText)
-              .fontSize(16)
-              .fontColor(AppColors.grey900)
-              .textAlign(TextAlign.Center)
-              .margin({ top: 16, left: 32, right: 32 })
-
-            Text(this.vm.titleText)
-              .fontSize(22)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(AppColors.white)
-              .textAlign(TextAlign.Center)
-              .margin({ top: 16, left: 32, right: 32 })
-
-            // 4 格 PIN 输入框(1:1 正方形等宽,间隙 8vp,顶距 title 48vp)
-            Row({ space: AppDimens.default_margin }) {
-              this.PinCell(this.vm.pin1, (v: string) => { this.vm.pin1 = v; this.onPinChanged(); })
-              this.PinCell(this.vm.pin2, (v: string) => { this.vm.pin2 = v; this.onPinChanged(); })
-              this.PinCell(this.vm.pin3, (v: string) => { this.vm.pin3 = v; this.onPinChanged(); })
-              this.PinCell(this.vm.pin4, (v: string) => { this.vm.pin4 = v; this.onPinChanged(); })
-            }
-            .width('100%')
-            .justifyContent(FlexAlign.Center)
-            .margin({ top: 48, left: 32, right: 32 })
-          }
-          .width('100%')
-        } else {
-          // sucess_group:锁图标 + 解锁成功文案
-          Column() {
-            Text($r('app.string.pin_unlock_success'))
-              .fontSize(16)
-              .fontColor(AppColors.grey900)
-              .textAlign(TextAlign.Center)
-              .margin({ left: 16, right: 16 })
-            Image($r('app.media.ic_pin_lock'))
-              .width(24)
-              .height(24)
-              .fillColor(AppColors.grey600)
-              .margin({ top: 16 })
-          }
-          .width('100%')
-          .layoutWeight(1)
-          .justifyContent(FlexAlign.Center)
-          .alignItems(HorizontalAlign.Center)
-        }
-
-        // 底部按钮栏(锁底,左 cancel 右 next)
-        Row() {
-          if (this.vm.uiState !== 'SUCCESS') {
-            Button($r('app.string.cancel'))
-              .type(ButtonType.Normal)
-              .backgroundColor(AppColors.transparent)
-              .fontColor(AppColors.grey700)
-              .margin({ left: 16 })
-              .onClick(() => NavController.pop())
-          }
-          Button(this.nextLabel())
-            .type(ButtonType.Normal)
-            .backgroundColor(AppColors.transparent)
-            .fontColor(AppColors.orange800)
-            .enabled(this.vm.uiState === 'SUCCESS' || this.vm.canSubmit)
-            .margin({ right: 16 })
-            .onClick(() => this.next())
-        }
-        .width('100%')
-        .justifyContent(FlexAlign.SpaceBetween)
-        .padding({ bottom: 16 })
-      }
-      .width('100%')
-      .height('100%')
-      .backgroundColor(AppColors.white)
-      .alignItems(HorizontalAlign.Start)
-    }
-    .hideTitleBar(true)
-    .onBackPressed(() => {
-      NavController.pop();
-      return true;
-    })
   }
 }

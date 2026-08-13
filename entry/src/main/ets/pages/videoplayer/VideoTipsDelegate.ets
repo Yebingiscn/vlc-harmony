@@ -1,5 +1,5 @@
+import { UiFeedback } from '../../common/utils/UiFeedback';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { promptAction } from '@kit.ArkUI';
 
 /**
  * VideoTipsDelegate —— 对齐 Android VideoTipsDelegate（首次手势引导骨架）。
@@ -21,6 +21,6 @@ export class VideoTipsDelegate {
 
   /** 调试入口：提示尚未实现。 */
   showUnavailable(): void {
-    promptAction.showToast({ message: 'Player tips are not available yet' });
+    UiFeedback.showToast({ message: 'Player tips are not available yet' });
   }
 }

@@ -16,15 +16,18 @@ export struct MediaGridCard {
   @Param selected: boolean = false;
   @Param inSelection: boolean = false;
   @Param showProgress: boolean = false;
-  @Event onItemClick: () => void = () => {
-  };
-  @Event onItemLongClick: () => void = () => {
-  };
-  @Event onItemMoreClick: () => void = () => {
-  };
   /** 设置-界面-视频中的两个展示开关。 */
   @Param showSeenMarker: boolean = true;
   @Param showThumbnail: boolean = true;
+
+  @Event onItemClick: () => void = () => {
+  };
+
+  @Event onItemLongClick: () => void = () => {
+  };
+
+  @Event onItemMoreClick: () => void = () => {
+  };
 
   @Builder
   emojiBadge(icon: Resource) {
@@ -140,7 +143,8 @@ export struct MediaGridCard {
     Column() {
       Stack({ alignContent: Alignment.Top }) {
         // 缩略图:artworkUrl 为媒体库 uri 时 Image 可直接渲染;为空/加载失败回落占位图。
-        Image(this.showThumbnail && this.item.artworkUrl.length > 0 ? this.item.artworkUrl : $r('app.media.tv_channel_default'))
+        Image(this.showThumbnail && this.item.artworkUrl.length > 0 ? this.item.artworkUrl :
+          $r('app.media.tv_channel_default'))
           .width('100%')
           .height('100%')
           .objectFit(ImageFit.Cover)

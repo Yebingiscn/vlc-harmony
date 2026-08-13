@@ -28,18 +28,22 @@ export struct VlcConfirmDialog {
   /** 取消按钮文案(默认 "Cancel")。 */
   @Param cancelText: Resource = $r('app.string.cancel');
   /** OK 按钮 onClick。 */
-  @Event onOk: () => void = () => {};
+  @Event onOk: () => void = () => {
+  };
   /** Cancel 按钮 / 遮罩 / 返回 onClick。 */
-  @Event onCancel: () => void = () => {};
+  @Event onCancel: () => void = () => {
+  };
   /** 关闭意图(等同 onCancel,供 bindSheet 关闭用)。 */
-  @Event onClose: () => void = () => {};
+  @Event onClose: () => void = () => {
+  };
 
   build() {
     Column() {
       // ── 标题行:警告图标 + 标题(垂直居中)──
       Row() {
         Image(this.icon)
-          .width(54).height(54)
+          .width(54)
+          .height(54)
           .fillColor(AppColors.grey400)
           .objectFit(ImageFit.Contain)
           .margin({ left: 16, top: 16 })
@@ -96,6 +100,7 @@ export struct VlcConfirmDialog {
     .backgroundColor($r('app.color.background_default'))
     .borderRadius({ topLeft: 16, topRight: 16 })
     .alignItems(HorizontalAlign.Start)
+
     // TODO(契约): anim_delete 循环 AVD(非 BAN_FOLDER 时无限循环)→ 鸿蒙转帧序列/GIF/Lottie,暂用静态 ic_warning。
     // TODO(契约): confirm_delete 动态标题 6 分支(mediaList/Album/Playlist 类型)由调用方计算后注入 title @Param。
     // TODO(契约): onOk 内 setFragmentResult 回传 mediaList+resultType(ConfirmDelete)/ preferenceKey(ConfirmPreference)→ 由调用方用 emitter/回调实现。

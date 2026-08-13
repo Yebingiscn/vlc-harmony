@@ -1,4 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 20 20">
-<path d="M4.75,7.5L15.25,7.5A0.75,0.75 0,0 1,16 8.25L16,8.25A0.75,0.75 0,0 1,15.25 9L4.75,9A0.75,0.75 0,0 1,4 8.25L4,8.25A0.75,0.75 0,0 1,4.75 7.5z" fill="currentColor" fill-opacity="1" stroke="#00000000" stroke-width="9.81950092" fill-rule="nonZero"/>
-<path d="M4.75,11L15.25,11A0.75,0.75 0,0 1,16 11.75L16,11.75A0.75,0.75 0,0 1,15.25 12.5L4.75,12.5A0.75,0.75 0,0 1,4 11.75L4,11.75A0.75,0.75 0,0 1,4.75 11z" fill="currentColor" fill-opacity="1" stroke="#00000000" stroke-width="9.81950092" fill-rule="nonZero"/>
+    <path d="M4.75,7.5L15.25,7.5A0.75,0.75 0,0 1,16 8.25L16,8.25A0.75,0.75 0,0 1,15.25 9L4.75,9A0.75,0.75 0,0 1,4 8.25L4,8.25A0.75,0.75 0,0 1,4.75 7.5z"
+          fill="currentColor" fill-opacity="1" stroke="#00000000" stroke-width="9.81950092" fill-rule="nonZero"/>
+    <path d="M4.75,11L15.25,11A0.75,0.75 0,0 1,16 11.75L16,11.75A0.75,0.75 0,0 1,15.25 12.5L4.75,12.5A0.75,0.75 0,0 1,4 11.75L4,11.75A0.75,0.75 0,0 1,4.75 11z"
+          fill="currentColor" fill-opacity="1" stroke="#00000000" stroke-width="9.81950092" fill-rule="nonZero"/>
 </svg>

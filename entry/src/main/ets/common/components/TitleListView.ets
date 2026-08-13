@@ -11,7 +11,8 @@ export struct TitleListView {
   @Param items: SheetItem[] = [];
   @Param loading: boolean = false;
   @Param emptyText: Resource = $r('app.string.no_favorite');
-  @Event onItemClick: (item: SheetItem, index: number) => void = () => {};
+  @Event onItemClick: (item: SheetItem, index: number) => void = () => {
+  };
 
   build() {
     Column() {
@@ -34,7 +35,11 @@ export struct TitleListView {
             ListItem() {
               Row() {
                 if (item.icon) {
-                  Image(item.icon).width(28).height(28).objectFit(ImageFit.Contain).fillColor('#FF8800')
+                  Image(item.icon)
+                    .width(28)
+                    .height(28)
+                    .objectFit(ImageFit.Contain)
+                    .fillColor('#FF8800')
                     .margin({ right: 8 })
                 }
                 Column() {

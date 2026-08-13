@@ -2,7 +2,9 @@ import { AppColors } from '../common/constants/AppConstants';
 
 /** 按流量计费的网络下对串流的处理:0=不执行任何操作 1=停止播放 2=警告我。 */
 export const METERED_CONNECTION_DEFAULT: string = '0';
+
 export const METERED_CONNECTION_VALUES: string[] = ['0', '1', '2'];
+
 export const METERED_CONNECTION_LABELS: string[] = [
   '不执行任何操作',
   '停止播放',
@@ -25,12 +27,10 @@ export struct MeteredConnectionDialog {
   @Param labels: string[] = METERED_CONNECTION_LABELS;
   @Param values: string[] = METERED_CONNECTION_VALUES;
   @Param selectedValue: string = METERED_CONNECTION_DEFAULT;
-  @Event onSelect: (value: string) => void = () => {};
-  @Event onCancel: () => void = () => {};
-
-  private valueAt(index: number): string {
-    return index >= 0 && index < this.values.length ? this.values[index] : '';
-  }
+  @Event onSelect: (value: string) => void = () => {
+  };
+  @Event onCancel: () => void = () => {
+  };
 
   build() {
     Column() {
@@ -58,7 +58,12 @@ export struct MeteredConnectionDialog {
             .layoutWeight(1)
         }
         .width('100%')
-        .padding({ left: 4, right: 4, top: 16, bottom: 16 })
+        .padding({
+          left: 4,
+          right: 4,
+          top: 16,
+          bottom: 16
+        })
         .alignItems(VerticalAlign.Center)
         .onClick(() => this.onSelect(this.valueAt(index)))
       }, (label: string, index: number) => `${index}`)
@@ -76,5 +81,9 @@ export struct MeteredConnectionDialog {
     .padding(20)
     .backgroundColor($r('app.color.background_default'))
     .borderRadius(16)
+  }
+
+  private valueAt(index: number): string {
+    return index >= 0 && index < this.values.length ? this.values[index] : '';
   }
 }

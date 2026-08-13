@@ -1,21 +1,16 @@
-import { promptAction } from '@kit.ArkUI';
+import { UiFeedback } from '../common/utils/UiFeedback';
 import { VlcToolbar } from '../common/components/VlcToolbar';
-import { PermissionsDialog } from './PermissionsDialog';
 import { NavController } from '../common/data/NavController';
 import { RouteName } from '../common/constants/AppConstants';
 import { PreferencesScreenParam } from '../common/models/MediaModels';
 import { Settings } from '../common/data/Settings';
-import {
-  SettingsHomeCatalog,
-  SettingsHomeItem,
-  SettingsHomeSection,
-} from '../common/models/SettingsHomeModels';
+import { SettingsHomeCatalog, SettingsHomeItem, SettingsHomeSection, } from '../common/models/SettingsHomeModels';
 import {
   SCREEN_ORIENTATION_DEFAULT,
   SCREEN_ORIENTATION_LABELS,
   SCREEN_ORIENTATION_VALUES,
-  screenOrientationLabel,
   ScreenOrientationDialog,
+  screenOrientationLabel,
 } from './ScreenOrientationDialog';
 import {
   HARDWARE_ACCELERATION_DEFAULT,
@@ -33,8 +28,8 @@ import {
   METERED_CONNECTION_DEFAULT,
   METERED_CONNECTION_LABELS,
   METERED_CONNECTION_VALUES,
-  meteredConnectionLabel,
   MeteredConnectionDialog,
+  meteredConnectionLabel,
 } from './MeteredConnectionDialog';
 
 /**
@@ -61,8 +56,6 @@ export struct PreferencesActivityPage {
   @Local meteredConnectionDialogId: number = -1;
   /** 变更行摘要后重建列表项。 */
   @Local rowVersion: number = 0;
-  /** 权限管理 BottomSheet 是否可见。 */
-  @Local showPermissionsSheet: boolean = false;
   @Local historyDisableConfirmOpen: boolean = false;
   @Local historyDisableSheetType: string = '';
 
@@ -81,24 +74,6 @@ export struct PreferencesActivityPage {
     this.toggleValues = values;
     await this.loadOrientationSummary();
     await this.loadMeteredConnectionSummary();
-  }
-
-  private async loadOrientationSummary(): Promise<void> {
-    const value: string = await Settings.getString(Settings.SCREEN_ORIENTATION, SCREEN_ORIENTATION_DEFAULT);
-    this.orientationValue = value;
-    this.updateOrientationSummary(value);
-  }
-
-  private updateOrientationSummary(value: string): void {
-    for (const section of this.sections) {
-      for (const item of section.items) {
-        if (item.key === Settings.SCREEN_ORIENTATION) {
-          item.summary = screenOrientationLabel(value);
-          this.rowVersion++;
-          return;
-        }
-      }
-    }
   }
 
   isItemEnabled(item: SettingsHomeItem): boolean {
@@ -140,59 +115,7 @@ export struct PreferencesActivityPage {
     }
   }
 
-  /** 后续接入子页、单选弹窗、权限页或业务设置的统一入口。 */
-  private async confirmDisablePlaybackHistory(): Promise<void> {
-    this.toggleValues = this.updatedToggleValues(Settings.ENABLE_PLAYBACK_HISTORY, false);
-    this.rowVersion++;
-    await Settings.put(Settings.ENABLE_PLAYBACK_HISTORY, false);
-    this.historyDisableConfirmOpen = false;
-    this.historyDisableSheetType = '';
-  }
-
-  private cancelDisablePlaybackHistory(): void {
-    // Toggle 的原始值仍为 true；递增 key 强制重建该行，撤销控件自身的瞬时视觉切换。
-    this.rowVersion++;
-    this.historyDisableConfirmOpen = false;
-    this.historyDisableSheetType = '';
-  }
-
-  private async confirmDisableAudioQueueHistory(): Promise<void> {
-    this.toggleValues = this.updatedToggleValues(Settings.AUDIO_PLAY_QUEUE_HISTORY, false);
-    this.rowVersion++;
-    await Settings.put(Settings.AUDIO_PLAY_QUEUE_HISTORY, false);
-    this.historyDisableConfirmOpen = false;
-    this.historyDisableSheetType = '';
-  }
-
-  private cancelDisableAudioQueueHistory(): void {
-    this.rowVersion++;
-    this.historyDisableConfirmOpen = false;
-    this.historyDisableSheetType = '';
-  }
-
-  /** 返回新对象引用，让播放历史与其子开关在同一帧重新计算可用状态。 */
-  private updatedToggleValues(key: string, value: boolean): Record<string, boolean> {
-    const next: Record<string, boolean> = {};
-    for (const section of this.sections) {
-      for (const item of section.items) {
-        if (item.type === 'toggle') {
-          if (key === Settings.ENABLE_PLAYBACK_HISTORY && value &&
-            (item.key === Settings.VIDEO_PLAY_QUEUE_HISTORY || item.key === Settings.AUDIO_PLAY_QUEUE_HISTORY)) {
-            next[item.key] = true;
-          } else {
-            next[item.key] = item.key === key ? value : this.toggleValues[item.key] === true;
-          }
-        }
-      }
-    }
-    return next;
-  }
-
   onSettingAction(item: SettingsHomeItem): void {
-    if (item.key === 'permissions') {
-      this.showPermissionsSheet = true;
-      return;
-    }
     if (item.key === Settings.SCREEN_ORIENTATION) {
       this.openOrientationDialog();
       return;
@@ -216,98 +139,7 @@ export struct PreferencesActivityPage {
       NavController.push(RouteName.PreferencesScreen, param);
       return;
     }
-    promptAction.showToast({ message: `“${item.key}”功能暂未实现` });
-  }
-
-  private openOrientationDialog(): void {
-    Settings.getString(Settings.SCREEN_ORIENTATION, SCREEN_ORIENTATION_DEFAULT).then((value: string) => {
-      this.orientationValue = value;
-      this.getUIContext().getPromptAction().openCustomDialog({
-        builder: () => {
-          this.orientationDialogContent();
-        },
-        alignment: DialogAlignment.Center,
-        autoCancel: true,
-        maskColor: $r('app.color.dialog_mask'),
-        backgroundColor: Color.Transparent,
-      }).then((dialogId: number) => {
-        this.orientationDialogId = dialogId;
-      });
-    });
-  }
-
-  private closeOrientationDialog(): void {
-    if (this.orientationDialogId >= 0) {
-      this.getUIContext().getPromptAction().closeCustomDialog(this.orientationDialogId);
-    }
-    this.orientationDialogId = -1;
-  }
-
-  private onOrientationSelect(value: string): void {
-    this.orientationValue = value;
-    Settings.put(Settings.SCREEN_ORIENTATION, value);
-    this.updateOrientationSummary(value);
-    this.closeOrientationDialog();
-  }
-
-  private openHardwareAccelerationDialog(): void {
-    Settings.getString(Settings.KEY_HARDWARE_ACCELERATION, HARDWARE_ACCELERATION_DEFAULT).then((value: string) => {
-      this.hardwareAccelerationValue = value;
-      this.getUIContext().getPromptAction().openCustomDialog({
-        builder: () => {
-          this.hardwareAccelerationDialogContent();
-        },
-        alignment: DialogAlignment.Center,
-        autoCancel: true,
-        maskColor: $r('app.color.dialog_mask'),
-        backgroundColor: Color.Transparent,
-      }).then((dialogId: number) => {
-        this.hardwareAccelerationDialogId = dialogId;
-      });
-    });
-  }
-
-  private closeHardwareAccelerationDialog(): void {
-    if (this.hardwareAccelerationDialogId >= 0) {
-      this.getUIContext().getPromptAction().closeCustomDialog(this.hardwareAccelerationDialogId);
-    }
-    this.hardwareAccelerationDialogId = -1;
-  }
-
-  private onHardwareAccelerationSelect(value: string): void {
-    this.hardwareAccelerationValue = value;
-    Settings.put(Settings.KEY_HARDWARE_ACCELERATION, value);
-    this.closeHardwareAccelerationDialog();
-  }
-
-  private openBackgroundPipDialog(): void {
-    Settings.getString(Settings.KEY_VIDEO_APP_SWITCH, BACKGROUND_PIP_DEFAULT).then((value: string) => {
-      this.backgroundPipValue = value;
-      this.getUIContext().getPromptAction().openCustomDialog({
-        builder: () => {
-          this.backgroundPipDialogContent();
-        },
-        alignment: DialogAlignment.Center,
-        autoCancel: true,
-        maskColor: $r('app.color.dialog_mask'),
-        backgroundColor: Color.Transparent,
-      }).then((dialogId: number) => {
-        this.backgroundPipDialogId = dialogId;
-      });
-    });
-  }
-
-  private closeBackgroundPipDialog(): void {
-    if (this.backgroundPipDialogId >= 0) {
-      this.getUIContext().getPromptAction().closeCustomDialog(this.backgroundPipDialogId);
-    }
-    this.backgroundPipDialogId = -1;
-  }
-
-  private onBackgroundPipSelect(value: string): void {
-    this.backgroundPipValue = value;
-    Settings.put(Settings.KEY_VIDEO_APP_SWITCH, value);
-    this.closeBackgroundPipDialog();
+    UiFeedback.showToast({ message: `“${item.key}”功能暂未实现` });
   }
 
   @Builder
@@ -324,55 +156,6 @@ export struct PreferencesActivityPage {
         .width('100%')
     }
     .width('100%')
-  }
-
-  private async loadMeteredConnectionSummary(): Promise<void> {
-    const value: string = await Settings.getString(Settings.KEY_METERED_CONNECTION, METERED_CONNECTION_DEFAULT);
-    this.meteredConnectionValue = value;
-    this.updateMeteredConnectionSummary(value);
-  }
-
-  private updateMeteredConnectionSummary(value: string): void {
-    for (const section of this.sections) {
-      for (const item of section.items) {
-        if (item.key === Settings.KEY_METERED_CONNECTION) {
-          item.summary = meteredConnectionLabel(value);
-          this.rowVersion++;
-          return;
-        }
-      }
-    }
-  }
-
-  private openMeteredConnectionDialog(): void {
-    Settings.getString(Settings.KEY_METERED_CONNECTION, METERED_CONNECTION_DEFAULT).then((value: string) => {
-      this.meteredConnectionValue = value;
-      this.getUIContext().getPromptAction().openCustomDialog({
-        builder: () => {
-          this.meteredConnectionDialogContent();
-        },
-        alignment: DialogAlignment.Center,
-        autoCancel: true,
-        maskColor: $r('app.color.dialog_mask'),
-        backgroundColor: Color.Transparent,
-      }).then((dialogId: number) => {
-        this.meteredConnectionDialogId = dialogId;
-      });
-    });
-  }
-
-  private closeMeteredConnectionDialog(): void {
-    if (this.meteredConnectionDialogId >= 0) {
-      this.getUIContext().getPromptAction().closeCustomDialog(this.meteredConnectionDialogId);
-    }
-    this.meteredConnectionDialogId = -1;
-  }
-
-  private onMeteredConnectionSelect(value: string): void {
-    this.meteredConnectionValue = value;
-    Settings.put(Settings.KEY_METERED_CONNECTION, value);
-    this.updateMeteredConnectionSummary(value);
-    this.closeMeteredConnectionDialog();
   }
 
   @Builder
@@ -425,14 +208,7 @@ export struct PreferencesActivityPage {
 
   /** 后续接入 PreferenceSearchActivityPage 的统一入口。 */
   onSearch(): void {
-    promptAction.showToast({ message: '设置搜索功能暂未实现' });
-  }
-
-  /** 权限管理 BottomSheet。 */
-  @Builder
-  permissionsSheet() {
-    PermissionsDialog({ onClose: () => this.showPermissionsSheet = false })
-      .width('100%')
+    UiFeedback.showToast({ message: '设置搜索功能暂未实现' });
   }
 
   iconFor(item: SettingsHomeItem): Resource {
@@ -473,7 +249,12 @@ export struct PreferencesActivityPage {
       .fontWeight(FontWeight.Medium)
       .fontColor('#FF8800')
       .width('100%')
-      .padding({ left: 16, right: 16, top: 26, bottom: 14 })
+      .padding({
+        left: 16,
+        right: 16,
+        top: 26,
+        bottom: 14
+      })
   }
 
   @Builder
@@ -505,6 +286,7 @@ export struct PreferencesActivityPage {
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
+
       if (item.type === 'toggle') {
         Toggle({ type: ToggleType.Checkbox, isOn: this.isToggleOn(item) })
           .selectedColor('#FF8800')
@@ -514,7 +296,12 @@ export struct PreferencesActivityPage {
       }
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 18, bottom: 18 })
+    .padding({
+      left: 16,
+      right: 16,
+      top: 18,
+      bottom: 18
+    })
     .alignItems(VerticalAlign.Center)
     .opacity(this.isItemEnabled(item) ? 1 : 0.45)
     .onClick(() => {
@@ -573,19 +360,6 @@ export struct PreferencesActivityPage {
       NavController.pop();
       return true;
     })
-    .bindSheet(this.showPermissionsSheet, this.permissionsSheet(), {
-      height: SheetSize.FIT_CONTENT,
-      dragBar: true,
-      onDisappear: () => this.showPermissionsSheet = false,
-    })
-  }
-
-  private cancelHistoryDisableSheet(): void {
-    if (this.historyDisableSheetType === 'audio') {
-      this.cancelDisableAudioQueueHistory();
-      return;
-    }
-    this.cancelDisablePlaybackHistory();
   }
 
   @Builder
@@ -614,7 +388,8 @@ export struct PreferencesActivityPage {
       .width('100%')
       .alignItems(VerticalAlign.Center)
 
-      Text('禁用播放历史将隐藏历史记录、媒体进度和已看标记。应用将继续保存您的活动，并在历史记录重新启用时恢复这些记录。\n\n如果您想完全停止保存活动，请改用无痕模式。\n\n您还可以在历史记录界面或高级设置中清除历史记录。')
+      Text(
+        '禁用播放历史将隐藏历史记录、媒体进度和已看标记。应用将继续保存您的活动，并在历史记录重新启用时恢复这些记录。\n\n如果您想完全停止保存活动，请改用无痕模式。\n\n您还可以在历史记录界面或高级设置中清除历史记录。')
         .fontSize(16)
         .fontColor('#757575')
         .lineHeight(24)
@@ -639,7 +414,12 @@ export struct PreferencesActivityPage {
       .margin({ top: 48 })
     }
     .width('100%')
-    .padding({ left: 24, right: 24, top: 20, bottom: 16 })
+    .padding({
+      left: 24,
+      right: 24,
+      top: 20,
+      bottom: 16
+    })
     .backgroundColor('#FFFFFF')
   }
 
@@ -660,7 +440,8 @@ export struct PreferencesActivityPage {
       .width('100%')
       .alignItems(VerticalAlign.Center)
 
-      Text('禁用音频播放队列历史可能会引发异常行为。\n禁用以后，您将无法在以下位置执行继续播放操作：\n\n－ 蓝牙设备\n－ 小工具\n－ 媒体通知界面')
+      Text(
+        '禁用音频播放队列历史可能会引发异常行为。\n禁用以后，您将无法在以下位置执行继续播放操作：\n\n－ 蓝牙设备\n－ 小工具\n－ 媒体通知界面')
         .fontSize(16)
         .fontColor('#757575')
         .lineHeight(24)
@@ -685,7 +466,242 @@ export struct PreferencesActivityPage {
       .margin({ top: 48 })
     }
     .width('100%')
-    .padding({ left: 24, right: 24, top: 20, bottom: 16 })
+    .padding({
+      left: 24,
+      right: 24,
+      top: 20,
+      bottom: 16
+    })
     .backgroundColor('#FFFFFF')
+  }
+
+  private async loadOrientationSummary(): Promise<void> {
+    const value: string = await Settings.getString(Settings.SCREEN_ORIENTATION, SCREEN_ORIENTATION_DEFAULT);
+    this.orientationValue = value;
+    this.updateOrientationSummary(value);
+  }
+
+  private updateOrientationSummary(value: string): void {
+    for (const section of this.sections) {
+      for (const item of section.items) {
+        if (item.key === Settings.SCREEN_ORIENTATION) {
+          item.summary = screenOrientationLabel(value);
+          this.rowVersion++;
+          return;
+        }
+      }
+    }
+  }
+
+  /** 后续接入子页、单选弹窗、权限页或业务设置的统一入口。 */
+  private async confirmDisablePlaybackHistory(): Promise<void> {
+    this.toggleValues = this.updatedToggleValues(Settings.ENABLE_PLAYBACK_HISTORY, false);
+    this.rowVersion++;
+    await Settings.put(Settings.ENABLE_PLAYBACK_HISTORY, false);
+    this.historyDisableConfirmOpen = false;
+    this.historyDisableSheetType = '';
+  }
+
+  private cancelDisablePlaybackHistory(): void {
+    // Toggle 的原始值仍为 true；递增 key 强制重建该行，撤销控件自身的瞬时视觉切换。
+    this.rowVersion++;
+    this.historyDisableConfirmOpen = false;
+    this.historyDisableSheetType = '';
+  }
+
+  private async confirmDisableAudioQueueHistory(): Promise<void> {
+    this.toggleValues = this.updatedToggleValues(Settings.AUDIO_PLAY_QUEUE_HISTORY, false);
+    this.rowVersion++;
+    await Settings.put(Settings.AUDIO_PLAY_QUEUE_HISTORY, false);
+    this.historyDisableConfirmOpen = false;
+    this.historyDisableSheetType = '';
+  }
+
+  private cancelDisableAudioQueueHistory(): void {
+    this.rowVersion++;
+    this.historyDisableConfirmOpen = false;
+    this.historyDisableSheetType = '';
+  }
+
+  /** 返回新对象引用，让播放历史与其子开关在同一帧重新计算可用状态。 */
+  private updatedToggleValues(key: string, value: boolean): Record<string, boolean> {
+    const next: Record<string, boolean> = {};
+    for (const section of this.sections) {
+      for (const item of section.items) {
+        if (item.type === 'toggle') {
+          if (key === Settings.ENABLE_PLAYBACK_HISTORY && value &&
+            (item.key === Settings.VIDEO_PLAY_QUEUE_HISTORY || item.key === Settings.AUDIO_PLAY_QUEUE_HISTORY)) {
+            next[item.key] = true;
+          } else {
+            next[item.key] = item.key === key ? value : this.toggleValues[item.key] === true;
+          }
+        }
+      }
+    }
+    return next;
+  }
+
+  private openOrientationDialog(): void {
+    Settings.getString(Settings.SCREEN_ORIENTATION, SCREEN_ORIENTATION_DEFAULT).then((value: string) => {
+      this.orientationValue = value;
+      this.getUIContext().getPromptAction().openCustomDialog({
+        builder: () => {
+          this.orientationDialogContent();
+        },
+        alignment: DialogAlignment.Center,
+        autoCancel: true,
+        maskColor: $r('app.color.dialog_mask'),
+        backgroundColor: Color.Transparent,
+      }).then((dialogId: number) => {
+        this.orientationDialogId = dialogId;
+      });
+    });
+  }
+
+  private closeOrientationDialog(): void {
+    if (this.orientationDialogId >= 0) {
+      try {
+        this.getUIContext().getPromptAction().closeCustomDialog(this.orientationDialogId);
+      } catch (error) {
+        // The dialog may already have been dismissed by the system.
+      }
+    }
+    this.orientationDialogId = -1;
+  }
+
+  private onOrientationSelect(value: string): void {
+    this.orientationValue = value;
+    Settings.put(Settings.SCREEN_ORIENTATION, value);
+    this.updateOrientationSummary(value);
+    this.closeOrientationDialog();
+  }
+
+  private openHardwareAccelerationDialog(): void {
+    Settings.getString(Settings.KEY_HARDWARE_ACCELERATION, HARDWARE_ACCELERATION_DEFAULT).then((value: string) => {
+      this.hardwareAccelerationValue = value;
+      this.getUIContext().getPromptAction().openCustomDialog({
+        builder: () => {
+          this.hardwareAccelerationDialogContent();
+        },
+        alignment: DialogAlignment.Center,
+        autoCancel: true,
+        maskColor: $r('app.color.dialog_mask'),
+        backgroundColor: Color.Transparent,
+      }).then((dialogId: number) => {
+        this.hardwareAccelerationDialogId = dialogId;
+      });
+    });
+  }
+
+  private closeHardwareAccelerationDialog(): void {
+    if (this.hardwareAccelerationDialogId >= 0) {
+      try {
+        this.getUIContext().getPromptAction().closeCustomDialog(this.hardwareAccelerationDialogId);
+      } catch (error) {
+        // The dialog may already have been dismissed by the system.
+      }
+    }
+    this.hardwareAccelerationDialogId = -1;
+  }
+
+  private onHardwareAccelerationSelect(value: string): void {
+    this.hardwareAccelerationValue = value;
+    Settings.put(Settings.KEY_HARDWARE_ACCELERATION, value);
+    this.closeHardwareAccelerationDialog();
+  }
+
+  private openBackgroundPipDialog(): void {
+    Settings.getString(Settings.KEY_VIDEO_APP_SWITCH, BACKGROUND_PIP_DEFAULT).then((value: string) => {
+      this.backgroundPipValue = value;
+      this.getUIContext().getPromptAction().openCustomDialog({
+        builder: () => {
+          this.backgroundPipDialogContent();
+        },
+        alignment: DialogAlignment.Center,
+        autoCancel: true,
+        maskColor: $r('app.color.dialog_mask'),
+        backgroundColor: Color.Transparent,
+      }).then((dialogId: number) => {
+        this.backgroundPipDialogId = dialogId;
+      });
+    });
+  }
+
+  private closeBackgroundPipDialog(): void {
+    if (this.backgroundPipDialogId >= 0) {
+      try {
+        this.getUIContext().getPromptAction().closeCustomDialog(this.backgroundPipDialogId);
+      } catch (error) {
+        // The dialog may already have been dismissed by the system.
+      }
+    }
+    this.backgroundPipDialogId = -1;
+  }
+
+  private onBackgroundPipSelect(value: string): void {
+    this.backgroundPipValue = value;
+    Settings.put(Settings.KEY_VIDEO_APP_SWITCH, value);
+    this.closeBackgroundPipDialog();
+  }
+
+  private async loadMeteredConnectionSummary(): Promise<void> {
+    const value: string = await Settings.getString(Settings.KEY_METERED_CONNECTION, METERED_CONNECTION_DEFAULT);
+    this.meteredConnectionValue = value;
+    this.updateMeteredConnectionSummary(value);
+  }
+
+  private updateMeteredConnectionSummary(value: string): void {
+    for (const section of this.sections) {
+      for (const item of section.items) {
+        if (item.key === Settings.KEY_METERED_CONNECTION) {
+          item.summary = meteredConnectionLabel(value);
+          this.rowVersion++;
+          return;
+        }
+      }
+    }
+  }
+
+  private openMeteredConnectionDialog(): void {
+    Settings.getString(Settings.KEY_METERED_CONNECTION, METERED_CONNECTION_DEFAULT).then((value: string) => {
+      this.meteredConnectionValue = value;
+      this.getUIContext().getPromptAction().openCustomDialog({
+        builder: () => {
+          this.meteredConnectionDialogContent();
+        },
+        alignment: DialogAlignment.Center,
+        autoCancel: true,
+        maskColor: $r('app.color.dialog_mask'),
+        backgroundColor: Color.Transparent,
+      }).then((dialogId: number) => {
+        this.meteredConnectionDialogId = dialogId;
+      });
+    });
+  }
+
+  private closeMeteredConnectionDialog(): void {
+    if (this.meteredConnectionDialogId >= 0) {
+      try {
+        this.getUIContext().getPromptAction().closeCustomDialog(this.meteredConnectionDialogId);
+      } catch (error) {
+        // The dialog may already have been dismissed by the system.
+      }
+    }
+    this.meteredConnectionDialogId = -1;
+  }
+
+  private onMeteredConnectionSelect(value: string): void {
+    this.meteredConnectionValue = value;
+    Settings.put(Settings.KEY_METERED_CONNECTION, value);
+    this.updateMeteredConnectionSummary(value);
+    this.closeMeteredConnectionDialog();
+  }
+
+  private cancelHistoryDisableSheet(): void {
+    if (this.historyDisableSheetType === 'audio') {
+      this.cancelDisableAudioQueueHistory();
+      return;
+    }
+    this.cancelDisablePlaybackHistory();
   }
 }

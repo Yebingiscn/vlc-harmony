@@ -1,4 +1,5 @@
-import { promptAction, window } from '@kit.ArkUI';
+import { UiFeedback } from '../common/utils/UiFeedback';
+import { window } from '@kit.ArkUI';
 import { audio, AVVolumePanel } from '@kit.AudioKit';
 import { picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
@@ -7,7 +8,7 @@ import PiPWindow from '@ohos.PiPWindow';
 import { NavController } from '../common/data/NavController';
 import { AppContext } from '../common/data/AppContext';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
-import { PlaybackService, PlaybackListener, QueueItem } from '../common/data/PlaybackService';
+import { PlaybackListener, PlaybackService, QueueItem } from '../common/data/PlaybackService';
 import { VlcChapterInfo } from 'libvlcnapi.so';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { Settings } from '../common/data/Settings';
@@ -21,13 +22,13 @@ import { SelectChapterDialog } from './SelectChapterDialog';
 import { VideoTracksDialog } from './VideoTracksDialog';
 import { AudioSubtitlePanelDialog } from './AudioSubtitlePanelDialog';
 import { RenderersDialog } from './RenderersDialog';
-import { PlaybackSpeedDialog, PlaybackSpeedAction } from './PlaybackSpeedDialog';
-import { VideoControlsSettingsDialog, ControlsState } from './VideoControlsSettingsDialog';
+import { PlaybackSpeedAction, PlaybackSpeedDialog } from './PlaybackSpeedDialog';
+import { ControlsState, VideoControlsSettingsDialog } from './VideoControlsSettingsDialog';
 import { EqualizerDialog } from './EqualizerDialog';
 import { VideoInfoDialog } from './VideoInfoDialog';
 import { SubtitleDownloaderDialog } from './SubtitleDownloaderDialog';
 import { BookmarkDialog } from './BookmarkDialog';
-import { AddToPlaylistDialog, AddToPlaylistAction } from './AddToPlaylistDialog';
+import { AddToPlaylistAction, AddToPlaylistDialog } from './AddToPlaylistDialog';
 import {
   SCREEN_ORIENTATION_DEFAULT,
   SCREEN_ORIENTATION_LABELS,
@@ -35,6 +36,16 @@ import {
   ScreenOrientationDialog,
 } from './ScreenOrientationDialog';
 import { BACKGROUND_PIP_DEFAULT } from './BackgroundPipDialog';
+import {
+  VIDEO_RATIO_16_9,
+  VIDEO_RATIO_4_3,
+  VIDEO_RATIO_BEST_FIT,
+  VIDEO_RATIO_FILL,
+  VIDEO_RATIO_FIT_SCREEN,
+  VIDEO_RATIO_ORIGINAL,
+  VideoAspectRatioDialog,
+  videoRatioLabel,
+} from './VideoAspectRatioDialog';
 import {
   buildPlayerAdvancedOptions,
   PlayerAdvancedOptionId,
@@ -46,39 +57,21 @@ import {
   VideoPlayerBottomActionId,
 } from '../common/components/VideoPlayerControls';
 import { VideoPanMode, VideoTouchDelegate } from './videoplayer/VideoTouchDelegate';
+import {
+  fmtTime,
+  VLC_NAPI_LIBRARY,
+  VLC_VIDEO_XCOMPONENT_ID,
+  VideoParam,
+  VideoPlayItem,
+} from './videoplayer/VideoPlayerModels';
 
 /** 与 Native / XComponent id 一致;libraryname 对齐 nm_modname=libvlcnapi。 */
-export const VLC_VIDEO_XCOMPONENT_ID: string = 'vlc_video_surface';
-export const VLC_NAPI_LIBRARY: string = 'libvlcnapi';
-
-/** 播放队列中的一项(仅携带播放器需要的字段,避免把整个 MediaWrapper 塞进路由参数)。 */
-export interface VideoPlayItem {
-  uri: string;
-  title: string;
-  artworkUrl?: string;
-}
-
-export interface VideoParam {
-  uri: string;
-  title: string;
-  artworkUrl?: string;
-  /** 可选:所在列表,用于上一个/下一个。 */
-  list?: VideoPlayItem[];
-  /** 可选:uri 在 list 中的下标。 */
-  index?: number;
-}
-
-/** 播放器专用时长格式化:0 显示 00:00(MediaModels.formatDuration 对 0 返回空串,列表项需要、播放器不需要)。 */
-function fmtTime(ms: number): string {
-  const safe = ms > 0 ? ms : 0;
-  const totalSec = Math.floor(safe / 1000);
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  const mm = m < 10 ? `0${m}` : `${m}`;
-  const ss = s < 10 ? `0${s}` : `${s}`;
-  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
-}
+export {
+  VLC_VIDEO_XCOMPONENT_ID,
+  VLC_NAPI_LIBRARY,
+  VideoPlayItem,
+  VideoParam,
+} from './videoplayer/VideoPlayerModels';
 
 /**
  * 睡眠倒计时时长 → 中文可读文案。
@@ -139,6 +132,41 @@ export function fitContain(
   return [containerH * videoAspect, containerH];
 }
 
+/** Calculates the XComponent bounds for VLC's standard video resize modes. */
+export function fitVideoSurface(
+  mode: string,
+  containerW: number,
+  containerH: number,
+  videoW: number,
+  videoH: number
+): [number, number] {
+  if (containerW <= 0 || containerH <= 0 || videoW <= 0 || videoH <= 0) {
+    return [containerW, containerH];
+  }
+  if (mode === VIDEO_RATIO_FILL) {
+    return [containerW, containerH];
+  }
+  if (mode === VIDEO_RATIO_ORIGINAL) {
+    const scale: number = Math.min(1, containerW / videoW, containerH / videoH);
+    return [videoW * scale, videoH * scale];
+  }
+  let aspect: number = videoW / videoH;
+  if (mode === VIDEO_RATIO_16_9) {
+    aspect = 16 / 9;
+  } else if (mode === VIDEO_RATIO_4_3) {
+    aspect = 4 / 3;
+  }
+  const viewAspect: number = containerW / containerH;
+  if (mode === VIDEO_RATIO_FIT_SCREEN) {
+    return viewAspect >= aspect
+      ? [containerW, containerW / aspect]
+      : [containerH * aspect, containerH];
+  }
+  return viewAspect > aspect
+    ? [containerH * aspect, containerH]
+    : [containerW, containerW / aspect];
+}
+
 /**
  * VideoPlayerPage —— VideoPlayerActivity(全屏视频播放器)。
  * UI 布局/显示以 origin/dev 为准;出画与控制走 PlaybackService → libVLC(NAPI + XComponent)。
@@ -164,6 +192,7 @@ class VideoPlayerViewModel implements PlaybackListener {
   /** contain 后的 XComponent 显示尺寸 */
   @Trace surfaceWidth: number = 0;
   @Trace surfaceHeight: number = 0;
+  @Trace videoRatioMode: string = VIDEO_RATIO_BEST_FIT;
   /** 播放器锁定状态:锁定后点击画面不显 HUD,需手动解锁。 */
   @Trace locked: boolean = false;
   /** 当前循环模式:0=关闭,1=列表循环,2=单曲循环。 */
@@ -172,22 +201,20 @@ class VideoPlayerViewModel implements PlaybackListener {
   @Trace abPointA: number = -1;
   @Trace abPointB: number = -1;
   @Trace abActive: boolean = false;
-
   /** ISO 光盘镜像:使用章节导航替代时间 seek。 */
   isIsoFile: boolean = false;
   isoChapters: VlcChapterInfo[] = [];
   @Trace isoChapterIdx: number = 0;
-
   uri: string = '';
   currentArtworkUrl: string = '';
-  private list: VideoPlayItem[] = [];
-  private listening: boolean = false;
   /** 页面退出守卫(leaveEarly 置位);VideoPlayerPage 退后台逻辑需要读取。 */
   leaving: boolean = false;
-  private xcomponentId: string = '';
-  private lastHistoryUri: string = '';
   /** 播放开始回调(供页面自动进入画中画;autoPipFired 保证每个媒体只触发一次)。 */
   onPlaybackStarted: (() => void) | null = null;
+  private list: VideoPlayItem[] = [];
+  private listening: boolean = false;
+  private xcomponentId: string = '';
+  private lastHistoryUri: string = '';
   private autoPipFired: boolean = false;
 
   hasPrev(): boolean {
@@ -243,11 +270,16 @@ class VideoPlayerViewModel implements PlaybackListener {
       this.listening = true;
     }
 
-    const mws: MediaWrapper[] = this.list.map((it: VideoPlayItem, i: number) =>
-    new MediaWrapper(i + 1, it.title, it.uri, 0));
+    const mws: MediaWrapper[] = this.list.map((it: VideoPlayItem, i: number) => {
+      const media: MediaWrapper = new MediaWrapper(i + 1, it.title, it.uri, 0);
+      media.artworkUrl = it.artworkUrl ?? '';
+      media.artworkPath = it.artworkUrl ?? '';
+      return media;
+    });
     await svc.prepareList(mws, this.index, true, 'video');
     svc.setSpeed(this.speed);
     const bound = await svc.bindAndPlay(xcomponentId, this.uri, this.title);
+    this.setVideoRatioMode(this.videoRatioMode);
     this.state = svc.getState();
     this.duration = svc.getDuration();
     this.position = svc.getPosition();
@@ -273,7 +305,8 @@ class VideoPlayerViewModel implements PlaybackListener {
         }
         this.duration = total;
         this.isoChapterIdx = svc.getChapterIdx();
-        hilog.info(0x0001, 'VLC', '[VLC] ISO chapters=%{public}d totalDuration=%{public}d', this.isoChapters.length, total);
+        hilog.info(0x0001, 'VLC', '[VLC] ISO chapters=%{public}d totalDuration=%{public}d', this.isoChapters.length,
+          total);
       }
     }
   }
@@ -310,7 +343,7 @@ class VideoPlayerViewModel implements PlaybackListener {
     this.duration = duration;
     // A-B 循环:到达 B 时回到 A。200ms 余量防止越界。
     if (this.abActive && this.abPointA >= 0 && this.abPointB > this.abPointA &&
-        current >= this.abPointB - 200) {
+      current >= this.abPointB - 200) {
       PlaybackService.getInstance().seek(this.abPointA);
       this.position = this.abPointA;
     }
@@ -366,20 +399,28 @@ class VideoPlayerViewModel implements PlaybackListener {
     this.recomputeSurface();
   }
 
-  private recomputeSurface(): void {
-    const result = fitContain(
-      this.containerWidth,
-      this.containerHeight,
-      this.videoWidth,
-      this.videoHeight
-    );
-    this.surfaceWidth = result[0];
-    this.surfaceHeight = result[1];
-    hilog.info(0x0001, 'VLC',
-      '[VLC] contain container=%{public}sx%{public}s video=%{public}sx%{public}s surface=%{public}sx%{public}s',
-      String(this.containerWidth), String(this.containerHeight),
-      String(this.videoWidth), String(this.videoHeight),
-      String(Math.round(result[0])), String(Math.round(result[1])));
+  setVideoRatioMode(mode: string): void {
+    this.videoRatioMode = mode;
+    const svc = PlaybackService.getInstance();
+    if (mode === VIDEO_RATIO_16_9) {
+      svc.setVideoAspectRatio('16:9');
+      svc.setVideoScale(0);
+    } else if (mode === VIDEO_RATIO_4_3) {
+      svc.setVideoAspectRatio('4:3');
+      svc.setVideoScale(0);
+    } else if (mode === VIDEO_RATIO_ORIGINAL) {
+      svc.setVideoAspectRatio('');
+      svc.setVideoScale(1);
+    } else if (mode === VIDEO_RATIO_FILL) {
+      svc.setVideoScale(0);
+      const w: number = Math.max(1, Math.round(this.containerWidth));
+      const h: number = Math.max(1, Math.round(this.containerHeight));
+      svc.setVideoAspectRatio(`${w}:${h}`);
+    } else {
+      svc.setVideoAspectRatio('');
+      svc.setVideoScale(0);
+    }
+    this.recomputeSurface();
   }
 
   async playAt(i: number): Promise<void> {
@@ -389,6 +430,7 @@ class VideoPlayerViewModel implements PlaybackListener {
     this.index = i;
     this.uri = this.list[i].uri;
     this.title = this.list[i].title;
+    this.currentArtworkUrl = this.list[i].artworkUrl ?? '';
     this.position = 0;
     this.duration = 0;
     this.videoWidth = 0;
@@ -399,11 +441,16 @@ class VideoPlayerViewModel implements PlaybackListener {
     this.isoChapterIdx = 0;
     this.isIsoFile = this.uri.toLowerCase().endsWith('.iso');
     const svc = PlaybackService.getInstance();
-    const mws: MediaWrapper[] = this.list.map((it: VideoPlayItem, idx: number) =>
-    new MediaWrapper(idx + 1, it.title, it.uri, 0));
+    const mws: MediaWrapper[] = this.list.map((it: VideoPlayItem, idx: number) => {
+      const media: MediaWrapper = new MediaWrapper(idx + 1, it.title, it.uri, 0);
+      media.artworkUrl = it.artworkUrl ?? '';
+      media.artworkPath = it.artworkUrl ?? '';
+      return media;
+    });
     await svc.prepareList(mws, i, true, 'video');
     if (this.xcomponentId.length > 0) {
       await svc.bindAndPlay(this.xcomponentId, this.uri, this.title);
+      this.setVideoRatioMode(this.videoRatioMode);
     }
     // ISO:延迟重新加载章节
     if (this.isIsoFile) {
@@ -561,30 +608,29 @@ class VideoPlayerViewModel implements PlaybackListener {
     }
     this.cleanUI();
   }
+
+  private recomputeSurface(): void {
+    const result = fitVideoSurface(
+      this.videoRatioMode,
+      this.containerWidth,
+      this.containerHeight,
+      this.videoWidth,
+      this.videoHeight
+    );
+    this.surfaceWidth = result[0];
+    this.surfaceHeight = result[1];
+    hilog.info(0x0001, 'VLC',
+      '[VLC] contain container=%{public}sx%{public}s video=%{public}sx%{public}s surface=%{public}sx%{public}s',
+      String(this.containerWidth), String(this.containerHeight),
+      String(this.videoWidth), String(this.videoHeight),
+      String(Math.round(result[0])), String(Math.round(result[1])));
+  }
 }
 
 @ComponentV2
 export struct VideoPlayerPage {
   @Local vm: VideoPlayerViewModel = new VideoPlayerViewModel();
   @Param param: VideoParam = { uri: '', title: '' };
-  private hudTimer: number = -1;
-  private surfaceStarted: boolean = false;
-  /** 画中画所需的 XComponent 控制器(创建 XComponent 时传入,与 native surface 共享同一实例)。 */
-  private pipXc: XComponentController = new XComponentController();
-  /** 画中画控制器(enterPopupPlayer 启动后持有,stopPiP 时清理)。 */
-  private pipController: PiPWindow.PiPController | null = null;
-  /** 应用退后台监听器(aboutToAppear 注册,aboutToDisappear 注销)。 */
-  private appBackgroundListener: () => void = () => {};
-  private touch: VideoTouchDelegate = new VideoTouchDelegate();
-  private touchBound: boolean = false;
-  private mainWindow: window.Window | null = null;
-  private brightnessHudTimer: number = -1;
-  private volumeHudTimer: number = -1;
-  private seekHudTimer: number = -1;
-  private saveBrightness: boolean = false;
-  private volumeAcc: number = 0;
-  private pendingSeekTarget: number = -1;
-
   @Local volumeLevel: number = 0;
   @Local volumeMin: number = 0;
   @Local volumeMax: number = 15;
@@ -594,24 +640,20 @@ export struct VideoPlayerPage {
   @Local volumeHudVisible: boolean = false;
   @Local seekHudVisible: boolean = false;
   @Local seekHudText: string = '';
-
   /** 拖动 seek 条期间冻结 timeUpdate 回写,否则滑块被不断拉回。 */
   @Local seeking: boolean = false;
   @Local seekPercent: number = 0;
-
   /** 睡眠倒计时状态。 */
   @Local sleepArmed: boolean = false;
-  private sleepTimer: number = -1;
-  private sleepMillis: number = 0;
-  private sleepWaitMediaEnd: boolean = false;
-  private sleepResetOnInteraction: boolean = false;
   /** 视频屏幕方向弹窗状态。 */
   @Local orientationValue: string = SCREEN_ORIENTATION_DEFAULT;
   @Local orientationDialogId: number = -1;
-
+  @Local videoRatioValue: string = VIDEO_RATIO_BEST_FIT;
+  @Local videoRatioDialogId: number = -1;
   /** 更多选项/二级弹窗的 sheet 状态。sheetKind 空串=主选项列表;否则=对应二级弹窗。 */
   @Local sheetOpen: boolean = false;
-  @Local sheetKind: string = ''; // '' | 'jump' | 'sleep' | 'chapter' | 'tracks' | 'renderer' | 'speed' | 'controls' | 'equalizer' | 'videoInfo' | 'savePlaylist' | 'audioSubInfo' | 'downloadSubtitle'
+  @Local sheetKind: string =
+    ''; // '' | 'jump' | 'sleep' | 'chapter' | 'tracks' | 'renderer' | 'speed' | 'controls' | 'equalizer' | 'videoInfo' | 'savePlaylist' | 'audioSubInfo' | 'downloadSubtitle'
   /**
    * 当前字幕延迟(微秒)。libvlc 没有 get_spu_delay 桥接;
    * 权威源在 PlaybackService.spuidDelayUs,这里仅镜像用于面板绑定显示。
@@ -625,9 +667,37 @@ export struct VideoPlayerPage {
   @Local bookmarkOpen: boolean = false;
   /** 当前视频的书签列表（每次变更自动持久化）。 */
   @Local bookmarks: BookMark[] = [];
+  @Local advancedOptionsOpen: boolean = false;
+  /** VideoInfo 用的轨道元数据(由 refreshVideoInfoTracks 刷新)。 */
+  @Local videoCodecName: string = '';
+  @Local audioCodecName: string = '';
+  @Local videoLang: string = '';
+  @Local videoFps: string = '';
+  @Local audioLang: string = '';
+  @Local audioChannels: string = '';
+  @Local audioSampleRate: string = '';
+  @Local bitrate: string = '';
+  private hudTimer: number = -1;
+  private surfaceStarted: boolean = false;
+  /** 画中画所需的 XComponent 控制器(创建 XComponent 时传入,与 native surface 共享同一实例)。 */
+  private pipXc: XComponentController = new XComponentController();
+  /** 画中画控制器(enterPopupPlayer 启动后持有,stopPiP 时清理)。 */
+  private pipController: PiPWindow.PiPController | null = null;
+  private touch: VideoTouchDelegate = new VideoTouchDelegate();
+  private touchBound: boolean = false;
+  private mainWindow: window.Window | null = null;
+  private brightnessHudTimer: number = -1;
+  private volumeHudTimer: number = -1;
+  private seekHudTimer: number = -1;
+  private saveBrightness: boolean = false;
+  private volumeAcc: number = 0;
+  private pendingSeekTarget: number = -1;
+  private sleepTimer: number = -1;
+  private sleepMillis: number = 0;
+  private sleepWaitMediaEnd: boolean = false;
+  private sleepResetOnInteraction: boolean = false;
   private bookmarkIdSeq: number = 1;
   private bookmarkUri: string = '';
-  @Local advancedOptionsOpen: boolean = false;
   /**
    * 高级选项菜单选中项的暂存。
    * 为什么不在 onSelect 里直接开弹窗:bindMenu(showInSubWindow) 收起有动画,
@@ -653,24 +723,6 @@ export struct VideoPlayerPage {
     this.sheetKind = '';
   }
 
-  /**
-   * 二级 sheet 高度。
-   * - audioSubInfo 内容较少,固定 1/3 屏,避免 FIT_CONTENT 把面板撑得过高或留大片空白。
-   *   注意:不能靠给 Dialog 根 Column 设百分比高度来实现(FIT_CONTENT 下父高度不确定,
-   *   分数百分比会塌成 0 导致面板闪现即消失),必须在 sheet 的 height 配置里给确定值。
-   * - speed / savePlaylist 半屏(MEDIUM)。
-   * - 其余自适应内容(FIT_CONTENT)。
-   */
-  private sheetHeight(): SheetSize | Length {
-    if (this.sheetKind === 'audioSubInfo') {
-      return '40%';
-    }
-    if (this.sheetKind === 'speed' || this.sheetKind === 'savePlaylist') {
-      return SheetSize.MEDIUM;
-    }
-    return SheetSize.FIT_CONTENT;
-  }
-
   /** Jump to Time 确认 → seek 后关闭。 */
   onJumpConfirm(timeMs: number): void {
     this.vm.seekTo(timeMs);
@@ -693,48 +745,12 @@ export struct VideoPlayerPage {
     // 设定成功提示。勾了「先等当前媒体播完」时行为不同(不会在到点那一刻暂停),文案要说清楚,
     // 否则用户设 5 分钟却发现 5 分钟后还在播,会以为没生效。
     const span: string = fmtSleepSpan(millis);
-    promptAction.showToast({
+    UiFeedback.showToast({
       message: waitForMediaEnd
         ? $r('app.string.sleep_timer_set_wait', span)
         : $r('app.string.sleep_timer_set', span),
     });
     this.closeSheet();
-  }
-
-  private armSleepTimer(): void {
-    if (this.sleepMillis <= 0) {
-      return;
-    }
-    if (this.sleepTimer !== -1) {
-      clearTimeout(this.sleepTimer);
-    }
-    this.sleepArmed = true;
-    this.sleepTimer = setTimeout(() => {
-      this.sleepTimer = -1;
-      if (this.sleepWaitMediaEnd) {
-        // 「先等当前媒体播完」→ 不立刻暂停,标记播完即停(见 vm.onState 的 completed 分支)。
-        this.vm.setStopAfterCurrent(true);
-      } else {
-        this.vm.pauseForSleep();
-        this.sleepArmed = false;
-        // 到点提示 —— 否则画面无缘无故停住,用户不知道是倒计时干的。
-        promptAction.showToast({ message: $r('app.string.sleep_timer_fired') });
-      }
-    }, this.sleepMillis);
-  }
-
-  /** 取消倒计时。fromUser=true 时给出取消提示(页面销毁时的清理不需要弹)。 */
-  private clearSleepTimer(fromUser: boolean = false): void {
-    const wasArmed: boolean = this.sleepArmed;
-    if (this.sleepTimer !== -1) {
-      clearTimeout(this.sleepTimer);
-      this.sleepTimer = -1;
-    }
-    this.sleepArmed = false;
-    this.vm.setStopAfterCurrent(false);
-    if (fromUser && wasArmed) {
-      promptAction.showToast({ message: $r('app.string.sleep_timer_cancelled') });
-    }
   }
 
   onChapterSelect(index: number): void {
@@ -818,7 +834,7 @@ export struct VideoPlayerPage {
    */
   async onPickSubtitle(): Promise<void> {
     try {
-      const ctx = getContext(this) as common.UIAbilityContext;
+      const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
       const opts = new picker.DocumentSelectOptions();
       opts.maxSelectNumber = 1;
       opts.fileSuffixFilters = ['字幕|.srt,.ass,.ssa,.vtt,.sub'];
@@ -826,7 +842,7 @@ export struct VideoPlayerPage {
       const uris: string[] = await docPicker.select(opts);
       if (uris.length > 0) {
         const ok: boolean = PlaybackService.getInstance().addSubtitleSlave(uris[0]);
-        promptAction.showToast({
+        UiFeedback.showToast({
           message: ok ? '字幕已加载' : '字幕加载失败',
         });
         hilog.info(0x0001, 'VLC', '[VLC] addSubtitleSlave ok=%{public}s uri=%{public}s',
@@ -867,16 +883,6 @@ export struct VideoPlayerPage {
     this.closeSheet();
   }
 
-  /** VideoInfo 用的轨道元数据(由 refreshVideoInfoTracks 刷新)。 */
-  @Local videoCodecName: string = '';
-  @Local audioCodecName: string = '';
-  @Local videoLang: string = '';
-  @Local videoFps: string = '';
-  @Local audioLang: string = '';
-  @Local audioChannels: string = '';
-  @Local audioSampleRate: string = '';
-  @Local bitrate: string = '';
-
   /**
    * 刷新视频信息弹框要展示的全部字段:从 libVLC 真实轨道数据填入。
    *
@@ -911,7 +917,7 @@ export struct VideoPlayerPage {
         this.videoLang = videoTrack.language;
       }
       if (videoTrack.frameRateNum !== undefined && videoTrack.frameRateDen !== undefined &&
-          videoTrack.frameRateDen > 0) {
+        videoTrack.frameRateDen > 0) {
         this.videoFps = (videoTrack.frameRateNum / videoTrack.frameRateDen).toFixed(3);
       }
       if (videoTrack.bitrate > 0) {
@@ -954,7 +960,7 @@ export struct VideoPlayerPage {
 
   onSpeedConfirm(action: PlaybackSpeedAction): void {
     this.vm.setSpeed(action.speed);
-    promptAction.showToast({ message: `播放速度已设为 ${action.speed.toFixed(2)}x` });
+    UiFeedback.showToast({ message: `播放速度已设为 ${action.speed.toFixed(2)}x` });
     this.closeSheet();
   }
 
@@ -966,7 +972,7 @@ export struct VideoPlayerPage {
     Settings.put(Settings.ENABLE_SWIPE_SEEK, s.swipeSeek);
     Settings.put(Settings.ENABLE_DOUBLE_TAP_SEEK, s.doubleTapSeek);
     void this.touch.refreshPrefs();
-    promptAction.showToast({ message: '控制设置已保存' });
+    UiFeedback.showToast({ message: '控制设置已保存' });
     this.closeSheet();
   }
 
@@ -974,7 +980,7 @@ export struct VideoPlayerPage {
   async onSavePlaylistConfirm(action: AddToPlaylistAction): Promise<void> {
     const uri: string = this.vm.uri;
     if (uri.length === 0) {
-      promptAction.showToast({ message: '当前没有可保存的视频' });
+      UiFeedback.showToast({ message: '当前没有可保存的视频' });
       this.closeSheet();
       return;
     }
@@ -987,7 +993,7 @@ export struct VideoPlayerPage {
       }
     }
     const count: number = action.selectedIds.length;
-    promptAction.showToast({ message: count === 1 ? '已保存到播放列表' : `已保存到 ${count} 个播放列表` });
+    UiFeedback.showToast({ message: count === 1 ? '已保存到播放列表' : `已保存到 ${count} 个播放列表` });
     this.closeSheet();
   }
 
@@ -1003,20 +1009,13 @@ export struct VideoPlayerPage {
     this.bookmarkIdSeq = loaded.length > 0 ? Math.max(...loaded.map((b: BookMark) => b.id)) + 1 : 1;
   }
 
-  /** 持久化当前书签列表。 */
-  private async persistBookmarks(): Promise<void> {
-    if (this.bookmarkUri.length > 0) {
-      await MediaLibrary.saveBookmarks(this.bookmarkUri, this.bookmarks);
-    }
-  }
-
   /** 在当前播放位置新增一条书签（自动持久化）。 */
   addBookmarkAtCurrent(): void {
     const timeMs: number = Math.max(0, Math.floor(this.vm.position));
     const bm: BookMark = new BookMark(this.bookmarkIdSeq++, -1, timeMs, '');
     this.bookmarks = [...this.bookmarks, bm].sort((a: BookMark, b: BookMark) => a.timeMs - b.timeMs);
     void this.persistBookmarks();
-    promptAction.showToast({ message: '已保存书签' });
+    UiFeedback.showToast({ message: '已保存书签' });
   }
 
   /** 删除指定 id 的书签（自动持久化）。 */
@@ -1028,7 +1027,7 @@ export struct VideoPlayerPage {
   /** 重命名书签:本期直接在 toBoolean 提示里给出占位 toast。 */
   renameBookmark(id: number): void {
     void id;
-    promptAction.showToast({ message: '书签重命名功能开发中' });
+    UiFeedback.showToast({ message: '书签重命名功能开发中' });
   }
 
   /** A-B 循环点时间显示:mm:ss / h:mm:ss。 */
@@ -1047,6 +1046,10 @@ export struct VideoPlayerPage {
     this.bindTouch();
     void this.initVolumeAndBrightness();
     void this.applyScreenOrientation();
+    Settings.getString(Settings.VIDEO_RATIO, VIDEO_RATIO_BEST_FIT).then((value: string) => {
+      this.videoRatioValue = value;
+      this.vm.setVideoRatioMode(value);
+    });
     void this.touch.refreshPrefs();
     this.resetHudTimer();
     this.appBackgroundListener = () => {
@@ -1097,7 +1100,7 @@ export struct VideoPlayerPage {
     const uri: string = cur?.uri ?? this.vm.uri;
     hilog.info(0x0001, 'VLC', '[VLC] playAsAudio start uri=%{public}s', uri);
     if (uri.length === 0) {
-      promptAction.showToast({ message: '没有可播放的视频' });
+      UiFeedback.showToast({ message: '没有可播放的视频' });
       return;
     }
     const svc = PlaybackService.getInstance();
@@ -1129,17 +1132,17 @@ export struct VideoPlayerPage {
     await PlaybackService.play();
     // 现在安全 pop —— aboutToDisappear 会调 vm.release() → leaveEarly(stop) + cleanUI(detachViews)
     NavController.pop();
-    promptAction.showToast({ message: '已切换为仅播放音频' });
+    UiFeedback.showToast({ message: '已切换为仅播放音频' });
   }
 
   /** 进入画中画模式:用 XComponent 控制器创建 PiPController 并启动。 */
   async enterPopupPlayer(): Promise<void> {
     if (!PiPWindow.isPiPEnabled()) {
-      promptAction.showToast({ message: '当前设备不支持画中画' });
+      UiFeedback.showToast({ message: '当前设备不支持画中画' });
       return;
     }
     if (!this.pipXc) {
-      promptAction.showToast({ message: '视频尚未就绪' });
+      UiFeedback.showToast({ message: '视频尚未就绪' });
       return;
     }
     try {
@@ -1173,10 +1176,10 @@ export struct VideoPlayerPage {
       });
       await controller.startPiP();
       this.pipController = controller;
-      promptAction.showToast({ message: '已进入画中画' });
+      UiFeedback.showToast({ message: '已进入画中画' });
     } catch (e) {
       hilog.error(0x0001, 'VLC', '[PiP] failed: %{public}s', (e as Error).message ?? String(e));
-      promptAction.showToast({ message: '画中画启动失败' });
+      UiFeedback.showToast({ message: '画中画启动失败' });
     }
   }
 
@@ -1196,281 +1199,6 @@ export struct VideoPlayerPage {
     }
   }
 
-  /**
-   * 应用退到后台:按「背景/画中画模式」设置执行。
-   * 0=停止播放(页面保留);1=后台播放(切仅音频并回到主页);2=画中画(页面保留)。
-   * 对应 Android VideoPlayerActivity.onUserLeaveHint/onStop 逻辑。
-   */
-  private async handleAppBackground(): Promise<void> {
-    hilog.info(0x0001, 'VLC', '[VLC] handleAppBackground enter leaving=%{public}s state=%{public}d',
-      this.vm.leaving ? 'yes' : 'no', PlaybackService.getState());
-    if (this.vm.leaving) {
-      return;
-    }
-    const st: PlayState = PlaybackService.getState();
-    if (st !== PlayState.PLAYING && st !== PlayState.PREPARED) {
-      return;
-    }
-    let mode: string = BACKGROUND_PIP_DEFAULT;
-    try {
-      mode = await Settings.getString(Settings.KEY_VIDEO_APP_SWITCH, BACKGROUND_PIP_DEFAULT);
-    } catch (e) {
-      hilog.warn(0x0001, 'VLC', '[VLC] handleAppBackground getSetting failed: %{public}s',
-        (e as Error).message ?? String(e));
-    }
-    hilog.info(0x0001, 'VLC', '[VLC] handleAppBackground mode=%{public}s state=%{public}d', mode, st);
-    if (mode === '1') {
-      await this.playAsAudio();
-    } else if (mode === '2') {
-      if (this.pipController === null) {
-        await this.enterPopupPlayer();
-      }
-    } else {
-      PlaybackService.getInstance().stop();
-    }
-  }
-
-  /**
-   * 设置「以画中画模式播放视频」时,每次新视频开始播放自动进入弹出式播放器(PiP),
-   * 效果与播放器右上角菜单「弹出式播放器」一致。
-   */
-  private async maybeAutoEnterPip(): Promise<void> {
-    if (this.vm.leaving || this.pipController !== null) {
-      return;
-    }
-    const mode: string = await Settings.getString(Settings.KEY_VIDEO_APP_SWITCH, BACKGROUND_PIP_DEFAULT);
-    if (mode !== '2') {
-      return;
-    }
-    // 等首帧渲染稳定后再进入画中画,避免过早启动失败。
-    await new Promise<void>((r: () => void) => setTimeout(r, 500));
-    if (this.vm.leaving || this.pipController !== null) {
-      return;
-    }
-    await this.enterPopupPlayer();
-  }
-
-  private bindTouch(): void {
-    if (this.touchBound) {
-      return;
-    }
-    this.touchBound = true;
-    this.touch.bind({
-      doPlayPause: (): void => {
-        if (this.vm.locked) {
-          return;
-        }
-        this.vm.toggle();
-        this.resetHudTimer();
-      },
-      onSingleTap: (): void => {
-        this.toggleHud();
-      },
-      seekDelta: (deltaMs: number): void => {
-        if (this.vm.locked) {
-          return;
-        }
-        const next: number = this.vm.position + deltaMs;
-        const clamped: number = this.vm.duration > 0
-          ? Math.max(0, Math.min(this.vm.duration, next))
-          : Math.max(0, next);
-        this.vm.seekTo(clamped);
-        this.resetHudTimer();
-      },
-      getContainerWidth: (): number => {
-        return this.vm.containerWidth;
-      },
-      getContainerHeight: (): number => {
-        return this.vm.containerHeight;
-      },
-      getPosition: (): number => {
-        return this.vm.position;
-      },
-      getDuration: (): number => {
-        return this.vm.duration;
-      },
-      isHudVisible: (): boolean => {
-        return this.vm.hudVisible;
-      },
-      onPanBegan: (): void => {
-        if (this.vm.locked) {
-          return;
-        }
-        if (this.hudTimer !== -1) {
-          clearTimeout(this.hudTimer);
-          this.hudTimer = -1;
-        }
-        this.vm.hudVisible = false;
-        this.volumeAcc = this.volumeLevel;
-      },
-      onVolumePan: (deltaNorm: number): void => {
-        if (this.vm.locked) {
-          return;
-        }
-        const span: number = Math.max(1, this.volumeMax - this.volumeMin);
-        this.volumeAcc = Math.max(this.volumeMin, Math.min(this.volumeMax, this.volumeAcc + deltaNorm * span));
-        const next: number = Math.round(this.volumeAcc);
-        if (next !== this.volumeLevel) {
-          this.volumeLevel = next;
-          hilog.info(0x0001, 'VLC', '[VLC] volumeLevel -> %{public}d', next);
-        }
-        this.volumeHudVisible = true;
-        this.brightnessHudVisible = false;
-        this.seekHudVisible = false;
-        this.armVolumeHudTimer();
-      },
-      onBrightnessPan: (deltaNorm: number): void => {
-        if (this.vm.locked) {
-          return;
-        }
-        this.brightnessLevel = Math.max(0, Math.min(1, this.brightnessLevel + deltaNorm));
-        this.brightnessHudVisible = true;
-        this.volumeHudVisible = false;
-        this.seekHudVisible = false;
-        void this.applyBrightness(this.brightnessLevel);
-        hilog.info(0x0001, 'VLC', '[VLC] brightnessLevel -> %{public}s',
-          this.brightnessLevel.toFixed(2));
-        this.armBrightnessHudTimer();
-      },
-      onSeekPan: (jumpMs: number, targetMs: number): void => {
-        if (this.vm.locked) {
-          return;
-        }
-        this.pendingSeekTarget = targetMs;
-        const sign: string = jumpMs >= 0 ? '+' : '';
-        this.seekHudText = `${sign}${fmtTime(Math.abs(jumpMs))} (${fmtTime(targetMs)})`;
-        this.seekHudVisible = true;
-        this.volumeHudVisible = false;
-        this.brightnessHudVisible = false;
-        if (this.seekHudTimer !== -1) {
-          clearTimeout(this.seekHudTimer);
-          this.seekHudTimer = -1;
-        }
-      },
-      onPanEnded: (mode: VideoPanMode): void => {
-        if (this.vm.locked) {
-          return;
-        }
-        if (mode === VideoPanMode.Brightness && this.saveBrightness) {
-          void Settings.put(Settings.BRIGHTNESS_VALUE, this.brightnessLevel);
-        }
-        if (mode === VideoPanMode.Brightness) {
-          this.armBrightnessHudTimer();
-        }
-        if (mode === VideoPanMode.Volume) {
-          this.volumeAcc = this.volumeLevel;
-          this.armVolumeHudTimer();
-        }
-        if (mode === VideoPanMode.Seek) {
-          if (this.pendingSeekTarget >= 0) {
-            this.vm.seekTo(this.pendingSeekTarget);
-            hilog.info(0x0001, 'VLC', '[VLC] swipe seek -> %{public}d', this.pendingSeekTarget);
-            this.pendingSeekTarget = -1;
-          }
-          this.armSeekHudTimer();
-        }
-      },
-    });
-  }
-
-  private async initVolumeAndBrightness(): Promise<void> {
-    try {
-      const volMgr = audio.getAudioManager().getVolumeManager();
-      const group = await volMgr.getVolumeGroupManager(audio.DEFAULT_VOLUME_GROUP_ID);
-      this.volumeMin = await group.getMinVolume(audio.AudioVolumeType.MEDIA);
-      this.volumeMax = await group.getMaxVolume(audio.AudioVolumeType.MEDIA);
-      this.volumeLevel = await group.getVolume(audio.AudioVolumeType.MEDIA);
-      this.volumeAcc = this.volumeLevel;
-    } catch (e) {
-      hilog.warn(0x0001, 'VLC', '[VLC] init volume failed %{public}s', JSON.stringify(e));
-    }
-    try {
-      this.mainWindow = await window.getLastWindow(AppContext.get());
-      this.saveBrightness = await Settings.getBoolean(Settings.SAVE_BRIGHTNESS, false);
-      if (this.saveBrightness) {
-        const saved: number = await Settings.getFloat(Settings.BRIGHTNESS_VALUE, 0.5);
-        this.brightnessLevel = Math.max(0, Math.min(1, saved));
-        await this.mainWindow.setWindowBrightness(this.brightnessLevel);
-      } else {
-        this.brightnessLevel = 0.5;
-      }
-      await this.mainWindow.setWindowKeepScreenOn(true);
-    } catch (e) {
-      hilog.warn(0x0001, 'VLC', '[VLC] init brightness failed %{public}s', JSON.stringify(e));
-    }
-  }
-
-  private async restoreSystemBrightnessIfNeeded(): Promise<void> {
-    if (this.mainWindow === null) {
-      return;
-    }
-    try {
-      await this.mainWindow.setWindowKeepScreenOn(false);
-      if (!this.saveBrightness) {
-        await this.mainWindow.setWindowBrightness(-1);
-      }
-    } catch (_e) {
-      // ignore
-    }
-  }
-
-  /** 依据「视频屏幕方向」设置旋转主窗口(进入播放页时应用,勾选后即可控制视频播放方向)。 */
-  private async applyScreenOrientation(): Promise<void> {
-    try {
-      const value: string = await Settings.getString(Settings.SCREEN_ORIENTATION, SCREEN_ORIENTATION_DEFAULT);
-      this.orientationValue = value;
-      if (this.mainWindow === null) {
-        this.mainWindow = await window.getLastWindow(AppContext.get());
-      }
-      await this.mainWindow.setPreferredOrientation(windowOrientationFor(value));
-    } catch (e) {
-      hilog.warn(0x0001, 'VLC', '[VLC] applyScreenOrientation failed %{public}s', JSON.stringify(e));
-    }
-  }
-
-  /** 离开播放页时恢复系统默认方向,避免设置页等其它页面保持横屏。 */
-  private async restoreScreenOrientation(): Promise<void> {
-    try {
-      if (this.mainWindow === null) {
-        this.mainWindow = await window.getLastWindow(AppContext.get());
-      }
-      await this.mainWindow.setPreferredOrientation(window.Orientation.UNSPECIFIED);
-    } catch (_e) {
-      // ignore
-    }
-  }
-
-  private openOrientationDialog(): void {
-    Settings.getString(Settings.SCREEN_ORIENTATION, SCREEN_ORIENTATION_DEFAULT).then((value: string) => {
-      this.orientationValue = value;
-      this.getUIContext().getPromptAction().openCustomDialog({
-        builder: () => {
-          this.playerOrientationDialogContent();
-        },
-        alignment: DialogAlignment.Center,
-        autoCancel: true,
-        maskColor: $r('app.color.dialog_mask'),
-        backgroundColor: Color.Transparent,
-      }).then((dialogId: number) => {
-        this.orientationDialogId = dialogId;
-      });
-    });
-  }
-
-  private closeOrientationDialog(): void {
-    if (this.orientationDialogId >= 0) {
-      this.getUIContext().getPromptAction().closeCustomDialog(this.orientationDialogId);
-    }
-    this.orientationDialogId = -1;
-  }
-
-  private onOrientationSelect(value: string): void {
-    this.orientationValue = value;
-    Settings.put(Settings.SCREEN_ORIENTATION, value);
-    this.closeOrientationDialog();
-    void this.applyScreenOrientation();
-  }
-
   @Builder
   playerOrientationDialogContent() {
     Column() {
@@ -1487,45 +1215,17 @@ export struct VideoPlayerPage {
     .width('100%')
   }
 
-  private async applyBrightness(value: number): Promise<void> {
-    try {
-      if (this.mainWindow === null) {
-        this.mainWindow = await window.getLastWindow(AppContext.get());
-      }
-      await this.mainWindow.setWindowBrightness(value);
-    } catch (e) {
-      hilog.warn(0x0001, 'VLC', '[VLC] setWindowBrightness failed %{public}s', JSON.stringify(e));
+  @Builder
+  playerVideoRatioDialogContent() {
+    Column() {
+      VideoAspectRatioDialog({
+        selectedValue: this.videoRatioValue,
+        onSelect: (value: string) => this.onVideoRatioSelect(value),
+        onCancel: () => this.closeVideoRatioDialog(),
+      })
+        .width('100%')
     }
-  }
-
-  private armBrightnessHudTimer(): void {
-    if (this.brightnessHudTimer !== -1) {
-      clearTimeout(this.brightnessHudTimer);
-    }
-    this.brightnessHudTimer = setTimeout(() => {
-      this.brightnessHudTimer = -1;
-      this.brightnessHudVisible = false;
-    }, 1200);
-  }
-
-  private armVolumeHudTimer(): void {
-    if (this.volumeHudTimer !== -1) {
-      clearTimeout(this.volumeHudTimer);
-    }
-    this.volumeHudTimer = setTimeout(() => {
-      this.volumeHudTimer = -1;
-      this.volumeHudVisible = false;
-    }, 1200);
-  }
-
-  private armSeekHudTimer(): void {
-    if (this.seekHudTimer !== -1) {
-      clearTimeout(this.seekHudTimer);
-    }
-    this.seekHudTimer = setTimeout(() => {
-      this.seekHudTimer = -1;
-      this.seekHudVisible = false;
-    }, 1200);
+    .width('100%')
   }
 
   /** 显示 HUD 并重置 4s 自动隐藏计时。锁定态下禁止显示 HUD。 */
@@ -1548,7 +1248,7 @@ export struct VideoPlayerPage {
       // A-B 循环等待设 B 时也保持可见:用户需要看到「设置 B」按钮。
       const waitingAbB: boolean = this.vm.abPointA >= 0 && !this.vm.abActive;
       if (this.vm.state === PlayState.PLAYING && !this.seeking && !this.sheetOpen &&
-          !this.advancedOptionsOpen && !waitingAbB) {
+        !this.advancedOptionsOpen && !waitingAbB) {
         this.vm.hudVisible = false;
       }
     }, 4000);
@@ -1603,7 +1303,7 @@ export struct VideoPlayerPage {
     } else if (id === 'orientation') {
       this.openOrientationDialog();
     } else if (id === 'aspectRatio') {
-      promptAction.showToast({ message: 'Aspect ratio is not available yet' });
+      this.openVideoRatioDialog();
     }
     this.resetHudTimer();
   }
@@ -1712,7 +1412,8 @@ export struct VideoPlayerPage {
               .width(28).height(28)
               .fillColor('#FFFFFF')
           }
-          .width(52).height(52)
+          .width(52)
+          .height(52)
           .borderRadius(26)
           .backgroundColor('#66000000')
           .justifyContent(FlexAlign.Center)
@@ -1741,7 +1442,9 @@ export struct VideoPlayerPage {
                 this.bookmarkOpen = false;
                 this.resetHudTimer();
               },
-              onSeek: (timeMs: number) => { this.vm.seekTo(timeMs); },
+              onSeek: (timeMs: number) => {
+                this.vm.seekTo(timeMs);
+              },
               onAddAtCurrent: () => this.addBookmarkAtCurrent(),
               onDelete: (id: number) => this.deleteBookmark(id),
               onRename: (id: number) => this.renameBookmark(id),
@@ -1792,14 +1495,24 @@ export struct VideoPlayerPage {
           NavController.pop();
         })
       Text(this.vm.title)
-        .fontSize(18).fontColor('#FFFFFF').layoutWeight(1).margin({ left: 12, right: 12 })
-        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+        .fontSize(18)
+        .fontColor('#FFFFFF')
+        .layoutWeight(1)
+        .margin({ left: 12, right: 12 })
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
       // A-B 循环指示灯
       if (this.vm.abPointA >= 0) {
         Row() {
           Text('A-B')
-            .fontSize(12).fontColor('#FFFFFF')
-            .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+            .fontSize(12)
+            .fontColor('#FFFFFF')
+            .padding({
+              left: 8,
+              right: 8,
+              top: 3,
+              bottom: 3
+            })
             .borderRadius(10)
             .backgroundColor('#FF8800')
         }
@@ -1809,14 +1522,19 @@ export struct VideoPlayerPage {
       // 睡眠倒计时已设定的指示灯,点一下取消(否则设完毫无反馈,也无处撤销)。
       if (this.sleepArmed) {
         Image($r('app.media.ic_sleep'))
-          .width(22).height(22).fillColor('#FF8800').margin({ right: 16 })
+          .width(22)
+          .height(22)
+          .fillColor('#FF8800')
+          .margin({ right: 16 })
           .onClick(() => {
             this.clearSleepTimer(true);
             this.resetHudTimer();
           })
       }
       Image($r('app.media.ic_player_more'))
-        .width(24).height(24).fillColor('#FFFFFF')
+        .width(24)
+        .height(24)
+        .fillColor('#FFFFFF')
         .onClick(() => {
           if (this.vm.locked) {
             return;
@@ -1832,7 +1550,12 @@ export struct VideoPlayerPage {
         })
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 44, bottom: 16 })
+    .padding({
+      left: 16,
+      right: 16,
+      top: 44,
+      bottom: 16
+    })
     .alignItems(VerticalAlign.Center)
     .linearGradient({ angle: 180, colors: [['#cb000000', 0.0], ['#00000000', 1.0]] })
     .hitTestBehavior(HitTestMode.Default)
@@ -1845,32 +1568,51 @@ export struct VideoPlayerPage {
       // A-B 循环设置行(已设 A 后显示)
       if (this.vm.abPointA >= 0) {
         Row() {
-          Text(`A ${this.fmtAbPoint(this.vm.abPointA)} → B ${this.vm.abActive ? this.fmtAbPoint(this.vm.abPointB) : '???'}`)
-            .fontSize(12).fontColor('#FF8800')
+          Text(`A ${this.fmtAbPoint(this.vm.abPointA)} → B ${this.vm.abActive ? this.fmtAbPoint(this.vm.abPointB) :
+            '???'}`)
+            .fontSize(12)
+            .fontColor('#FF8800')
             .layoutWeight(1)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
           if (this.vm.abActive) {
             Text('关闭')
-              .fontSize(12).fontColor('#FFFFFF')
-              .padding({ left: 12, right: 12, top: 4, bottom: 4 })
+              .fontSize(12)
+              .fontColor('#FFFFFF')
+              .padding({
+                left: 12,
+                right: 12,
+                top: 4,
+                bottom: 4
+              })
               .borderRadius(12)
               .backgroundColor('#33FFFFFF')
               .onClick(() => this.vm.resetAb())
           } else {
             Text('设置 B')
-              .fontSize(12).fontColor('#FFFFFF')
-              .padding({ left: 12, right: 12, top: 4, bottom: 4 })
+              .fontSize(12)
+              .fontColor('#FFFFFF')
+              .padding({
+                left: 12,
+                right: 12,
+                top: 4,
+                bottom: 4
+              })
               .borderRadius(12)
               .backgroundColor('#FF8800')
               .onClick(() => {
                 this.vm.setAbPointB();
-                promptAction.showToast({ message: this.vm.abActive ? 'A-B 循环已开启' : 'B 点需在 A 点之后' });
+                UiFeedback.showToast({ message: this.vm.abActive ? 'A-B 循环已开启' : 'B 点需在 A 点之后' });
               })
           }
         }
         .width('100%')
-        .padding({ left: 12, right: 12, top: 4, bottom: 4 })
+        .padding({
+          left: 12,
+          right: 12,
+          top: 4,
+          bottom: 4
+        })
       }
 
       // seek bar
@@ -1912,8 +1654,14 @@ export struct VideoPlayerPage {
           if (this.vm.abPointA >= 0 && this.vm.duration > 0) {
             Column() {
               Text('A')
-                .fontSize(10).fontColor('#FFFFFF')
-                .padding({ left: 4, right: 4, top: 1, bottom: 1 })
+                .fontSize(10)
+                .fontColor('#FFFFFF')
+                .padding({
+                  left: 4,
+                  right: 4,
+                  top: 1,
+                  bottom: 1
+                })
                 .borderRadius(4)
                 .backgroundColor('#FF8800')
               // 倒三角
@@ -1929,29 +1677,36 @@ export struct VideoPlayerPage {
             // 让 Column 中心对到 offset 处
             .translate({ x: -8 })
 
-          // B 点标记:竖线 + 顶部小三角 + 「B」徽标
-          if (this.vm.abActive) {
-            Column() {
-              Text('B')
-                .fontSize(10).fontColor('#FFFFFF')
-                .padding({ left: 4, right: 4, top: 1, bottom: 1 })
-                .borderRadius(4)
-                .backgroundColor('#FF3B30')
-              Text('▼')
-                .fontSize(8).fontColor('#FF3B30')
-                .margin({ top: -1 })
+            // B 点标记:竖线 + 顶部小三角 + 「B」徽标
+            if (this.vm.abActive) {
+              Column() {
+                Text('B')
+                  .fontSize(10)
+                  .fontColor('#FFFFFF')
+                  .padding({
+                    left: 4,
+                    right: 4,
+                    top: 1,
+                    bottom: 1
+                  })
+                  .borderRadius(4)
+                  .backgroundColor('#FF3B30')
+                Text('▼')
+                  .fontSize(8).fontColor('#FF3B30')
+                  .margin({ top: -1 })
+              }
+              .alignItems(HorizontalAlign.Center)
+              .offset({
+                x: `${Math.min(100, Math.max(0, this.vm.abPointB * 100 / this.vm.duration))}%`,
+                y: 0,
+              })
+              .translate({ x: -8 })
             }
-            .alignItems(HorizontalAlign.Center)
-            .offset({
-              x: `${Math.min(100, Math.max(0, this.vm.abPointB * 100 / this.vm.duration))}%`,
-              y: 0,
-            })
-            .translate({ x: -8 })
-          }
           }
         }
         .layoutWeight(1)
         .height(40)
+
         Text(fmtTime(this.vm.duration))
           .fontSize(12).fontColor('#FFFFFF').width(52).textAlign(TextAlign.End)
       }
@@ -1962,11 +1717,11 @@ export struct VideoPlayerPage {
       // 音轨和字幕、屏幕方向、播放、宽高比、高级选项。
       Row() {
         ForEach(buildVideoPlayerBottomActions(), (action: VideoPlayerBottomAction) => {
-            Image(this.bottomActionIcon(action))
-              .width(action.id === 'play' ? 56 : 32)
-              .height(action.id === 'play' ? 56 : 32)
-              .fillColor('#FFFFFF')
-              .onClick(() => this.onBottomAction(action.id))
+          Image(this.bottomActionIcon(action))
+            .width(action.id === 'play' ? 56 : 32)
+            .height(action.id === 'play' ? 56 : 32)
+            .fillColor('#FFFFFF')
+            .onClick(() => this.onBottomAction(action.id))
         }, (action: VideoPlayerBottomAction): string => action.id)
         // 循环模式:0=关闭(白),1=列表循环(橙),2=单曲循环(橙 + 数字 1)
         Image(this.vm.repeatMode === 2 ? $r('app.media.ic_repeat_one_audio') : $r('app.media.ic_repeat_audio'))
@@ -1980,13 +1735,18 @@ export struct VideoPlayerPage {
               svc.cycleRepeat();
             }
             this.vm.repeatMode = next;
-            promptAction.showToast({
+            UiFeedback.showToast({
               message: next === 1 ? '已开启循环播放' : '已关闭循环播放'
             });
           })
       }
       .width('100%')
-      .padding({ left: 18, right: 18, top: 12, bottom: 12 })
+      .padding({
+        left: 18,
+        right: 18,
+        top: 12,
+        bottom: 12
+      })
       .justifyContent(FlexAlign.SpaceBetween)
       .alignItems(VerticalAlign.Center)
     }
@@ -2003,7 +1763,12 @@ export struct VideoPlayerPage {
       Text(this.seekHudText)
         .fontSize(16).fontColor('#FF8800').fontWeight(FontWeight.Medium)
     }
-    .padding({ left: 24, right: 24, top: 16, bottom: 16 })
+    .padding({
+      left: 24,
+      right: 24,
+      top: 16,
+      bottom: 16
+    })
     .backgroundColor('#99000000')
     .borderRadius(12)
     .hitTestBehavior(HitTestMode.None)
@@ -2026,7 +1791,12 @@ export struct VideoPlayerPage {
       Text(`${Math.round(this.brightnessLevel * 100)}%`)
         .fontSize(12).fontColor('#FFFFFF')
     }
-    .padding({ left: 20, right: 20, top: 16, bottom: 16 })
+    .padding({
+      left: 20,
+      right: 20,
+      top: 16,
+      bottom: 16
+    })
     .backgroundColor('#99000000')
     .borderRadius(12)
     .hitTestBehavior(HitTestMode.None)
@@ -2051,7 +1821,12 @@ export struct VideoPlayerPage {
       Text(`${this.volumeLevel}`)
         .fontSize(12).fontColor('#FFFFFF')
     }
-    .padding({ left: 20, right: 20, top: 16, bottom: 16 })
+    .padding({
+      left: 20,
+      right: 20,
+      top: 16,
+      bottom: 16
+    })
     .backgroundColor('#99000000')
     .borderRadius(12)
     .hitTestBehavior(HitTestMode.None)
@@ -2100,7 +1875,9 @@ export struct VideoPlayerPage {
           onTrackChange: (id: number, type: string) => this.onTrackChange(id, type),
           onSetSpuDelay: (us: number) => this.onSetSpuDelay(us),
           onSetAudioDelay: (us: number) => this.onSetAudioDelay(us),
-          onPickSubtitle: (): void => { void this.onPickSubtitle(); },
+          onPickSubtitle: (): void => {
+            void this.onPickSubtitle();
+          },
           onDownloadSubtitle: () => this.onDownloadSubtitle(),
         }).width('100%')
       } else if (this.sheetKind === 'downloadSubtitle') {
@@ -2284,7 +2061,7 @@ export struct VideoPlayerPage {
     if (id === 'abRepeat') {
       if (this.vm.abActive) {
         this.vm.resetAb();
-        promptAction.showToast({ message: '已关闭 A-B 循环' });
+        UiFeedback.showToast({ message: '已关闭 A-B 循环' });
       } else if (this.vm.abPointA < 0) {
         this.vm.setAbPointA();
         // 强制 HUD 持续可见 —— 等待用户设 B 时不能自动隐藏。
@@ -2293,13 +2070,13 @@ export struct VideoPlayerPage {
           clearTimeout(this.hudTimer);
           this.hudTimer = -1;
         }
-        promptAction.showToast({ message: '已设置 A 点,请拖动至结束位置后再次点击 A-B 循环' });
+        UiFeedback.showToast({ message: '已设置 A 点,请拖动至结束位置后再次点击 A-B 循环' });
       } else {
         this.vm.setAbPointB();
         if (this.vm.abActive) {
-          promptAction.showToast({ message: 'A-B 循环已开启' });
+          UiFeedback.showToast({ message: 'A-B 循环已开启' });
         } else {
-          promptAction.showToast({ message: 'B 点需在 A 点之后' });
+          UiFeedback.showToast({ message: 'B 点需在 A 点之后' });
         }
       }
       return;
@@ -2313,10 +2090,429 @@ export struct VideoPlayerPage {
         svc.cycleRepeat();
       }
       this.vm.repeatMode = next;
-      promptAction.showToast({ message: next === 1 ? '已开启循环播放' : '已关闭循环播放' });
+      UiFeedback.showToast({ message: next === 1 ? '已开启循环播放' : '已关闭循环播放' });
       return;
     }
-    promptAction.showToast({ message: '该功能暂未实现' });
+    UiFeedback.showToast({ message: '该功能暂未实现' });
   }
 
+  /** 应用退后台监听器(aboutToAppear 注册,aboutToDisappear 注销)。 */
+  private appBackgroundListener: () => void = () => {
+  };
+
+  /**
+   * 二级 sheet 高度。
+   * - audioSubInfo 内容较少,固定 1/3 屏,避免 FIT_CONTENT 把面板撑得过高或留大片空白。
+   *   注意:不能靠给 Dialog 根 Column 设百分比高度来实现(FIT_CONTENT 下父高度不确定,
+   *   分数百分比会塌成 0 导致面板闪现即消失),必须在 sheet 的 height 配置里给确定值。
+   * - speed / savePlaylist 半屏(MEDIUM)。
+   * - 其余自适应内容(FIT_CONTENT)。
+   */
+  private sheetHeight(): SheetSize | Length {
+    if (this.sheetKind === 'audioSubInfo') {
+      return '40%';
+    }
+    if (this.sheetKind === 'speed' || this.sheetKind === 'savePlaylist') {
+      return SheetSize.MEDIUM;
+    }
+    return SheetSize.FIT_CONTENT;
+  }
+
+  private armSleepTimer(): void {
+    if (this.sleepMillis <= 0) {
+      return;
+    }
+    if (this.sleepTimer !== -1) {
+      clearTimeout(this.sleepTimer);
+    }
+    this.sleepArmed = true;
+    this.sleepTimer = setTimeout(() => {
+      this.sleepTimer = -1;
+      if (this.sleepWaitMediaEnd) {
+        // 「先等当前媒体播完」→ 不立刻暂停,标记播完即停(见 vm.onState 的 completed 分支)。
+        this.vm.setStopAfterCurrent(true);
+      } else {
+        this.vm.pauseForSleep();
+        this.sleepArmed = false;
+        // 到点提示 —— 否则画面无缘无故停住,用户不知道是倒计时干的。
+        UiFeedback.showToast({ message: $r('app.string.sleep_timer_fired') });
+      }
+    }, this.sleepMillis);
+  }
+
+  /** 取消倒计时。fromUser=true 时给出取消提示(页面销毁时的清理不需要弹)。 */
+  private clearSleepTimer(fromUser: boolean = false): void {
+    const wasArmed: boolean = this.sleepArmed;
+    if (this.sleepTimer !== -1) {
+      clearTimeout(this.sleepTimer);
+      this.sleepTimer = -1;
+    }
+    this.sleepArmed = false;
+    this.vm.setStopAfterCurrent(false);
+    if (fromUser && wasArmed) {
+      UiFeedback.showToast({ message: $r('app.string.sleep_timer_cancelled') });
+    }
+  }
+
+  /** 持久化当前书签列表。 */
+  private async persistBookmarks(): Promise<void> {
+    if (this.bookmarkUri.length > 0) {
+      await MediaLibrary.saveBookmarks(this.bookmarkUri, this.bookmarks);
+    }
+  }
+
+  /**
+   * 应用退到后台:按「背景/画中画模式」设置执行。
+   * 0=停止播放(页面保留);1=后台播放(切仅音频并回到主页);2=画中画(页面保留)。
+   * 对应 Android VideoPlayerActivity.onUserLeaveHint/onStop 逻辑。
+   */
+  private async handleAppBackground(): Promise<void> {
+    hilog.info(0x0001, 'VLC', '[VLC] handleAppBackground enter leaving=%{public}s state=%{public}d',
+      this.vm.leaving ? 'yes' : 'no', PlaybackService.getState());
+    if (this.vm.leaving) {
+      return;
+    }
+    const st: PlayState = PlaybackService.getState();
+    if (st !== PlayState.PLAYING && st !== PlayState.PREPARED) {
+      return;
+    }
+    let mode: string = BACKGROUND_PIP_DEFAULT;
+    try {
+      mode = await Settings.getString(Settings.KEY_VIDEO_APP_SWITCH, BACKGROUND_PIP_DEFAULT);
+    } catch (e) {
+      hilog.warn(0x0001, 'VLC', '[VLC] handleAppBackground getSetting failed: %{public}s',
+        (e as Error).message ?? String(e));
+    }
+    hilog.info(0x0001, 'VLC', '[VLC] handleAppBackground mode=%{public}s state=%{public}d', mode, st);
+    if (mode === '1') {
+      await this.playAsAudio();
+    } else if (mode === '2') {
+      if (this.pipController === null) {
+        await this.enterPopupPlayer();
+      }
+    } else {
+      PlaybackService.getInstance().stop();
+    }
+  }
+
+  /**
+   * 设置「以画中画模式播放视频」时,每次新视频开始播放自动进入弹出式播放器(PiP),
+   * 效果与播放器右上角菜单「弹出式播放器」一致。
+   */
+  private async maybeAutoEnterPip(): Promise<void> {
+    if (this.vm.leaving || this.pipController !== null) {
+      return;
+    }
+    const mode: string = await Settings.getString(Settings.KEY_VIDEO_APP_SWITCH, BACKGROUND_PIP_DEFAULT);
+    if (mode !== '2') {
+      return;
+    }
+    // 等首帧渲染稳定后再进入画中画,避免过早启动失败。
+    await new Promise<void>((r: () => void) => setTimeout(r, 500));
+    if (this.vm.leaving || this.pipController !== null) {
+      return;
+    }
+    await this.enterPopupPlayer();
+  }
+
+  private bindTouch(): void {
+    if (this.touchBound) {
+      return;
+    }
+    this.touchBound = true;
+    this.touch.bind({
+      doPlayPause: (): void => {
+        if (this.vm.locked) {
+          return;
+        }
+        this.vm.toggle();
+        this.resetHudTimer();
+      },
+      onSingleTap: (): void => {
+        this.toggleHud();
+      },
+      seekDelta: (deltaMs: number): void => {
+        if (this.vm.locked) {
+          return;
+        }
+        const next: number = this.vm.position + deltaMs;
+        const clamped: number = this.vm.duration > 0
+          ? Math.max(0, Math.min(this.vm.duration, next))
+          : Math.max(0, next);
+        this.vm.seekTo(clamped);
+        this.resetHudTimer();
+      },
+      getContainerWidth: (): number => {
+        return this.vm.containerWidth;
+      },
+      getContainerHeight: (): number => {
+        return this.vm.containerHeight;
+      },
+      getPosition: (): number => {
+        return this.vm.position;
+      },
+      getDuration: (): number => {
+        return this.vm.duration;
+      },
+      isHudVisible: (): boolean => {
+        return this.vm.hudVisible;
+      },
+      onPanBegan: (): void => {
+        if (this.vm.locked) {
+          return;
+        }
+        if (this.hudTimer !== -1) {
+          clearTimeout(this.hudTimer);
+          this.hudTimer = -1;
+        }
+        this.vm.hudVisible = false;
+        this.volumeAcc = this.volumeLevel;
+      },
+      onVolumePan: (deltaNorm: number): void => {
+        if (this.vm.locked) {
+          return;
+        }
+        const span: number = Math.max(1, this.volumeMax - this.volumeMin);
+        this.volumeAcc = Math.max(this.volumeMin, Math.min(this.volumeMax, this.volumeAcc + deltaNorm * span));
+        const next: number = Math.round(this.volumeAcc);
+        if (next !== this.volumeLevel) {
+          this.volumeLevel = next;
+          hilog.info(0x0001, 'VLC', '[VLC] volumeLevel -> %{public}d', next);
+        }
+        this.volumeHudVisible = true;
+        this.brightnessHudVisible = false;
+        this.seekHudVisible = false;
+        this.armVolumeHudTimer();
+      },
+      onBrightnessPan: (deltaNorm: number): void => {
+        if (this.vm.locked) {
+          return;
+        }
+        this.brightnessLevel = Math.max(0, Math.min(1, this.brightnessLevel + deltaNorm));
+        this.brightnessHudVisible = true;
+        this.volumeHudVisible = false;
+        this.seekHudVisible = false;
+        void this.applyBrightness(this.brightnessLevel);
+        hilog.info(0x0001, 'VLC', '[VLC] brightnessLevel -> %{public}s',
+          this.brightnessLevel.toFixed(2));
+        this.armBrightnessHudTimer();
+      },
+      onSeekPan: (jumpMs: number, targetMs: number): void => {
+        if (this.vm.locked) {
+          return;
+        }
+        this.pendingSeekTarget = targetMs;
+        const sign: string = jumpMs >= 0 ? '+' : '';
+        this.seekHudText = `${sign}${fmtTime(Math.abs(jumpMs))} (${fmtTime(targetMs)})`;
+        this.seekHudVisible = true;
+        this.volumeHudVisible = false;
+        this.brightnessHudVisible = false;
+        if (this.seekHudTimer !== -1) {
+          clearTimeout(this.seekHudTimer);
+          this.seekHudTimer = -1;
+        }
+      },
+      onPanEnded: (mode: VideoPanMode): void => {
+        if (this.vm.locked) {
+          return;
+        }
+        if (mode === VideoPanMode.Brightness && this.saveBrightness) {
+          void Settings.put(Settings.BRIGHTNESS_VALUE, this.brightnessLevel);
+        }
+        if (mode === VideoPanMode.Brightness) {
+          this.armBrightnessHudTimer();
+        }
+        if (mode === VideoPanMode.Volume) {
+          this.volumeAcc = this.volumeLevel;
+          this.armVolumeHudTimer();
+        }
+        if (mode === VideoPanMode.Seek) {
+          if (this.pendingSeekTarget >= 0) {
+            this.vm.seekTo(this.pendingSeekTarget);
+            hilog.info(0x0001, 'VLC', '[VLC] swipe seek -> %{public}d', this.pendingSeekTarget);
+            this.pendingSeekTarget = -1;
+          }
+          this.armSeekHudTimer();
+        }
+      },
+    });
+  }
+
+  private async initVolumeAndBrightness(): Promise<void> {
+    try {
+      const volMgr = audio.getAudioManager().getVolumeManager();
+      this.volumeMin = volMgr.getMinVolumeByStream(audio.StreamUsage.STREAM_USAGE_MUSIC);
+      this.volumeMax = volMgr.getMaxVolumeByStream(audio.StreamUsage.STREAM_USAGE_MUSIC);
+      this.volumeLevel = volMgr.getVolumeByStream(audio.StreamUsage.STREAM_USAGE_MUSIC);
+      this.volumeAcc = this.volumeLevel;
+    } catch (e) {
+      hilog.warn(0x0001, 'VLC', '[VLC] init volume failed %{public}s', JSON.stringify(e));
+    }
+    try {
+      this.mainWindow = await window.getLastWindow(AppContext.get());
+      this.saveBrightness = await Settings.getBoolean(Settings.SAVE_BRIGHTNESS, false);
+      if (this.saveBrightness) {
+        const saved: number = await Settings.getFloat(Settings.BRIGHTNESS_VALUE, 0.5);
+        this.brightnessLevel = Math.max(0, Math.min(1, saved));
+        await this.mainWindow.setWindowBrightness(this.brightnessLevel);
+      } else {
+        this.brightnessLevel = 0.5;
+      }
+      await this.mainWindow.setWindowKeepScreenOn(true);
+    } catch (e) {
+      hilog.warn(0x0001, 'VLC', '[VLC] init brightness failed %{public}s', JSON.stringify(e));
+    }
+  }
+
+  private async restoreSystemBrightnessIfNeeded(): Promise<void> {
+    if (this.mainWindow === null) {
+      return;
+    }
+    try {
+      await this.mainWindow.setWindowKeepScreenOn(false);
+      if (!this.saveBrightness) {
+        await this.mainWindow.setWindowBrightness(-1);
+      }
+    } catch (_e) {
+      // ignore
+    }
+  }
+
+  /** 依据「视频屏幕方向」设置旋转主窗口(进入播放页时应用,勾选后即可控制视频播放方向)。 */
+  private async applyScreenOrientation(): Promise<void> {
+    try {
+      const value: string = await Settings.getString(Settings.SCREEN_ORIENTATION, SCREEN_ORIENTATION_DEFAULT);
+      this.orientationValue = value;
+      if (this.mainWindow === null) {
+        this.mainWindow = await window.getLastWindow(AppContext.get());
+      }
+      await this.mainWindow.setPreferredOrientation(windowOrientationFor(value));
+    } catch (e) {
+      hilog.warn(0x0001, 'VLC', '[VLC] applyScreenOrientation failed %{public}s', JSON.stringify(e));
+    }
+  }
+
+  /** 离开播放页时恢复系统默认方向,避免设置页等其它页面保持横屏。 */
+  private async restoreScreenOrientation(): Promise<void> {
+    try {
+      if (this.mainWindow === null) {
+        this.mainWindow = await window.getLastWindow(AppContext.get());
+      }
+      await this.mainWindow.setPreferredOrientation(window.Orientation.UNSPECIFIED);
+    } catch (_e) {
+      // ignore
+    }
+  }
+
+  private openOrientationDialog(): void {
+    Settings.getString(Settings.SCREEN_ORIENTATION, SCREEN_ORIENTATION_DEFAULT).then((value: string) => {
+      this.orientationValue = value;
+      this.getUIContext().getPromptAction().openCustomDialog({
+        builder: () => {
+          this.playerOrientationDialogContent();
+        },
+        alignment: DialogAlignment.Center,
+        autoCancel: true,
+        maskColor: $r('app.color.dialog_mask'),
+        backgroundColor: Color.Transparent,
+      }).then((dialogId: number) => {
+        this.orientationDialogId = dialogId;
+      });
+    });
+  }
+
+  private closeOrientationDialog(): void {
+    if (this.orientationDialogId >= 0) {
+      try {
+        this.getUIContext().getPromptAction().closeCustomDialog(this.orientationDialogId);
+      } catch (error) {
+        hilog.warn(0x0001, 'VLC', '[VLC] close orientation dialog failed: %{public}s', String(error));
+      }
+    }
+    this.orientationDialogId = -1;
+  }
+
+  private onOrientationSelect(value: string): void {
+    this.orientationValue = value;
+    Settings.put(Settings.SCREEN_ORIENTATION, value);
+    this.closeOrientationDialog();
+    void this.applyScreenOrientation();
+  }
+
+  private openVideoRatioDialog(): void {
+    Settings.getString(Settings.VIDEO_RATIO, VIDEO_RATIO_BEST_FIT).then((value: string) => {
+      this.videoRatioValue = value;
+      this.getUIContext().getPromptAction().openCustomDialog({
+        builder: () => {
+          this.playerVideoRatioDialogContent();
+        },
+        alignment: DialogAlignment.Center,
+        autoCancel: true,
+        maskColor: $r('app.color.dialog_mask'),
+        backgroundColor: Color.Transparent,
+      }).then((dialogId: number) => {
+        this.videoRatioDialogId = dialogId;
+      });
+    });
+  }
+
+  private closeVideoRatioDialog(): void {
+    if (this.videoRatioDialogId >= 0) {
+      try {
+        this.getUIContext().getPromptAction().closeCustomDialog(this.videoRatioDialogId);
+      } catch (error) {
+        hilog.warn(0x0001, 'VLC', '[VLC] close video ratio dialog failed: %{public}s', String(error));
+      }
+    }
+    this.videoRatioDialogId = -1;
+  }
+
+  private onVideoRatioSelect(value: string): void {
+    this.videoRatioValue = value;
+    Settings.put(Settings.VIDEO_RATIO, value);
+    this.vm.setVideoRatioMode(value);
+    this.closeVideoRatioDialog();
+    UiFeedback.showToast({ message: `画面比例：${videoRatioLabel(value)}` });
+  }
+
+  private async applyBrightness(value: number): Promise<void> {
+    try {
+      if (this.mainWindow === null) {
+        this.mainWindow = await window.getLastWindow(AppContext.get());
+      }
+      await this.mainWindow.setWindowBrightness(value);
+    } catch (e) {
+      hilog.warn(0x0001, 'VLC', '[VLC] setWindowBrightness failed %{public}s', JSON.stringify(e));
+    }
+  }
+
+  private armBrightnessHudTimer(): void {
+    if (this.brightnessHudTimer !== -1) {
+      clearTimeout(this.brightnessHudTimer);
+    }
+    this.brightnessHudTimer = setTimeout(() => {
+      this.brightnessHudTimer = -1;
+      this.brightnessHudVisible = false;
+    }, 1200);
+  }
+
+  private armVolumeHudTimer(): void {
+    if (this.volumeHudTimer !== -1) {
+      clearTimeout(this.volumeHudTimer);
+    }
+    this.volumeHudTimer = setTimeout(() => {
+      this.volumeHudTimer = -1;
+      this.volumeHudVisible = false;
+    }, 1200);
+  }
+
+  private armSeekHudTimer(): void {
+    if (this.seekHudTimer !== -1) {
+      clearTimeout(this.seekHudTimer);
+    }
+    this.seekHudTimer = setTimeout(() => {
+      this.seekHudTimer = -1;
+      this.seekHudVisible = false;
+    }, 1200);
+  }
 }

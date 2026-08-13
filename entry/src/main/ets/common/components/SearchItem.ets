@@ -7,7 +7,8 @@ import { MediaLibraryItem } from '../models/MediaModels';
 @ComponentV2
 export struct SearchItem {
   @Param item: MediaLibraryItem = new MediaLibraryItem(0, '', 0);
-  @Event onItemClick: () => void = () => {};
+  @Event onItemClick: () => void = () => {
+  };
 
   build() {
     Row() {
@@ -38,7 +39,12 @@ export struct SearchItem {
       .layoutWeight(1)
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 6, bottom: 6 })
+    .padding({
+      left: 16,
+      right: 16,
+      top: 6,
+      bottom: 6
+    })
     .alignItems(VerticalAlign.Center)
     .onClick(() => this.onItemClick())
   }

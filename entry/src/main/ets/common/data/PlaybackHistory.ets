@@ -85,7 +85,8 @@ export class PlaybackHistory {
       PlaybackHistory.listeners.push(listener);
     }
     return () => {
-      PlaybackHistory.listeners = PlaybackHistory.listeners.filter((item: PlaybackHistoryListener) => item !== listener);
+      PlaybackHistory.listeners =
+        PlaybackHistory.listeners.filter((item: PlaybackHistoryListener) => item !== listener);
     };
   }
 
@@ -142,7 +143,7 @@ export class PlaybackHistory {
    */
   private static async hydrateArtworkUrls(): Promise<void> {
     const hasMissingArtwork: boolean = PlaybackHistory.entries.some((entry: PlaybackHistoryEntry) =>
-      entry.artworkUrl.length === 0);
+    entry.artworkUrl.length === 0);
     if (!hasMissingArtwork) {
       return;
     }

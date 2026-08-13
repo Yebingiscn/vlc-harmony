@@ -12,7 +12,8 @@ const APP_VERSION_DATE: string = '2026-07-29';
 export struct AboutLinkRow {
   @Param icon: Resource = $r('app.media.ic_link');
   @Param title: string = '';
-  @Event onRowClick: () => void = () => {};
+  @Event onRowClick: () => void = () => {
+  };
 
   build() {
     Row() {
@@ -43,37 +44,6 @@ export struct AboutFragmentPage {
   @Local showVersionSheet: boolean = false;
   @Local showLicenseSheet: boolean = false;
   @Local licenseText: string = '';
-
-  private onVersionCardClick(): void {
-    this.showVersionSheet = true;
-  }
-
-  private onWebsiteClick(): void {
-    OpenLink.open('https://www.videolan.org/vlc/');
-  }
-
-  private onFeedbackClick(): void {
-    NavController.push('Feedback');
-  }
-
-  private onSourcesClick(): void {
-    OpenLink.open('https://code.videolan.org/videolan/vlc-android');
-  }
-
-  private onLibrariesClick(): void {
-    NavController.push('Libraries');
-  }
-
-  private onAuthorsClick(): void {
-    NavController.push('Authors');
-  }
-
-  private async onCopyleftCardClick(): Promise<void> {
-    if (this.licenseText.length === 0) {
-      this.licenseText = await RawData.loadLicenseText();
-    }
-    this.showLicenseSheet = true;
-  }
 
   build() {
     NavDestination() {
@@ -124,9 +94,12 @@ export struct AboutFragmentPage {
             .onClick(() => this.onVersionCardClick())
 
             Column() {
-              AboutLinkRow({ icon: $r('app.media.ic_link'), title: '官方网站', onRowClick: () => this.onWebsiteClick() })
-              AboutLinkRow({ icon: $r('app.media.ic_feedback'), title: '发送反馈', onRowClick: () => this.onFeedbackClick() })
-              AboutLinkRow({ icon: $r('app.media.ic_sourcecode'), title: '源代码', onRowClick: () => this.onSourcesClick() })
+              AboutLinkRow(
+                { icon: $r('app.media.ic_link'), title: '官方网站', onRowClick: () => this.onWebsiteClick() })
+              AboutLinkRow(
+                { icon: $r('app.media.ic_feedback'), title: '发送反馈', onRowClick: () => this.onFeedbackClick() })
+              AboutLinkRow(
+                { icon: $r('app.media.ic_sourcecode'), title: '源代码', onRowClick: () => this.onSourcesClick() })
               AboutLinkRow({ icon: $r('app.media.ic_sources'), title: '库', onRowClick: () => this.onLibrariesClick() })
               AboutLinkRow({ icon: $r('app.media.ic_authors'), title: '作者', onRowClick: () => this.onAuthorsClick() })
             }
@@ -149,7 +122,12 @@ export struct AboutFragmentPage {
             .backgroundColor($r('app.color.card_background'))
             .borderRadius(8)
             .padding(24)
-            .margin({ left: 40, right: 40, top: 12, bottom: 40 })
+            .margin({
+              left: 40,
+              right: 40,
+              top: 12,
+              bottom: 40
+            })
             .alignItems(HorizontalAlign.Start)
             .onClick(() => this.onCopyleftCardClick())
           }
@@ -182,7 +160,10 @@ export struct AboutFragmentPage {
 
   @Builder
   versionSheet() {
-    AboutVersionDialog({ onClose: () => this.showVersionSheet = false, onOpenWhatsNew: () => {} })
+    AboutVersionDialog({
+      onClose: () => this.showVersionSheet = false, onOpenWhatsNew: () => {
+      }
+    })
       .width('100%')
   }
 
@@ -196,6 +177,37 @@ export struct AboutFragmentPage {
       onClose: () => this.showLicenseSheet = false,
       onOpenLink: () => OpenLink.open('https://www.gnu.org/licenses/old-licenses/gpl-2.0.html'),
     })
-    .width('100%')
+      .width('100%')
+  }
+
+  private onVersionCardClick(): void {
+    this.showVersionSheet = true;
+  }
+
+  private onWebsiteClick(): void {
+    OpenLink.open('https://www.videolan.org/vlc/');
+  }
+
+  private onFeedbackClick(): void {
+    NavController.push('Feedback');
+  }
+
+  private onSourcesClick(): void {
+    OpenLink.open('https://code.videolan.org/videolan/vlc-android');
+  }
+
+  private onLibrariesClick(): void {
+    NavController.push('Libraries');
+  }
+
+  private onAuthorsClick(): void {
+    NavController.push('Authors');
+  }
+
+  private async onCopyleftCardClick(): Promise<void> {
+    if (this.licenseText.length === 0) {
+      this.licenseText = await RawData.loadLicenseText();
+    }
+    this.showLicenseSheet = true;
   }
 }

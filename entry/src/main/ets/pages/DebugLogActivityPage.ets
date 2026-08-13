@@ -1,10 +1,10 @@
+import { UiFeedback } from '../common/utils/UiFeedback';
 import { VlcToolbar } from '../common/components/VlcToolbar';
 import { NavController } from '../common/data/NavController';
 import { AppContext } from '../common/data/AppContext';
 import { AppColors, AppDimens } from '../common/constants/AppConstants';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
-import { promptAction } from '@kit.ArkUI';
 
 /**
  * DebugLogActivityPage —— 调试日志采集页(DebugLogActivity)。
@@ -39,8 +39,12 @@ export class DebugLogVM {
     const buffer: string = this.logList.join('\n');
     const pasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, buffer);
     const mgr = pasteboard.getSystemPasteboard();
-    await mgr.setData(pasteData);
-    promptAction.showToast({ message: 'Copied log to clipboard.' });
+    try {
+      await mgr.setData(pasteData);
+      UiFeedback.showToast({ message: 'Copied log to clipboard.' });
+    } catch (error) {
+      UiFeedback.showToast({ message: 'Failed to copy log.' });
+    }
   }
 
   async save(): Promise<void> {
@@ -55,9 +59,9 @@ export class DebugLogVM {
       const file = fs.openSync(path, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
       fs.writeSync(file.fd, buffer);
       fs.closeSync(file);
-      promptAction.showToast({ message: `Logcat dumped to ${path}` });
+      UiFeedback.showToast({ message: `Logcat dumped to ${path}` });
     } catch (e) {
-      promptAction.showToast({ message: 'Failed to dump logcat.' });
+      UiFeedback.showToast({ message: 'Failed to dump logcat.' });
     }
   }
 }

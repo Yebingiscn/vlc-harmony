@@ -1,8 +1,10 @@
+import { UiFeedback } from '../common/utils/UiFeedback';
 import { Settings } from '../common/data/Settings';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { VideoSeenState } from '../common/data/VideoSeenState';
-import { PermissionCoordinator } from '../common/data/PermissionCoordinator';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { picker } from '@kit.CoreFileKit';
+import { common } from '@kit.AbilityKit';
 import { NavController } from '../common/data/NavController';
 import { RouteName } from '../common/constants/AppConstants';
 import { EmptyStateView } from '../common/components/EmptyStateView';
@@ -17,7 +19,6 @@ import {
 } from '../common/models/MediaModels';
 import { HeaderMediaListParam } from './HeaderMediaListActivityPage';
 import { VideoParam, VideoPlayItem } from './VideoPlayerPage';
-import { promptAction } from '@kit.ArkUI';
 
 /**
  * VideoGridPage —— VideoGridFragment(Video Tab 根)。
@@ -63,12 +64,7 @@ class VideoGridViewModel {
     this.grouping = VideoGridViewModel.toGroupingType(await Settings.getInt(Settings.KEY_GROUP_VIDEOS, 0));
     // 尊重「自动重新扫描」开关:autoRescan 关闭时不自动扫描。
     // 手动刷新请走 vm.refresh()(下拉 / FAB / 权限弹窗授权后),不受此门控影响。
-    const autoRescan = await Settings.getBoolean(Settings.KEY_MEDIALIBRARY_AUTO_RESCAN, true);
-    if (autoRescan) {
-      // 先确保媒体读权限(首次弹授权框),再扫描 -- 否则扫描在授权完成前跑会返回空。
-      await PermissionCoordinator.askStoragePermission(false, false, true);
-      await MediaLibrary.scan();
-    }
+    await MediaLibrary.scan();
     await MediaLibrary.loadVideoFavs();
     await MediaLibrary.loadFolderFavs();
     await this.rebuild();
@@ -294,7 +290,7 @@ export struct VideoGridPage {
     seen ? VideoSeenState.markSeen(v.uri) : VideoSeenState.markUnseen(v.uri)
     );
     Promise.all(tasks).then(() => {
-      promptAction.showToast({ message: seen ? '已标记为已播放' : '已标记为未播放' });
+      UiFeedback.showToast({ message: seen ? '已标记为已播放' : '已标记为未播放' });
       void this.vm.rebuild();
     });
   }
@@ -328,25 +324,11 @@ export struct VideoGridPage {
     this.showContext = true;
   }
 
-  /** 「添加」入口:未授予视频权限 → 提示去授权(拉起系统授权弹窗);已授予 → 待实现的导入动作。 */
-  private async onAddVideo(): Promise<void> {
-    try {
-      const granted: boolean = await PermissionCoordinator.hasVideoPermission();
-      if (!granted) {
-        await PermissionCoordinator.askStoragePermission(false, false, true);
-        return;
-      }
-      promptAction.showToast({ message: $r('app.string.developing') });
-    } catch (e) {
-      hilog.warn(0x0001, 'VLC', '[VLC] onAddVideo: %{public}s', (e as Error).message ?? String(e));
-    }
-  }
-
-  // ---- 选择模式 ----
-
   isSelected(uri: string): boolean {
     return this.selectedUris.includes(uri);
   }
+
+  // ---- 选择模式 ----
 
   enterSelection(item: MediaWrapper): void {
     this.inSelection = true;
@@ -423,7 +405,7 @@ export struct VideoGridPage {
     }
     const tasks: Promise<boolean>[] = targets.map((uri: string) => MediaLibrary.toggleVideoFav(uri));
     Promise.all(tasks).then(() => {
-      promptAction.showToast({ message: allFav ? '已取消收藏' : '已收藏' });
+      UiFeedback.showToast({ message: allFav ? '已取消收藏' : '已收藏' });
       void this.vm.rebuild();
       this.exitSelection();
     });
@@ -437,7 +419,7 @@ export struct VideoGridPage {
     }
     const tasks: Promise<boolean>[] = items.map((v: MediaWrapper) => MediaLibrary.deleteVideo(v));
     Promise.all(tasks).then(() => {
-      promptAction.showToast({ message: '已删除' });
+      UiFeedback.showToast({ message: '已从媒体库移除' });
       void this.vm.rebuild();
       this.exitSelection();
     });
@@ -454,7 +436,7 @@ export struct VideoGridPage {
           EmptyStateView({
             state: this.vm.emptyState,
             filterQuery: this.searchQuery,
-            onOpenStorage: () => promptAction.showToast({ message: $r('app.string.developing') }),
+            onOpenStorage: () => UiFeedback.showToast({ message: $r('app.string.developing') }),
             onGrantPermission: () => this.vm.refresh(),
             onPickFile: () => this.onAddVideo(),
           })
@@ -510,7 +492,6 @@ export struct VideoGridPage {
     }
   }
 
-  /** ContextSheet 弹窗内容(自定义组件 → builder 必须 .width('100%'))。 */
   /** 视频操作半模态:顶部封面+名称,后续 播放 / 添加到收藏夹。 */
   @Builder
   videoContextSheet() {
@@ -588,7 +569,7 @@ export struct VideoGridPage {
           const uri = this.contextItem!.uri;
           MediaLibrary.toggleVideoFav(uri).then((fav: boolean) => {
             this.contextItemFav = fav;
-            promptAction.showToast({ message: fav ? '已收藏' : '已取消收藏' });
+            UiFeedback.showToast({ message: fav ? '已收藏' : '已取消收藏' });
             void this.vm.rebuild();
           });
         })
@@ -612,7 +593,7 @@ export struct VideoGridPage {
           bottom: 14
         })
         .onClick(() => {
-          promptAction.showToast({
+          UiFeedback.showToast({
             message: `视频: ${this.contextItem!.title}\n时长: ${this.contextItem!.length > 0 ?
               formatDuration(this.contextItem!.length) : '未知'}`
           });
@@ -665,10 +646,10 @@ export struct VideoGridPage {
           this.showContext = false;
           MediaLibrary.deleteVideo(item).then((ok: boolean) => {
             if (ok) {
-              promptAction.showToast({ message: '已删除' });
+              UiFeedback.showToast({ message: '已从媒体库移除' });
               void this.vm.rebuild();
             } else {
-              promptAction.showToast({ message: '删除失败,可能缺少权限' });
+              UiFeedback.showToast({ message: '删除失败,可能缺少权限' });
             }
           });
         })
@@ -683,6 +664,8 @@ export struct VideoGridPage {
     .width('100%').backgroundColor('#FFFFFF')
     .borderRadius({ topLeft: 16, topRight: 16 })
   }
+
+  /** ContextSheet 弹窗内容(自定义组件 → builder 必须 .width('100%'))。 */
 
   /** 文件夹操作半模态内容:文件夹名 + 播放 / 打开文件夹 / 收藏 / 全部标记已播放 / 全部标记未播放。 */
   @Builder
@@ -778,7 +761,7 @@ export struct VideoGridPage {
           const path = this.contextFolder!.path;
           MediaLibrary.toggleFolderFav(path).then((fav: boolean) => {
             this.contextFolderFav = fav;
-            promptAction.showToast({ message: fav ? '已收藏' : '已取消收藏' });
+            UiFeedback.showToast({ message: fav ? '已收藏' : '已取消收藏' });
             this.vm.rebuild();
           });
         })
@@ -1160,5 +1143,25 @@ export struct VideoGridPage {
     })
     .width('100%')
     .layoutWeight(1)
+  }
+
+  /** 通过系统文件选择器导入视频，仅保存持久 URI 引用。 */
+  private async onAddVideo(): Promise<void> {
+    try {
+      const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      const options = new picker.DocumentSelectOptions();
+      options.maxSelectNumber = 200;
+      options.fileSuffixFilters = [
+        '视频 (.mp4, .mkv, .avi, .mov, .webm, .ts, .m4v)|.mp4,.mkv,.avi,.mov,.webm,.ts,.m4v',
+      ];
+      options.mergeMode = picker.MergeTypeMode.VIDEO;
+      const uris = await new picker.DocumentViewPicker(ctx).select(options);
+      if (uris.length > 0) {
+        await MediaLibrary.importVideoUris(uris);
+        await this.vm.rebuild();
+      }
+    } catch (e) {
+      hilog.warn(0x0001, 'VLC', '[VLC] onAddVideo: %{public}s', (e as Error).message ?? String(e));
+    }
   }
 }

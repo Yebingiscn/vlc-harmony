@@ -27,8 +27,6 @@ export class AudioInfoParams {
  */
 @ComponentV2
 export struct AudioInfoDialog {
-  @Event onClose: () => void = () => {};
-
   // ── 视觉常量(与 PlaybackSpeedDialog / VideoInfoDialog 对齐) ──────────
   readonly cPanelBg: Resource = $r('app.color.background_default');
   readonly cHeaderBg: Resource = $r('app.color.background_default');
@@ -36,7 +34,6 @@ export struct AudioInfoDialog {
   readonly cDim: Resource = $r('app.color.list_subtitle');
   readonly cSubtle: Resource = $r('app.color.font_light');
   readonly cAccent: string = '#FF8800';
-
   // ── 真值数据(从外面传进来) ──────────────────────────
   @Param title: string = '';
   @Param artist: string = '';
@@ -48,24 +45,24 @@ export struct AudioInfoDialog {
   @Param uri: string = '';
   @Param fileSize: number = 0;
 
-  /** 空值兜底 '—'(对齐 VideoInfoDialog)。 */
-  private safe(v: string): string {
-    return v.length > 0 ? v : '—';
-  }
+  @Event onClose: () => void = () => {
+  };
 
   // ── 顶栏 ──────────────────────────────────────
   @Builder
   header() {
     Column() {
       Row()
-        .width(36).height(4)
+        .width(36)
+        .height(4)
         .backgroundColor($r('app.color.font_light'))
         .borderRadius(2)
         .margin({ top: 8, bottom: 10 })
       Row() {
         Row() {
           Image($r('app.media.ic_arrow_back'))
-            .width(28).height(28)
+            .width(28)
+            .height(28)
             .fillColor($r('app.color.list_title'))
             .padding(2)
             .onClick(() => this.onClose())
@@ -74,7 +71,8 @@ export struct AudioInfoDialog {
         .justifyContent(FlexAlign.Start)
 
         Text('信息展示')
-          .fontSize(18).fontWeight(FontWeight.Medium)
+          .fontSize(18)
+          .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.list_title'))
           .layoutWeight(1)
           .textAlign(TextAlign.Center)
@@ -92,10 +90,16 @@ export struct AudioInfoDialog {
   @Builder
   sectionHeader(text: string) {
     Text(text)
-      .fontSize(15).fontWeight(FontWeight.Medium)
+      .fontSize(15)
+      .fontWeight(FontWeight.Medium)
       .fontColor(this.cAccent)
       .width('100%')
-      .padding({ left: 20, right: 20, top: 18, bottom: 6 })
+      .padding({
+        left: 20,
+        right: 20,
+        top: 18,
+        bottom: 6
+      })
   }
 
   // ── 单行信息 ──────────────────────────────────
@@ -106,13 +110,19 @@ export struct AudioInfoDialog {
         .fontSize(14).fontColor(this.cDim)
         .width(76)
       Text(value)
-        .fontSize(14).fontColor($r('app.color.list_title'))
+        .fontSize(14)
+        .fontColor($r('app.color.list_title'))
         .layoutWeight(1)
         .maxLines(2)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
     }
     .width('100%')
-    .padding({ left: 20, right: 20, top: 7, bottom: 7 })
+    .padding({
+      left: 20,
+      right: 20,
+      top: 7,
+      bottom: 7
+    })
     .alignItems(VerticalAlign.Top)
   }
 
@@ -160,5 +170,10 @@ export struct AudioInfoDialog {
     .backgroundColor(this.cPanelBg)
     .alignItems(HorizontalAlign.Start)
     .justifyContent(FlexAlign.Start)
+  }
+
+  /** 空值兜底 '—'(对齐 VideoInfoDialog)。 */
+  private safe(v: string): string {
+    return v.length > 0 ? v : '—';
   }
 }

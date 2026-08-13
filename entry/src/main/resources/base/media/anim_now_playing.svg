@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 6 6">
-<path d="M 1.455 3.969 L 2.514 3.969 L 2.514 6.35 L 1.455 6.35 Z" fill="currentColor" stroke-width="1"/>
-<path d="M 2.778 2.117 L 3.836 2.117 L 3.836 6.35 L 2.778 6.35 Z" fill="currentColor" stroke-width="1"/>
-<path d="M 4.101 4.233 L 5.159 4.233 L 5.159 6.35 L 4.101 6.35 Z" fill="currentColor" stroke-width="1"/>
-<path d="M 1.455 3.969 L 2.514 3.969 L 2.514 6.35 L 1.455 6.35 Z" fill="currentColor" stroke-width="1"/>
-<path d="M 2.778 2.117 L 3.836 2.117 L 3.836 6.35 L 2.778 6.35 Z" fill="currentColor" stroke-width="1"/>
-<path d="M 4.101 4.233 L 5.159 4.233 L 5.159 6.35 L 4.101 6.35 Z" fill="currentColor" stroke-width="1"/>
+    <path d="M 1.455 3.969 L 2.514 3.969 L 2.514 6.35 L 1.455 6.35 Z" fill="currentColor" stroke-width="1"/>
+    <path d="M 2.778 2.117 L 3.836 2.117 L 3.836 6.35 L 2.778 6.35 Z" fill="currentColor" stroke-width="1"/>
+    <path d="M 4.101 4.233 L 5.159 4.233 L 5.159 6.35 L 4.101 6.35 Z" fill="currentColor" stroke-width="1"/>
+    <path d="M 1.455 3.969 L 2.514 3.969 L 2.514 6.35 L 1.455 6.35 Z" fill="currentColor" stroke-width="1"/>
+    <path d="M 2.778 2.117 L 3.836 2.117 L 3.836 6.35 L 2.778 6.35 Z" fill="currentColor" stroke-width="1"/>
+    <path d="M 4.101 4.233 L 5.159 4.233 L 5.159 6.35 L 4.101 6.35 Z" fill="currentColor" stroke-width="1"/>
 </svg>

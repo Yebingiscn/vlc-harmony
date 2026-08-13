@@ -36,8 +36,10 @@ struct VersionRow {
  */
 @ComponentV2
 export struct AboutVersionDialog {
-  @Event onClose: () => void = () => {};
-  @Event onOpenWhatsNew: () => void = () => {};
+  @Event onClose: () => void = () => {
+  };
+  @Event onOpenWhatsNew: () => void = () => {
+  };
 
   aboutToAppear(): void {
     // TODO(契约): 版本/构建/签名信息由 BuildConfig + Gradle resValue + APK 签名指纹计算后注入:
@@ -75,7 +77,12 @@ export struct AboutVersionDialog {
             .fontSize(14)
             .fontWeight(FontWeight.Medium)
             .fontColor(AppColors.orange500)
-            .padding({ left: 8, right: 8, top: 8, bottom: 8 })
+            .padding({
+              left: 8,
+              right: 8,
+              top: 8,
+              bottom: 8
+            })
             .onClick(() => {
               this.onOpenWhatsNew();
               this.onClose();
@@ -102,7 +109,12 @@ export struct AboutVersionDialog {
         VersionRow({ label: $r('app.string.remote_access_hash_title'), value: $r('app.string.unknown'), marginTop: 8 })
       }
       .width('100%')
-      .padding({ left: 16, right: 16, top: 16, bottom: 16 })
+      .padding({
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: 16
+      })
       .alignItems(HorizontalAlign.Start)
     }
     .width('100%')

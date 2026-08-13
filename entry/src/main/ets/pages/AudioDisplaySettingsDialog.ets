@@ -7,15 +7,15 @@ import { Settings } from '../common/data/Settings';
  */
 @ComponentV2
 export struct AudioDisplaySettingsDialog {
-  @Event onClose: () => void = () => {
-  };
   @Local displayAsList: boolean = false;
   @Local showAllArtists: boolean = false;
   @Local onlyFavs: boolean = false;
   @Local playActionIndex: number = 0;
   @Local sortDesc: boolean = false;
-
   readonly playActions: string[] = ['播放', '添加到播放队列', '插入为下一项'];
+
+  @Event onClose: () => void = () => {
+  };
 
   async aboutToAppear(): Promise<void> {
     this.displayAsList = await Settings.getBoolean(Settings.KEY_DISPLAY_AS_LIST, false);
@@ -44,7 +44,12 @@ export struct AudioDisplaySettingsDialog {
           .fontWeight(FontWeight.Medium)
           .fontColor(AppColors.orange500)
           .width('100%')
-          .margin({ left: 16, right: 16, top: 16, bottom: 8 })
+          .margin({
+            left: 16,
+            right: 16,
+            top: 16,
+            bottom: 8
+          })
           .maxLines(1)
 
         // 列表/网格切换
@@ -154,7 +159,12 @@ export struct AudioDisplaySettingsDialog {
           .fontWeight(FontWeight.Medium)
           .fontColor(AppColors.orange500)
           .width('100%')
-          .margin({ left: 16, right: 16, top: 24, bottom: 8 })
+          .margin({
+            left: 16,
+            right: 16,
+            top: 24,
+            bottom: 8
+          })
 
         // 按名称排序:正序/倒序
         Row() {
@@ -208,7 +218,12 @@ export struct AudioDisplaySettingsDialog {
           .alignItems(HorizontalAlign.Start)
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+        .padding({
+          left: 16,
+          right: 16,
+          top: 8,
+          bottom: 8
+        })
         .alignItems(VerticalAlign.Center)
       }
       .width('100%')

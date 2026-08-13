@@ -16,6 +16,7 @@ function formatChapterTime(ms: number): string {
 export class Chapter {
   name: string;
   time: string;
+
   constructor(name: string, time: string) {
     this.name = name;
     this.time = time;
@@ -27,7 +28,8 @@ export class Chapter {
 struct ChapterItem {
   @Param item: Chapter = new Chapter('', '');
   @Param selected: boolean = false;
-  @Event onItemClick: () => void = () => {};
+  @Event onItemClick: () => void = () => {
+  };
 
   build() {
     Row() {
@@ -59,11 +61,14 @@ struct ChapterItem {
  */
 @ComponentV2
 export struct SelectChapterDialog {
-  @Event onClose: () => void = () => {};
-  @Event onSelectChapter: (index: number) => void = () => {};
-
   @Local chapterData: Chapter[] = [];
   @Local selectedIndex: number = 0;
+
+  @Event onClose: () => void = () => {
+  };
+
+  @Event onSelectChapter: (index: number) => void = () => {
+  };
 
   aboutToAppear(): void {
     const svc = PlaybackService.getInstance();

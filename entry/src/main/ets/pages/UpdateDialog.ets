@@ -8,17 +8,26 @@ import { AppColors } from '../common/constants/AppConstants';
  */
 @ComponentV2
 export struct UpdateDialog {
-  @Event onClose: () => void = () => {};
-  @Event onDownload: () => void = () => {};
-
   @Local progress: number = 0; // 0..100,0=未开始
   @Local downloading: boolean = false;
+
+  @Event onClose: () => void = () => {
+  };
+
+  @Event onDownload: () => void = () => {
+  };
 
   build() {
     Column() {
       Text($r('app.string.update_nightly'))
-        .fontSize(18).fontWeight(FontWeight.Medium).fontColor('#FFFFFF')
-        .height(56).width('100%').padding({ left: 16, right: 16 }).maxLines(1).textAlign(TextAlign.Start)
+        .fontSize(18)
+        .fontWeight(FontWeight.Medium)
+        .fontColor('#FFFFFF')
+        .height(56)
+        .width('100%')
+        .padding({ left: 16, right: 16 })
+        .maxLines(1)
+        .textAlign(TextAlign.Start)
 
       Text($r('app.string.update_nightly_summary'))
         .fontSize(14).fontColor('#FFFFFF').width('100%')
@@ -35,12 +44,16 @@ export struct UpdateDialog {
       // 按钮行
       Row() {
         Button($r('app.string.cancel'))
-          .type(ButtonType.Normal).fontColor(AppColors.orange500).backgroundColor(AppColors.transparent)
+          .type(ButtonType.Normal)
+          .fontColor(AppColors.orange500)
+          .backgroundColor(AppColors.transparent)
           .margin({ right: 16 })
           .enabled(!this.downloading)
           .onClick(() => this.onClose())
         Button(this.downloading ? 'Installing…' : $r('app.string.install'))
-          .type(ButtonType.Normal).fontColor('#FFFFFF').backgroundColor(AppColors.orange500)
+          .type(ButtonType.Normal)
+          .fontColor('#FFFFFF')
+          .backgroundColor(AppColors.orange500)
           .enabled(!this.downloading)
           .onClick(() => {
             this.downloading = true;

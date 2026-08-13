@@ -1,39 +1,18 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { PlaybackService, PlaybackListener } from '../../common/data/PlaybackService';
+import { PlaybackListener, PlaybackService } from '../../common/data/PlaybackService';
 import { Settings } from '../../common/data/Settings';
 import { MediaWrapper, PlayState } from '../../common/models/MediaModels';
 import { VideoPlayerResizeDelegate } from './VideoPlayerResizeDelegate';
+import { VideoParam, VideoPlayItem } from './VideoPlayerModels';
 
 /** 与 Native / XComponent id 一致;libraryname 对齐 nm_modname=libvlcnapi。 */
-export const VLC_VIDEO_XCOMPONENT_ID: string = 'vlc_video_surface';
-export const VLC_NAPI_LIBRARY: string = 'libvlcnapi';
-
-/** 播放队列中的一项(仅携带播放器需要的字段,避免把整个 MediaWrapper 塞进路由参数)。 */
-export interface VideoPlayItem {
-  uri: string;
-  title: string;
-}
-
-export interface VideoParam {
-  uri: string;
-  title: string;
-  /** 可选:所在列表,用于上一个/下一个。 */
-  list?: VideoPlayItem[];
-  /** 可选:uri 在 list 中的下标。 */
-  index?: number;
-}
-
-/** 播放器专用时长格式化:0 显示 00:00。 */
-export function fmtTime(ms: number): string {
-  const safe = ms > 0 ? ms : 0;
-  const totalSec = Math.floor(safe / 1000);
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  const mm = m < 10 ? `0${m}` : `${m}`;
-  const ss = s < 10 ? `0${s}` : `${s}`;
-  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
-}
+export {
+  fmtTime,
+  VLC_NAPI_LIBRARY,
+  VLC_VIDEO_XCOMPONENT_ID,
+  VideoParam,
+  VideoPlayItem,
+} from './VideoPlayerModels';
 
 /**
  * VideoPlayerViewModel —— 播放状态 / 队列 / Surface 尺寸。
@@ -59,7 +38,6 @@ export class VideoPlayerViewModel implements PlaybackListener {
   /** contain 后的 XComponent 显示尺寸 */
   @Trace surfaceWidth: number = 0;
   @Trace surfaceHeight: number = 0;
-
   uri: string = '';
   private list: VideoPlayItem[] = [];
   private listening: boolean = false;
@@ -106,7 +84,7 @@ export class VideoPlayerViewModel implements PlaybackListener {
     }
 
     const mws: MediaWrapper[] = this.list.map((it: VideoPlayItem, i: number) =>
-      new MediaWrapper(i + 1, it.title, it.uri, 0));
+    new MediaWrapper(i + 1, it.title, it.uri, 0));
     await svc.prepareList(mws, this.index, true, 'video');
     svc.setSpeed(this.speed);
     const bound = await svc.bindAndPlay(xcomponentId, this.uri, this.title);
@@ -170,22 +148,6 @@ export class VideoPlayerViewModel implements PlaybackListener {
     this.recomputeSurface();
   }
 
-  private recomputeSurface(): void {
-    const result = this.resize.computeSurface(
-      this.containerWidth,
-      this.containerHeight,
-      this.videoWidth,
-      this.videoHeight
-    );
-    this.surfaceWidth = result[0];
-    this.surfaceHeight = result[1];
-    hilog.info(0x0001, 'VLC',
-      '[VLC] contain container=%{public}sx%{public}s video=%{public}sx%{public}s surface=%{public}sx%{public}s',
-      String(this.containerWidth), String(this.containerHeight),
-      String(this.videoWidth), String(this.videoHeight),
-      String(Math.round(result[0])), String(Math.round(result[1])));
-  }
-
   async playAt(i: number): Promise<void> {
     if (i < 0 || i >= this.list.length) {
       return;
@@ -200,7 +162,7 @@ export class VideoPlayerViewModel implements PlaybackListener {
     this.state = PlayState.IDLE;
     const svc = PlaybackService.getInstance();
     const mws: MediaWrapper[] = this.list.map((it: VideoPlayItem, idx: number) =>
-      new MediaWrapper(idx + 1, it.title, it.uri, 0));
+    new MediaWrapper(idx + 1, it.title, it.uri, 0));
     await svc.prepareList(mws, i, true, 'video');
     if (this.xcomponentId.length > 0) {
       await svc.bindAndPlay(this.xcomponentId, this.uri, this.title);
@@ -274,5 +236,21 @@ export class VideoPlayerViewModel implements PlaybackListener {
       this.leaveEarly();
     }
     this.cleanUI();
+  }
+
+  private recomputeSurface(): void {
+    const result = this.resize.computeSurface(
+      this.containerWidth,
+      this.containerHeight,
+      this.videoWidth,
+      this.videoHeight
+    );
+    this.surfaceWidth = result[0];
+    this.surfaceHeight = result[1];
+    hilog.info(0x0001, 'VLC',
+      '[VLC] contain container=%{public}sx%{public}s video=%{public}sx%{public}s surface=%{public}sx%{public}s',
+      String(this.containerWidth), String(this.containerHeight),
+      String(this.videoWidth), String(this.videoHeight),
+      String(Math.round(result[0])), String(Math.round(result[1])));
   }
 }

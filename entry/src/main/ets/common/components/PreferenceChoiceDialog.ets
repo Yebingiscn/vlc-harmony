@@ -8,12 +8,10 @@ export struct PreferenceChoiceDialog {
   @Param labels: ResourceStr[] = [];
   @Param values: string[] = [];
   @Param selectedValue: string = '';
-  @Event onSelect: (value: string) => void = () => {};
-  @Event onCancel: () => void = () => {};
-
-  private valueAt(index: number): string {
-    return index >= 0 && index < this.values.length ? this.values[index] : '';
-  }
+  @Event onSelect: (value: string) => void = () => {
+  };
+  @Event onCancel: () => void = () => {
+  };
 
   build() {
     Column() {
@@ -40,7 +38,12 @@ export struct PreferenceChoiceDialog {
               }
             }
             .width('100%')
-            .padding({ left: 4, right: 4, top: 16, bottom: 16 })
+            .padding({
+              left: 4,
+              right: 4,
+              top: 16,
+              bottom: 16
+            })
             .onClick(() => this.onSelect(this.valueAt(index)))
           }
         }, (label: ResourceStr, index: number) => `${index}`)
@@ -61,5 +64,9 @@ export struct PreferenceChoiceDialog {
     .width('100%')
     .padding(20)
     .borderRadius(16)
+  }
+
+  private valueAt(index: number): string {
+    return index >= 0 && index < this.values.length ? this.values[index] : '';
   }
 }

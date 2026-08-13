@@ -18,6 +18,7 @@ export interface VideoTouchHost {
   getContainerHeight: () => number;
   getPosition: () => number;
   getDuration: () => number;
+
   /** HUD 可见时顶/底栏区域不触发单击显隐，避免与按钮抢点。 */
   isHudVisible: () => boolean;
   onVolumePan: (deltaNorm: number) => void;
@@ -35,15 +36,13 @@ export interface VideoTouchHost {
  */
 export class VideoTouchDelegate {
   isSeeking: boolean = false;
-
-  private host: VideoTouchHost | null = null;
   enableDoubleTapPlay: boolean = true;
   enableDoubleTapSeek: boolean = true;
   enableVolumeGesture: boolean = true;
   enableBrightnessGesture: boolean = true;
   enableSwipeSeek: boolean = true;
   jumpDelaySec: number = 10;
-
+  private host: VideoTouchHost | null = null;
   private panMode: VideoPanMode = VideoPanMode.None;
   private tracking: boolean = false;
   private initX: number = 0;
@@ -193,6 +192,34 @@ export class VideoTouchDelegate {
     }
   }
 
+  isPanning(): boolean {
+    return this.panMode !== VideoPanMode.None;
+  }
+
+  onPanStart(_localX: number): void {
+  }
+
+  onPanUpdate(_offsetY: number): void {
+  }
+
+  onPanEnd(): void {
+  }
+
+  seekDelta(deltaMs: number): void {
+    this.host?.seekDelta(deltaMs);
+  }
+
+  clearTouchAction(): void {
+    this.isSeeking = false;
+    this.panMode = VideoPanMode.None;
+    this.tracking = false;
+    this.lastJumpMs = 0;
+    this.cancelSingleTap();
+  }
+
+  hideSeekOverlay(): void {
+  }
+
   private shouldIgnoreSingleTapAt(localY: number): boolean {
     if (this.host === null || !this.host.isHudVisible()) {
       return false;
@@ -305,33 +332,5 @@ export class VideoTouchDelegate {
     } else if (this.panMode === VideoPanMode.Brightness) {
       this.host.onBrightnessPan(deltaNorm);
     }
-  }
-
-  isPanning(): boolean {
-    return this.panMode !== VideoPanMode.None;
-  }
-
-  onPanStart(_localX: number): void {
-  }
-
-  onPanUpdate(_offsetY: number): void {
-  }
-
-  onPanEnd(): void {
-  }
-
-  seekDelta(deltaMs: number): void {
-    this.host?.seekDelta(deltaMs);
-  }
-
-  clearTouchAction(): void {
-    this.isSeeking = false;
-    this.panMode = VideoPanMode.None;
-    this.tracking = false;
-    this.lastJumpMs = 0;
-    this.cancelSingleTap();
-  }
-
-  hideSeekOverlay(): void {
   }
 }

@@ -1,4 +1,4 @@
-import { PreferenceScreen, PreferenceGroup, PreferenceItem, PreferenceSearchEntry } from '../common/models/PreferenceModels';
+import { PreferenceScreen, PreferenceSearchEntry } from '../common/models/PreferenceModels';
 import { NavController } from '../common/data/NavController';
 import { PreferencesPage } from './PreferencesPage';
 import { PreferencesScreenParam } from '../common/models/MediaModels';
@@ -14,6 +14,27 @@ export struct PreferenceSearchPage {
   @Local query: string = '';
   @Local results: PreferenceSearchEntry[] = [];
   @Local dataset: PreferenceSearchEntry[] = [];
+
+  static flatten(registry: Map<string, PreferenceScreen>): PreferenceSearchEntry[] {
+    const out: PreferenceSearchEntry[] = [];
+    registry.forEach((screen: PreferenceScreen) => {
+      for (const g of screen.groups) {
+        for (const it of g.items) {
+          if (it.type === 'info') {
+            continue;
+          }
+          out.push(new PreferenceSearchEntry({
+            key: it.key,
+            title: it.title,
+            summary: it.summary ?? '',
+            screenKey: screen.key,
+            category: g.title,
+          }));
+        }
+      }
+    });
+    return out;
+  }
 
   aboutToAppear(): void {
     this.dataset = PreferenceSearchPage.flatten(PreferencesPage.buildScreens());
@@ -50,27 +71,6 @@ export struct PreferenceSearchPage {
     return text;
   }
 
-  static flatten(registry: Map<string, PreferenceScreen>): PreferenceSearchEntry[] {
-    const out: PreferenceSearchEntry[] = [];
-    registry.forEach((screen: PreferenceScreen) => {
-      for (const g of screen.groups) {
-        for (const it of g.items) {
-          if (it.type === 'info') {
-            continue;
-          }
-          out.push(new PreferenceSearchEntry({
-            key: it.key,
-            title: it.title,
-            summary: it.summary ?? '',
-            screenKey: screen.key,
-            category: g.title,
-          }));
-        }
-      }
-    });
-    return out;
-  }
-
   build() {
     NavDestination() {
       Column() {
@@ -97,6 +97,7 @@ export struct PreferenceSearchPage {
         .width('100%')
         .alignItems(VerticalAlign.Center)
         .padding({ top: 8, bottom: 4 })
+
         Divider().color('#424242').strokeWidth(1).margin({ top: 4 })
         // 结果列表
         List() {

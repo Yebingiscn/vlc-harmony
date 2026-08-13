@@ -2,25 +2,25 @@ export type PlayerAdvancedMenuMode = 'audio' | 'video';
 
 export type PlayerAdvancedOptionId =
   | 'lock'
-  | 'sleep'
-  | 'speed'
-  | 'jumpToTime'
-  | 'equalizer'
-  | 'playAsAudio'
-  | 'popupPlayer'
-  | 'repeat'
-  | 'videoInfo'
-  | 'bookmark'
-  | 'abRepeat'
-  | 'savePlaylist'
-  | 'videoControls'
-  | 'videoTips'
-  | 'shareTrack'
-  | 'audioControls'
-  | 'audioTips'
-  | 'playlistTips'
-  | 'audioInfo'
-  | 'goToArtist';
+    | 'sleep'
+    | 'speed'
+    | 'jumpToTime'
+    | 'equalizer'
+    | 'playAsAudio'
+    | 'popupPlayer'
+    | 'repeat'
+    | 'videoInfo'
+    | 'bookmark'
+    | 'abRepeat'
+    | 'savePlaylist'
+    | 'videoControls'
+    | 'videoTips'
+    | 'shareTrack'
+    | 'audioControls'
+    | 'audioTips'
+    | 'playlistTips'
+    | 'audioInfo'
+    | 'goToArtist';
 
 export class PlayerAdvancedOption {
   id: PlayerAdvancedOptionId;
@@ -86,7 +86,8 @@ export struct PlayerAdvancedOptions {
   @Param items: PlayerAdvancedOption[] = [];
   /** 当前激活项的 id 列表(如 repeat=激活时图标/文字变橙色)。 */
   @Param activeIds: PlayerAdvancedOptionId[] = [];
-  @Event onSelect: (id: PlayerAdvancedOptionId) => void = () => {};
+  @Event onSelect: (id: PlayerAdvancedOptionId) => void = () => {
+  };
 
   build() {
     List({ space: 0 }) {

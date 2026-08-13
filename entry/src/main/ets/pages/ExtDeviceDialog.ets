@@ -10,10 +10,14 @@ import { AppColors } from '../common/constants/AppConstants';
 @ComponentV2
 export struct ExtDeviceDialog {
   @Param scan: boolean = false;
-  @Event onClose: () => void = () => {};
-  @Event onBrowse: () => void = () => {};
-  @Event onScan: () => void = () => {};
-  @Event onCancel: () => void = () => {};
+  @Event onClose: () => void = () => {
+  };
+  @Event onBrowse: () => void = () => {
+  };
+  @Event onScan: () => void = () => {
+  };
+  @Event onCancel: () => void = () => {
+  };
 
   build() {
     Column() {
@@ -62,6 +66,7 @@ export struct ExtDeviceDialog {
     .borderRadius(3)
     .padding({ top: 10, bottom: 10 })
     .alignItems(HorizontalAlign.Center)
+
     // 注:居中浮层内容卡;由调用方 Stack 居中承载 + #99000000 遮罩。
   }
 }

@@ -9,7 +9,8 @@ import { AppColors } from '../common/constants/AppConstants';
  */
 @ComponentV2
 export struct NotificationPermissionDialog {
-  @Event onClose: () => void = () => {};
+  @Event onClose: () => void = () => {
+  };
 
   build() {
     Column() {

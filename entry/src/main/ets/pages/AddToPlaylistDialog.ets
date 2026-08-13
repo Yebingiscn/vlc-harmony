@@ -1,4 +1,3 @@
-import { AppColors } from '../common/constants/AppConstants';
 import { Playlist } from '../common/models/MediaModels';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { inputMethod } from '@kit.IMEKit';
@@ -24,77 +23,33 @@ export interface AddToPlaylistAction {
 
 @ComponentV2
 export struct AddToPlaylistDialog {
-  @Event onClose: () => void = () => {};
-  /** 保存:回调传出当前选中的歌单 id + 是否替换。 */
-  @Event onConfirm: (action: AddToPlaylistAction) => void = () => {};
-
   @Param mediaCount: number = 1;
-
-  // ── 视觉常量 ─────────────────────────────────────
   // 主题感知:浅色=白底深字,深色=深底浅字。资源定义见 base/dark element/color.json。
   readonly cPanelBg: Resource = $r('app.color.background_default');
   readonly cHeaderBg: Resource = $r('app.color.background_default');
+  // ── 视觉常量 ─────────────────────────────────────
   readonly cInputBg: Resource = $r('app.color.card_background');
   readonly cInputBorder: string = '#FF8800';
   readonly cSubtle: Resource = $r('app.color.font_light');
   readonly cDim: Resource = $r('app.color.list_subtitle');
   readonly cAccent: string = '#FF8800';
   readonly cDivider: Resource = $r('app.color.divider');
-
   @Local newName: string = '';
   @Local playlists: Playlist[] = [];
   @Local selected: Set<number> = new Set<number>();
   @Local replace: boolean = false;
   private idSeq: number = 1;
 
+  @Event onClose: () => void = () => {
+  };
+
+  /** 保存:回调传出当前选中的歌单 id + 是否替换。 */
+  @Event onConfirm: (action: AddToPlaylistAction) => void = () => {
+  };
+
   async aboutToAppear(): Promise<void> {
     await MediaLibrary.initPlaylistCache();
     this.playlists = MediaLibrary.getPlaylists();
-  }
-
-  private canCreate(): boolean {
-    return this.newName.trim().length > 0;
-  }
-
-  private canSave(): boolean {
-    return this.selected.size > 0;
-  }
-
-  private toggleSelect(id: number): void {
-    const next: Set<number> = new Set<number>(this.selected);
-    if (next.has(id)) {
-      next.delete(id);
-    } else {
-      next.add(id);
-    }
-    this.selected = next;
-  }
-
-  /**
-   * 新建:持久化到 MediaLibrary,插到列表,自动勾选,清空输入框。
-   * 不关闭弹框 —— 用户可能想连续新建。
-   */
-  private async createNew(): Promise<void> {
-    const name: string = this.newName.trim();
-    if (name.length === 0) {
-      return;
-    }
-    const p: Playlist = await MediaLibrary.createPlaylist(name);
-    this.playlists = [...this.playlists, p];
-    // 单选:新建后只勾选这一条,旧的自动取消。
-    this.selected = new Set<number>([p.id]);
-    this.newName = '';
-    // 隐藏软键盘
-    this.hideKeyboard();
-  }
-
-  /** 收起系统输入法。 */
-  private hideKeyboard(): void {
-    try {
-      inputMethod.getInputMethodController().hideTextInput();
-    } catch (e) {
-      // 异常时静默 —— 没有键盘可隐藏不影响主流程
-    }
   }
 
   // ── 顶栏 ─────────────────────────────────────────
@@ -103,7 +58,9 @@ export struct AddToPlaylistDialog {
     Row() {
       Row() {
         Image($r('app.media.ic_arrow_back'))
-          .width(28).height(28).fillColor($r('app.color.list_title'))
+          .width(28)
+          .height(28)
+          .fillColor($r('app.color.list_title'))
           .padding(2)
           .onClick(() => this.onClose())
       }
@@ -111,7 +68,9 @@ export struct AddToPlaylistDialog {
       .justifyContent(FlexAlign.Start)
 
       Text('保存到播放列表')
-        .fontSize(17).fontWeight(600).fontColor($r('app.color.list_title'))
+        .fontSize(17)
+        .fontWeight(600)
+        .fontColor($r('app.color.list_title'))
         .layoutWeight(1)
         .textAlign(TextAlign.Center)
         .maxLines(1)
@@ -152,7 +111,8 @@ export struct AddToPlaylistDialog {
           .onBlur(() => this.hideKeyboard())
 
         Text('新建')
-          .fontSize(15).fontWeight(FontWeight.Medium)
+          .fontSize(15)
+          .fontWeight(FontWeight.Medium)
           .fontColor(this.cAccent)
           .margin({ left: 16 })
           .opacity(this.canCreate() ? 1 : 0.4)
@@ -185,7 +145,8 @@ export struct AddToPlaylistDialog {
 
       Stack() {
         Row()
-          .width(20).height(20)
+          .width(20)
+          .height(20)
           .borderRadius(10)
           .backgroundColor(this.selected.has(p.id) ? this.cAccent : Color.Transparent)
           .border({
@@ -218,7 +179,12 @@ export struct AddToPlaylistDialog {
         .onChange((on: boolean) => this.replace = on)
     }
     .width('100%')
-    .padding({ left: 20, right: 20, top: 6, bottom: 8 })
+    .padding({
+      left: 20,
+      right: 20,
+      top: 6,
+      bottom: 8
+    })
     .alignItems(VerticalAlign.Center)
   }
 
@@ -226,10 +192,16 @@ export struct AddToPlaylistDialog {
   @Builder
   sectionHeader(text: ResourceStr) {
     Text(text)
-      .fontSize(15).fontWeight(FontWeight.Bold)
+      .fontSize(15)
+      .fontWeight(FontWeight.Bold)
       .fontColor($r('app.color.list_title'))
       .width('100%')
-      .padding({ left: 20, right: 20, top: 12, bottom: 4 })
+      .padding({
+        left: 20,
+        right: 20,
+        top: 12,
+        bottom: 4
+      })
   }
 
   build() {
@@ -280,7 +252,8 @@ export struct AddToPlaylistDialog {
       Row() {
         Button('保存')
           .type(ButtonType.Capsule)
-          .fontSize(15).fontWeight(FontWeight.Medium)
+          .fontSize(15)
+          .fontWeight(FontWeight.Medium)
           .backgroundColor(this.cAccent)
           .fontColor('#FFFFFF')
           .height(42)
@@ -298,7 +271,12 @@ export struct AddToPlaylistDialog {
           })
       }
       .width('100%')
-      .padding({ left: 20, right: 20, top: 8, bottom: 20 })
+      .padding({
+        left: 20,
+        right: 20,
+        top: 8,
+        bottom: 20
+      })
       .backgroundColor(this.cPanelBg)
     }
     .width('100%')
@@ -306,5 +284,52 @@ export struct AddToPlaylistDialog {
     .backgroundColor(this.cPanelBg)
     .alignItems(HorizontalAlign.Start)
     .justifyContent(FlexAlign.Start)
+  }
+
+  private canCreate(): boolean {
+    return this.newName.trim().length > 0;
+  }
+
+  private canSave(): boolean {
+    return this.selected.size > 0;
+  }
+
+  private toggleSelect(id: number): void {
+    const next: Set<number> = new Set<number>(this.selected);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    this.selected = next;
+  }
+
+  /**
+   * 新建:持久化到 MediaLibrary,插到列表,自动勾选,清空输入框。
+   * 不关闭弹框 —— 用户可能想连续新建。
+   */
+  private async createNew(): Promise<void> {
+    const name: string = this.newName.trim();
+    if (name.length === 0) {
+      return;
+    }
+    const p: Playlist = await MediaLibrary.createPlaylist(name);
+    this.playlists = [...this.playlists, p];
+    // 单选:新建后只勾选这一条,旧的自动取消。
+    this.selected = new Set<number>([p.id]);
+    this.newName = '';
+    // 隐藏软键盘
+    this.hideKeyboard();
+  }
+
+  /** 收起系统输入法。 */
+  private hideKeyboard(): void {
+    try {
+      inputMethod.getController().hideTextInput().catch(() => {
+        // No active input session.
+      });
+    } catch (e) {
+      // 异常时静默 —— 没有键盘可隐藏不影响主流程
+    }
   }
 }

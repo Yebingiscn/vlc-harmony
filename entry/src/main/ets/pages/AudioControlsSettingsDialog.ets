@@ -6,7 +6,8 @@ struct ControlToggleRow {
   @Param title: Resource = $r('app.string.audio');
   @Param summary: string = '';
   @Param checked: boolean = false;
-  @Event onToggle: (on: boolean) => void = () => {};
+  @Event onToggle: (on: boolean) => void = () => {
+  };
 
   build() {
     Row() {
@@ -32,7 +33,12 @@ struct ControlToggleRow {
         .onChange((on: boolean) => this.onToggle(on))
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+    .padding({
+      left: 16,
+      right: 16,
+      top: 12,
+      bottom: 12
+    })
     .alignItems(VerticalAlign.Center)
   }
 }
@@ -45,12 +51,13 @@ struct ControlToggleRow {
  */
 @ComponentV2
 export struct AudioControlsSettingsDialog {
-  @Event onClose: () => void = () => {};
-
   @Local forcePlayAllAudio: boolean = false;
   @Local forceShuffle: boolean = false;
   @Local resumeOnHeadset: boolean = false;
   @Local headsetControls: boolean = true;
+
+  @Event onClose: () => void = () => {
+  };
 
   aboutToAppear(): void {
     // TODO(契约): 从 Settings 读默认值(force_play_all_audio / force_shuffle / resume_on_headset / headset_controls 等 key)。
@@ -107,8 +114,13 @@ export struct AudioControlsSettingsDialog {
       })
 
       Button($r('app.string.ok'))
-        .type(ButtonType.Normal).borderRadius(4).backgroundColor(AppColors.orange500).fontColor('#FFFFFF')
-        .width('80%').onClick(() => this.onClose()).margin({ top: 16, bottom: 24 })
+        .type(ButtonType.Normal)
+        .borderRadius(4)
+        .backgroundColor(AppColors.orange500)
+        .fontColor('#FFFFFF')
+        .width('80%')
+        .onClick(() => this.onClose())
+        .margin({ top: 16, bottom: 24 })
     }
     .width('100%')
     .backgroundColor($r('app.color.background_default'))

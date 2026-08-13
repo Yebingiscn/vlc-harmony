@@ -15,15 +15,27 @@ export struct BackTitleBar {
   build() {
     Row() {
       Image($r('app.media.ic_arrow_back'))
-        .width(24).height(24).fillColor($r('app.color.list_title'))
+        .width(24)
+        .height(24)
+        .fillColor($r('app.color.list_title'))
         .margin({ left: 4 })
         .onClick(() => this.onBack())
       Text(this.title)
-        .fontSize(20).fontColor($r('app.color.list_title')).fontWeight(FontWeight.Bold)
-        .layoutWeight(1).margin({ left: 8 }).maxLines(1)
+        .fontSize(20)
+        .fontColor($r('app.color.list_title'))
+        .fontWeight(FontWeight.Bold)
+        .layoutWeight(1)
+        .margin({ left: 8 })
+        .maxLines(1)
     }
-    .width('100%').height(56)
-    .padding({ left: 4, right: 4, top: 32, bottom: 8 })
+    .width('100%')
+    .height(56)
+    .padding({
+      left: 4,
+      right: 4,
+      top: 32,
+      bottom: 8
+    })
     .backgroundColor($r('app.color.background_actionbar'))
     .alignItems(VerticalAlign.Center)
   }

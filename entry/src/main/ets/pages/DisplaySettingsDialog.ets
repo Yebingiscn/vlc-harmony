@@ -94,8 +94,6 @@ struct SortItem {
 
 @ComponentV2
 export struct DisplaySettingsDialog {
-  @Event onClose: () => void = () => {
-  };
   @Local displayInCards: boolean = false;
   @Local onlyFavs: boolean = false;
   @Local currentSort: number = 1;
@@ -111,6 +109,9 @@ export struct DisplaySettingsDialog {
     new SortMeta(4, '轨道编号', '视频较多的群组优先', '视频较少的群组优先', $r('app.media.ic_sort_track')),
     new SortMeta(5, '插入时间', '最旧的优先', '最新的优先', $r('app.media.ic_medialibrary_date')),
   ];
+
+  @Event onClose: () => void = () => {
+  };
 
   async aboutToAppear(): Promise<void> {
     const cards = await Settings.getBoolean(Settings.KEY_VIDEOS_CARDS, true);

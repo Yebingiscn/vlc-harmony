@@ -10,10 +10,14 @@ import { AppColors } from '../common/constants/AppConstants';
 @ComponentV2
 export struct DeviceDialog {
   @Param scan: boolean = false;
-  @Event onClose: () => void = () => {};
-  @Event onBrowse: () => void = () => {};
-  @Event onScan: () => void = () => {};
-  @Event onCancel: () => void = () => {};
+  @Event onClose: () => void = () => {
+  };
+  @Event onBrowse: () => void = () => {
+  };
+  @Event onScan: () => void = () => {
+  };
+  @Event onCancel: () => void = () => {
+  };
 
   build() {
     Column() {
@@ -68,6 +72,7 @@ export struct DeviceDialog {
     .borderRadius(12)
     .padding({ top: 8, bottom: 8 })
     .alignItems(HorizontalAlign.Center)
+
     // 注:本组件为居中浮层内容卡(非贴底 BottomSheet);由调用方 bindSheet/Stack 居中承载 + 遮罩。
   }
 }

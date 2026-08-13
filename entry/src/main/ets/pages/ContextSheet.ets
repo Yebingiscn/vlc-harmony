@@ -1,11 +1,11 @@
-import { AppColors } from '../common/constants/AppConstants';
 import { SheetItem } from '../common/models/MediaModels';
 
 /** 上下文动作行:24vp 图标(grey900 fill)+ 18fp 标题,minHeight 48vp,整行可点。 */
 @ComponentV2
 struct ContextItem {
   @Param item: SheetItem = new SheetItem('');
-  @Event onItemClick: () => void = () => {};
+  @Event onItemClick: () => void = () => {
+  };
 
   build() {
     Row() {
@@ -44,8 +44,10 @@ export struct ContextSheet {
   @Param title: string = '';
   @Param cover: Resource = $r('app.media.ic_empty');
   @Param menuItems: SheetItem[] = [];
-  @Event onClose: () => void = () => {};
-  @Event onItemClick: (index: number) => void = () => {};
+  @Event onClose: () => void = () => {
+  };
+  @Event onItemClick: (index: number) => void = () => {
+  };
 
   onItemTap(index: number): void {
     this.onItemClick(index);
@@ -58,7 +60,8 @@ export struct ContextSheet {
       if (this.showCover) {
         Row() {
           Image(this.cover)
-            .width(48).height(48)
+            .width(48)
+            .height(48)
             .borderRadius(4)
             .objectFit(ImageFit.Cover)
             .margin(8)

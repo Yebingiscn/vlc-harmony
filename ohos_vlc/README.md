@@ -5,15 +5,15 @@
 
 ## 补丁列表（按应用顺序）
 
-| 补丁 | 内容 |
-|------|------|
-| `0001-avcodec-respect-disabled-hardware-decoding.patch` | avcodec 解码器尊重 `:avcodec-hw=none`（禁硬解时不再尝试硬件） |
-| `0002-avcodec-fallback-to-software-on-hw-start-failure.patch` | 硬解启动失败回退软解 |
-| `0003-vcd-mode1-2048-iso.patch` | VCD access 支持 CUE `MODE1/2048` 的 ISO9660 镜像（修复 2352/2048 扇区错位花屏） |
-| `0004-bluray-seek-fix.patch` | libbluray seek 定位修复 |
-| `0005-vcd-iso9660-no-cue.patch` | VCD 无 .cue 时自动解析 ISO9660 定位 `MPEGAV/AVSEQ*.DAT` 作为视频轨（单文件播放） |
-| `vlc-hpkbuild-apply-local-patches.patch` | 修改 HPKBUILD 的 `prepare()`，自动应用上面 0001–0005 |
-| `vlc-hpkbuild-build-dvbpsi.patch` | 修改 HPKBUILD 构建 dvbpsi 依赖 |
+| 补丁                                                            | 内容                                                               |
+|---------------------------------------------------------------|------------------------------------------------------------------|
+| `0001-avcodec-respect-disabled-hardware-decoding.patch`       | avcodec 解码器尊重 `:avcodec-hw=none`（禁硬解时不再尝试硬件）                     |
+| `0002-avcodec-fallback-to-software-on-hw-start-failure.patch` | 硬解启动失败回退软解                                                       |
+| `0003-vcd-mode1-2048-iso.patch`                               | VCD access 支持 CUE `MODE1/2048` 的 ISO9660 镜像（修复 2352/2048 扇区错位花屏） |
+| `0004-bluray-seek-fix.patch`                                  | libbluray seek 定位修复                                              |
+| `0005-vcd-iso9660-no-cue.patch`                               | VCD 无 .cue 时自动解析 ISO9660 定位 `MPEGAV/AVSEQ*.DAT` 作为视频轨（单文件播放）     |
+| `vlc-hpkbuild-apply-local-patches.patch`                      | 修改 HPKBUILD 的 `prepare()`，自动应用上面 0001–0005                       |
+| `vlc-hpkbuild-build-dvbpsi.patch`                             | 修改 HPKBUILD 构建 dvbpsi 依赖                                         |
 
 ## 应用方式
 

@@ -1,6 +1,5 @@
-import { VlcToolbar } from '../common/components/VlcToolbar';
 import { NavController } from '../common/data/NavController';
-import { MediaWrapper, MediaInfoItem, formatDuration, formatSize } from '../common/models/MediaModels';
+import { formatDuration, formatSize, MediaInfoItem } from '../common/models/MediaModels';
 import { AppColors } from '../common/constants/AppConstants';
 import { VideoParam } from './VideoPlayerPage';
 import { hilog } from '@kit.PerformanceAnalysisKit';
@@ -51,9 +50,16 @@ export struct InfoPage {
             }).align(Alignment.Bottom)
             if (this.resolution.length > 0) {
               Text(this.resolution)
-                .fontSize(10).fontColor('#FFFFFF')
+                .fontSize(10)
+                .fontColor('#FFFFFF')
                 .backgroundColor($r('app.color.rounded_corners_black_more_transparent'))
-                .borderRadius(5).padding({ left: 4, top: 2, right: 4, bottom: 2 })
+                .borderRadius(5)
+                .padding({
+                  left: 4,
+                  top: 2,
+                  right: 4,
+                  bottom: 2
+                })
                 .margin({ left: 12, top: 60 })
                 .align(Alignment.TopStart)
             }
@@ -66,7 +72,12 @@ export struct InfoPage {
             Column() {
               Text(this.title)
                 .fontSize(20).fontColor('#FFFFFF').fontWeight(FontWeight.Bold)
-                .margin({ left: 16, right: 16, top: 16, bottom: 8 })
+                .margin({
+                  left: 16,
+                  right: 16,
+                  top: 16,
+                  bottom: 8
+                })
               List() {
                 ForEach(this.infoItems, (it: MediaInfoItem) => {
                   ListItem() {
@@ -78,7 +89,12 @@ export struct InfoPage {
                   }
                 }, (it: MediaInfoItem, idx: number) => `${idx}`)
               }
-              .divider({ strokeWidth: 0.5, color: $r('app.color.divider'), startMargin: 16, endMargin: 16 })
+              .divider({
+                strokeWidth: 0.5,
+                color: $r('app.color.divider'),
+                startMargin: 16,
+                endMargin: 16
+              })
               .width('100%')
             }
             .width('100%')

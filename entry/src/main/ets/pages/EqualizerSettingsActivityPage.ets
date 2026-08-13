@@ -1,7 +1,7 @@
+import { UiFeedback } from '../common/utils/UiFeedback';
 import { NavController } from '../common/data/NavController';
 import { AppColors, AppDimens } from '../common/constants/AppConstants';
 import { EqualizerPreset } from '../common/models/MediaModels';
-import { promptAction } from '@kit.ArkUI';
 
 /** 点击类型(对应 EqualizerSettingsAdapter.ClickType)。 */
 export enum EqClickType {
@@ -100,11 +100,11 @@ export struct EqualizerSettingsActivityPage {
       case EqClickType.EQUALIZER_DELETE:
         // TODO(契约): vm.delete(item) + 撤销 snackbar(equalizer_deleted/undo)
         this.vm.entries = this.vm.entries.filter((e: EqualizerEntry) => e.id !== item.id);
-        promptAction.showToast({ message: 'The equalizer has been deleted' });
+        UiFeedback.showToast({ message: 'The equalizer has been deleted' });
         break;
       case EqClickType.EQUALIZER_EXPORT:
         // TODO(契约): vm.export(item)(生成 vlc_<name>.json 写公共目录 + share)
-        promptAction.showToast({ message: 'Export equalizer' });
+        UiFeedback.showToast({ message: 'Export equalizer' });
         break;
       default:
         break;
@@ -169,7 +169,12 @@ export struct EqualizerSettingsActivityPage {
     Row() {
       // 左:缩略图(40dp,叠当前项对勾)
       Stack() {
-        EqualizerThumbnail({ bands: item.bands, isCustom: item.presetIndex === -1, strokeColor: this.strokeColor, customColor: this.customColor })
+        EqualizerThumbnail({
+          bands: item.bands,
+          isCustom: item.presetIndex === -1,
+          strokeColor: this.strokeColor,
+          customColor: this.customColor
+        })
         if (item.id === this.vm.currentId) {
           Stack() {
             Image($r('app.media.ic_check_large_white'))
@@ -205,7 +210,8 @@ export struct EqualizerSettingsActivityPage {
             .height(24)
             .fillColor(AppColors.grey600)
             .padding(12)
-            .margin({ right: AppDimens.default_margin, top: AppDimens.default_margin, bottom: AppDimens.default_margin })
+            .margin(
+              { right: AppDimens.default_margin, top: AppDimens.default_margin, bottom: AppDimens.default_margin })
             .onClick(() => this.onItemClick(item, EqClickType.EQUALIZER_DISABLE))
         }
         // enable(可见:!current && presetIndex!=-1 && isDisabled)— ic_invisible
@@ -215,7 +221,8 @@ export struct EqualizerSettingsActivityPage {
             .height(24)
             .fillColor(AppColors.grey600)
             .padding(12)
-            .margin({ right: AppDimens.default_margin, top: AppDimens.default_margin, bottom: AppDimens.default_margin })
+            .margin(
+              { right: AppDimens.default_margin, top: AppDimens.default_margin, bottom: AppDimens.default_margin })
             .onClick(() => this.onItemClick(item, EqClickType.EQUALIZER_ENABLE))
         }
         // delete(可见:!current && presetIndex==-1)— ic_delete
@@ -276,7 +283,7 @@ export struct EqualizerSettingsActivityPage {
             .padding(12)
             .onClick(() => {
               // TODO(契约): EqualizerFragmentDialog().show("equalizer")
-              promptAction.showToast({ message: 'Show equalizer' });
+              UiFeedback.showToast({ message: 'Show equalizer' });
             })
           // equalizer_import → FilePickerActivity(code=10000)
           Image($r('app.media.ic_import'))
@@ -286,7 +293,7 @@ export struct EqualizerSettingsActivityPage {
             .padding(12)
             .onClick(() => {
               // TODO(契约): startActivityForResult(FilePickerActivity, PickerType.EQUALIZER, code=10000)
-              promptAction.showToast({ message: 'Import equalizer' });
+              UiFeedback.showToast({ message: 'Import equalizer' });
             })
         }
         .width('100%')

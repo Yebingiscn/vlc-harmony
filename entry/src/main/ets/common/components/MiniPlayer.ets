@@ -1,5 +1,5 @@
 import { PlayState } from '../models/MediaModels';
-import { PlaybackService, PlaybackState, PlaybackListener } from '../data/PlaybackService';
+import { PlaybackListener, PlaybackService, PlaybackState } from '../data/PlaybackService';
 import { NavController } from '../data/NavController';
 
 const AUDIO_EXTS = ['.mp3', '.flac', '.ogg', '.wav', '.aac', '.m4a', '.wma', '.opus'];
@@ -35,6 +35,7 @@ export struct MiniPlayer {
     this.vm.onChange(s);
     PlaybackService.addListener(this.vm);
   }
+
   aboutToDisappear(): void {
     PlaybackService.removeListener(this.vm);
   }
@@ -44,17 +45,27 @@ export struct MiniPlayer {
       Column() {
         Row() {
           Text(this.vm.title)
-            .fontSize(14).fontColor($r('app.color.list_title')).maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1)
+            .fontSize(14)
+            .fontColor($r('app.color.list_title'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
             .margin({ left: 16, right: 8 })
 
           Image(this.vm.state === PlayState.PLAYING ? $r('app.media.ic_pause_player') : $r('app.media.ic_play_player'))
-            .width(32).height(32).objectFit(ImageFit.Contain).fillColor($r('app.color.list_title'))
+            .width(32)
+            .height(32)
+            .objectFit(ImageFit.Contain)
+            .fillColor($r('app.color.list_title'))
             .margin({ right: 8 })
             .onClick(() => PlaybackService.togglePlay())
 
-          Image($r('app.media.ic_player_next')).width(32).height(32)
-            .objectFit(ImageFit.Contain).fillColor($r('app.color.list_title')).margin({ right: 16 })
+          Image($r('app.media.ic_player_next'))
+            .width(32)
+            .height(32)
+            .objectFit(ImageFit.Contain)
+            .fillColor($r('app.color.list_title'))
+            .margin({ right: 16 })
             .onClick(() => PlaybackService.next())
         }
         .width('100%').height(48).alignItems(VerticalAlign.Center)

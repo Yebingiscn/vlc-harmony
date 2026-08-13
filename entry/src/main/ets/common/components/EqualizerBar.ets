@@ -8,7 +8,8 @@ export struct EqualizerBar {
   @Param value: number = 0; // dB,默认 0
   @Param min: number = -20;
   @Param max: number = 20;
-  @Event onChange: (v: number) => void = () => {};
+  @Event onChange: (v: number) => void = () => {
+  };
 
   build() {
     Column() {

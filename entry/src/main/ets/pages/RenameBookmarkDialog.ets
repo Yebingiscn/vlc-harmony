@@ -6,17 +6,18 @@ import { AppColors } from '../common/constants/AppConstants';
  */
 @ComponentV2
 export struct RenameBookmarkDialog {
-  @Event onClose: () => void = () => {};
-  @Event onConfirm: (newName: string) => void = () => {};
-
   @Param initialName: string = '';
-
   @Local input: string = '';
-
   readonly cCardBg: string = '#1C1C1C';
   readonly cInputBg: string = '#262626';
   readonly cSubtle: string = '#9E9E9E';
   readonly cCancelBg: string = '#2A2A2A';
+
+  @Event onClose: () => void = () => {
+  };
+
+  @Event onConfirm: (newName: string) => void = () => {
+  };
 
   aboutToAppear(): void {
     this.input = this.initialName;
@@ -32,9 +33,16 @@ export struct RenameBookmarkDialog {
     Column() {
       // 标题
       Text('重命名书签')
-        .fontSize(19).fontWeight(600).fontColor('#FFFFFF')
+        .fontSize(19)
+        .fontWeight(600)
+        .fontColor('#FFFFFF')
         .width('100%')
-        .padding({ left: 20, right: 20, top: 16, bottom: 12 })
+        .padding({
+          left: 20,
+          right: 20,
+          top: 16,
+          bottom: 12
+        })
         .textAlign(TextAlign.Start)
 
       Text('留空将显示为「书签 N」')
@@ -61,7 +69,8 @@ export struct RenameBookmarkDialog {
       Row({ space: 10 }) {
         Button('取消')
           .type(ButtonType.Capsule)
-          .fontSize(16).fontWeight(FontWeight.Medium)
+          .fontSize(16)
+          .fontWeight(FontWeight.Medium)
           .backgroundColor(this.cCancelBg)
           .fontColor('#E0E0E0')
           .height(46)
@@ -69,7 +78,8 @@ export struct RenameBookmarkDialog {
           .onClick(() => this.onClose())
         Button('保存')
           .type(ButtonType.Capsule)
-          .fontSize(16).fontWeight(FontWeight.Medium)
+          .fontSize(16)
+          .fontWeight(FontWeight.Medium)
           .backgroundColor(AppColors.orange500)
           .fontColor('#FFFFFF')
           .height(46)
@@ -77,7 +87,12 @@ export struct RenameBookmarkDialog {
           .onClick(() => this.confirm())
       }
       .width('100%')
-      .padding({ left: 20, right: 20, top: 20, bottom: 24 })
+      .padding({
+        left: 20,
+        right: 20,
+        top: 20,
+        bottom: 24
+      })
     }
     .width('100%')
     .backgroundColor(this.cCardBg)

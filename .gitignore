@@ -66,3 +66,9 @@ oh_modules
 # Signing material (private keys, certs) - never commit
 sign/
 sign/**
+
+# Machine-local HarmonyOS signing configuration
+build-profile.local.json5
+*.p12
+*.p7b
+*.cer

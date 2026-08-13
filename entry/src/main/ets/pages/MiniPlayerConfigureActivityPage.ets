@@ -1,7 +1,7 @@
+import { UiFeedback } from '../common/utils/UiFeedback';
 import { NavController } from '../common/data/NavController';
 import { AppColors, AppDimens } from '../common/constants/AppConstants';
 import { Settings } from '../common/data/Settings';
-import { promptAction } from '@kit.ArkUI';
 
 /** MiniPlayer 配置入参(EXTRA_APPWIDGET_ID)。 */
 export class MiniPlayerConfigureParam {
@@ -12,6 +12,7 @@ export class MiniPlayerConfigureParam {
 export class WidgetThemeEntry {
   label: string;
   value: number;
+
   constructor(label: string, value: number) {
     this.label = label;
     this.value = value;
@@ -38,7 +39,6 @@ export class WidgetVM {
   @Trace rewindDelay: number = 10;
   @Trace showConfigure: boolean = false;
   @Trace previewPlaying: boolean = true;
-
   readonly themeEntries: WidgetThemeEntry[] = [
     new WidgetThemeEntry('Palette (pulls colors from the media cover)', 1),
     new WidgetThemeEntry('Custom', 2),
@@ -79,6 +79,7 @@ export struct MiniPlayerConfigureActivityPage {
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
+
       Toggle({ type: ToggleType.Switch, isOn: isOn })
         .onChange((c: boolean) => onChange(c))
     }
@@ -100,7 +101,13 @@ export struct MiniPlayerConfigureActivityPage {
           .fontColor(AppColors.grey700)
       }
       .width('100%')
-      Slider({ value: value, min: 0, max: 100, step: 1 })
+
+      Slider({
+        value: value,
+        min: 0,
+        max: 100,
+        step: 1
+      })
         .blockColor(AppColors.orange800)
         .selectedColor(AppColors.orange800)
         .width('100%')
@@ -126,6 +133,7 @@ export struct MiniPlayerConfigureActivityPage {
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
+
       Image($r('app.media.ic_chevron_right'))
         .width(24)
         .height(24)
@@ -159,7 +167,7 @@ export struct MiniPlayerConfigureActivityPage {
             .margin({ right: AppDimens.default_margin })
             .onClick(() => {
               // TODO(契约): WidgetExplanationDialog().show("fragment_widget_explanation")(3 步引导)
-              promptAction.showToast({ message: 'Widget explanation' });
+              UiFeedback.showToast({ message: 'Widget explanation' });
             })
           // widget_configure_done → onMenuDone() 后 finish()
           Image($r('app.media.ic_check'))
@@ -210,7 +218,12 @@ export struct MiniPlayerConfigureActivityPage {
             }
             .alignItems(HorizontalAlign.Start)
             .backgroundColor(AppColors.grey200)
-            .padding({ left: AppDimens.kl_normal, top: AppDimens.default_margin, right: AppDimens.kl_normal, bottom: AppDimens.default_margin })
+            .padding({
+              left: AppDimens.kl_normal,
+              top: AppDimens.default_margin,
+              right: AppDimens.kl_normal,
+              bottom: AppDimens.default_margin
+            })
             .margin({ top: 24, right: AppDimens.kl_normal })
             .borderRadius(8)
 
@@ -221,22 +234,35 @@ export struct MiniPlayerConfigureActivityPage {
                 .fontColor(AppColors.orange800)
                 .margin({ top: AppDimens.kl_normal, bottom: AppDimens.half_default_margin })
               this.NavRow($r('app.string.widget_theme'), this.vm.themeEntries[this.vm.theme].label, () => {
-                promptAction.showToast({ message: 'Choose widget theme' });
+                UiFeedback.showToast({ message: 'Choose widget theme' });
               })
               this.NavRow($r('app.string.widget_type'), this.vm.typeEntries[this.vm.widgetType], () => {
-                promptAction.showToast({ message: 'Choose widget type' });
+                UiFeedback.showToast({ message: 'Choose widget type' });
               })
               if (this.vm.theme !== 2) {
-                this.ToggleRow($r('app.string.light_theme'), '', this.vm.lightTheme, (c: boolean) => { this.vm.lightTheme = c; })
+                this.ToggleRow($r('app.string.light_theme'), '', this.vm.lightTheme, (c: boolean) => {
+                  this.vm.lightTheme = c;
+                })
               }
-              this.SliderRow($r('app.string.opacity'), this.vm.opacity, (v: number) => { this.vm.opacity = v; })
+              this.SliderRow($r('app.string.opacity'), this.vm.opacity, (v: number) => {
+                this.vm.opacity = v;
+              })
               if (this.vm.theme === 2) {
-                this.NavRow($r('app.string.widget_background'), this.vm.backgroundColor, () => promptAction.showToast({ message: 'Pick background color' }))
-                this.NavRow($r('app.string.widget_foreground'), this.vm.foregroundColor, () => promptAction.showToast({ message: 'Pick foreground color' }))
+                this.NavRow($r('app.string.widget_background'), this.vm.backgroundColor,
+                  () => UiFeedback.showToast({ message: 'Pick background color' }))
+                this.NavRow($r('app.string.widget_foreground'), this.vm.foregroundColor,
+                  () => UiFeedback.showToast({ message: 'Pick foreground color' }))
               }
-              this.ToggleRow($r('app.string.widget_show_cover'), '', this.vm.showCover, (c: boolean) => { this.vm.showCover = c; })
-              this.ToggleRow($r('app.string.widget_show_seek'), '', this.vm.showSeek, (c: boolean) => { this.vm.showSeek = c; })
-              this.ToggleRow($r('app.string.widget_show_configure'), $r('app.string.widget_show_configure_summary'), this.vm.showConfigure, (c: boolean) => { this.vm.showConfigure = c; })
+              this.ToggleRow($r('app.string.widget_show_cover'), '', this.vm.showCover, (c: boolean) => {
+                this.vm.showCover = c;
+              })
+              this.ToggleRow($r('app.string.widget_show_seek'), '', this.vm.showSeek, (c: boolean) => {
+                this.vm.showSeek = c;
+              })
+              this.ToggleRow($r('app.string.widget_show_configure'), $r('app.string.widget_show_configure_summary'),
+                this.vm.showConfigure, (c: boolean) => {
+                  this.vm.showConfigure = c;
+                })
             }
             .width('100%')
             .padding({ left: AppDimens.kl_normal, right: AppDimens.kl_normal })

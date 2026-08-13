@@ -1,4 +1,3 @@
-import { AppColors } from '../common/constants/AppConstants';
 
 /**
  * JumpToTimeDialog —— 「跳转至时间」弹窗。
@@ -12,9 +11,6 @@ import { AppColors } from '../common/constants/AppConstants';
 
 @ComponentV2
 export struct JumpToTimeDialog {
-  @Event onClose: () => void = () => {};
-  @Event onConfirm: (timeMs: number) => void = () => {};
-
   // 主题感知:浅色=白底深字,深色=深底浅字。资源定义见 base/dark element/color.json。
   readonly cPanelBg: Resource = $r('app.color.background_default');
   readonly cHeaderBg: Resource = $r('app.color.background_default');
@@ -23,18 +19,15 @@ export struct JumpToTimeDialog {
   readonly cKeyBg: Resource = $r('app.color.background_default_darker');
   readonly cDim: Resource = $r('app.color.list_subtitle');
   readonly cSubtle: Resource = $r('app.color.font_light');
-
   @Local pickedRawTime: string = '';
   @Local formatTime: string = '';
   readonly maxTimeSize: number = 6;
 
-  private parts(): string[] {
-    const raw: string = this.pickedRawTime;
-    const seconds: string = raw.length > 2 ? raw.substring(raw.length - 2) : raw;
-    const minutes: string = raw.length > 2 ? raw.substring(Math.max(0, raw.length - 4), raw.length - 2) : '';
-    const hours: string = raw.length > 4 ? raw.substring(0, raw.length - 4) : '';
-    return [hours, minutes, seconds];
-  }
+  @Event onClose: () => void = () => {
+  };
+
+  @Event onConfirm: (timeMs: number) => void = () => {
+  };
 
   updateValue(value: string): void {
     if (value.length > 0 && this.pickedRawTime.length + value.length > this.maxTimeSize) {
@@ -45,9 +38,15 @@ export struct JumpToTimeDialog {
     }
     const p: string[] = this.parts();
     let out: string = '';
-    if (p[0].length > 0) { out = out + `${p[0]}h `; }
-    if (p[1].length > 0) { out = out + `${p[1]}m `; }
-    if (p[2].length > 0) { out = out + `${p[2]}s`; }
+    if (p[0].length > 0) {
+      out = out + `${p[0]}h `;
+    }
+    if (p[1].length > 0) {
+      out = out + `${p[1]}m `;
+    }
+    if (p[2].length > 0) {
+      out = out + `${p[2]}s`;
+    }
     this.formatTime = out.trim();
   }
 
@@ -91,12 +90,14 @@ export struct JumpToTimeDialog {
       // 顶栏
       Row() {
         Image($r('app.media.ic_arrow_back'))
-          .width(28).height(28)
+          .width(28)
+          .height(28)
           .fillColor($r('app.color.list_title'))
           .padding(2)
           .onClick(() => this.onClose())
         Text('跳转至时间')
-          .fontSize(18).fontWeight(600)
+          .fontSize(18)
+          .fontWeight(600)
           .fontColor($r('app.color.list_title'))
           .layoutWeight(1)
           .textAlign(TextAlign.Center)
@@ -115,7 +116,8 @@ export struct JumpToTimeDialog {
           .fontSize(28).fontWeight(FontWeight.Bold)
           .fontColor(this.formatTime.length > 0 ? $r('app.color.list_title') : this.cDim)
         Image($r('app.media.ic_backspace'))
-          .width(26).height(26)
+          .width(26)
+          .height(26)
           .fillColor(this.pickedRawTime.length > 0 ? $r('app.color.list_title') : $r('app.color.font_light'))
           .margin({ left: 12 })
           .onClick(() => this.deleteLastNumber())
@@ -130,13 +132,32 @@ export struct JumpToTimeDialog {
 
       // 键盘
       Column({ space: 8 }) {
-        Row({ space: 8 }) { this.numKey('1', '1'); this.numKey('2', '2'); this.numKey('3', '3'); }
+        Row({ space: 8 }) {
+          this.numKey('1', '1');
+          this.numKey('2', '2');
+          this.numKey('3', '3');
+        }
         .width('100%')
-        Row({ space: 8 }) { this.numKey('4', '4'); this.numKey('5', '5'); this.numKey('6', '6'); }
+
+        Row({ space: 8 }) {
+          this.numKey('4', '4');
+          this.numKey('5', '5');
+          this.numKey('6', '6');
+        }
         .width('100%')
-        Row({ space: 8 }) { this.numKey('7', '7'); this.numKey('8', '8'); this.numKey('9', '9'); }
+
+        Row({ space: 8 }) {
+          this.numKey('7', '7');
+          this.numKey('8', '8');
+          this.numKey('9', '9');
+        }
         .width('100%')
-        Row({ space: 8 }) { this.numKey(':00', '00'); this.numKey('0', '0'); this.numKey(':30', '30'); }
+
+        Row({ space: 8 }) {
+          this.numKey(':00', '00');
+          this.numKey('0', '0');
+          this.numKey(':30', '30');
+        }
         .width('100%')
       }
       .width('100%')
@@ -146,14 +167,20 @@ export struct JumpToTimeDialog {
       // 确定按钮
       Button('确定')
         .type(ButtonType.Capsule)
-        .fontSize(16).fontWeight(FontWeight.Medium)
+        .fontSize(16)
+        .fontWeight(FontWeight.Medium)
         .backgroundColor(this.cAccent)
         .fontColor('#FFFFFF')
         .width('100%')
         .height(46)
         .enabled(this.canConfirm())
         .opacity(this.canConfirm() ? 1 : 0.4)
-        .margin({ left: 20, right: 20, top: 20, bottom: 28 })
+        .margin({
+          left: 20,
+          right: 20,
+          top: 20,
+          bottom: 28
+        })
         .onClick(() => {
           this.onConfirm(this.getTimeInMillis());
           this.onClose();
@@ -162,5 +189,13 @@ export struct JumpToTimeDialog {
     .width('100%')
     .backgroundColor(this.cPanelBg)
     .borderRadius({ topLeft: 20, topRight: 20 })
+  }
+
+  private parts(): string[] {
+    const raw: string = this.pickedRawTime;
+    const seconds: string = raw.length > 2 ? raw.substring(raw.length - 2) : raw;
+    const minutes: string = raw.length > 2 ? raw.substring(Math.max(0, raw.length - 4), raw.length - 2) : '';
+    const hours: string = raw.length > 4 ? raw.substring(0, raw.length - 4) : '';
+    return [hours, minutes, seconds];
   }
 }

@@ -1,5 +1,5 @@
+import { UiFeedback } from '../../common/utils/UiFeedback';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { promptAction } from '@kit.ArkUI';
 
 /**
  * VideoPlayerResizeDelegate —— 对齐 Android VideoPlayerResizeDelegate。
@@ -45,7 +45,7 @@ export class VideoPlayerResizeDelegate {
   /** 对齐 Android showResizeOverlay —— 宽高比面板尚未实现。 */
   showResizeOverlay(): void {
     hilog.info(0x0001, 'VLC', '[VLC] ResizeDelegate.showResizeOverlay (stub)');
-    promptAction.showToast({ message: 'Aspect ratio is not available yet' });
+    UiFeedback.showToast({ message: 'Aspect ratio is not available yet' });
   }
 
   hideResizeOverlay(): void {

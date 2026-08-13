@@ -1,15 +1,15 @@
 import {
-  equalizerGetPresetCount,
-  equalizerGetPresetName,
-  equalizerGetBandCount,
-  equalizerGetBandFrequency,
   equalizerCreate,
   equalizerCreateFromPreset,
-  equalizerRelease,
-  equalizerSetPreAmp,
-  equalizerGetPreAmp,
-  equalizerSetAmp,
   equalizerGetAmp,
+  equalizerGetBandCount,
+  equalizerGetBandFrequency,
+  equalizerGetPreAmp,
+  equalizerGetPresetCount,
+  equalizerGetPresetName,
+  equalizerRelease,
+  equalizerSetAmp,
+  equalizerSetPreAmp,
 } from 'libvlcnapi.so';
 import { VLCObject } from './VLCObject';
 

@@ -2,13 +2,16 @@
  * videoplayer 模块再导出 —— 对齐 Android gui/video 包边界。
  */
 export {
+  VideoPlayerViewModel,
+} from './VideoPlayerViewModel';
+
+export {
   VLC_VIDEO_XCOMPONENT_ID,
   VLC_NAPI_LIBRARY,
   VideoPlayItem,
   VideoParam,
   fmtTime,
-  VideoPlayerViewModel,
-} from './VideoPlayerViewModel';
+} from './VideoPlayerModels';
 
 export { fitContain, VideoPlayerResizeDelegate } from './VideoPlayerResizeDelegate';
 
@@ -25,8 +28,13 @@ export {
 } from './VideoPlayerControls';
 
 export { VideoTouchDelegate } from './VideoTouchDelegate';
+
 export { VideoDelayDelegate } from './VideoDelayDelegate';
+
 export { VideoPlayerOrientationDelegate } from './VideoPlayerOrientationDelegate';
+
 export { VideoPlayerScreenshotDelegate } from './VideoPlayerScreenshotDelegate';
+
 export { VideoTipsDelegate } from './VideoTipsDelegate';
+
 export { VideoStatsDelegate } from './VideoStatsDelegate';

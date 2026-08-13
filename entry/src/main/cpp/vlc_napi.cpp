@@ -1556,6 +1556,30 @@ napi_value MediaPlayerSetScale(napi_env env, napi_callback_info info)
     return nullptr;
 }
 
+napi_value MediaPlayerSetAspectRatio(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value argv[2];
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    uint32_t h = 0;
+    if (argc < 2 || !GetU32(env, argv[0], &h)) {
+        return nullptr;
+    }
+    const std::string aspect = GetString(env, argv[1]);
+    libvlc_media_player_t *mp = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(g_mtx);
+        PlayerEntry *pe = FindPlayerLocked(h);
+        if (pe != nullptr && pe->mp != nullptr) {
+            mp = pe->mp;
+        }
+    }
+    if (mp != nullptr) {
+        libvlc_video_set_aspect_ratio(mp, aspect.empty() ? nullptr : aspect.c_str());
+    }
+    return nullptr;
+}
+
 napi_value MediaPlayerAddSlave(napi_env env, napi_callback_info info)
 {
     size_t argc = 4;
@@ -2800,6 +2824,7 @@ napi_value VlcNapiInit(napi_env env, napi_value exports)
         {"mediaPlayerGetVideoSize", nullptr, MediaPlayerGetVideoSize, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerGetFps", nullptr, MediaPlayerGetFps, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerSetScale", nullptr, MediaPlayerSetScale, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"mediaPlayerSetAspectRatio", nullptr, MediaPlayerSetAspectRatio, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerAddSlave", nullptr, MediaPlayerAddSlave, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerGetAudioTracks", nullptr, MediaPlayerGetAudioTracks, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerGetSpuTracks", nullptr, MediaPlayerGetSpuTracks, nullptr, nullptr, nullptr, napi_default, nullptr},

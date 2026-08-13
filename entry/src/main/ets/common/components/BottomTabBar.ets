@@ -1,4 +1,4 @@
-import { VLC_TABS, TabItem } from '../constants/AppConstants';
+import { TabItem, VLC_TABS } from '../constants/AppConstants';
 
 /**
  * BottomTabBar —— 底部 5 项导航栏(BottomNavigationView,menu=bottom_navigation)。
@@ -8,7 +8,8 @@ import { VLC_TABS, TabItem } from '../constants/AppConstants';
 @ComponentV2
 export struct BottomTabBar {
   @Param currentTab: string = 'video';
-  @Event onTabChange: (id: string) => void = () => {};
+  @Event onTabChange: (id: string) => void = () => {
+  };
 
   @Builder
   tabItem(tab: TabItem) {

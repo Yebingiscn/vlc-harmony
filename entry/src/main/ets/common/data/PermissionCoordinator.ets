@@ -40,9 +40,9 @@ const PERMISSION_WRITE_MEDIA: string = 'ohos.permission.WRITE_IMAGEVIDEO';
 /** checkAccessToken 参数所需权限名联合(系统 Permissions 类型的子集,不用 string 避免类型不符)。 */
 type OhPermissionName =
   'ohos.permission.READ_AUDIO'
-  | 'ohos.permission.READ_IMAGEVIDEO'
-  | 'ohos.permission.READ_MEDIA'
-  | 'ohos.permission.WRITE_IMAGEVIDEO';
+    | 'ohos.permission.READ_IMAGEVIDEO'
+    | 'ohos.permission.READ_MEDIA'
+    | 'ohos.permission.WRITE_IMAGEVIDEO';
 
 /**
  * PermissionViewModel —— 安卓 `BaseHeadlessFragment.PermissionViewmodel`(activity 作用域,
@@ -55,10 +55,19 @@ type OhPermissionName =
 export class PermissionViewModel {
   /** 是否已向用户展示过权限说明(rationale);授权流程完成回调里复位为 false。 */
   @Trace permissionRationaleShown: boolean = false;
-
   private resolveFn: ((value: boolean) => void) | null = null;
   private rejectFn: ((reason: string) => void) | null = null;
   private done: boolean = false;
+
+  /** permissionPending(派生):已初始化 && 未完成。 */
+  get permissionPending(): boolean {
+    return this.resolveFn !== null && !this.done;
+  }
+
+  /** isCompleted(派生):已初始化 && 已完成。 */
+  get isCompleted(): boolean {
+    return this.resolveFn !== null && this.done;
+  }
 
   /**
    * setupDeferred —— 新建一个一次性授权结果 Promise,完成时清 permissionRationaleShown。
@@ -72,16 +81,6 @@ export class PermissionViewModel {
       this.resolveFn = resolve;
       this.rejectFn = reject;
     });
-  }
-
-  /** permissionPending(派生):已初始化 && 未完成。 */
-  get permissionPending(): boolean {
-    return this.resolveFn !== null && !this.done;
-  }
-
-  /** isCompleted(派生):已初始化 && 已完成。 */
-  get isCompleted(): boolean {
-    return this.resolveFn !== null && this.done;
   }
 
   /**
@@ -116,8 +115,24 @@ export class PermissionViewModel {
  * 返回 boolean(true=已授权 / false=拒绝或失败)。
  */
 export class PermissionCoordinator {
+  /**
+   * askOtgAccess —— 对应 OtgAccess(OTG/USB 文档树选择)。
+   *
+   * 安卓:onCreate(savedInstanceState==null)弹 AlertDialog(标题 "Allow OTG access" /
+   *   正文 "Please select your OTG drive to allow access to VLC." / 单个 OK 按钮,可取消);
+   *   onOk → startActivity(ACTION_OPEN_DOCUMENT_TREE, requestCode=85);onActivityResult(85):
+   *     intent!=null → OtgAccess.otgRoot.value = intent.data(全局 companion StateFlow);
+   *   catch ActivityNotFoundException → exit();onCancel → exit();末尾无条件 exit()。
+   *
+   * 鸿蒙:@ohos.file.picker 的文档目录选择器;返回用户选择的 OTG 根 Uri(写到全局
+   *   `otgRoot`),失败/取消返回 null/false。
+   *
+   * TODO(契约):系统权限 API —— 鸿蒙 OTG/USB 存储 picker 的精确 API 与返回 Uri 形态需下游核实。
+   */
+  static otgRoot: string | null = null;
   /** activity 级共享状态(对齐 `activityViewModels<PermissionViewmodel>()` 单实例)。 */
   private static model: PermissionViewModel = new PermissionViewModel();
+  private static mediaPermissionPromise: Promise<boolean> | null = null;
 
   static getModel(): PermissionViewModel {
     return PermissionCoordinator.model;
@@ -174,14 +189,18 @@ export class PermissionCoordinator {
   static async askStoragePermission(write: boolean = false,
     withDialog: boolean = true, onlyMedia: boolean = false): Promise<boolean> {
     try {
+      if (!write) {
+        void withDialog;
+        void onlyMedia;
+        return await PermissionCoordinator.requestMediaPermission();
+      }
       if (!AppContext.isReady()) {
         return false;
       }
       const ctx: common.UIAbilityContext = AppContext.get();
       const mgr: abilityAccessCtrl.AtManager = abilityAccessCtrl.createAtManager();
       // requestPermissionsFromUser 弹系统授权框;返回 authResults(0=已授予)。
-      const res = await mgr.requestPermissionsFromUser(ctx,
-        write ? ['ohos.permission.WRITE_IMAGEVIDEO'] : ['ohos.permission.READ_IMAGEVIDEO']);
+      const res = await mgr.requestPermissionsFromUser(ctx, ['ohos.permission.WRITE_IMAGEVIDEO']);
       void withDialog;
       void onlyMedia;
       void PERMISSION_READ_MEDIA;
@@ -214,7 +233,7 @@ export class PermissionCoordinator {
    * 鸿蒙:ACTION_OPEN_DOCUMENT_TREE / DocumentFile / 持久化 URI 权限无直接等价。
    *
    * TODO(契约):系统权限 API —— @ohos.file.picker.DocumentSelectPicker /
-   *   @ohos.file.fs + abilityAccessCtrl 的目录树授权 API;KEY_STORAGE_PATH="VLC/storage_path"
+   * @ohos.file.fs + abilityAccessCtrl 的目录树授权 API;KEY_STORAGE_PATH="VLC/storage_path"
    *   与动态 key "tree_uri_$storage" 的真实持久化(Settings.put)。
    */
   static async askWritePermission(storagePath: string | null = null): Promise<boolean> {
@@ -230,22 +249,6 @@ export class PermissionCoordinator {
       return false;
     }
   }
-
-  /**
-   * askOtgAccess —— 对应 OtgAccess(OTG/USB 文档树选择)。
-   *
-   * 安卓:onCreate(savedInstanceState==null)弹 AlertDialog(标题 "Allow OTG access" /
-   *   正文 "Please select your OTG drive to allow access to VLC." / 单个 OK 按钮,可取消);
-   *   onOk → startActivity(ACTION_OPEN_DOCUMENT_TREE, requestCode=85);onActivityResult(85):
-   *     intent!=null → OtgAccess.otgRoot.value = intent.data(全局 companion StateFlow);
-   *   catch ActivityNotFoundException → exit();onCancel → exit();末尾无条件 exit()。
-   *
-   * 鸿蒙:@ohos.file.picker 的文档目录选择器;返回用户选择的 OTG 根 Uri(写到全局
-   *   `otgRoot`),失败/取消返回 null/false。
-   *
-   * TODO(契约):系统权限 API —— 鸿蒙 OTG/USB 存储 picker 的精确 API 与返回 Uri 形态需下游核实。
-   */
-  static otgRoot: string | null = null;
 
   static async askOtgAccess(): Promise<boolean> {
     try {
@@ -297,20 +300,6 @@ export class PermissionCoordinator {
 
   /* ─────────────────── 权限状态查询(供 PermissionsDialog 等 UI 使用) ─────────────────── */
 
-  /** 查询当前应用是否已授予指定权限(AtManager.checkAccessToken,0=PERMISSION_GRANTED)。 */
-  private static async checkGranted(permission: OhPermissionName): Promise<boolean> {
-    try {
-      const mgr: abilityAccessCtrl.AtManager = abilityAccessCtrl.createAtManager();
-      const bundleInfo = await bundleManager.getBundleInfoForSelf(
-        bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION);
-      const tokenId: number = bundleInfo.appInfo.accessTokenId;
-      const status: number = await mgr.checkAccessToken(tokenId, permission);
-      return status === 0;
-    } catch (e) {
-      return false;
-    }
-  }
-
   /** 通知权限是否已开启(对应安卓 canSendNotifications)。 */
   static async hasNotificationPermission(): Promise<boolean> {
     try {
@@ -341,6 +330,19 @@ export class PermissionCoordinator {
 
   /** 请求媒体读取权限(READ_IMAGEVIDEO + READ_AUDIO,对应安卓 READ_MEDIA_VIDEO + READ_MEDIA_AUDIO)。 */
   static async requestMediaPermission(): Promise<boolean> {
+    if (PermissionCoordinator.mediaPermissionPromise !== null) {
+      return PermissionCoordinator.mediaPermissionPromise;
+    }
+    const request: Promise<boolean> = PermissionCoordinator.doRequestMediaPermission();
+    PermissionCoordinator.mediaPermissionPromise = request;
+    try {
+      return await request;
+    } finally {
+      PermissionCoordinator.mediaPermissionPromise = null;
+    }
+  }
+
+  private static async doRequestMediaPermission(): Promise<boolean> {
     try {
       if (!AppContext.isReady()) {
         return false;
@@ -384,6 +386,20 @@ export class PermissionCoordinator {
       });
     } catch (e) {
       // 无法拉起设置页时静默失败,不阻塞 UI。
+    }
+  }
+
+  /** 查询当前应用是否已授予指定权限(AtManager.checkAccessToken,0=PERMISSION_GRANTED)。 */
+  private static async checkGranted(permission: OhPermissionName): Promise<boolean> {
+    try {
+      const mgr: abilityAccessCtrl.AtManager = abilityAccessCtrl.createAtManager();
+      const bundleInfo = await bundleManager.getBundleInfoForSelf(
+        bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION);
+      const tokenId: number = bundleInfo.appInfo.accessTokenId;
+      const status: number = await mgr.checkAccessToken(tokenId, permission);
+      return status === 0;
+    } catch (e) {
+      return false;
     }
   }
 }

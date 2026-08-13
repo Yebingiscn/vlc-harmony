@@ -1,12 +1,13 @@
+import { UiFeedback } from '../common/utils/UiFeedback';
 import { NavController } from '../common/data/NavController';
 import { OpenLink } from '../common/data/OpenLink';
 import { AppColors, AppDimens } from '../common/constants/AppConstants';
-import { promptAction } from '@kit.ArkUI';
 
 /** 反馈类型条目(对应 feedback_entries 数组)。 */
 export class FeedbackTypeEntry {
   key: string;
   label: ResourceStr;
+
   constructor(key: string, label: ResourceStr) {
     this.key = key;
     this.label = label;
@@ -31,7 +32,6 @@ export class FeedbackVM {
   @Trace sendEnabled: boolean = true;
   @Trace subject: string = '';
   @Trace message: string = '';
-
   readonly feedbackEntries: FeedbackTypeEntry[] = [
     new FeedbackTypeEntry('get_help', $r('app.string.get_help')),
     new FeedbackTypeEntry('send_feedback_request', $r('app.string.send_feedback')),
@@ -114,7 +114,12 @@ export struct FeedbackActivityPage {
         .alignItems(HorizontalAlign.Start)
       }
       .width('100%')
-      .padding({ left: AppDimens.kl_normal, top: AppDimens.default_margin, bottom: AppDimens.default_margin, right: AppDimens.kl_normal })
+      .padding({
+        left: AppDimens.kl_normal,
+        top: AppDimens.default_margin,
+        bottom: AppDimens.default_margin,
+        right: AppDimens.kl_normal
+      })
       .alignItems(VerticalAlign.Center)
     }
     .width('100%')
@@ -169,10 +174,16 @@ export struct FeedbackActivityPage {
         .width('100%')
         .margin({ top: AppDimens.default_margin })
         .alignItems(VerticalAlign.Center)
+
         Text($r('app.string.feedback_email_warning_explanation'))
           .fontSize(AppDimens.audio_item_title_size)
           .fontColor(AppColors.black)
-          .margin({ left: AppDimens.kl_normal, right: AppDimens.kl_normal, top: 24, bottom: AppDimens.kl_normal })
+          .margin({
+            left: AppDimens.kl_normal,
+            right: AppDimens.kl_normal,
+            top: 24,
+            bottom: AppDimens.kl_normal
+          })
         Row() {
           Button($r('app.string.feedback_email_warning_try_anyway'))
             .type(ButtonType.Normal)
@@ -190,7 +201,7 @@ export struct FeedbackActivityPage {
             .fontColor(AppColors.orange800)
             .onClick(() => {
               // TODO(契约): PreferencesActivity.launchWithPref("enable_remote_access") / TV_PREFERENCE_ACTIVITY 不在本页。
-              promptAction.showToast({ message: 'Open remote access settings' });
+              UiFeedback.showToast({ message: 'Open remote access settings' });
             })
         }
         .width('100%')
@@ -213,20 +224,26 @@ export struct FeedbackActivityPage {
       TextInput({ placeholder: $r('app.string.subject') })
         .width('100%')
         .margin({ left: AppDimens.kl_normal, right: AppDimens.kl_normal, top: AppDimens.default_margin })
-        .onChange((v: string) => { this.vm.subject = v; })
+        .onChange((v: string) => {
+          this.vm.subject = v;
+        })
 
       // 消息输入
       TextArea({ placeholder: $r('app.string.body') })
         .width('100%')
         .margin({ left: AppDimens.kl_normal, right: AppDimens.kl_normal, top: AppDimens.default_margin })
-        .onChange((v: string) => { this.vm.message = v; })
+        .onChange((v: string) => {
+          this.vm.message = v;
+        })
 
       // include_logs 复选框
       if (this.vm.showIncludes) {
         Row() {
           Checkbox()
             .select(this.vm.includeLogs)
-            .onChange((c: boolean) => { this.vm.includeLogs = c; })
+            .onChange((c: boolean) => {
+              this.vm.includeLogs = c;
+            })
           Text($r('app.string.include_logs'))
             .fontSize(AppDimens.audio_item_title_size)
             .margin({ left: AppDimens.default_margin })
@@ -234,6 +251,7 @@ export struct FeedbackActivityPage {
         .width('100%')
         .margin({ left: AppDimens.kl_normal, right: AppDimens.default_margin, top: AppDimens.default_margin })
         .alignItems(VerticalAlign.Center)
+
         if (this.vm.includeLogs) {
           this.WarningRow($r('app.string.logs_warning'))
         }
@@ -241,7 +259,9 @@ export struct FeedbackActivityPage {
         Row() {
           Checkbox()
             .select(this.vm.includeMedialibrary)
-            .onChange((c: boolean) => { this.vm.includeMedialibrary = c; })
+            .onChange((c: boolean) => {
+              this.vm.includeMedialibrary = c;
+            })
           Text($r('app.string.include_medialib'))
             .fontSize(AppDimens.audio_item_title_size)
             .margin({ left: AppDimens.default_margin })
@@ -249,6 +269,7 @@ export struct FeedbackActivityPage {
         .width('100%')
         .margin({ left: AppDimens.kl_normal, right: AppDimens.default_margin, top: AppDimens.default_margin })
         .alignItems(VerticalAlign.Center)
+
         if (this.vm.includeMedialibrary) {
           this.WarningRow($r('app.string.ml_database_warning'))
         }
@@ -266,7 +287,7 @@ export struct FeedbackActivityPage {
             // TODO(契约): 更深的 ACTION_SEND_MULTIPLE(带 logs/medialib 附件)由 FeedbackUtil.sendEmail 移植,此处仅 mailto。
             const ok = OpenLink.open(this.vm.mailtoUrl());
             if (!ok) {
-              promptAction.showToast({ message: $r('app.string.developing') });
+              UiFeedback.showToast({ message: $r('app.string.developing') });
             }
           })
       }
@@ -340,12 +361,12 @@ export struct FeedbackActivityPage {
             this.InfoCard($r('app.media.ic_forum'), $r('app.string.feedback_forum'),
               'Send feedback • Get some help', () => {
                 // TODO(契约): openLinkIfPossible(forumUrl)
-                promptAction.showToast({ message: this.vm.forumUrl });
+                UiFeedback.showToast({ message: this.vm.forumUrl });
               })
             // 卡片2:Read the documentation
             this.InfoCard($r('app.media.ic_documentation'), $r('app.string.read_doc'),
               'Get some help', () => {
-                promptAction.showToast({ message: this.vm.docUrl });
+                UiFeedback.showToast({ message: this.vm.docUrl });
               })
             // 卡片3:Email support(可展开表单)
             this.EmailCard()
@@ -354,7 +375,7 @@ export struct FeedbackActivityPage {
               this.InfoCard($r('app.media.ic_rate'), $r('app.string.rate_us'),
                 'Google Play', () => {
                   // TODO(契约): openLinkIfPossible(installSource.first)
-                  promptAction.showToast({ message: 'Rate the app' });
+                  UiFeedback.showToast({ message: 'Rate the app' });
                 })
             }
           }

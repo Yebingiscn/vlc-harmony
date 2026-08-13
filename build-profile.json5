@@ -5,13 +5,13 @@
         "name": "default",
         "type": "HarmonyOS",
         "material": {
-          "certpath": "C:\\Users\\whoo\\.ohos\\config\\default_vlc-harmony_3GDLv7-FLYcaiyfiEeHTUowW06jYykACCzgBk05-jPI=.cer",
+          "certpath": "C:\\Users\\a1309\\.ohos\\config\\default_vlc-harmony_2enwF20bSr7s37wmjMYBy2xh3ewuroznCqPVs3PSH8w=.cer",
           "keyAlias": "debugKey",
-          "keyPassword": "0000001BFD90743797BD9B9D57E49680643C1CFD3F2D8F70F5BC05579B40BEA08353BD8709DCD1F7DD8B46",
-          "profile": "C:\\Users\\whoo\\.ohos\\config\\default_vlc-harmony_3GDLv7-FLYcaiyfiEeHTUowW06jYykACCzgBk05-jPI=.p7b",
+          "keyPassword": "0000001A6A43FC0E00EEB93F2FB0C8764D496B0D8A892AF7D8170DEEA4F47BC2377F9E25E2965CD3E6E9",
+          "profile": "C:\\Users\\a1309\\.ohos\\config\\default_vlc-harmony_2enwF20bSr7s37wmjMYBy2xh3ewuroznCqPVs3PSH8w=.p7b",
           "signAlg": "SHA256withECDSA",
-          "storeFile": "C:\\Users\\whoo\\.ohos\\config\\default_vlc-harmony_3GDLv7-FLYcaiyfiEeHTUowW06jYykACCzgBk05-jPI=.p12",
-          "storePassword": "0000001BCCBE21780D325EA62AA7050C944C5BCF83EF5151CFB5387C0306458C3AFE951CF1C427FC885120"
+          "storeFile": "C:\\Users\\a1309\\.ohos\\config\\default_vlc-harmony_2enwF20bSr7s37wmjMYBy2xh3ewuroznCqPVs3PSH8w=.p12",
+          "storePassword": "0000001A3DB364AC5124A894B379F68E691AE2BF3523733996F3FAC0904BCD4DA3E377D94DB227B47FC9"
         }
       }
     ],
@@ -19,7 +19,7 @@
       {
         "name": "default",
         "signingConfig": "default",
-        "targetSdkVersion": "6.0.1(21)",
+        "targetSdkVersion": "6.1.1(24)",
         "compatibleSdkVersion": "6.0.1(21)",
         "runtimeOS": "HarmonyOS",
         "buildOption": {

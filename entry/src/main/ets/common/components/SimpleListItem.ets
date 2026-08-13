@@ -8,7 +8,8 @@ export struct SimpleListItem {
   @Param subtitle: string = '';
   @Param selected: boolean = false;
   @Param showCheckbox: boolean = true;
-  @Event onItemClick: () => void = () => {};
+  @Event onItemClick: () => void = () => {
+  };
 
   build() {
     Row() {
@@ -27,6 +28,7 @@ export struct SimpleListItem {
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
+
       if (this.showCheckbox) {
         Image(this.selected ? $r('app.media.ic_checkbox_true_normal') : $r('app.media.ic_checkbox_false'))
           .width(24)
@@ -35,7 +37,12 @@ export struct SimpleListItem {
       }
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+    .padding({
+      left: 16,
+      right: 16,
+      top: 12,
+      bottom: 12
+    })
     .alignItems(VerticalAlign.Center)
     .onClick(() => this.onItemClick())
   }

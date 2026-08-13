@@ -20,7 +20,8 @@ export struct EqualizerDialog {
   @Local snap: boolean = false;
   @Local presetIndex: number = 0;
   @Local presets: EqualizerPreset[] = [];
-  @Event onClose: () => void = () => {};
+  @Event onClose: () => void = () => {
+  };
 
   async aboutToAppear(): Promise<void> {
     const count = Equalizer.getPresetCount();
@@ -55,10 +56,6 @@ export struct EqualizerDialog {
     this.pushToPlayer();
   }
 
-  private pushToPlayer(): void {
-    PlaybackService.getInstance().applyEqualizer(this.eqEnabled, this.presetIndex, this.preamp, this.bands);
-  }
-
   setBand(index: number, v: number): void {
     const next = this.bands.slice();
     next[index] = v;
@@ -74,7 +71,10 @@ export struct EqualizerDialog {
     Column() {
       // 标题 + 启用开关
       Row() {
-        Text($r('app.string.equalizer')).fontSize(18).fontColor($r('app.color.list_title')).fontWeight(FontWeight.Medium)
+        Text($r('app.string.equalizer'))
+          .fontSize(18)
+          .fontColor($r('app.color.list_title'))
+          .fontWeight(FontWeight.Medium)
           .layoutWeight(1)
         Toggle({ type: ToggleType.Switch, isOn: this.eqEnabled })
           .selectedColor(AppColors.orange500)
@@ -95,7 +95,12 @@ export struct EqualizerDialog {
               .fontColor(this.presetIndex === p.id ? $r('app.color.list_title') : $r('app.color.font_light'))
               .backgroundColor(this.presetIndex === p.id ? AppColors.orange800 : '#1AFF610A')
               .borderRadius(16)
-              .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+              .padding({
+                left: 16,
+                right: 16,
+                top: 8,
+                bottom: 8
+              })
               .margin({ left: 4, right: 4 })
               .onClick(() => this.applyPreset(p))
           }, (p: EqualizerPreset) => `${p.id}`)
@@ -113,9 +118,18 @@ export struct EqualizerDialog {
         // 前置放大
         Column() {
           Text($r('app.string.preamp')).fontSize(12).fontColor($r('app.color.font_light')).margin({ bottom: 8 })
-          Slider({ value: this.preamp, min: -20, max: 20, step: 1, direction: Axis.Vertical,
-            style: SliderStyle.OutSet })
-            .width(40).height(150).blockColor(AppColors.orange500).selectedColor(AppColors.orange500)
+          Slider({
+            value: this.preamp,
+            min: -20,
+            max: 20,
+            step: 1,
+            direction: Axis.Vertical,
+            style: SliderStyle.OutSet
+          })
+            .width(40)
+            .height(150)
+            .blockColor(AppColors.orange500)
+            .selectedColor(AppColors.orange500)
             .trackColor($r('app.color.background_default_darker'))
             .onChange((v: number) => {
               this.preamp = Math.round(v);
@@ -155,25 +169,50 @@ export struct EqualizerDialog {
           Text($r('app.string.eq_snap_bands')).fontSize(12).fontColor($r('app.color.font_light')).margin({ left: 8 })
         }
         .layoutWeight(1)
-        Image($r('app.media.ic_add')).width(24).height(24).fillColor($r('app.color.list_title')).margin({ right: 16 })
-          .onClick(() => {})
-        Image($r('app.media.ic_undo')).width(24).height(24).fillColor($r('app.color.list_title')).margin({ right: 16 })
-          .onClick(() => {})
-        Image($r('app.media.ic_delete')).width(24).height(24).fillColor($r('app.color.list_title')).margin({ right: 16 })
-          .onClick(() => {})
+
+        Image($r('app.media.ic_add'))
+          .width(24)
+          .height(24)
+          .fillColor($r('app.color.list_title'))
+          .margin({ right: 16 })
+          .onClick(() => {
+          })
+        Image($r('app.media.ic_undo'))
+          .width(24)
+          .height(24)
+          .fillColor($r('app.color.list_title'))
+          .margin({ right: 16 })
+          .onClick(() => {
+          })
+        Image($r('app.media.ic_delete'))
+          .width(24)
+          .height(24)
+          .fillColor($r('app.color.list_title'))
+          .margin({ right: 16 })
+          .onClick(() => {
+          })
       }
       .width('100%').padding(16).alignItems(VerticalAlign.Center)
 
       Button($r('app.string.ok'))
-        .type(ButtonType.Normal).borderRadius(4).backgroundColor(AppColors.orange500).fontColor('#FFFFFF')
-        .width('80%').onClick(() => {
+        .type(ButtonType.Normal)
+        .borderRadius(4)
+        .backgroundColor(AppColors.orange500)
+        .fontColor('#FFFFFF')
+        .width('80%')
+        .onClick(() => {
           this.pushToPlayer();
           this.onClose();
-        }).margin({ bottom: 24 })
+        })
+        .margin({ bottom: 24 })
     }
     .width('100%')
     .backgroundColor($r('app.color.background_default'))
     .borderRadius({ topLeft: 16, topRight: 16 })
     .alignItems(HorizontalAlign.Center)
+  }
+
+  private pushToPlayer(): void {
+    PlaybackService.getInstance().applyEqualizer(this.eqEnabled, this.presetIndex, this.preamp, this.bands);
   }
 }

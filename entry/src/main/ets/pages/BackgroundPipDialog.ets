@@ -6,7 +6,9 @@ import { AppColors } from '../common/constants/AppConstants';
  * 存储 key 复用 Settings.KEY_VIDEO_APP_SWITCH(与附加设置页一致)。
  */
 export const BACKGROUND_PIP_DEFAULT: string = '0';
+
 export const BACKGROUND_PIP_VALUES: string[] = ['0', '1', '2'];
+
 export const BACKGROUND_PIP_LABELS: string[] = ['停止', '在后台播放视频', '以画中画模式播放视频'];
 
 /**
@@ -19,12 +21,10 @@ export struct BackgroundPipDialog {
   @Param labels: string[] = BACKGROUND_PIP_LABELS;
   @Param values: string[] = BACKGROUND_PIP_VALUES;
   @Param selectedValue: string = BACKGROUND_PIP_DEFAULT;
-  @Event onSelect: (value: string) => void = () => {};
-  @Event onCancel: () => void = () => {};
-
-  private valueAt(index: number): string {
-    return index >= 0 && index < this.values.length ? this.values[index] : '';
-  }
+  @Event onSelect: (value: string) => void = () => {
+  };
+  @Event onCancel: () => void = () => {
+  };
 
   build() {
     Column() {
@@ -52,7 +52,12 @@ export struct BackgroundPipDialog {
             .layoutWeight(1)
         }
         .width('100%')
-        .padding({ left: 4, right: 4, top: 16, bottom: 16 })
+        .padding({
+          left: 4,
+          right: 4,
+          top: 16,
+          bottom: 16
+        })
         .alignItems(VerticalAlign.Center)
         .onClick(() => this.onSelect(this.valueAt(index)))
       }, (label: string, index: number) => `${index}`)
@@ -70,5 +75,9 @@ export struct BackgroundPipDialog {
     .padding(20)
     .backgroundColor($r('app.color.background_default'))
     .borderRadius(16)
+  }
+
+  private valueAt(index: number): string {
+    return index >= 0 && index < this.values.length ? this.values[index] : '';
   }
 }

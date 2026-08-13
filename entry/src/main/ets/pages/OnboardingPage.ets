@@ -1,7 +1,6 @@
 import { NavController } from '../common/data/NavController';
 import { Settings } from '../common/data/Settings';
 import { AppColors } from '../common/constants/AppConstants';
-import { promptAction } from '@kit.ArkUI';
 
 enum OnboardingStep {
   WELCOME = 0,
@@ -20,7 +19,8 @@ enum OnboardingStep {
 @ComponentV2
 export struct OnboardingPage {
   @Local step: OnboardingStep = OnboardingStep.WELCOME;
-  @Event onDone: () => void = () => {};
+  @Event onDone: () => void = () => {
+  };
 
   next(): void {
     switch (this.step) {
@@ -83,13 +83,23 @@ export struct OnboardingPage {
         // 底部 Next / Skip 按钮
         Row() {
           Button($r('app.string.cancel'))
-            .type(ButtonType.Normal).borderRadius(4)
-            .backgroundColor('#33011422').borderWidth(1).borderColor('#33FFFFFF')
-            .fontColor('#FFFFFF').fontSize(14).layoutWeight(1).margin({ right: 8 })
+            .type(ButtonType.Normal)
+            .borderRadius(4)
+            .backgroundColor('#33011422')
+            .borderWidth(1)
+            .borderColor('#33FFFFFF')
+            .fontColor('#FFFFFF')
+            .fontSize(14)
+            .layoutWeight(1)
+            .margin({ right: 8 })
             .onClick(() => this.skip())
           Button(this.step === OnboardingStep.THEME ? $r('app.string.ok') : $r('app.string.next_step'))
-            .type(ButtonType.Normal).borderRadius(4)
-            .backgroundColor(AppColors.orange500).fontColor('#FFFFFF').fontSize(14).layoutWeight(1)
+            .type(ButtonType.Normal)
+            .borderRadius(4)
+            .backgroundColor(AppColors.orange500)
+            .fontColor('#FFFFFF')
+            .fontSize(14)
+            .layoutWeight(1)
             .onClick(() => this.next())
         }
         .width('100%')
@@ -112,7 +122,11 @@ export struct OnboardingPage {
     Column() {
       Image($r('app.media.ic_about_logo')).width(96).height(96).objectFit(ImageFit.Contain).margin({ bottom: 24 })
       Text($r('app.string.welcome_title')).fontSize(24).fontColor('#FFFFFF').fontWeight(FontWeight.Bold)
-      Text($r('app.string.welcome_subtitle')).fontSize(14).fontColor('#B3FFFFFF').margin({ top: 12 }).textAlign(TextAlign.Center)
+      Text($r('app.string.welcome_subtitle'))
+        .fontSize(14)
+        .fontColor('#B3FFFFFF')
+        .margin({ top: 12 })
+        .textAlign(TextAlign.Center)
     }.alignItems(HorizontalAlign.Center)
   }
 
@@ -120,7 +134,11 @@ export struct OnboardingPage {
   permissionContent() {
     Column() {
       Image($r('app.media.ic_permission_big')).width(80).height(80).fillColor('#FFFFFF').margin({ bottom: 24 })
-      Text($r('app.string.permission_media')).fontSize(16).fontColor('#FFFFFF').textAlign(TextAlign.Center).margin({ top: 16 })
+      Text($r('app.string.permission_media'))
+        .fontSize(16)
+        .fontColor('#FFFFFF')
+        .textAlign(TextAlign.Center)
+        .margin({ top: 16 })
       Text($r('app.string.permission_expanation_allow')).fontSize(12).fontColor('#B3FFFFFF').margin({ top: 12 })
       Text($r('app.string.permission_expanation_no_allow')).fontSize(12).fontColor('#B3FFFFFF').margin({ top: 8 })
     }.alignItems(HorizontalAlign.Center)
@@ -139,7 +157,11 @@ export struct OnboardingPage {
   @Builder
   noPermissionContent() {
     Column() {
-      Image($r('app.media.ic_onboarding_no_permission')).width(80).height(80).fillColor('#FFFFFF').margin({ bottom: 24 })
+      Image($r('app.media.ic_onboarding_no_permission'))
+        .width(80)
+        .height(80)
+        .fillColor('#FFFFFF')
+        .margin({ bottom: 24 })
       Text($r('app.string.permission_not_granted')).fontSize(16).fontColor('#FFFFFF').textAlign(TextAlign.Center)
     }.alignItems(HorizontalAlign.Center)
   }

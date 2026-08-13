@@ -1,3 +1,4 @@
+import { UiFeedback } from '../common/utils/UiFeedback';
 import { BottomTabBar } from '../common/components/BottomTabBar';
 import { VlcToolbar } from '../common/components/VlcToolbar';
 import { MiniPlayer } from '../common/components/MiniPlayer';
@@ -10,14 +11,12 @@ import { Settings } from '../common/data/Settings';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { NavController } from '../common/data/NavController';
 import { AudioBrowserRequest } from '../common/data/AudioBrowserRequest';
-import { PermissionCoordinator } from '../common/data/PermissionCoordinator';
 import { AppColors } from '../common/constants/AppConstants';
 import { DisplaySettingsDialog } from './DisplaySettingsDialog';
 import { AudioDisplaySettingsDialog } from './AudioDisplaySettingsDialog';
 import { NetworkServerDialog } from './NetworkServerDialog';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
 import { VideoParam, VideoPlayItem } from './VideoPlayerPage';
-import { promptAction } from '@kit.ArkUI';
 
 /**
  * MainPage —— MainActivity(透明 5-Tab 宿主)。
@@ -51,15 +50,10 @@ export struct MainPage {
   async aboutToAppear(): Promise<void> {
     this.incognitoMode = Settings.incognitoMode;
     this.scanning = MediaLibrary.isScanning() || !MediaLibrary.hasScanned();
-    const autoRescan = await Settings.getBoolean(Settings.KEY_MEDIALIBRARY_AUTO_RESCAN, true);
-    if (autoRescan) {
-      // 先确保媒体读权限(首次弹系统授权框),再扫描 —— 无权限时 photoAccessHelper 返回空。
-      await PermissionCoordinator.askStoragePermission(false, false, true);
-      await MediaLibrary.scan();
-      this.scanning = false;
-    } else {
-      this.scanning = false;
-    }
+    await MediaLibrary.scan();
+    this.scanning = false;
+    this.displaySettingsVersion++;
+    this.audioSettingsVersion++;
   }
 
   onTabChange(id: string): void {
@@ -97,7 +91,7 @@ export struct MainPage {
   async resumePlayback(): Promise<void> {
     const entries = await PlaybackHistory.load();
     if (entries.length === 0) {
-      promptAction.showToast({ message: '暂无播放历史' });
+      UiFeedback.showToast({ message: '暂无播放历史' });
       return;
     }
     const latest = entries[0];
@@ -114,24 +108,24 @@ export struct MainPage {
     const next = !Settings.incognitoMode;
     Settings.put(Settings.KEY_INCOGNITO, next);
     this.incognitoMode = next;
-    promptAction.showToast({
+    UiFeedback.showToast({
       message: next ? $r('app.string.menu_incognito_on') : $r('app.string.menu_incognito_off'),
     });
   }
 
   async refreshMediaLibrary(): Promise<void> {
     this.scanning = true;
-    await PermissionCoordinator.askStoragePermission(false, false, true);
-    await MediaLibrary.scan();
+    await MediaLibrary.rescan();
     this.scanning = false;
     // 通知 VideoGridPage 重建列表(scan 完成后数据已更新,但页面不会自动 rebuild)。
     this.displaySettingsVersion++;
+    this.audioSettingsVersion++;
   }
 
   async toggleDisplayAsList(): Promise<void> {
     const next = !(await Settings.getBoolean(Settings.KEY_DISPLAY_AS_LIST, false));
     Settings.put(Settings.KEY_DISPLAY_AS_LIST, next);
-    promptAction.showToast({
+    UiFeedback.showToast({
       message: next ? $r('app.string.menu_display_list_on') : $r('app.string.menu_display_list_off'),
     });
   }
@@ -169,13 +163,33 @@ export struct MainPage {
           searchQuery: this.searchQuery,
           selectionMode: this.selectionMode,
           selectionCount: this.selectionCount,
-          onSearch: () => { this.searchMode = true; this.searchQuery = ''; },
-          onSearchBack: () => { this.searchMode = false; this.searchQuery = ''; },
-          onSearchQueryChange: (q: string) => { this.searchQuery = q; },
-          onSelectionBack: () => { this.selectionActionType = 'exit'; this.selectionActionVersion++; },
-          onSelectionPlay: () => { this.selectionActionType = 'play'; this.selectionActionVersion++; },
-          onSelectionFav: () => { this.selectionActionType = 'fav'; this.selectionActionVersion++; },
-          onSelectionDelete: () => { this.selectionActionType = 'delete'; this.selectionActionVersion++; },
+          onSearch: () => {
+            this.searchMode = true;
+            this.searchQuery = '';
+          },
+          onSearchBack: () => {
+            this.searchMode = false;
+            this.searchQuery = '';
+          },
+          onSearchQueryChange: (q: string) => {
+            this.searchQuery = q;
+          },
+          onSelectionBack: () => {
+            this.selectionActionType = 'exit';
+            this.selectionActionVersion++;
+          },
+          onSelectionPlay: () => {
+            this.selectionActionType = 'play';
+            this.selectionActionVersion++;
+          },
+          onSelectionFav: () => {
+            this.selectionActionType = 'fav';
+            this.selectionActionVersion++;
+          },
+          onSelectionDelete: () => {
+            this.selectionActionType = 'delete';
+            this.selectionActionVersion++;
+          },
           onMoreSettings: () => this.openDisplaySettings(),
           onMoreIncognito: () => this.toggleIncognito(),
           onMoreDisplayAsList: () => this.toggleDisplayAsList(),
@@ -204,7 +218,11 @@ export struct MainPage {
             searchQuery: this.searchQuery,
             selectionActionVersion: this.selectionActionVersion,
             selectionActionType: this.selectionActionType,
-            onSearchGlobal: () => { this.searchMode = false; this.searchQuery = ''; NavController.push('Search'); },
+            onSearchGlobal: () => {
+              this.searchMode = false;
+              this.searchQuery = '';
+              NavController.push('Search');
+            },
             onSelectionChange: (active: boolean, count: number) => {
               this.selectionMode = active;
               this.selectionCount = count;
@@ -217,7 +235,11 @@ export struct MainPage {
             searchQuery: this.searchQuery,
             goToArtistName: this.goToArtistName,
             goToArtistVersion: this.goToArtistVersion,
-            onSearchGlobal: () => { this.searchMode = false; this.searchQuery = ''; NavController.push('Search'); },
+            onSearchGlobal: () => {
+              this.searchMode = false;
+              this.searchQuery = '';
+              NavController.push('Search');
+            },
           })
             .visibility(this.currentTab === 'audio' ? Visibility.Visible : Visibility.None)
           MainBrowserPage().visibility(this.currentTab === 'browse' ? Visibility.Visible : Visibility.None)
@@ -226,7 +248,11 @@ export struct MainPage {
             searchQuery: this.searchQuery,
             currentTab: this.currentTab,
             playlistsVersion: this.playlistsVersion,
-            onSearchGlobal: () => { this.searchMode = false; this.searchQuery = ''; NavController.push('Search'); },
+            onSearchGlobal: () => {
+              this.searchMode = false;
+              this.searchQuery = '';
+              NavController.push('Search');
+            },
           })
             .visibility(this.currentTab === 'playlists' ? Visibility.Visible : Visibility.None)
           MorePage().visibility(this.currentTab === 'more' ? Visibility.Visible : Visibility.None)

@@ -22,19 +22,6 @@ export struct OTPCodeActivityPage {
     this.vm.code = '482915';
   }
 
-  private digit(idx: number): string {
-    if (this.vm.code === null || idx >= this.vm.code.length) {
-      return '';
-    }
-    return this.vm.code.charAt(idx);
-  }
-
-  private onCancel(): void {
-    // onCancel(): RemoteAccessUtils.otpCodeRemoveFlow.emit(code) + otpFlow.emit(null) + finish()。
-    // TODO(契约): otpCodeRemoveFlow 接收方/撤销登录逻辑在 remote-access-server 模块,不在本页。
-    NavController.pop();
-  }
-
   @Builder
   CodeDigit(idx: number) {
     Text(this.digit(idx))
@@ -103,5 +90,18 @@ export struct OTPCodeActivityPage {
       NavController.pop();
       return true;
     })
+  }
+
+  private digit(idx: number): string {
+    if (this.vm.code === null || idx >= this.vm.code.length) {
+      return '';
+    }
+    return this.vm.code.charAt(idx);
+  }
+
+  private onCancel(): void {
+    // onCancel(): RemoteAccessUtils.otpCodeRemoveFlow.emit(code) + otpFlow.emit(null) + finish()。
+    // TODO(契约): otpCodeRemoveFlow 接收方/撤销登录逻辑在 remote-access-server 模块,不在本页。
+    NavController.pop();
   }
 }

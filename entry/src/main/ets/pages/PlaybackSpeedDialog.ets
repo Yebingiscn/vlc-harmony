@@ -1,4 +1,3 @@
-import { AppColors } from '../common/constants/AppConstants';
 
 /** 保存动作载荷。 */
 export interface PlaybackSpeedAction {
@@ -14,17 +13,11 @@ export interface PlaybackSpeedAction {
 
 @ComponentV2
 export struct PlaybackSpeedDialog {
-  @Event onClose: () => void = () => {};
-  @Event onConfirm: (action: PlaybackSpeedAction) => void = () => {};
-
   @Param currentSpeed: number = 1.0;
-
   /** 语境:audio 显示"此曲目/所有曲目",video(默认)显示"THIS VIDEO/ALL VIDEOS"。 */
   @Param mediaKind: 'audio' | 'video' = 'video';
-
   /** 当前生效作用域(打开时默认选中:全局速度开→所有,否则→此)。 */
   @Param currentScope: 'this' | 'all' = 'this';
-
   // 主题感知:浅色=白底深字,深色=深底浅字。资源定义见 base/dark element/color.json。
   readonly cPanelBg: Resource = $r('app.color.background_default');
   readonly cHeaderBg: Resource = $r('app.color.background_default');
@@ -32,10 +25,15 @@ export struct PlaybackSpeedDialog {
   readonly cDim: Resource = $r('app.color.list_subtitle');
   readonly cBorder: Resource = $r('app.color.divider');
   readonly cIconBtn: Resource = $r('app.color.background_default_darker');
-
   @Local scope: 'this' | 'all' = 'this';
   @Local speed: number = 1.0;
   @Local sliderValue: number = 50; // 0..100
+
+  @Event onClose: () => void = () => {
+  };
+
+  @Event onConfirm: (action: PlaybackSpeedAction) => void = () => {
+  };
 
   aboutToAppear(): void {
     this.speed = this.currentSpeed > 0 ? this.currentSpeed : 1.0;
@@ -43,43 +41,21 @@ export struct PlaybackSpeedDialog {
     this.scope = this.currentScope;
   }
 
-  private rateToSlider(r: number): number {
-    return Math.round(Math.log(r / 0.25) / Math.log(32) * 100);
-  }
-
-  private sliderToRate(v: number): number {
-    return Math.round(0.25 * Math.pow(32, v / 100) * 100) / 100;
-  }
-
-  private step(delta: number): void {
-    const r: number = Math.max(0.25, Math.min(8.0, Math.round((this.speed + delta) * 100) / 100));
-    this.speed = r;
-    this.sliderValue = this.rateToSlider(r);
-  }
-
-  private applyPreset(r: number): void {
-    this.speed = r;
-    this.sliderValue = this.rateToSlider(r);
-  }
-
-  private onSliderChange(v: number): void {
-    this.sliderValue = Math.round(v);
-    this.speed = this.sliderToRate(this.sliderValue);
-  }
-
   // ── 顶栏 ──────────────────────────────────────
   @Builder
   header() {
     Column() {
       Row()
-        .width(36).height(4)
+        .width(36)
+        .height(4)
         .backgroundColor($r('app.color.font_light'))
         .borderRadius(2)
         .margin({ top: 8, bottom: 10 })
       Row() {
         Row() {
           Image($r('app.media.ic_arrow_back'))
-            .width(28).height(28)
+            .width(28)
+            .height(28)
             .fillColor($r('app.color.list_title'))
             .padding(2)
             .onClick(() => this.onClose())
@@ -88,7 +64,8 @@ export struct PlaybackSpeedDialog {
         .justifyContent(FlexAlign.Start)
 
         Text('回放速度')
-          .fontSize(18).fontWeight(FontWeight.Medium)
+          .fontSize(18)
+          .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.list_title'))
           .layoutWeight(1)
           .textAlign(TextAlign.Center)
@@ -102,14 +79,6 @@ export struct PlaybackSpeedDialog {
     .backgroundColor(this.cHeaderBg)
   }
 
-  // ── THIS MEDIA / ALL MEDIA ─────────────────────
-  private scopeTabLabel(isThis: boolean): string {
-    if (this.mediaKind === 'audio') {
-      return isThis ? '此曲目' : '所有曲目';
-    }
-    return isThis ? 'THIS VIDEO' : 'ALL VIDEOS';
-  }
-
   @Builder
   scopeTabs() {
     Row() {
@@ -117,12 +86,12 @@ export struct PlaybackSpeedDialog {
       this.scopeTab('all')
     }
     .width('100%')
-    .padding({ left: 20, right: 20, top: 14, bottom: 6 })
-  }
-
-  /** 当前 scope 是否等于 scopeValue(builder 体内直接读 this.scope,保证切换后重渲染)。 */
-  private isScopeSelected(scopeValue: 'this' | 'all'): boolean {
-    return this.scope === scopeValue;
+    .padding({
+      left: 20,
+      right: 20,
+      top: 14,
+      bottom: 6
+    })
   }
 
   @Builder
@@ -157,7 +126,8 @@ export struct PlaybackSpeedDialog {
           .fontSize(22).fontColor($r('app.color.list_title'))
           .textAlign(TextAlign.Center)
       }
-      .width(44).height(44)
+      .width(44)
+      .height(44)
       .borderRadius(22)
       .backgroundColor(this.cIconBtn)
       .justifyContent(FlexAlign.Center)
@@ -166,7 +136,8 @@ export struct PlaybackSpeedDialog {
       .onClick(() => this.step(-0.05))
 
       Text(`${this.speed.toFixed(2)}x`)
-        .fontSize(32).fontWeight(FontWeight.Bold)
+        .fontSize(32)
+        .fontWeight(FontWeight.Bold)
         .fontColor(this.cAccent)
         .layoutWeight(1)
         .textAlign(TextAlign.Center)
@@ -176,7 +147,8 @@ export struct PlaybackSpeedDialog {
           .fontSize(22).fontColor($r('app.color.list_title'))
           .textAlign(TextAlign.Center)
       }
-      .width(44).height(44)
+      .width(44)
+      .height(44)
       .borderRadius(22)
       .backgroundColor(this.cIconBtn)
       .justifyContent(FlexAlign.Center)
@@ -185,7 +157,12 @@ export struct PlaybackSpeedDialog {
       .onClick(() => this.step(0.05))
     }
     .width('100%')
-    .padding({ left: 28, right: 28, top: 12, bottom: 10 })
+    .padding({
+      left: 28,
+      right: 28,
+      top: 12,
+      bottom: 10
+    })
     .alignItems(VerticalAlign.Center)
   }
 
@@ -234,7 +211,8 @@ export struct PlaybackSpeedDialog {
             .fontSize(12).fontWeight(FontWeight.Medium)
             .fontColor(Math.abs(this.speed - p) < 0.005 ? $r('app.color.list_title') : this.cDim)
         }
-        .width(52).height(36)
+        .width(52)
+        .height(36)
         .borderRadius(18)
         .border({ width: 1, color: Math.abs(this.speed - p) < 0.005 ? this.cAccent : this.cBorder })
         .backgroundColor(Math.abs(this.speed - p) < 0.005 ? '#33FF8800' : Color.Transparent)
@@ -286,7 +264,8 @@ export struct PlaybackSpeedDialog {
           .backgroundColor(this.cBorder)
         Button('保存')
           .type(ButtonType.Capsule)
-          .fontSize(15).fontWeight(FontWeight.Medium)
+          .fontSize(15)
+          .fontWeight(FontWeight.Medium)
           .backgroundColor(this.cAccent)
           .fontColor('#FFFFFF')
           .width('100%')
@@ -297,11 +276,53 @@ export struct PlaybackSpeedDialog {
           })
       }
       .width('100%')
-      .padding({ left: 20, right: 20, top: 12, bottom: 28 })
+      .padding({
+        left: 20,
+        right: 20,
+        top: 12,
+        bottom: 28
+      })
       .backgroundColor(this.cPanelBg)
     }
     .width('100%')
     .height('100%')
     .backgroundColor(this.cPanelBg)
+  }
+
+  private rateToSlider(r: number): number {
+    return Math.round(Math.log(r / 0.25) / Math.log(32) * 100);
+  }
+
+  private sliderToRate(v: number): number {
+    return Math.round(0.25 * Math.pow(32, v / 100) * 100) / 100;
+  }
+
+  private step(delta: number): void {
+    const r: number = Math.max(0.25, Math.min(8.0, Math.round((this.speed + delta) * 100) / 100));
+    this.speed = r;
+    this.sliderValue = this.rateToSlider(r);
+  }
+
+  private applyPreset(r: number): void {
+    this.speed = r;
+    this.sliderValue = this.rateToSlider(r);
+  }
+
+  private onSliderChange(v: number): void {
+    this.sliderValue = Math.round(v);
+    this.speed = this.sliderToRate(this.sliderValue);
+  }
+
+  // ── THIS MEDIA / ALL MEDIA ─────────────────────
+  private scopeTabLabel(isThis: boolean): string {
+    if (this.mediaKind === 'audio') {
+      return isThis ? '此曲目' : '所有曲目';
+    }
+    return isThis ? 'THIS VIDEO' : 'ALL VIDEOS';
+  }
+
+  /** 当前 scope 是否等于 scopeValue(builder 体内直接读 this.scope,保证切换后重渲染)。 */
+  private isScopeSelected(scopeValue: 'this' | 'all'): boolean {
+    return this.scope === scopeValue;
   }
 }

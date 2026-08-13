@@ -5,7 +5,8 @@
  */
 @ComponentV2
 export struct SdWriteDialog {
-  @Event onClose: () => void = () => {};
+  @Event onClose: () => void = () => {
+  };
 
   build() {
     Column() {

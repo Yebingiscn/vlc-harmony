@@ -17,17 +17,17 @@ export class VLCObject {
     return this.released || this.handle === 0;
   }
 
-  protected markReleased(): void {
-    this.released = true;
-    this.handle = 0;
-  }
-
   release(): void {
     if (this.released) {
       return;
     }
     this.onNativeRelease();
     this.markReleased();
+  }
+
+  protected markReleased(): void {
+    this.released = true;
+    this.handle = 0;
   }
 
   protected onNativeRelease(): void {

@@ -1,5 +1,5 @@
+import { UiFeedback } from '../../common/utils/UiFeedback';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { promptAction } from '@kit.ArkUI';
 
 /**
  * VideoPlayerScreenshotDelegate —— 对齐 Android VideoPlayerScreenshotDelegate。
@@ -7,7 +7,7 @@ import { promptAction } from '@kit.ArkUI';
 export class VideoPlayerScreenshotDelegate {
   takeScreenshot(): void {
     hilog.info(0x0001, 'VLC', '[VLC] ScreenshotDelegate.takeScreenshot (stub)');
-    promptAction.showToast({ message: 'Screenshot is not available yet' });
+    UiFeedback.showToast({ message: 'Screenshot is not available yet' });
   }
 
   hide(): void {

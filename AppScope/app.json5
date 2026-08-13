@@ -1,7 +1,7 @@
 {
   "app": {
     "bundleName": "com.jia.videolan.vlc",
-    "vendor": "example",
+    "vendor": "vlc-harmony contributors",
     "versionCode": 1000000,
     "versionName": "1.0.0",
     "icon": "$media:layered_image",

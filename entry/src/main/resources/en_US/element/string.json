@@ -1531,6 +1531,10 @@
     {
       "name": "safe_mode_summary",
       "value": "When activated, files cannot be deleted or playlist modified without entering the pin"
+    },
+    {
+      "name": "reason_file_access_persist",
+      "value": "Allows continued access to audio and video files you explicitly import"
     }
   ]
 }

@@ -16,32 +16,40 @@ import { BookMark } from '../common/models/BookmarkModels';
 
 @ComponentV2
 export struct BookmarkDialog {
-  @Event onClose: () => void = () => {};
-  @Event onSeek: (timeMs: number) => void = () => {};
-  @Event onAddAtCurrent: () => void = () => {};
-  @Event onRename: (id: number) => void = () => {};
-  @Event onDelete: (id: number) => void = () => {};
-
   @Param bookmarks: BookMark[] = [];
   /** 当前播放位置(毫秒)—— 用来画底部时间线上的"当前点"。 */
   @Param currentTimeMs: number = 0;
   /** 总时长(毫秒)—— 0 表示未知,时间线不画。 */
   @Param durationMs: number = 0;
   @Param mediaId: number = -1;
-
-  // ── 视觉常量 ─────────────────────────────────────────
-  // 主题感知:浅色=白底深字,深色=深底浅字。资源定义见 base/dark element/color.json。
   // 面板用实色 background_default(原 #CC1C1C1C 半透黑在浅色下改为实白,更清晰)。
   readonly cPanelBg: Resource = $r('app.color.background_default');
   readonly cHeaderBg: Resource = $r('app.color.background_default');
   readonly cTimelineBg: Resource = $r('app.color.background_default');
   readonly cDivider: Resource = $r('app.color.divider');
   readonly cSubtle: Resource = $r('app.color.font_light');
+  // ── 视觉常量 ─────────────────────────────────────────
+  // 主题感知:浅色=白底深字,深色=深底浅字。资源定义见 base/dark element/color.json。
   readonly cDim: Resource = $r('app.color.list_subtitle');
   readonly cAccent: string = '#FF3B30';
-  // 全屏:不再使用固定高度,内容用 layoutWeight(1) 撑开,时间线固定在底。
   // 保留 panelHeight 仅给时间线计算 / 旧引用兜底(实际未使用)。
   readonly panelHeight: number = 0;
+
+  @Event onClose: () => void = () => {
+  };
+
+  @Event onSeek: (timeMs: number) => void = () => {
+  };
+
+  @Event onAddAtCurrent: () => void = () => {
+  };
+
+  @Event onRename: (id: number) => void = () => {
+  };
+  // 全屏:不再使用固定高度,内容用 layoutWeight(1) 撑开,时间线固定在底。
+
+  @Event onDelete: (id: number) => void = () => {
+  };
 
   @Builder
   panelHeader() {
@@ -62,7 +70,9 @@ export struct BookmarkDialog {
 
       // 中间:标题
       Text('书签')
-        .fontSize(18).fontWeight(600).fontColor($r('app.color.list_title'))
+        .fontSize(18)
+        .fontWeight(600)
+        .fontColor($r('app.color.list_title'))
         .layoutWeight(1)
         .textAlign(TextAlign.Center)
 
@@ -93,17 +103,6 @@ export struct BookmarkDialog {
     Row()
       .width('100%').height(0.5)
       .backgroundColor(this.cDivider)
-  }
-
-  /** 时间格式 mm:ss / h:mm:ss。 */
-  private fmtTime(ms: number): string {
-    const totalSec: number = Math.floor(ms / 1000);
-    const h: number = Math.floor(totalSec / 3600);
-    const m: number = Math.floor((totalSec % 3600) / 60);
-    const s: number = totalSec % 60;
-    const mm: string = m < 10 ? `0${m}` : `${m}`;
-    const ss: string = s < 10 ? `0${s}` : `${s}`;
-    return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
   }
 
   /** 底部时间线 + 书签点。高度 36,作为面板最底下一条。 */
@@ -139,7 +138,8 @@ export struct BookmarkDialog {
         ForEach(this.bookmarks, (b: BookMark) => {
           if (this.durationMs > 0) {
             Image($r('app.media.ic_bookmark_marker'))
-              .width(14).height(14)
+              .width(14)
+              .height(14)
               .fillColor(this.cAccent)
               .offset({ x: `${Math.min(100, Math.max(0, b.timeMs * 100 / this.durationMs))}%`, y: -5 })
               .onClick(() => this.onSeek(b.timeMs))
@@ -164,7 +164,12 @@ export struct BookmarkDialog {
     }
     .width('100%')
     // bottom: 28 避让手势条;top: 10 普通内边距
-    .padding({ left: 16, right: 16, top: 10, bottom: 28 })
+    .padding({
+      left: 16,
+      right: 16,
+      top: 10,
+      bottom: 28
+    })
     .backgroundColor(this.cTimelineBg)
   }
 
@@ -186,8 +191,10 @@ export struct BookmarkDialog {
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
       .margin({ left: 14, right: 12 })
+
       Image($r('app.media.ic_playlist_delete'))
-        .width(20).height(20)
+        .width(20)
+        .height(20)
         .fillColor(this.cSubtle)
         .padding(4)
         .onClick(() => this.onDelete(b.id))
@@ -223,9 +230,15 @@ export struct BookmarkDialog {
 
       // 提示用户顶部有「+ 添加」按钮
       Text('点右上角「+」添加当前时间为书签')
-        .fontSize(12).fontColor(AppColors.orange500)
+        .fontSize(12)
+        .fontColor(AppColors.orange500)
         .margin({ top: 18 })
-        .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+        .padding({
+          left: 14,
+          right: 14,
+          top: 8,
+          bottom: 8
+        })
         .backgroundColor('#33FF8800')
         .borderRadius(14)
       Blank().layoutWeight(1)
@@ -257,7 +270,9 @@ export struct BookmarkDialog {
           }, (b: BookMark): string => `${b.id}`)
         }
         // 列表底部留白,避免最后一项贴边
-        ListItem() { Row().width('100%').height(20) }
+        ListItem() {
+          Row().width('100%').height(20)
+        }
       }
       .width('100%')
       .layoutWeight(1)
@@ -268,6 +283,7 @@ export struct BookmarkDialog {
         startMargin: 56,
         endMargin: 12,
       })
+
       this.thinDivider()
       this.timeline()
     }
@@ -276,5 +292,16 @@ export struct BookmarkDialog {
     // 85% 透黑底 —— 接近实色,只留一丝视频透出。
     .backgroundColor(this.cPanelBg)
     .alignItems(HorizontalAlign.Start)
+  }
+
+  /** 时间格式 mm:ss / h:mm:ss。 */
+  private fmtTime(ms: number): string {
+    const totalSec: number = Math.floor(ms / 1000);
+    const h: number = Math.floor(totalSec / 3600);
+    const m: number = Math.floor((totalSec % 3600) / 60);
+    const s: number = totalSec % 60;
+    const mm: string = m < 10 ? `0${m}` : `${m}`;
+    const ss: string = s < 10 ? `0${s}` : `${s}`;
+    return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
   }
 }

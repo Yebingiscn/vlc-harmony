@@ -1,5 +1,5 @@
+import { UiFeedback } from '../../common/utils/UiFeedback';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { promptAction } from '@kit.ArkUI';
 
 /**
  * VideoStatsDelegate —— 对齐 Android VideoStatsDelegate（码率/轨道统计骨架）。
@@ -14,7 +14,7 @@ export class VideoStatsDelegate {
   start(): void {
     this.running = true;
     hilog.info(0x0001, 'VLC', '[VLC] StatsDelegate.start (stub)');
-    promptAction.showToast({ message: 'Video stats are not available yet' });
+    UiFeedback.showToast({ message: 'Video stats are not available yet' });
   }
 
   stop(): void {

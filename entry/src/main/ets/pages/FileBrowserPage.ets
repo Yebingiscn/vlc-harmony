@@ -1,9 +1,8 @@
-import { hilog } from '@kit.PerformanceAnalysisKit';
 import { NavController } from '../common/data/NavController';
 import { BackTitleBar } from '../common/components/BackTitleBar';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { EmptyStateView } from '../common/components/EmptyStateView';
-import { Folder, SheetItem, EmptyLoadingState } from '../common/models/MediaModels';
+import { EmptyLoadingState, Folder, SheetItem } from '../common/models/MediaModels';
 
 /** 浏览模式。 */
 export type BrowserMode = 'file' | 'network' | 'storage' | 'picker';
@@ -35,7 +34,9 @@ class BrowserViewModel {
     this.loading = false;
   }
 
-  isEmpty(): boolean { return this.dataset.length === 0; }
+  isEmpty(): boolean {
+    return this.dataset.length === 0;
+  }
 }
 
 /**
@@ -73,7 +74,12 @@ export struct FileBrowserPage {
               }, (item: SheetItem) => item.title)
             }
             .width('100%').height('100%')
-            .divider({ strokeWidth: 0.5, color: $r('app.color.divider'), startMargin: 72, endMargin: 16 })
+            .divider({
+              strokeWidth: 0.5,
+              color: $r('app.color.divider'),
+              startMargin: 72,
+              endMargin: 16
+            })
             .alignListItem(ListItemAlign.Start)
           }
           .layoutWeight(1).width('100%')
@@ -87,7 +93,10 @@ export struct FileBrowserPage {
       .backgroundColor($r('app.color.background_default'))
     }
     .hideTitleBar(true)
-    .onBackPressed(() => { NavController.pop(); return true; })
+    .onBackPressed(() => {
+      NavController.pop();
+      return true;
+    })
   }
 
   /** 对齐 Android browser_item.xml: 48vp 左图标 + 16fp 标题 + 12fp 副标题 + 更多右。 */
@@ -100,8 +109,12 @@ export struct FileBrowserPage {
         Text(item.title).fontSize(16).fontColor($r('app.color.list_title')).maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         if (item.subtitle.length > 0) {
-          Text(item.subtitle).fontSize(12).fontColor($r('app.color.list_subtitle')).maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ top: 2 })
+          Text(item.subtitle)
+            .fontSize(12)
+            .fontColor($r('app.color.list_subtitle'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .margin({ top: 2 })
         }
       }
       .layoutWeight(1).alignItems(HorizontalAlign.Start).margin({ left: 12, right: 8 })

@@ -9,32 +9,40 @@ export struct VlcToolbar {
   @Param titleColor: ResourceColor | string = '';
   @Param showBack: boolean = false;
   @Param showIncognito: boolean = false;
-  @Event onBack: () => void = () => {
-  };
-  @Event onSearch: () => void = () => {
-  };
   @Param showSearch: boolean = false;
   @Param searchMode: boolean = false;
   @Param searchQuery: string = '';
-  @Event onSearchQueryChange: (q: string) => void = () => {
-  };
-  @Event onSearchBack: () => void = () => {
-  };
   @Param selectionMode: boolean = false;
   @Param selectionCount: number = 0;
-  @Event onSelectionBack: () => void = () => {
-  };
-  @Event onSelectionPlay: () => void = () => {
-  };
-  @Event onSelectionFav: () => void = () => {
-  };
-  @Event onSelectionDelete: () => void = () => {
-  };
   @Param showMore: boolean = false;
   @Param currentTab: string = 'video';
   @Param incognitoMode: boolean = false;
   @Local moreOpen: boolean = false;
   @Local input: string = '';
+
+  @Event onBack: () => void = () => {
+  };
+
+  @Event onSearch: () => void = () => {
+  };
+
+  @Event onSearchQueryChange: (q: string) => void = () => {
+  };
+
+  @Event onSearchBack: () => void = () => {
+  };
+
+  @Event onSelectionBack: () => void = () => {
+  };
+
+  @Event onSelectionPlay: () => void = () => {
+  };
+
+  @Event onSelectionFav: () => void = () => {
+  };
+
+  @Event onSelectionDelete: () => void = () => {
+  };
 
   @Monitor('searchMode')
   onSearchModeChange(): void {
@@ -42,6 +50,7 @@ export struct VlcToolbar {
       this.input = '';
     }
   }
+
   @Event onMoreSettings: () => void = () => {
   };
   @Event onMoreIncognito: () => void = () => {
@@ -103,7 +112,12 @@ export struct VlcToolbar {
         }
         .width('100%')
         .height(92)
-        .padding({ left: 4, right: 4, top: 38, bottom: 4 })
+        .padding({
+          left: 4,
+          right: 4,
+          top: 38,
+          bottom: 4
+        })
         .backgroundColor($r('app.color.background_actionbar'))
       } else if (this.selectionMode) {
         // 选择模式:返回箭头 + 选中数 + 播放/收藏/删除
@@ -143,7 +157,12 @@ export struct VlcToolbar {
         }
         .width('100%')
         .height(92)
-        .padding({ left: 4, right: 4, top: 38, bottom: 4 })
+        .padding({
+          left: 4,
+          right: 4,
+          top: 38,
+          bottom: 4
+        })
         .backgroundColor($r('app.color.background_actionbar'))
       } else {
         Row() {
@@ -223,7 +242,12 @@ export struct VlcToolbar {
         }
         .width('100%')
         .height(92)
-        .padding({ left: 4, right: 4, top: 38, bottom: 4 })
+        .padding({
+          left: 4,
+          right: 4,
+          top: 38,
+          bottom: 4
+        })
         .backgroundColor($r('app.color.background_actionbar'))
       }
     }

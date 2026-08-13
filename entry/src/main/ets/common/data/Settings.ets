@@ -133,14 +133,13 @@ export class Settings {
   static readonly KEY_ARTISTS_SHOW_ALL: string = 'artists_show_all';
   static readonly PLAYLIST_REPLACE: string = 'playlist_replace';
   static readonly HTTP_USER_AGENT: string = 'http_user_agent';
-
-  private static readonly PREFS_NAME: string = 'vlc_preferences';
-  private static store: preferences.Preferences | null = null;
   /** 启动时缓存的 key(对齐 P0.1 默认值)。 */
   static showVideoThumbs: boolean = true;
   static incognitoMode: boolean = false;
   static fastplaySpeed: number = 2.0; // FASTPLAY_SPEED default 20 /10f
   static videoHudDelay: number = 4;
+  private static readonly PREFS_NAME: string = 'vlc_preferences';
+  private static store: preferences.Preferences | null = null;
   private static changeListeners: SettingsChangeListener[] = [];
 
   static async init(): Promise<void> {
@@ -148,7 +147,12 @@ export class Settings {
       return;
     }
     const ctx = AppContext.get();
-    Settings.store = await preferences.getPreferences(ctx, Settings.PREFS_NAME);
+    try {
+      Settings.store = await preferences.getPreferences(ctx, Settings.PREFS_NAME);
+    } catch (error) {
+      Settings.store = null;
+      return;
+    }
     Settings.showVideoThumbs = await Settings.getBoolean(Settings.SHOW_VIDEO_THUMBNAILS, true);
     Settings.incognitoMode = await Settings.getBoolean(Settings.KEY_INCOGNITO, false);
     const fps = await Settings.getInt(Settings.FASTPLAY_SPEED, 20);
@@ -164,32 +168,48 @@ export class Settings {
     if (!Settings.store) {
       return def;
     }
-    const v = await Settings.store.get(key, def);
-    return typeof v === 'boolean' ? v : def;
+    try {
+      const v = await Settings.store.get(key, def);
+      return typeof v === 'boolean' ? v : def;
+    } catch (error) {
+      return def;
+    }
   }
 
   static async getInt(key: string, def: number): Promise<number> {
     if (!Settings.store) {
       return def;
     }
-    const v = await Settings.store.get(key, def);
-    return typeof v === 'number' ? v : def;
+    try {
+      const v = await Settings.store.get(key, def);
+      return typeof v === 'number' ? v : def;
+    } catch (error) {
+      return def;
+    }
   }
 
   static async getFloat(key: string, def: number): Promise<number> {
     if (!Settings.store) {
       return def;
     }
-    const v = await Settings.store.get(key, def);
-    return typeof v === 'number' ? v : def;
+    try {
+      const v = await Settings.store.get(key, def);
+      return typeof v === 'number' ? v : def;
+    } catch (error) {
+      return def;
+    }
   }
 
   static async getString(key: string, def: string): Promise<string> {
     if (!Settings.store) {
       return def;
     }
-    const v = await Settings.store.get(key, def);
-    return typeof v === 'string' ? v : def;
+    try {
+      const v = await Settings.store.get(key, def);
+      return typeof v === 'string' ? v : def;
+    } catch (error) {
+      return def;
+    }
   }
 
   /** putSingle —— 类型分发写(对齐安卓 putSingle 扩展)。 */
@@ -197,8 +217,12 @@ export class Settings {
     if (!Settings.store) {
       return;
     }
-    await Settings.store.put(key, value);
-    await Settings.store.flush();
+    try {
+      await Settings.store.put(key, value);
+      await Settings.store.flush();
+    } catch (error) {
+      return;
+    }
     if (key === Settings.KEY_INCOGNITO && typeof value === 'boolean') {
       Settings.incognitoMode = value;
     }
@@ -218,25 +242,33 @@ export class Settings {
     };
   }
 
-  private static notifyChanged(key: string): void {
-    for (const listener of Settings.changeListeners) {
-      listener(key);
-    }
-  }
-
   static async contains(key: string): Promise<boolean> {
     if (!Settings.store) {
       return false;
     }
-    const v = await Settings.store.get(key, undefined);
-    return v !== undefined;
+    try {
+      const v = await Settings.store.get(key, undefined);
+      return v !== undefined;
+    } catch (error) {
+      return false;
+    }
   }
 
   static async remove(key: string): Promise<void> {
     if (!Settings.store) {
       return;
     }
-    await Settings.store.delete(key);
-    await Settings.store.flush();
+    try {
+      await Settings.store.delete(key);
+      await Settings.store.flush();
+    } catch (error) {
+      return;
+    }
+  }
+
+  private static notifyChanged(key: string): void {
+    for (const listener of Settings.changeListeners) {
+      listener(key);
+    }
   }
 }

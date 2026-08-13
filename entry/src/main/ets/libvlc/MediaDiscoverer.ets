@@ -1,9 +1,9 @@
 import {
   mediaDiscovererCreate,
+  mediaDiscovererMediaList,
   mediaDiscovererRelease,
   mediaDiscovererStart,
   mediaDiscovererStop,
-  mediaDiscovererMediaList,
 } from 'libvlcnapi.so';
 import { VLCObject } from './VLCObject';
 import { LibVLC } from './LibVLC';

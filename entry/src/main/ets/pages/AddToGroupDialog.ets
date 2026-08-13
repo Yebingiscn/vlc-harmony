@@ -1,17 +1,19 @@
 import { AppColors } from '../common/constants/AppConstants';
-import { MediaLibraryItem, MediaItemType } from '../common/models/MediaModels';
+import { MediaItemType, MediaLibraryItem } from '../common/models/MediaModels';
 
 /** 列表项(simple_item.xml):48vp 封面 + 16fp 标题 + 副标题,整行可点。 */
 @ComponentV2
 struct GroupListItem {
   @Param item: MediaLibraryItem = new MediaLibraryItem(0, '', MediaItemType.MEDIA);
   @Param cover: Resource = $r('app.media.ic_empty');
-  @Event onItemClick: () => void = () => {};
+  @Event onItemClick: () => void = () => {
+  };
 
   build() {
     Row() {
       Image(this.cover)
-        .width(48).height(48)
+        .width(48)
+        .height(48)
         .objectFit(ImageFit.Cover)
         .borderRadius(4)
         .margin({ left: 8, top: 8, bottom: 8 })
@@ -34,7 +36,12 @@ struct GroupListItem {
       .justifyContent(FlexAlign.Center)
     }
     .width('100%')
-    .padding({ left: 8, right: 8, top: 8, bottom: 8 })
+    .padding({
+      left: 8,
+      right: 8,
+      top: 8,
+      bottom: 8
+    })
     .alignItems(VerticalAlign.Center)
     .onClick(() => this.onItemClick())
   }
@@ -51,12 +58,17 @@ struct GroupListItem {
 export struct AddToGroupDialog {
   @Param newTrackCount: number = 0;
   @Param forbidNewGroup: boolean = true;
-  @Event onClose: () => void = () => {};
-  @Event onSelectGroup: (group: MediaLibraryItem) => void = () => {};
-  @Event onCreateNewGroup: () => void = () => {};
-
   @Local isLoading: boolean = false;
   @Local groupList: MediaLibraryItem[] = [];
+
+  @Event onClose: () => void = () => {
+  };
+
+  @Event onSelectGroup: (group: MediaLibraryItem) => void = () => {
+  };
+
+  @Event onCreateNewGroup: () => void = () => {
+  };
 
   aboutToAppear(): void {
     // TODO(契约): 订阅 VideosViewModel(VideoGroupingType.NAME).provider.pagedList:

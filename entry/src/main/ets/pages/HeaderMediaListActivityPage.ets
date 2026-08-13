@@ -1,10 +1,10 @@
+import { UiFeedback } from '../common/utils/UiFeedback';
 import { NavController } from '../common/data/NavController';
 import { AppColors } from '../common/constants/AppConstants';
-import { MediaWrapper, Track, formatDuration } from '../common/models/MediaModels';
+import { formatDuration, MediaWrapper, Track } from '../common/models/MediaModels';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { PlaybackService } from '../common/data/PlaybackService';
 import { VideoParam, VideoPlayItem } from './VideoPlayerPage';
-import { promptAction } from '@kit.ArkUI';
 
 /** HeaderMediaList 入参(album/playlist/folder MediaLibraryItem)。 */
 export class HeaderMediaListParam {
@@ -19,7 +19,9 @@ export class HeaderMediaListParam {
 }
 
 function fmtTrackDuration(ms: number): string {
-  if (ms <= 0) { return ''; }
+  if (ms <= 0) {
+    return '';
+  }
   const totalSec = Math.floor(ms / 1000);
   const m = Math.floor(totalSec / 60);
   const s = totalSec % 60;
@@ -197,23 +199,6 @@ export struct HeaderMediaListActivityPage {
     }
   }
 
-  /** 视频文件夹模式:点击视频 -> 跳转 VideoPlayerPage,以文件夹内全部视频为播放队列。 */
-  private async playVideoFromFolder(item: Track, position: number): Promise<void> {
-    const videos = MediaLibrary.getVideosByFolder(this.param.folderPath);
-    const list: VideoPlayItem[] = videos.map((v: MediaWrapper) => {
-      const e: VideoPlayItem = { uri: v.uri, title: v.title, artworkUrl: v.artworkUrl };
-      return e;
-    });
-    const idx = videos.findIndex((v: MediaWrapper) => v.uri === item.uri);
-    const param: VideoParam = {
-      uri: item.uri,
-      title: item.title,
-      list: list,
-      index: idx >= 0 ? idx : position,
-    };
-    NavController.push('VideoPlayer', param);
-  }
-
   /** 更多按钮 -> 打开 ContextSheet(与 VideoGridPage 外层一致)。 */
   openContext(item: Track, position: number): void {
     this.contextTrack = item;
@@ -222,81 +207,21 @@ export struct HeaderMediaListActivityPage {
     this.showContext = true;
   }
 
-  /** 构建整组曲目的播放队列(按扩展名区分音频/视频类型)。 */
-  private buildQueueItems(): MediaWrapper[] {
-    const items: MediaWrapper[] = [];
-    for (const t of this.vm.tracks) {
-      // 根据扩展名区分音频/视频类型
-      const mw = new MediaWrapper(t.id, t.title, t.uri, isVideoUri(t.uri) ? 0 : 1);
-      mw.artistName = t.artistName;
-      mw.artworkPath = t.artworkPath;
-      items.push(mw);
-    }
-    return items;
-  }
-
-  /** 构建播放队列并在当前页开始播放(不跳转播放页)。同时关掉随机,UI 立即切到"播放全部"高亮。 */
-  private async playAll(startPos: number = 0): Promise<void> {
-    if (this.vm.tracks.length === 0) { return; }
-    const items = this.buildQueueItems();
-    // 始终用同一个播放队列,准备好后调用 play() 触发真实播放。
-    // 第一次播放前先 load 队列(等同 append 后再切换到 startPos),后续切换曲目只需 seek + play。
-    await PlaybackService.playList(MediaLibrary.toQueueItems(items), startPos, true);
-    // 显式关掉随机模式,让顶部按钮高亮切回"播放全部"
-    PlaybackService.setShuffle(false);
-    await PlaybackService.play();
-    // 立刻同步响应式状态(不等 setInterval 的 30ms 延迟)
-    this.isShuffle = false;
-    this.nowPlayingUri = items[startPos].uri;
-    this.animTick = 0;
-  }
-
-  private async shuffleAll(): Promise<void> {
-    if (this.vm.tracks.length === 0) { return; }
-    const start = Math.floor(Math.random() * this.vm.tracks.length);
-    await this.playAll(start);
-    // playAll 已经关了 shuffle,这里再开
-    PlaybackService.setShuffle(true);
-    this.isShuffle = true;
-  }
-
-  /** 点击三点菜单:单曲播放并跳转到对应播放页(音频→AudioPlayer,视频→VideoPlayer)。
-   *  队列始终是整组曲目,从点击的这首开始,保证随机/循环/上一首/下一首在组内生效。 */
-  private async playSingle(item: Track): Promise<void> {
-    const isVideo = isVideoUri(item.uri);
-    const items = this.buildQueueItems();
-    const startPos = this.vm.tracks.findIndex((t: Track) => t.uri === item.uri);
-    const start = startPos >= 0 ? startPos : 0;
-    await PlaybackService.playList(MediaLibrary.toQueueItems(items), start, true);
-    await PlaybackService.play();
-    this.nowPlayingUri = item.uri;
-    this.animTick = 0;
-    if (isVideo) {
-      const param: VideoParam = {
-        uri: item.uri,
-        title: item.title,
-        list: [{ uri: item.uri, title: item.title } as VideoPlayItem],
-        index: start,
-      };
-      NavController.push('VideoPlayer', param);
-    } else {
-      NavController.push('AudioPlayer');
-    }
-  }
-
   @Builder
   TrackItem(item: Track, position: number) {
     Row() {
       // 封面:优先用实际图片,回退到歌曲线框图标
       Image(item.artworkPath.length > 0 ? item.artworkPath : $r('app.media.ic_song'))
-        .width(44).height(44)
+        .width(44)
+        .height(44)
         .objectFit(ImageFit.Cover)
         .borderRadius(4)
         .fillColor(item.artworkPath.length > 0 ? Color.Transparent : $r('app.color.font_light'))
 
       Column() {
         Text(item.title)
-          .fontSize(15).fontWeight(FontWeight.Medium)
+          .fontSize(15)
+          .fontWeight(FontWeight.Medium)
           .fontColor(this.nowPlayingUri === item.uri
             ? AppColors.orange500 : $r('app.color.list_title'))
           .maxLines(1)
@@ -373,7 +298,12 @@ export struct HeaderMediaListActivityPage {
         })
     }
     .width('100%')
-    .padding({ left: 16, right: 12, top: 10, bottom: 10 })
+    .padding({
+      left: 16,
+      right: 12,
+      top: 10,
+      bottom: 10
+    })
     .alignItems(VerticalAlign.Center)
     .onClick(() => {
       // 行点击:视频文件夹模式跳转播放器;音频模式在当前页播放。
@@ -437,7 +367,12 @@ export struct HeaderMediaListActivityPage {
           Text('播放').fontSize(15).fontColor('#212121')
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: 14, bottom: 14 })
+        .padding({
+          left: 16,
+          right: 16,
+          top: 14,
+          bottom: 14
+        })
         .onClick(() => {
           const item = this.contextTrack!;
           const pos = this.contextTrackPosition;
@@ -456,12 +391,17 @@ export struct HeaderMediaListActivityPage {
           Text(this.contextTrackFav ? '取消收藏' : '添加到收藏夹').fontSize(15).fontColor('#212121')
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: 14, bottom: 14 })
+        .padding({
+          left: 16,
+          right: 16,
+          top: 14,
+          bottom: 14
+        })
         .onClick(() => {
           const uri = this.contextTrack!.uri;
           MediaLibrary.toggleVideoFav(uri).then((fav: boolean) => {
             this.contextTrackFav = fav;
-            promptAction.showToast({ message: fav ? '已收藏' : '已取消收藏' });
+            UiFeedback.showToast({ message: fav ? '已收藏' : '已取消收藏' });
           });
         })
 
@@ -471,10 +411,16 @@ export struct HeaderMediaListActivityPage {
           Text('视频信息').fontSize(15).fontColor('#212121')
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: 14, bottom: 14 })
+        .padding({
+          left: 16,
+          right: 16,
+          top: 14,
+          bottom: 14
+        })
         .onClick(() => {
-          promptAction.showToast({
-            message: `视频: ${this.contextTrack!.title}\n时长: ${this.contextTrack!.length > 0 ? formatDuration(this.contextTrack!.length) : '未知'}`
+          UiFeedback.showToast({
+            message: `视频: ${this.contextTrack!.title}\n时长: ${this.contextTrack!.length > 0 ?
+              formatDuration(this.contextTrack!.length) : '未知'}`
           });
         })
 
@@ -484,7 +430,12 @@ export struct HeaderMediaListActivityPage {
           Text('分享').fontSize(15).fontColor('#212121')
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: 14, bottom: 14 })
+        .padding({
+          left: 16,
+          right: 16,
+          top: 14,
+          bottom: 14
+        })
         .onClick(() => {
           const item = this.contextTrack!;
           this.showContext = false;
@@ -497,7 +448,12 @@ export struct HeaderMediaListActivityPage {
           Text('删除').fontSize(15).fontColor('#F44336')
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: 14, bottom: 14 })
+        .padding({
+          left: 16,
+          right: 16,
+          top: 14,
+          bottom: 14
+        })
         .onClick(() => {
           const item = this.contextTrack!;
           this.showContext = false;
@@ -505,10 +461,10 @@ export struct HeaderMediaListActivityPage {
           mw.artworkUrl = item.artworkPath;
           MediaLibrary.deleteVideo(mw).then((ok: boolean) => {
             if (ok) {
-              promptAction.showToast({ message: '已删除' });
+              UiFeedback.showToast({ message: '已删除' });
               this.vm.load(this.param);
             } else {
-              promptAction.showToast({ message: '删除失败,可能缺少权限' });
+              UiFeedback.showToast({ message: '删除失败,可能缺少权限' });
             }
           });
         })
@@ -532,16 +488,23 @@ export struct HeaderMediaListActivityPage {
             .onClick(() => NavController.pop())
 
           Text(this.vm.title)
-            .fontSize(18).fontWeight(FontWeight.Medium)
+            .fontSize(18)
+            .fontWeight(FontWeight.Medium)
             .fontColor('#FFFFFF')
-            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
             .layoutWeight(1)
             .textAlign(TextAlign.Center)
 
           Row().width(28).height(28)
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: 44, bottom: 16 })
+        .padding({
+          left: 16,
+          right: 16,
+          top: 44,
+          bottom: 16
+        })
         .alignItems(VerticalAlign.Center)
         .linearGradient({ angle: 180, colors: [['#99000000', 0.0], ['#00000000', 1.0]] })
 
@@ -553,7 +516,8 @@ export struct HeaderMediaListActivityPage {
               Image(this.vm.tracks.length > 0 && this.vm.tracks[0].artworkPath.length > 0
                 ? this.vm.tracks[0].artworkPath
                 : (this.vm.isVideoFolder ? $r('app.media.ic_video') : $r('app.media.ic_playlist_big')))
-                .width(140).height(140)
+                .width(140)
+                .height(140)
                 .objectFit(ImageFit.Cover)
                 .borderRadius(8)
                 .fillColor($r('app.color.card_background'))
@@ -620,7 +584,12 @@ export struct HeaderMediaListActivityPage {
               .margin({ top: 16 })
             }
             .width('100%')
-            .padding({ left: 20, right: 20, top: 16, bottom: 16 })
+            .padding({
+              left: 20,
+              right: 20,
+              top: 16,
+              bottom: 16
+            })
             .alignItems(HorizontalAlign.Center)
 
             // ── 分隔 ──
@@ -641,7 +610,12 @@ export struct HeaderMediaListActivityPage {
               }
               .width('100%')
               .layoutWeight(1)
-              .divider({ strokeWidth: 0.5, color: $r('app.color.divider'), startMargin: 72, endMargin: 16 })
+              .divider({
+                strokeWidth: 0.5,
+                color: $r('app.color.divider'),
+                startMargin: 72,
+                endMargin: 16
+              })
               .scrollBar(BarState.Off)
             }
           }
@@ -672,5 +646,88 @@ export struct HeaderMediaListActivityPage {
         this.contextTrack = null;
       },
     })
+  }
+
+  /** 视频文件夹模式:点击视频 -> 跳转 VideoPlayerPage,以文件夹内全部视频为播放队列。 */
+  private async playVideoFromFolder(item: Track, position: number): Promise<void> {
+    const videos = MediaLibrary.getVideosByFolder(this.param.folderPath);
+    const list: VideoPlayItem[] = videos.map((v: MediaWrapper) => {
+      const e: VideoPlayItem = { uri: v.uri, title: v.title, artworkUrl: v.artworkUrl };
+      return e;
+    });
+    const idx = videos.findIndex((v: MediaWrapper) => v.uri === item.uri);
+    const param: VideoParam = {
+      uri: item.uri,
+      title: item.title,
+      list: list,
+      index: idx >= 0 ? idx : position,
+    };
+    NavController.push('VideoPlayer', param);
+  }
+
+  /** 构建整组曲目的播放队列(按扩展名区分音频/视频类型)。 */
+  private buildQueueItems(): MediaWrapper[] {
+    const items: MediaWrapper[] = [];
+    for (const t of this.vm.tracks) {
+      // 根据扩展名区分音频/视频类型
+      const mw = new MediaWrapper(t.id, t.title, t.uri, isVideoUri(t.uri) ? 0 : 1);
+      mw.artistName = t.artistName;
+      mw.artworkPath = t.artworkPath;
+      items.push(mw);
+    }
+    return items;
+  }
+
+  /** 构建播放队列并在当前页开始播放(不跳转播放页)。同时关掉随机,UI 立即切到"播放全部"高亮。 */
+  private async playAll(startPos: number = 0): Promise<void> {
+    if (this.vm.tracks.length === 0) {
+      return;
+    }
+    const items = this.buildQueueItems();
+    // 始终用同一个播放队列,准备好后调用 play() 触发真实播放。
+    // 第一次播放前先 load 队列(等同 append 后再切换到 startPos),后续切换曲目只需 seek + play。
+    await PlaybackService.playList(MediaLibrary.toQueueItems(items), startPos, true);
+    // 显式关掉随机模式,让顶部按钮高亮切回"播放全部"
+    PlaybackService.setShuffle(false);
+    await PlaybackService.play();
+    // 立刻同步响应式状态(不等 setInterval 的 30ms 延迟)
+    this.isShuffle = false;
+    this.nowPlayingUri = items[startPos].uri;
+    this.animTick = 0;
+  }
+
+  private async shuffleAll(): Promise<void> {
+    if (this.vm.tracks.length === 0) {
+      return;
+    }
+    const start = Math.floor(Math.random() * this.vm.tracks.length);
+    await this.playAll(start);
+    // playAll 已经关了 shuffle,这里再开
+    PlaybackService.setShuffle(true);
+    this.isShuffle = true;
+  }
+
+  /** 点击三点菜单:单曲播放并跳转到对应播放页(音频→AudioPlayer,视频→VideoPlayer)。
+   *  队列始终是整组曲目,从点击的这首开始,保证随机/循环/上一首/下一首在组内生效。 */
+  private async playSingle(item: Track): Promise<void> {
+    const isVideo = isVideoUri(item.uri);
+    const items = this.buildQueueItems();
+    const startPos = this.vm.tracks.findIndex((t: Track) => t.uri === item.uri);
+    const start = startPos >= 0 ? startPos : 0;
+    await PlaybackService.playList(MediaLibrary.toQueueItems(items), start, true);
+    await PlaybackService.play();
+    this.nowPlayingUri = item.uri;
+    this.animTick = 0;
+    if (isVideo) {
+      const param: VideoParam = {
+        uri: item.uri,
+        title: item.title,
+        list: [{ uri: item.uri, title: item.title } as VideoPlayItem],
+        index: start,
+      };
+      NavController.push('VideoPlayer', param);
+    } else {
+      NavController.push('AudioPlayer');
+    }
   }
 }

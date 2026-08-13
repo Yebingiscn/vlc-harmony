@@ -1,3 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 48 48">
-<path d="M24,24m-24,0a24,24 0,1 1,48 0a24,24 0,1 1,-48 0" fill="currentColor" stroke="#00000000" stroke-width="15.1181097" fill-rule="nonZero"/>
+    <path d="M24,24m-24,0a24,24 0,1 1,48 0a24,24 0,1 1,-48 0" fill="currentColor" stroke="#00000000"
+          stroke-width="15.1181097" fill-rule="nonZero"/>
 </svg>

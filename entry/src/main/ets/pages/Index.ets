@@ -1,6 +1,6 @@
 import { MainPage } from './MainPage';
 import { OnboardingPage } from './OnboardingPage';
-import { VideoPlayerPage, VideoParam } from './VideoPlayerPage';
+import { VideoParam, VideoPlayerPage } from './VideoPlayerPage';
 import { AudioPlayerPage } from './AudioPlayerPage';
 import { InfoPage, InfoParam } from './InfoPage';
 import { SecondaryPage } from './SecondaryPage';
@@ -31,7 +31,7 @@ import { PreferencesPage } from './PreferencesPage';
 import { PreferenceSearchPage } from './PreferenceSearchPage';
 import { AboutFragmentPage } from './AboutFragmentPage';
 import { HistoryFragmentPage } from './HistoryFragmentPage';
-import { FileBrowserPage, BrowserMode } from './FileBrowserPage';
+import { BrowserMode, FileBrowserPage } from './FileBrowserPage';
 import { MrlPanelPage } from './MrlPanelPage';
 import { ParentalControlPage, ParentalControlParam } from './ParentalControlPage';
 import { FormatCompatibilityTestPage } from './FormatCompatibilityTestPage';

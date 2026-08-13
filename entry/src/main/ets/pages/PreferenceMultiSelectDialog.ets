@@ -11,13 +11,16 @@ import { PreferenceItem } from '../common/models/PreferenceModels';
 export struct PreferenceMultiSelectDialog {
   @Param title: ResourceStr = '';
   @Param item: PreferenceItem = new PreferenceItem({});
-  @Event onConfirm: (values: string[]) => void = () => {};
-  @Event onDismiss: () => void = () => {};
-
   @Local checked: boolean[] = [];
   @Local newValues: string[] = [];
   @Local preferenceChanged: boolean = false;
   @Local initialized: boolean = false;
+
+  @Event onConfirm: (values: string[]) => void = () => {
+  };
+
+  @Event onDismiss: () => void = () => {
+  };
 
   aboutToAppear(): void {
     const it = this.item;
@@ -72,7 +75,12 @@ export struct PreferenceMultiSelectDialog {
                 .onChange((on: boolean) => this.onCheckChange(index, on))
             }
             .width('100%')
-            .padding({ left: 4, right: 4, top: 16, bottom: 16 })
+            .padding({
+              left: 4,
+              right: 4,
+              top: 16,
+              bottom: 16
+            })
             .alignItems(VerticalAlign.Center)
           }
         }, (entry: ResourceStr, index: number) => `${index}`)

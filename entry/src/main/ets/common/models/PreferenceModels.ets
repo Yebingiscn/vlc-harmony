@@ -6,17 +6,17 @@
 
 /** 偏好项控件类型(对应 Android preference 子类)。 */
 export type PreferenceType =
-  | 'toggle'        // CheckBoxPreference / SwitchPreference —— 右侧 Toggle
-  | 'list'          // ListPreference —— 点击弹单选,右侧当前值 + 右箭头
-  | 'nav'           // PreferenceScreen / Preference —— 跳转下级,右侧右箭头
-  | 'numberpicker'  // NumberPickerPreference —— 点击弹数字选择器,右侧右箭头
-  | 'seekbar'       // SeekBarPreference —— 行内 Slider
-  | 'checkbox'      // 多选/单选项(CheckBox 行内显示) —— 右侧 Checkbox
-  | 'multiselect'   // MultiSelectListPreference —— 点击弹多选对话框,右侧右箭头
-  | 'text'          // EditTextPreference —— 点击弹文本输入,右侧右箭头
-  | 'color'         // ColorPreferenceCompat —— 点击弹颜色选择,右侧色块 + 右箭头
-  | 'click'         // 纯点击项(无控件,无右控件),整行可点
-  | 'info';         // 仅展示 summary 的不可交互说明条
+  | 'toggle' // CheckBoxPreference / SwitchPreference —— 右侧 Toggle
+    | 'list' // ListPreference —— 点击弹单选,右侧当前值 + 右箭头
+    | 'nav' // PreferenceScreen / Preference —— 跳转下级,右侧右箭头
+    | 'numberpicker' // NumberPickerPreference —— 点击弹数字选择器,右侧右箭头
+    | 'seekbar' // SeekBarPreference —— 行内 Slider
+    | 'checkbox' // 多选/单选项(CheckBox 行内显示) —— 右侧 Checkbox
+    | 'multiselect' // MultiSelectListPreference —— 点击弹多选对话框,右侧右箭头
+    | 'text' // EditTextPreference —— 点击弹文本输入,右侧右箭头
+    | 'color' // ColorPreferenceCompat —— 点击弹颜色选择,右侧色块 + 右箭头
+    | 'click' // 纯点击项(无控件,无右控件),整行可点
+    | 'info'; // 仅展示 summary 的不可交互说明条
 
 /** 单条偏好项(对应一个 preference 节点)。 */
 export class PreferenceItem {

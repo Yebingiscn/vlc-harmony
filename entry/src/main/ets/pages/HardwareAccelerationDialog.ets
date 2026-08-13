@@ -6,7 +6,9 @@ import { AppColors } from '../common/constants/AppConstants';
  *      1=解码加速(硬解但关闭直渲) 2=完全加速(硬解+直渲)。
  */
 export const HARDWARE_ACCELERATION_DEFAULT: string = '-1';
+
 export const HARDWARE_ACCELERATION_VALUES: string[] = ['-1', '0', '1', '2'];
+
 export const HARDWARE_ACCELERATION_LABELS: string[] = ['自动', '禁用', '解码加速', '完全加速'];
 
 /** 值 → 中文文案(未知值回退默认)。 */
@@ -25,12 +27,10 @@ export struct HardwareAccelerationDialog {
   @Param labels: string[] = HARDWARE_ACCELERATION_LABELS;
   @Param values: string[] = HARDWARE_ACCELERATION_VALUES;
   @Param selectedValue: string = HARDWARE_ACCELERATION_DEFAULT;
-  @Event onSelect: (value: string) => void = () => {};
-  @Event onCancel: () => void = () => {};
-
-  private valueAt(index: number): string {
-    return index >= 0 && index < this.values.length ? this.values[index] : '';
-  }
+  @Event onSelect: (value: string) => void = () => {
+  };
+  @Event onCancel: () => void = () => {
+  };
 
   build() {
     Column() {
@@ -58,7 +58,12 @@ export struct HardwareAccelerationDialog {
             .layoutWeight(1)
         }
         .width('100%')
-        .padding({ left: 4, right: 4, top: 16, bottom: 16 })
+        .padding({
+          left: 4,
+          right: 4,
+          top: 16,
+          bottom: 16
+        })
         .alignItems(VerticalAlign.Center)
         .onClick(() => this.onSelect(this.valueAt(index)))
       }, (label: string, index: number) => `${index}`)
@@ -76,5 +81,9 @@ export struct HardwareAccelerationDialog {
     .padding(20)
     .backgroundColor($r('app.color.background_default'))
     .borderRadius(16)
+  }
+
+  private valueAt(index: number): string {
+    return index >= 0 && index < this.values.length ? this.values[index] : '';
   }
 }

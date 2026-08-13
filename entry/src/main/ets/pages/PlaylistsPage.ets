@@ -1,11 +1,11 @@
+import { UiFeedback } from '../common/utils/UiFeedback';
 import { NavController } from '../common/data/NavController';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { Settings } from '../common/data/Settings';
-import { Track, MediaWrapper, EmptyLoadingState } from '../common/models/MediaModels';
+import { EmptyLoadingState, MediaWrapper, Track } from '../common/models/MediaModels';
 import { EmptyStateView } from '../common/components/EmptyStateView';
 import { PlaylistDialog } from './PlaylistDialog';
 import { RenameDialog } from './RenameDialog';
-import { promptAction } from '@kit.ArkUI';
 import { emitter } from '@kit.BasicServicesKit';
 import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
 import { VideoParam, VideoPlayItem } from './VideoPlayerPage';
@@ -127,9 +127,6 @@ export struct PlaylistsPage {
   @Param playlistsVersion: number = 0;
   @Event onSearchGlobal: () => void = () => {
   };
-  /** 持有 emitter 回调引用,aboutToDisappear 时按引用解绑。 */
-  private playlistsChangedHandler: (data: emitter.EventData) => void = () => {
-  };
 
   async aboutToAppear(): Promise<void> {
     await MediaLibrary.initPlaylistCache();
@@ -157,7 +154,9 @@ export struct PlaylistsPage {
   }
 
   @Monitor('searchQuery')
-  onSearchQueryChange(): void { this.vm.applySearch(this.searchQuery); }
+  onSearchQueryChange(): void {
+    this.vm.applySearch(this.searchQuery);
+  }
 
   async doRefresh(): Promise<void> {
     this.refreshing = true;
@@ -185,7 +184,7 @@ export struct PlaylistsPage {
     const audioTracks: Track[] = audios.filter((t: Track) => uriList.includes(t.uri));
     if (audioTracks.length > 0) {
       const queue = audioTracks.map((t: Track) =>
-        new QueueItem(t.id, t.title, t.uri, t.artistName, t.albumName, t.artworkPath));
+      new QueueItem(t.id, t.title, t.uri, t.artistName, t.albumName, t.artworkPath));
       PlaybackService.playList(queue, 0, true);
       NavController.push('AudioPlayer');
       return;
@@ -199,18 +198,40 @@ export struct PlaylistsPage {
         const item: VideoPlayItem = { uri: v.uri, title: v.title };
         list.push(item);
       }
-      const param: VideoParam = { uri: videoTracks[0].uri, title: videoTracks[0].title, list: list, index: 0 };
+      const param: VideoParam = {
+        uri: videoTracks[0].uri,
+        title: videoTracks[0].title,
+        list: list,
+        index: 0
+      };
       NavController.push('VideoPlayer', param);
       return;
     }
 
-    promptAction.showToast({ message: '播放列表为空' });
+    UiFeedback.showToast({ message: '播放列表为空' });
   }
 
-  openCreate(): void { this.sheetMode = 'create'; this.showSheet = true; }
-  openCtxMenu(card: PlaylistCard): void { this.ctxCard = card; this.sheetMode = 'ctxmenu'; this.showSheet = true; }
-  openRename(): void { this.sheetMode = 'rename'; this.showSheet = true; }
-  closeSheet(): void { this.showSheet = false; this.sheetMode = 'none'; this.ctxCard = null; }
+  openCreate(): void {
+    this.sheetMode = 'create';
+    this.showSheet = true;
+  }
+
+  openCtxMenu(card: PlaylistCard): void {
+    this.ctxCard = card;
+    this.sheetMode = 'ctxmenu';
+    this.showSheet = true;
+  }
+
+  openRename(): void {
+    this.sheetMode = 'rename';
+    this.showSheet = true;
+  }
+
+  closeSheet(): void {
+    this.showSheet = false;
+    this.sheetMode = 'none';
+    this.ctxCard = null;
+  }
 
   build() {
     Stack() {
@@ -225,11 +246,20 @@ export struct PlaylistsPage {
             } else {
               Column() {
                 Image($r('app.media.ic_playlist_big')).width(96).height(96).fillColor($r('app.color.grey800'))
-                Text($r('app.string.noplaylist')).fontSize(15).fontColor($r('app.color.list_subtitle')).margin({ top: 12 })
+                Text($r('app.string.noplaylist'))
+                  .fontSize(15)
+                  .fontColor($r('app.color.list_subtitle'))
+                  .margin({ top: 12 })
                 Button($r('app.string.create_new_playlist'))
-                  .type(ButtonType.Normal).borderRadius(4).backgroundColor('#FF8800').fontColor('#FFFFFF').fontSize(14)
+                  .type(ButtonType.Normal)
+                  .borderRadius(4)
+                  .backgroundColor('#FF8800')
+                  .fontColor('#FFFFFF')
+                  .fontSize(14)
                   .margin({ top: 16 })
-                  .onClick(() => { this.openCreate(); })
+                  .onClick(() => {
+                    this.openCreate();
+                  })
               }
               .width('100%').height('100%').justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
             }
@@ -240,13 +270,27 @@ export struct PlaylistsPage {
                   Column() {
                     Stack({ alignContent: Alignment.TopEnd }) {
                       Image(card.artwork.length > 0 ? card.artwork : $r('app.media.ic_playlist_big'))
-                        .width('100%').aspectRatio(1).objectFit(ImageFit.Cover).borderRadius({ topLeft: 6, topRight: 6 })
-                      Image($r('app.media.ic_more')).width(20).height(20).fillColor($r('app.color.list_title')).margin(4)
-                        .onClick(() => { this.openCtxMenu(card); })
+                        .width('100%')
+                        .aspectRatio(1)
+                        .objectFit(ImageFit.Cover)
+                        .borderRadius({ topLeft: 6, topRight: 6 })
+                      Image($r('app.media.ic_more'))
+                        .width(20)
+                        .height(20)
+                        .fillColor($r('app.color.list_title'))
+                        .margin(4)
+                        .onClick(() => {
+                          this.openCtxMenu(card);
+                        })
                     }
                     .width('100%')
-                    Text(card.name).fontSize(14).fontColor($r('app.color.list_title')).maxLines(1)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis }).margin({ top: 6, left: 8, right: 8 })
+
+                    Text(card.name)
+                      .fontSize(14)
+                      .fontColor($r('app.color.list_title'))
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .margin({ top: 6, left: 8, right: 8 })
                     Text(`${card.trackCount} 首`).fontSize(12).fontColor($r('app.color.list_subtitle'))
                       .margin({ bottom: 6 })
                   }
@@ -255,19 +299,30 @@ export struct PlaylistsPage {
                   .backgroundColor($r('app.color.card_background'))
                   .border({ width: 0.5, color: $r('app.color.card_border') })
                   .shadow({ radius: 4, color: '#1A000000', offsetY: 2 })
-                  .onClick(() => { this.openPlaylist(card); })
+                  .onClick(() => {
+                    this.openPlaylist(card);
+                  })
                 }
               }, (card: PlaylistCard) => `pl${card.id}`)
             }
             .columnsTemplate('1fr 1fr')
-            .columnsGap(10).rowsGap(12)
-            .padding({ left: 12, right: 12, top: 8, bottom: 80 })
-            .width('100%').height('100%')
+            .columnsGap(10)
+            .rowsGap(12)
+            .padding({
+              left: 12,
+              right: 12,
+              top: 8,
+              bottom: 80
+            })
+            .width('100%')
+            .height('100%')
           }
         }
-        .onRefreshing(() => this.doRefresh()).refreshOffset(64)
+        .onRefreshing(() => this.doRefresh())
+        .refreshOffset(64)
         .backgroundColor($r('app.color.background_default'))
-        .layoutWeight(1).width('100%')
+        .layoutWeight(1)
+        .width('100%')
       }
       .width('100%').height('100%')
 
@@ -275,17 +330,24 @@ export struct PlaylistsPage {
       Button() {
         Image($r('app.media.ic_add')).width(22).height(22).fillColor($r('app.color.colorOnPrimary'))
       }
-      .width(48).height(48).borderRadius(24).backgroundColor('#FF8800')
+      .width(48)
+      .height(48)
+      .borderRadius(24)
+      .backgroundColor('#FF8800')
       .shadow({ radius: 8, color: '#44000000', offsetY: 4 })
       .position({ right: 16, bottom: 16 })
-      .onClick(() => { this.openCreate(); })
+      .onClick(() => {
+        this.openCreate();
+      })
     }
     .width('100%').height('100%')
     .backgroundColor($r('app.color.background_default'))
     // 唯一的 bindSheet,内部按 sheetMode 切换内容
     .bindSheet(this.showSheet, this.unifiedSheet(), {
       height: SheetSize.FIT_CONTENT, dragBar: true,
-      onDisappear: () => { this.closeSheet(); },
+      onDisappear: () => {
+        this.closeSheet();
+      },
     })
   }
 
@@ -300,7 +362,12 @@ export struct PlaylistsPage {
         .fontColor('#FF8800')
         .border({ width: 1, color: $r('app.color.card_border') })
         .fontSize(14)
-        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+        .padding({
+          left: 16,
+          right: 16,
+          top: 8,
+          bottom: 8
+        })
         .onClick(() => this.onSearchGlobal())
     }
     .width('100%')
@@ -313,7 +380,10 @@ export struct PlaylistsPage {
   unifiedSheet() {
     if (this.sheetMode === 'create') {
       PlaylistDialog({
-        onClose: () => { this.closeSheet(); this.vm.load(); },
+        onClose: () => {
+          this.closeSheet();
+          this.vm.load();
+        },
         onCreate: async (name: string) => {
           await MediaLibrary.createPlaylist(name);
         },
@@ -329,7 +399,9 @@ export struct PlaylistsPage {
           }
           this.closeSheet();
         },
-        onCancel: () => { this.closeSheet(); },
+        onCancel: () => {
+          this.closeSheet();
+        },
       }).width('100%')
     }
   }
@@ -350,12 +422,24 @@ export struct PlaylistsPage {
 
       // 播放全部
       Row() {
-        Image($r('app.media.ic_play_player')).width(24).height(24).fillColor($r('app.color.list_title')).margin({ right: 12 })
+        Image($r('app.media.ic_play_player'))
+          .width(24)
+          .height(24)
+          .fillColor($r('app.color.list_title'))
+          .margin({ right: 12 })
         Text('播放全部').fontSize(15).fontColor($r('app.color.list_title'))
       }
-      .width('100%').padding({ left: 16, right: 16, top: 14, bottom: 14 })
+      .width('100%')
+      .padding({
+        left: 16,
+        right: 16,
+        top: 14,
+        bottom: 14
+      })
       .onClick(() => {
-        if (this.ctxCard) { this.playAll(this.ctxCard); }
+        if (this.ctxCard) {
+          this.playAll(this.ctxCard);
+        }
         this.closeSheet();
       })
 
@@ -364,19 +448,33 @@ export struct PlaylistsPage {
         Image($r('app.media.ic_edit')).width(24).height(24).fillColor($r('app.color.list_title')).margin({ right: 12 })
         Text($r('app.string.rename')).fontSize(15).fontColor($r('app.color.list_title'))
       }
-      .width('100%').padding({ left: 16, right: 16, top: 14, bottom: 14 })
-      .onClick(() => { this.openRename(); })
+      .width('100%')
+      .padding({
+        left: 16,
+        right: 16,
+        top: 14,
+        bottom: 14
+      })
+      .onClick(() => {
+        this.openRename();
+      })
 
       // 删除
       Row() {
         Image($r('app.media.ic_playlist_delete')).width(24).height(24).fillColor('#FF8800').margin({ right: 12 })
         Text($r('app.string.delete')).fontSize(15).fontColor('#FF8800')
       }
-      .width('100%').padding({ left: 16, right: 16, top: 14, bottom: 14 })
+      .width('100%')
+      .padding({
+        left: 16,
+        right: 16,
+        top: 14,
+        bottom: 14
+      })
       .onClick(async () => {
         if (this.ctxCard) {
           await this.vm.deletePlaylist(this.ctxCard.id);
-          promptAction.showToast({ message: $r('app.string.stream_deleted') });
+          UiFeedback.showToast({ message: $r('app.string.stream_deleted') });
         }
         this.closeSheet();
       })
@@ -386,4 +484,8 @@ export struct PlaylistsPage {
     .width('100%').backgroundColor($r('app.color.bottom_sheet_background'))
     .borderRadius({ topLeft: 16, topRight: 16 })
   }
+
+  /** 持有 emitter 回调引用,aboutToDisappear 时按引用解绑。 */
+  private playlistsChangedHandler: (data: emitter.EventData) => void = () => {
+  };
 }

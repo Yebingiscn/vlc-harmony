@@ -1,6 +1,5 @@
-import { promptAction } from '@kit.ArkUI';
+import { UiFeedback } from '../common/utils/UiFeedback';
 import { NavController } from '../common/data/NavController';
-import { BackTitleBar } from '../common/components/BackTitleBar';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
 import { Settings } from '../common/data/Settings';
 import { streamSubmissionMessage } from '../common/models/StreamInputModels';
@@ -16,24 +15,6 @@ export struct MrlPanelPage {
     this.incognitoMode = await Settings.getBoolean(Settings.KEY_INCOGNITO, false);
   }
 
-  private submitAddress(): void {
-    const message = streamSubmissionMessage(this.address);
-    if (message.length > 0) {
-      promptAction.showToast({ message: message });
-    }
-  }
-
-  private async setIncognito(enabled: boolean): Promise<void> {
-    await PlaybackHistory.setIncognito(enabled);
-    this.incognitoMode = enabled;
-    promptAction.showToast({ message: enabled ? '无痕模式已开启' : '无痕模式已关闭' });
-  }
-
-  private refresh(): void {
-    this.menuOpen = false;
-    promptAction.showToast({ message: '已刷新' });
-  }
-
   @Builder
   streamMenu() {
     Column() {
@@ -45,14 +26,24 @@ export struct MrlPanelPage {
           .onChange((enabled: boolean) => this.setIncognito(enabled))
       }
       .width('100%').height(52).padding({ left: 16, right: 12 }).alignItems(VerticalAlign.Center)
+
       Divider().color($r('app.color.divider')).strokeWidth(1)
       Text('刷新')
-        .fontSize(16).fontColor($r('app.color.list_title'))
-        .width('100%').padding({ left: 16, right: 16, top: 16, bottom: 16 })
+        .fontSize(16)
+        .fontColor($r('app.color.list_title'))
+        .width('100%')
+        .padding({
+          left: 16,
+          right: 16,
+          top: 16,
+          bottom: 16
+        })
         .onClick(() => this.refresh())
     }
-    .width(220).backgroundColor($r('app.color.card_background'))
-    .borderRadius(12).shadow({ radius: 16, color: '#1A000000', offsetY: 6 })
+    .width(220)
+    .backgroundColor($r('app.color.card_background'))
+    .borderRadius(12)
+    .shadow({ radius: 16, color: '#1A000000', offsetY: 6 })
     .position({ right: 12, top: 64 })
   }
 
@@ -62,8 +53,11 @@ export struct MrlPanelPage {
         Column() {
           Row() {
             Image($r('app.media.ic_arrow_back'))
-              .width(24).height(24).fillColor($r('app.color.list_title'))
-              .margin({ left: 16 }).onClick(() => NavController.pop())
+              .width(24)
+              .height(24)
+              .fillColor($r('app.color.list_title'))
+              .margin({ left: 16 })
+              .onClick(() => NavController.pop())
             Text('串流')
               .fontSize(16).fontWeight(FontWeight.Bold).fontColor($r('app.color.orange500'))
               .margin({ left: 16 })
@@ -72,10 +66,15 @@ export struct MrlPanelPage {
               SymbolGlyph($r('sys.symbol.dot_grid_1x2'))
                 .fontSize(28).fontColor([$r('sys.color.icon_primary')])
             }
-            .width(56).height(56).backgroundColor(Color.Transparent).margin({ right: 4 })
+            .width(56)
+            .height(56)
+            .backgroundColor(Color.Transparent)
+            .margin({ right: 4 })
             .onClick(() => this.menuOpen = !this.menuOpen)
           }
-          .width('100%').height(56).alignItems(VerticalAlign.Center)
+          .width('100%')
+          .height(56)
+          .alignItems(VerticalAlign.Center)
           .padding({ top: 32 })
           .backgroundColor($r('app.color.background_actionbar'))
 
@@ -91,7 +90,8 @@ export struct MrlPanelPage {
                 .type(InputType.URL)
                 .fontColor($r('app.color.list_title'))
                 .placeholderColor($r('app.color.grey600'))
-                .layoutWeight(1).height(52)
+                .layoutWeight(1)
+                .height(52)
                 .backgroundColor($r('app.color.card_background'))
                 .border({ width: 1, color: $r('app.color.card_border'), radius: 8 })
                 .padding({ left: 14, right: 12 })
@@ -101,8 +101,11 @@ export struct MrlPanelPage {
                 Image($r('app.media.ic_send'))
                   .width(26).height(26).fillColor($r('app.color.colorOnPrimary'))
               }
-              .width(52).height(52).backgroundColor($r('app.color.orange500'))
-              .borderRadius(8).margin({ left: 12 })
+              .width(52)
+              .height(52)
+              .backgroundColor($r('app.color.orange500'))
+              .borderRadius(8)
+              .margin({ left: 12 })
               .onClick(() => this.submitAddress())
             }
             .width('100%').margin({ top: 24 })
@@ -127,5 +130,23 @@ export struct MrlPanelPage {
       NavController.pop();
       return true;
     })
+  }
+
+  private submitAddress(): void {
+    const message = streamSubmissionMessage(this.address);
+    if (message.length > 0) {
+      UiFeedback.showToast({ message: message });
+    }
+  }
+
+  private async setIncognito(enabled: boolean): Promise<void> {
+    await PlaybackHistory.setIncognito(enabled);
+    this.incognitoMode = enabled;
+    UiFeedback.showToast({ message: enabled ? '无痕模式已开启' : '无痕模式已关闭' });
+  }
+
+  private refresh(): void {
+    this.menuOpen = false;
+    UiFeedback.showToast({ message: '已刷新' });
   }
 }

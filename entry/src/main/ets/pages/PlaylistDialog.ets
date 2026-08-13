@@ -1,7 +1,7 @@
+import { UiFeedback } from '../common/utils/UiFeedback';
 import { Playlist } from '../common/models/MediaModels';
 import { SimpleListItem } from '../common/components/SimpleListItem';
 import { AppColors } from '../common/constants/AppConstants';
-import { promptAction } from '@kit.ArkUI';
 
 /**
  * PlaylistDialog —— SavePlaylistDialog BottomSheet。
@@ -15,9 +15,12 @@ export struct PlaylistDialog {
   @Local selected: Set<number> = new Set<number>();
   @Local replace: boolean = false;
   @Local loading: boolean = true;
-  @Event onClose: () => void = () => {};
   /** 创建新播放列表回调:父组件负责持久化,返回 Promise 确保 await 生效。 */
-  @Event onCreate: (name: string) => Promise<void> = async () => {};
+  @Event onCreate: (name: string) => Promise<void> = async () => {
+  };
+
+  @Event onClose: () => void = () => {
+  };
 
   aboutToAppear(): void {
     // 无持久化歌单表 → 空列表(非 mock:真实读取,当前为空)
@@ -38,7 +41,7 @@ export struct PlaylistDialog {
   /** 创建新播放列表:通知父组件持久化,成功后更新本地列表并清空输入。 */
   async createNew(): Promise<void> {
     if (this.name.trim().length === 0) {
-      promptAction.showToast({ message: $r('app.string.edit_eq_name_not_allowed') });
+      UiFeedback.showToast({ message: $r('app.string.edit_eq_name_not_allowed') });
       return;
     }
     // 等待父组件(PlaylistsPage)完成持久化
@@ -46,7 +49,7 @@ export struct PlaylistDialog {
     const p = new Playlist(Date.now(), this.name.trim());
     this.playlists = [...this.playlists, p];
     this.name = '';
-    promptAction.showToast({ message: $r('app.string.ok') });
+    UiFeedback.showToast({ message: $r('app.string.ok') });
   }
 
   build() {
@@ -60,15 +63,22 @@ export struct PlaylistDialog {
           // 创建新歌单
           Row() {
             TextInput({ text: this.name, placeholder: $r('app.string.playlist_name_hint') })
-              .fontSize(14).fontColor($r('app.color.list_title')).backgroundColor($r('app.color.card_background'))
-              .borderRadius(4).layoutWeight(1)
+              .fontSize(14)
+              .fontColor($r('app.color.list_title'))
+              .backgroundColor($r('app.color.card_background'))
+              .borderRadius(4)
+              .layoutWeight(1)
               .border({ width: 0.5, color: $r('app.color.card_border') })
               .onChange((v: string) => {
                 this.name = v;
               })
             Button($r('app.string.create'))
-              .type(ButtonType.Normal).borderRadius(4).backgroundColor(AppColors.orange500).fontColor('#FFFFFF')
-              .fontSize(13).margin({ left: 8 })
+              .type(ButtonType.Normal)
+              .borderRadius(4)
+              .backgroundColor(AppColors.orange500)
+              .fontColor('#FFFFFF')
+              .fontSize(13)
+              .margin({ left: 8 })
               .onClick(() => this.createNew())
           }
           .width('100%').padding(16).alignItems(VerticalAlign.Center)
@@ -119,11 +129,18 @@ export struct PlaylistDialog {
       // 底部 Add / Save 按钮
       Row() {
         Button($r('app.string.add'))
-          .type(ButtonType.Normal).borderRadius(4).backgroundColor($r('app.color.card_background')).fontColor($r('app.color.list_title'))
-          .layoutWeight(1).margin({ right: 8 })
+          .type(ButtonType.Normal)
+          .borderRadius(4)
+          .backgroundColor($r('app.color.card_background'))
+          .fontColor($r('app.color.list_title'))
+          .layoutWeight(1)
+          .margin({ right: 8 })
           .onClick(() => this.onClose())
         Button($r('app.string.ok'))
-          .type(ButtonType.Normal).borderRadius(4).backgroundColor(AppColors.orange500).fontColor('#FFFFFF')
+          .type(ButtonType.Normal)
+          .borderRadius(4)
+          .backgroundColor(AppColors.orange500)
+          .fontColor('#FFFFFF')
           .layoutWeight(1)
           .onClick(() => this.onClose())
       }

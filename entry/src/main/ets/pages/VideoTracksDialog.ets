@@ -6,6 +6,7 @@ import { VlcTrackInfo } from 'libvlcnapi.so';
 export class VlcTrack {
   id: number;
   name: string;
+
   constructor(id: number, name: string) {
     this.id = id;
     this.name = name;
@@ -17,7 +18,8 @@ export class VlcTrack {
 struct TrackRow {
   @Param name: ResourceStr = '';
   @Param selected: boolean = false;
-  @Event onRowClick: () => void = () => {};
+  @Event onRowClick: () => void = () => {
+  };
 
   build() {
     Row() {
@@ -25,12 +27,16 @@ struct TrackRow {
         .fontSize(14)
         .fontColor(this.selected ? AppColors.orange500 : $r('app.color.list_title'))
         .layoutWeight(1)
-        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
       if (this.selected) {
         Image($r('app.media.ic_check_large')).width(20).height(20).fillColor(AppColors.orange500)
       }
     }
-    .width('100%').height(44).padding({ left: 24, right: 16 }).alignItems(VerticalAlign.Center)
+    .width('100%')
+    .height(44)
+    .padding({ left: 24, right: 16 })
+    .alignItems(VerticalAlign.Center)
     .onClick(() => this.onRowClick())
   }
 }
@@ -43,16 +49,26 @@ struct TrackSection {
   @Param emptyText: ResourceStr = '';
   @Param tracks: VlcTrack[] = [];
   @Param selectedId: number = -1;
-  @Event onTrackClick: (id: number) => void = () => {};
   @Local collapsed: boolean = true;
+
+  @Event onTrackClick: (id: number) => void = () => {
+  };
 
   build() {
     Column() {
       Row() {
-        Text(this.title).fontSize(16).fontColor($r('app.color.list_title')).margin({ left: 16, top: 16, right: 8 }).layoutWeight(1)
+        Text(this.title)
+          .fontSize(16)
+          .fontColor($r('app.color.list_title'))
+          .margin({ left: 16, top: 16, right: 8 })
+          .layoutWeight(1)
         if (this.showMore && this.tracks.length > 0) {
-          Image($r('app.media.ic_collapse_arrow')).width(24).height(24).fillColor($r('app.color.list_title'))
-            .padding(8).margin({ right: 8 })
+          Image($r('app.media.ic_collapse_arrow'))
+            .width(24)
+            .height(24)
+            .fillColor($r('app.color.list_title'))
+            .padding(8)
+            .margin({ right: 8 })
             .rotate({ angle: this.collapsed ? 0 : 180 })
             .onClick(() => this.collapsed = !this.collapsed)
         }
@@ -84,15 +100,18 @@ struct TrackSection {
  */
 @ComponentV2
 export struct VideoTracksDialog {
-  @Event onClose: () => void = () => {};
-  @Event onTrackSelect: (id: number, type: string) => void = () => {};
-
   @Local audioTracks: VlcTrack[] = [];
   @Local subtitleTracks: VlcTrack[] = [];
   @Local videoTracks: VlcTrack[] = [];
   @Local selectedAudio: number = -1;
   @Local selectedSubtitle: number = -1;
   @Local selectedVideo: number = -1;
+
+  @Event onClose: () => void = () => {
+  };
+
+  @Event onTrackSelect: (id: number, type: string) => void = () => {
+  };
 
   aboutToAppear(): void {
     const svc = PlaybackService.getInstance();

@@ -1,5 +1,5 @@
+import { UiFeedback } from '../../common/utils/UiFeedback';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { promptAction } from '@kit.ArkUI';
 
 /**
  * VideoPlayerOrientationDelegate —— 对齐 Android VideoPlayerOrientationDelegate。
@@ -9,7 +9,7 @@ export class VideoPlayerOrientationDelegate {
 
   displayOrientation(): void {
     hilog.info(0x0001, 'VLC', '[VLC] OrientationDelegate.displayOrientation (stub)');
-    promptAction.showToast({ message: 'Screen orientation is not available yet' });
+    UiFeedback.showToast({ message: 'Screen orientation is not available yet' });
   }
 
   hideOrientationOverlay(): void {

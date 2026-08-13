@@ -1,10 +1,10 @@
 import {
-  rendererDiscovererList,
   rendererDiscovererCreate,
+  rendererDiscovererGetItems,
+  rendererDiscovererList,
   rendererDiscovererRelease,
   rendererDiscovererStart,
   rendererDiscovererStop,
-  rendererDiscovererGetItems,
   VlcRendererInfo,
 } from 'libvlcnapi.so';
 import { VLCObject } from './VLCObject';

@@ -9,9 +9,12 @@ import { EmptyLoadingState } from '../models/MediaModels';
 export struct EmptyStateView {
   @Param state: EmptyLoadingState = EmptyLoadingState.LOADING;
   @Param filterQuery: string = '';
-  @Event onGrantPermission: () => void = () => {};
-  @Event onPickFile: () => void = () => {};
-  @Event onOpenStorage: () => void = () => {};
+  @Event onGrantPermission: () => void = () => {
+  };
+  @Event onPickFile: () => void = () => {
+  };
+  @Event onOpenStorage: () => void = () => {
+  };
 
   build() {
     Column() {
@@ -22,7 +25,11 @@ export struct EmptyStateView {
           .fontColor($r('app.color.list_subtitle'))
           .margin({ top: 12 })
       } else if (this.state === EmptyLoadingState.EMPTY) {
-        Image($r('app.media.ic_empty')).width(96).height(96).objectFit(ImageFit.Contain).fillColor($r('app.color.grey800'))
+        Image($r('app.media.ic_empty'))
+          .width(96)
+          .height(96)
+          .objectFit(ImageFit.Contain)
+          .fillColor($r('app.color.grey800'))
         Text($r('app.string.nomedia'))
           .fontSize(14)
           .fontColor($r('app.color.list_subtitle'))
@@ -37,7 +44,11 @@ export struct EmptyStateView {
           .margin({ top: 16 })
           .onClick(() => this.onPickFile())
       } else if (this.state === EmptyLoadingState.EMPTY_SEARCH) {
-        Image($r('app.media.ic_empty')).width(96).height(96).objectFit(ImageFit.Contain).fillColor($r('app.color.grey800'))
+        Image($r('app.media.ic_empty'))
+          .width(96)
+          .height(96)
+          .objectFit(ImageFit.Contain)
+          .fillColor($r('app.color.grey800'))
         Text(this.filterQuery.length > 0
           ? `No item found for search ${this.filterQuery}`
           : $r('app.string.empty_search').toString())
@@ -46,13 +57,17 @@ export struct EmptyStateView {
           .textAlign(TextAlign.Center)
           .margin({ top: 12, left: 24, right: 24 })
       } else if (this.state === EmptyLoadingState.EMPTY_FAVORITES) {
-        Image($r('app.media.ic_fav_empty')).width(96).height(96).objectFit(ImageFit.Contain).fillColor($r('app.color.grey800'))
+        Image($r('app.media.ic_fav_empty'))
+          .width(96)
+          .height(96)
+          .objectFit(ImageFit.Contain)
+          .fillColor($r('app.color.grey800'))
         Text($r('app.string.nofav'))
           .fontSize(14)
           .fontColor($r('app.color.list_subtitle'))
           .margin({ top: 12 })
       } else if (this.state === EmptyLoadingState.MISSING_PERMISSION ||
-      this.state === EmptyLoadingState.MISSING_VIDEO_PERMISSION) {
+        this.state === EmptyLoadingState.MISSING_VIDEO_PERMISSION) {
         Image($r('app.media.ic_empty_warning')).width(96).height(96).objectFit(ImageFit.Contain).fillColor('#FF8800')
         Text($r('app.string.permission_media'))
           .fontSize(16)

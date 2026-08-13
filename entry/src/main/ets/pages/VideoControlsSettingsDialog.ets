@@ -22,16 +22,11 @@ export interface ControlsState {
 
 @ComponentV2
 export struct VideoControlsSettingsDialog {
-  @Event onClose: () => void = () => {};
-  /** 保存:回调传出当前全部开关状态。 */
-  @Event onConfirm: (s: ControlsState) => void = () => {};
-
-  // ── 视觉常量 ───────────────────────────────────────────
   // 主题感知:浅色=白底深字,深色=深底浅字。资源定义见 base/dark element/color.json。
   readonly cSubtle: Resource = $r('app.color.font_light');
   readonly cDivider: Resource = $r('app.color.divider');
+  // ── 视觉常量 ───────────────────────────────────────────
   readonly cCancelBg: Resource = $r('app.color.background_default_darker');
-
   // 默认值:与参考图一致 —— 手势类全开,音频增强和快放默认关。
   @Local state: ControlsState = {
     audioBoost: false,
@@ -43,6 +38,13 @@ export struct VideoControlsSettingsDialog {
     doubleTapSeekDelay: 10,
     doubleTapPlayPause: true,
     fastPlayback: false,
+  };
+
+  @Event onClose: () => void = () => {
+  };
+
+  /** 保存:回调传出当前全部开关状态。 */
+  @Event onConfirm: (s: ControlsState) => void = () => {
   };
 
   /** 0.5px 分隔线 —— 1px 在低 dpi 屏有时会粗,0.5 更细。 */
@@ -62,7 +64,8 @@ export struct VideoControlsSettingsDialog {
           .fontSize(16).fontWeight(FontWeight.Medium).fontColor($r('app.color.list_title'))
         if (summary.length > 0) {
           Text(summary)
-            .fontSize(12).fontColor(this.cSubtle)
+            .fontSize(12)
+            .fontColor(this.cSubtle)
             .margin({ top: 4 })
             .maxLines(2)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -74,7 +77,8 @@ export struct VideoControlsSettingsDialog {
 
       Stack() {
         Row()
-          .width(20).height(20)
+          .width(20)
+          .height(20)
           .borderRadius(4)
           .backgroundColor(checked ? AppColors.orange500 : Color.Transparent)
           .border({
@@ -89,7 +93,12 @@ export struct VideoControlsSettingsDialog {
       .width(20).height(20)
     }
     .width('100%')
-    .padding({ left: 20, right: 20, top: 14, bottom: 14 })
+    .padding({
+      left: 20,
+      right: 20,
+      top: 14,
+      bottom: 14
+    })
     .alignItems(VerticalAlign.Center)
     .onClick(() => onTap())
   }
@@ -117,7 +126,12 @@ export struct VideoControlsSettingsDialog {
       .width(20).height(20)
     }
     .width('100%')
-    .padding({ left: 20, right: 20, top: 14, bottom: 14 })
+    .padding({
+      left: 20,
+      right: 20,
+      top: 14,
+      bottom: 14
+    })
     .alignItems(VerticalAlign.Center)
   }
 
@@ -129,7 +143,8 @@ export struct VideoControlsSettingsDialog {
         Text('轻按两下可进退')
           .fontSize(16).fontWeight(FontWeight.Medium).fontColor($r('app.color.list_title'))
         Text('在屏幕边缘轻按两下,可快进/快退 10 秒')
-          .fontSize(12).fontColor(this.cSubtle)
+          .fontSize(12)
+          .fontColor(this.cSubtle)
           .margin({ top: 4 })
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -149,7 +164,12 @@ export struct VideoControlsSettingsDialog {
       .padding({ right: 8 })
     }
     .width('100%')
-    .padding({ left: 20, right: 20, top: 14, bottom: 14 })
+    .padding({
+      left: 20,
+      right: 20,
+      top: 14,
+      bottom: 14
+    })
     .alignItems(VerticalAlign.Center)
     // 整行可点切换开关;「10 秒」在视觉上是入口但本期不做二级弹窗(用户没要求)。
     .onClick(() => this.state.doubleTapSeek = !this.state.doubleTapSeek)
@@ -159,9 +179,16 @@ export struct VideoControlsSettingsDialog {
     Column() {
       // ── 标题 ──────────────────────────────────────────
       Text('控制设置')
-        .fontSize(19).fontWeight(600).fontColor($r('app.color.list_title'))
+        .fontSize(19)
+        .fontWeight(600)
+        .fontColor($r('app.color.list_title'))
         .width('100%')
-        .padding({ left: 20, right: 20, top: 16, bottom: 12 })
+        .padding({
+          left: 20,
+          right: 20,
+          top: 16,
+          bottom: 12
+        })
         .textAlign(TextAlign.Start)
 
       this.thinDivider()
@@ -173,9 +200,16 @@ export struct VideoControlsSettingsDialog {
 
       // ── 手势段标题(橙色) ─────────────────────────────
       Text('手势')
-        .fontSize(13).fontWeight(FontWeight.Medium).fontColor(AppColors.orange500)
+        .fontSize(13)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(AppColors.orange500)
         .width('100%')
-        .padding({ left: 20, right: 20, top: 18, bottom: 8 })
+        .padding({
+          left: 20,
+          right: 20,
+          top: 18,
+          bottom: 8
+        })
 
       this.toggleRow('音量手势', '在视频回放过程中,通过手势控制音量', this.state.volGesture,
         () => this.state.volGesture = !this.state.volGesture)
@@ -212,7 +246,8 @@ export struct VideoControlsSettingsDialog {
       Row({ space: 10 }) {
         Button('取消')
           .type(ButtonType.Capsule)
-          .fontSize(16).fontWeight(FontWeight.Medium)
+          .fontSize(16)
+          .fontWeight(FontWeight.Medium)
           .backgroundColor(this.cCancelBg)
           .fontColor($r('app.color.list_title'))
           .height(46)
@@ -220,7 +255,8 @@ export struct VideoControlsSettingsDialog {
           .onClick(() => this.onClose())
         Button('保存')
           .type(ButtonType.Capsule)
-          .fontSize(16).fontWeight(FontWeight.Medium)
+          .fontSize(16)
+          .fontWeight(FontWeight.Medium)
           .backgroundColor(AppColors.orange500)
           .fontColor('#FFFFFF')
           .height(46)
@@ -231,7 +267,12 @@ export struct VideoControlsSettingsDialog {
           })
       }
       .width('100%')
-      .padding({ left: 20, right: 20, bottom: 24, top: 12 })
+      .padding({
+        left: 20,
+        right: 20,
+        bottom: 24,
+        top: 12
+      })
     }
     .width('100%')
     .height('100%')

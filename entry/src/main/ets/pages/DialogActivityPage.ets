@@ -1,5 +1,5 @@
+import { UiFeedback } from '../common/utils/UiFeedback';
 import { NavController } from '../common/data/NavController';
-import { promptAction } from '@kit.ArkUI';
 
 /**
  * DialogActivityPage —— 透明无 UI 派发壳(DialogActivity)。
@@ -39,11 +39,11 @@ export struct DialogActivityPage {
         msg = 'VLC dialog';
         break;
       default:
-        // 未知 action → finish()。
+      // 未知 action → finish()。
         NavController.pop();
         return;
     }
-    promptAction.showToast({ message: msg, duration: 1500 });
+    UiFeedback.showToast({ message: msg, duration: 1500 });
     // 派发后销毁自身。
     NavController.pop();
   }

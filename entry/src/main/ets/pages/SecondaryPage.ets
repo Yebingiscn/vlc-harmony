@@ -1,10 +1,9 @@
 import { VlcToolbar } from '../common/components/VlcToolbar';
 import { NavController } from '../common/data/NavController';
-import { SecondaryParam, FileBrowserParam, Track, formatDuration } from '../common/models/MediaModels';
+import { FileBrowserParam, formatDuration, SecondaryParam, Track } from '../common/models/MediaModels';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
 import { EmptyStateView } from '../common/components/EmptyStateView';
-import { promptAction } from '@kit.ArkUI';
 
 /**
  * SecondaryPage —— SecondaryActivity(pushed 宿主壳)。
@@ -61,7 +60,8 @@ export struct SecondaryPage {
           const g = t.genre.length > 0 ? t.genre.split(/[,;/]/)[0].trim() : '';
           return (g.length > 0 ? g : 'Unknown Genre') === key;
         });
-        filtered.sort((a: Track, b: Track) => a.artistName.localeCompare(b.artistName) || a.title.localeCompare(b.title));
+        filtered.sort(
+          (a: Track, b: Track) => a.artistName.localeCompare(b.artistName) || a.title.localeCompare(b.title));
         break;
       default:
         filtered = all.slice();
@@ -92,7 +92,7 @@ export struct SecondaryPage {
   async playTrack(track: Track): Promise<void> {
     const all = this.tracks.length > 0 ? this.tracks : MediaLibrary.getAudios();
     const queue: QueueItem[] = all.map((t: Track) =>
-      new QueueItem(t.id, t.title, t.uri, t.artistName, t.albumName, t.artworkPath)
+    new QueueItem(t.id, t.title, t.uri, t.artistName, t.albumName, t.artworkPath)
     );
     await PlaybackService.playList(queue, all.indexOf(track), true);
     NavController.push('AudioPlayer');
@@ -110,7 +110,8 @@ export struct SecondaryPage {
         Column() {
           if (this.param.fragment === 'ABOUT') {
             this.aboutContent()
-          } else if (this.param.fragment === 'ARTIST' || this.param.fragment === 'ALBUM' || this.param.fragment === 'GENRE') {
+          } else if (this.param.fragment === 'ARTIST' || this.param.fragment === 'ALBUM' ||
+            this.param.fragment === 'GENRE') {
             if (this.tracks.length === 0) {
               EmptyStateView({ state: 1 /* EMPTY */ })
             } else {
@@ -119,7 +120,10 @@ export struct SecondaryPage {
           } else {
             Column() {
               Image($r('app.media.ic_empty')).width(96).height(96).fillColor('#424242')
-              Text($r('app.string.developing')).fontSize(14).fontColor($r('app.color.list_subtitle')).margin({ top: 12 })
+              Text($r('app.string.developing'))
+                .fontSize(14)
+                .fontColor($r('app.color.list_subtitle'))
+                .margin({ top: 12 })
             }
             .width('100%')
             .height('100%')
@@ -152,16 +156,30 @@ export struct SecondaryPage {
             Column() {
               Text(t.title).fontSize(15).fontColor($r('app.color.list_title')).maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
-              Text(t.length > 0 ? formatDuration(t.length) : t.artistName).fontSize(12).fontColor($r('app.color.list_subtitle'))
+              Text(t.length > 0 ? formatDuration(t.length) : t.artistName)
+                .fontSize(12)
+                .fontColor($r('app.color.list_subtitle'))
                 .margin({ top: 2 })
             }.alignItems(HorizontalAlign.Start).layoutWeight(1)
           }
-          .width('100%').padding({ left: 16, right: 16, top: 8, bottom: 8 }).alignItems(VerticalAlign.Center)
+          .width('100%')
+          .padding({
+            left: 16,
+            right: 16,
+            top: 8,
+            bottom: 8
+          })
+          .alignItems(VerticalAlign.Center)
           .onClick(() => this.playTrack(t))
         }
       }, (t: Track) => `s${t.id}`)
     }
-    .divider({ strokeWidth: 0.5, color: $r('app.color.divider'), startMargin: 68, endMargin: 8 })
+    .divider({
+      strokeWidth: 0.5,
+      color: $r('app.color.divider'),
+      startMargin: 68,
+      endMargin: 8
+    })
     .width('100%')
     .layoutWeight(1)
   }

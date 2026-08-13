@@ -1,4 +1,4 @@
-import { MediaWrapper, formatDuration } from '../models/MediaModels';
+import { formatDuration, MediaWrapper } from '../models/MediaModels';
 
 /**
  * MediaListCard —— 列表卡片(video_list_card.xml)。横向:80x50 缩略图 + 标题/time + 收藏/更多/选中。
@@ -17,62 +17,84 @@ export struct MediaListCard {
   @Param showProgress: boolean = false;
   @Param showSeenMarker: boolean = true;
   @Param showThumbnail: boolean = true;
-  @Event onItemClick: () => void = () => {};
-  @Event onItemLongClick: () => void = () => {};
-  @Event onItemMoreClick: () => void = () => {};
+  @Event onItemClick: () => void = () => {
+  };
+  @Event onItemLongClick: () => void = () => {
+  };
+  @Event onItemMoreClick: () => void = () => {
+  };
 
   build() {
     Row() {
       // 可点击区域:缩略图 + 文本(点击播放)。更多按钮与之是兄弟节点,点击不会冒泡到播放
       Row() {
-      // 左侧 80x50 缩略图卡
-      Stack() {
-        Image(this.showThumbnail && this.item.artworkUrl.length > 0 ? this.item.artworkUrl : $r('app.media.tv_channel_default'))
-          .width(80)
-          .height(50)
-          .objectFit(ImageFit.Cover)
-          .alt($r('app.media.tv_channel_default'))
-          .draggable(false)
-          .borderRadius(4)
-          .backgroundColor($r('app.color.card_background'))
-        Row() {
-          if (this.isNetwork && this.isPresent) {
-            Image($r('app.media.ic_emoji_network')).width(16).height(16).fillColor('#FFFFFF')
-              .backgroundColor($r('app.color.rounded_corners_black_more_transparent')).borderRadius(3).padding(3)
-          }
-          if (this.isSD && this.isPresent) {
-            Image($r('app.media.ic_emoji_sd')).width(16).height(16).fillColor('#FFFFFF')
-              .backgroundColor($r('app.color.rounded_corners_black_more_transparent')).borderRadius(3).padding(3)
-          }
-          if (!this.isPresent) {
-            Image($r('app.media.ic_emoji_absent')).width(16).height(16).fillColor('#FFFFFF')
-              .backgroundColor($r('app.color.rounded_corners_black_more_transparent')).borderRadius(3).padding(3)
-          }
-        }
-        .position({ x: 4, y: 4 })
-        if (this.showSeenMarker && this.item.seen !== 0) {
-          Image($r('app.media.ic_check'))
-            .width(16)
-            .height(16)
-            .fillColor('#FFFFFF')
-            .backgroundColor($r('app.color.rounded_corners_black_more_transparent'))
-            .borderRadius(3)
-            .padding(3)
-            .position({ x: 60, y: 4 })
-        }
-        if (this.item.progress !== 0 && this.item.showItemProgress) {
-          Progress({ value: this.item.progress,
-            total: this.item.maxProgress > 0 ? this.item.maxProgress : 100, type: ProgressType.Linear })
-            .height(3)
+        // 左侧 80x50 缩略图卡
+        Stack() {
+          Image(this.showThumbnail && this.item.artworkUrl.length > 0 ? this.item.artworkUrl :
+            $r('app.media.tv_channel_default'))
             .width(80)
-            .color($r('app.color.orange'))
-            .backgroundColor('#33FF8800')
-            .position({ x: 0, y: 47 })
+            .height(50)
+            .objectFit(ImageFit.Cover)
+            .alt($r('app.media.tv_channel_default'))
+            .draggable(false)
+            .borderRadius(4)
+            .backgroundColor($r('app.color.card_background'))
+          Row() {
+            if (this.isNetwork && this.isPresent) {
+              Image($r('app.media.ic_emoji_network'))
+                .width(16)
+                .height(16)
+                .fillColor('#FFFFFF')
+                .backgroundColor($r('app.color.rounded_corners_black_more_transparent'))
+                .borderRadius(3)
+                .padding(3)
+            }
+            if (this.isSD && this.isPresent) {
+              Image($r('app.media.ic_emoji_sd'))
+                .width(16)
+                .height(16)
+                .fillColor('#FFFFFF')
+                .backgroundColor($r('app.color.rounded_corners_black_more_transparent'))
+                .borderRadius(3)
+                .padding(3)
+            }
+            if (!this.isPresent) {
+              Image($r('app.media.ic_emoji_absent'))
+                .width(16)
+                .height(16)
+                .fillColor('#FFFFFF')
+                .backgroundColor($r('app.color.rounded_corners_black_more_transparent'))
+                .borderRadius(3)
+                .padding(3)
+            }
+          }
+          .position({ x: 4, y: 4 })
+
+          if (this.showSeenMarker && this.item.seen !== 0) {
+            Image($r('app.media.ic_check'))
+              .width(16)
+              .height(16)
+              .fillColor('#FFFFFF')
+              .backgroundColor($r('app.color.rounded_corners_black_more_transparent'))
+              .borderRadius(3)
+              .padding(3)
+              .position({ x: 60, y: 4 })
+          }
+          if (this.item.progress !== 0 && this.item.showItemProgress) {
+            Progress({
+              value: this.item.progress,
+              total: this.item.maxProgress > 0 ? this.item.maxProgress : 100, type: ProgressType.Linear
+            })
+              .height(3)
+              .width(80)
+              .color($r('app.color.orange'))
+              .backgroundColor('#33FF8800')
+              .position({ x: 0, y: 47 })
+          }
         }
-      }
-      .borderRadius(4)
-      .clip(true)
-      .margin({ right: 16 })
+        .borderRadius(4)
+        .clip(true)
+        .margin({ right: 16 })
 
         // 中间:分辨率(置顶)+ 标题 + time
         Column() {

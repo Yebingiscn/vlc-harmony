@@ -16,11 +16,14 @@ export struct PreferenceNumberPickerDialog {
   @Param min: number = 1;
   /** 上限(NumberPickerPreference.MAX_VALUE=100)。 */
   @Param max: number = 100;
-  @Event onConfirm: (value: number) => void = () => {};
-  @Event onDismiss: () => void = () => {};
-
   @Local picked: number = 0;
   @Local initialized: boolean = false;
+
+  @Event onConfirm: (value: number) => void = () => {
+  };
+
+  @Event onDismiss: () => void = () => {
+  };
 
   aboutToAppear(): void {
     this.picked = this.currentValue;
@@ -45,8 +48,11 @@ export struct PreferenceNumberPickerDialog {
             }
           })
         Text(`${this.picked}`)
-          .fontSize(28).fontColor($r('app.color.orange500')).fontWeight(FontWeight.Bold)
-          .layoutWeight(1).textAlign(TextAlign.Center)
+          .fontSize(28)
+          .fontColor($r('app.color.orange500'))
+          .fontWeight(FontWeight.Bold)
+          .layoutWeight(1)
+          .textAlign(TextAlign.Center)
         Text('+')
           .fontSize(22).fontColor($r('app.color.list_subtitle')).padding(12)
           .onClick(() => {

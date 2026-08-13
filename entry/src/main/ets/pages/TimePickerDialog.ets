@@ -10,20 +10,14 @@ import { AppColors } from '../common/constants/AppConstants';
 export struct TimePickerDialog {
   @Param title: Resource = $r('app.string.tips_title');
   @Param maxTimeSize: number = 6;
-  @Event onClose: () => void = () => {};
-  @Event onConfirm: (millis: number) => void = () => {};
-
   @Local pickedRawTime: string = '';
   @Local formatTime: string = '';
 
-  /** 从右往左按 2 位切出 时/分/秒(与 JumpToTimeDialog 同一套修正后的逻辑)。 */
-  private parts(): string[] {
-    const raw: string = this.pickedRawTime;
-    const seconds: string = raw.length > 2 ? raw.substring(raw.length - 2) : raw;
-    const minutes: string = raw.length > 2 ? raw.substring(Math.max(0, raw.length - 4), raw.length - 2) : '';
-    const hours: string = raw.length > 4 ? raw.substring(0, raw.length - 4) : '';
-    return [hours, minutes, seconds];
-  }
+  @Event onClose: () => void = () => {
+  };
+
+  @Event onConfirm: (millis: number) => void = () => {
+  };
 
   updateValue(value: string): void {
     if (value.length > 0 && this.pickedRawTime.length + value.length > this.maxTimeSize) {
@@ -64,39 +58,78 @@ export struct TimePickerDialog {
   @Builder
   keyItem(label: string, pass: string) {
     Text(label)
-      .fontSize(18).fontWeight(FontWeight.Bold).fontColor('#FFFFFF')
-      .layoutWeight(1).height('100%').textAlign(TextAlign.Center)
+      .fontSize(18)
+      .fontWeight(FontWeight.Bold)
+      .fontColor('#FFFFFF')
+      .layoutWeight(1)
+      .height('100%')
+      .textAlign(TextAlign.Center)
       .onClick(() => this.updateValue(pass))
   }
 
   build() {
     Column() {
       Text(this.title)
-        .fontSize(18).fontWeight(FontWeight.Medium).fontColor('#FFFFFF')
-        .height(56).width('100%').margin({ top: 8 }).textAlign(TextAlign.Start)
+        .fontSize(18)
+        .fontWeight(FontWeight.Medium)
+        .fontColor('#FFFFFF')
+        .height(56)
+        .width('100%')
+        .margin({ top: 8 })
+        .textAlign(TextAlign.Start)
 
       Row() {
         Blank().layoutWeight(1)
         Text(this.formatTime).fontSize(24).fontWeight(FontWeight.Bold).fontColor('#FFFFFF')
-        Image($r('app.media.ic_backspace')).width(28).height(28).fillColor('#FFFFFF')
-          .margin({ left: 8, right: 16 }).onClick(() => this.deleteLastNumber())
+        Image($r('app.media.ic_backspace'))
+          .width(28)
+          .height(28)
+          .fillColor('#FFFFFF')
+          .margin({ left: 8, right: 16 })
+          .onClick(() => this.deleteLastNumber())
       }
       .width('100%').alignItems(VerticalAlign.Center).margin({ top: 8 })
 
-      Row() { this.keyItem('1', '1'); this.keyItem('2', '2'); this.keyItem('3', '3'); }
+      Row() {
+        this.keyItem('1', '1');
+        this.keyItem('2', '2');
+        this.keyItem('3', '3');
+      }
       .width('100%').height(44).margin({ top: 8 })
-      Row() { this.keyItem('4', '4'); this.keyItem('5', '5'); this.keyItem('6', '6'); }
+
+      Row() {
+        this.keyItem('4', '4');
+        this.keyItem('5', '5');
+        this.keyItem('6', '6');
+      }
       .width('100%').height(44).margin({ top: 8 })
-      Row() { this.keyItem('7', '7'); this.keyItem('8', '8'); this.keyItem('9', '9'); }
+
+      Row() {
+        this.keyItem('7', '7');
+        this.keyItem('8', '8');
+        this.keyItem('9', '9');
+      }
       .width('100%').height(44).margin({ top: 8 })
-      Row() { this.keyItem(':00', '00'); this.keyItem('0', '0'); this.keyItem(':30', '30'); }
+
+      Row() {
+        this.keyItem(':00', '00');
+        this.keyItem('0', '0');
+        this.keyItem(':30', '30');
+      }
       .width('100%').height(44)
 
       Button($r('app.string.ok'))
-        .type(ButtonType.Capsule).fontWeight(FontWeight.Bold)
-        .backgroundColor(AppColors.orange500).fontColor('#FFFFFF')
+        .type(ButtonType.Capsule)
+        .fontWeight(FontWeight.Bold)
+        .backgroundColor(AppColors.orange500)
+        .fontColor('#FFFFFF')
         .width('100%')
-        .margin({ top: 24, left: 16, right: 16, bottom: 16 })
+        .margin({
+          top: 24,
+          left: 16,
+          right: 16,
+          bottom: 16
+        })
         .onClick(() => {
           this.onConfirm(this.getTimeInMillis());
           this.onClose();
@@ -106,5 +139,14 @@ export struct TimePickerDialog {
     .backgroundColor($r('app.color.background_default'))
     .borderRadius({ topLeft: 16, topRight: 16 })
     .alignItems(HorizontalAlign.Center)
+  }
+
+  /** 从右往左按 2 位切出 时/分/秒(与 JumpToTimeDialog 同一套修正后的逻辑)。 */
+  private parts(): string[] {
+    const raw: string = this.pickedRawTime;
+    const seconds: string = raw.length > 2 ? raw.substring(raw.length - 2) : raw;
+    const minutes: string = raw.length > 2 ? raw.substring(Math.max(0, raw.length - 4), raw.length - 2) : '';
+    const hours: string = raw.length > 4 ? raw.substring(0, raw.length - 4) : '';
+    return [hours, minutes, seconds];
   }
 }

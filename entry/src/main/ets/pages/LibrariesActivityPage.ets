@@ -1,9 +1,9 @@
+import { UiFeedback } from '../common/utils/UiFeedback';
 import { NavController } from '../common/data/NavController';
-import { RawData, LibEntry, LicenseInfo } from '../common/data/RawData';
+import { LibEntry, LicenseInfo, RawData } from '../common/data/RawData';
 import { OpenLink } from '../common/data/OpenLink';
 import { AppColors, AppDimens } from '../common/constants/AppConstants';
 import { LicenseDialog } from './LicenseDialog';
-import { promptAction } from '@kit.ArkUI';
 
 /** 库许可条目(LibraryWithLicense data class)。 */
 export class LibraryWithLicense {
@@ -117,7 +117,7 @@ export struct LibrariesActivityPage {
           // openLinkIfPossible(licenseLink) → 系统浏览器打开许可官网。
           if (this.vm.dialogItem !== null && this.vm.dialogItem.licenseLink.length > 0) {
             if (!OpenLink.open(this.vm.dialogItem.licenseLink)) {
-              promptAction.showToast({ message: this.vm.dialogItem.licenseLink });
+              UiFeedback.showToast({ message: this.vm.dialogItem.licenseLink });
             }
           }
         },

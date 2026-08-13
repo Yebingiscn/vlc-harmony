@@ -1,10 +1,10 @@
+import { UiFeedback } from '../common/utils/UiFeedback';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
 import { NavController } from '../common/data/NavController';
 import { MediaWrapper, SheetItem, VideoNavParam } from '../common/models/MediaModels';
 import { picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
-import { promptAction } from '@kit.ArkUI';
 
 /**
  * MainBrowserPage -- Browse Tab (对齐 Android MainBrowserFragment 3.6.0)。
@@ -58,7 +58,7 @@ export struct MainBrowserPage {
   /** 打开文件选择器,导入音视频文件到存储列表。对齐 Audio tab pickAudioFiles() 模式。 */
   async pickStorageFiles(): Promise<void> {
     try {
-      const ctx = getContext(this) as common.UIAbilityContext;
+      const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
       const opts = new picker.DocumentSelectOptions();
       opts.maxSelectNumber = 200;
       opts.fileSuffixFilters = [
@@ -386,7 +386,7 @@ export struct MainBrowserPage {
             await MediaLibrary.removeFavorite(this.ctxItem!.title);
           } else {
             await MediaLibrary.addFavorite(this.ctxItem!);
-            promptAction.showToast({ message: '已收藏' });
+            UiFeedback.showToast({ message: '已收藏' });
           }
           const favs = await MediaLibrary.getFavorites();
           this.vm.syncData(favs);
@@ -412,7 +412,7 @@ export struct MainBrowserPage {
           bottom: 14
         })
         .onClick(() => {
-          promptAction.showToast({ message: `名称: ${this.ctxItem?.title}` });
+          UiFeedback.showToast({ message: `名称: ${this.ctxItem?.title}` });
           this.showCtxSheet = false;
         })
 
@@ -465,10 +465,10 @@ export struct MainBrowserPage {
             const mw = this.toMediaWrapper(item);
             MediaLibrary.deleteVideo(mw).then((ok: boolean) => {
               if (ok) {
-                promptAction.showToast({ message: '已删除' });
+                UiFeedback.showToast({ message: '已删除' });
                 void this.vm.load();
               } else {
-                promptAction.showToast({ message: '删除失败,可能缺少权限' });
+                UiFeedback.showToast({ message: '删除失败,可能缺少权限' });
               }
             });
           })

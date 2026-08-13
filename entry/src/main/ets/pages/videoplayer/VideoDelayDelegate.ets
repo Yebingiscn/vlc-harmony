@@ -1,5 +1,5 @@
+import { UiFeedback } from '../../common/utils/UiFeedback';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { promptAction } from '@kit.ArkUI';
 
 /**
  * VideoDelayDelegate —— 对齐 Android VideoDelayDelegate（音轨/字幕延迟骨架）。
@@ -9,7 +9,7 @@ export class VideoDelayDelegate {
 
   showDelayControls(): void {
     hilog.info(0x0001, 'VLC', '[VLC] DelayDelegate.showDelayControls (stub)');
-    promptAction.showToast({ message: 'Audio/SPU delay is not available yet' });
+    UiFeedback.showToast({ message: 'Audio/SPU delay is not available yet' });
   }
 
   showAudioDelaySetting(): void {

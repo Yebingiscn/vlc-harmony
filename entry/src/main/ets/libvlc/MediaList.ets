@@ -1,10 +1,10 @@
 import {
-  mediaListCreate,
-  mediaListRelease,
-  mediaListCount,
   mediaListAddMedia,
-  mediaListRemoveIndex,
+  mediaListCount,
+  mediaListCreate,
   mediaListItemAt,
+  mediaListRelease,
+  mediaListRemoveIndex,
 } from 'libvlcnapi.so';
 import { VLCObject } from './VLCObject';
 import { LibVLC } from './LibVLC';
