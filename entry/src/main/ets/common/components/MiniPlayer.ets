@@ -7,21 +7,21 @@ const AUDIO_EXTS = ['.mp3', '.flac', '.ogg', '.wav', '.aac', '.m4a', '.wma', '.o
 @ObservedV2
 class MiniPlayerVM implements PlaybackListener {
   @Trace title: string = '';
+  @Trace artworkPath: string = '';
   @Trace duration: number = 0;
   @Trace position: number = 0;
   @Trace state: PlayState = PlayState.IDLE;
   @Trace hasCurrent: boolean = false;
 
   onChange(s: PlaybackState): void {
-    // 通过回调拿到最新快照后立即同步检查是否为音频,确保 UI 刷新时判断准确。
     const cur = PlaybackService.getCurrent();
     const lower = cur?.uri?.toLowerCase() ?? '';
     const isAudio = AUDIO_EXTS.some(e => lower.endsWith(e));
     this.title = s.title;
+    this.artworkPath = s.artworkPath;
     this.duration = s.duration;
     this.position = s.position;
     this.state = s.state;
-    // 显示条件:原本就是音频文件,或当前处于"仅播放音频"模式(视频当音频播)。
     this.hasCurrent = s.queueSize > 0 && s.currentIndex >= 0 && (isAudio || s.playAsAudio);
   }
 }
@@ -42,45 +42,44 @@ export struct MiniPlayer {
 
   build() {
     if (this.vm.hasCurrent) {
-      Column() {
-        Row() {
-          Text(this.vm.title)
-            .fontSize(14)
-            .fontColor($r('app.color.list_title'))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .layoutWeight(1)
-            .margin({ left: 16, right: 8 })
+      Row() {
+        Image(this.vm.artworkPath.length > 0 ? this.vm.artworkPath : $r('app.media.ic_song'))
+          .width(32)
+          .height(32)
+          .borderRadius(6)
+          .objectFit(ImageFit.Cover)
+          .margin({ left: 12, right: 8 })
+          .fillColor(this.vm.artworkPath.length > 0 ? Color.Transparent : $r('app.color.font_light'))
 
-          Image(this.vm.state === PlayState.PLAYING ? $r('app.media.ic_pause_player') : $r('app.media.ic_play_player'))
-            .width(32)
-            .height(32)
-            .objectFit(ImageFit.Contain)
-            .fillColor($r('app.color.list_title'))
-            .margin({ right: 8 })
-            .onClick(() => PlaybackService.togglePlay())
+        Text(this.vm.title)
+          .fontSize(13)
+          .fontColor($r('app.color.list_title'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.MARQUEE })
+          .layoutWeight(1)
+          .margin({ right: 4 })
 
-          Image($r('app.media.ic_player_next'))
-            .width(32)
-            .height(32)
-            .objectFit(ImageFit.Contain)
-            .fillColor($r('app.color.list_title'))
-            .margin({ right: 16 })
-            .onClick(() => PlaybackService.next())
-        }
-        .width('100%').height(48).alignItems(VerticalAlign.Center)
+        Image(this.vm.state === PlayState.PLAYING ? $r('app.media.ic_pause_player') : $r('app.media.ic_play_player'))
+          .width(28)
+          .height(28)
+          .objectFit(ImageFit.Contain)
+          .fillColor($r('app.color.list_title'))
+          .margin({ right: 4 })
+          .onClick(() => PlaybackService.togglePlay())
 
-        Progress({
-          value: this.vm.duration > 0 ? Math.round(this.vm.position * 100 / this.vm.duration) : 0,
-          total: 100, type: ProgressType.Linear
-        })
-          .width('100%').height(2).color($r('app.color.orange500')).backgroundColor($r('app.color.card_border'))
+        Image($r('app.media.ic_player_next'))
+          .width(28)
+          .height(28)
+          .objectFit(ImageFit.Contain)
+          .fillColor($r('app.color.list_title'))
+          .margin({ right: 4 })
+          .onClick(() => PlaybackService.next())
       }
       .width('100%')
-      .backgroundColor($r('app.color.bottom_sheet_background'))
-      .border({ width: { top: 0.5 }, color: $r('app.color.card_border') })
-      .shadow({ radius: 12, color: '#1A000000', offsetY: -2 })
-      .borderRadius({ topLeft: 12, topRight: 12 })
+      .height(44)
+      .alignItems(VerticalAlign.Center)
+      .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THIN)
+      .borderRadius(22)
       .onClick(() => NavController.push('AudioPlayer'))
     }
   }

@@ -88,14 +88,14 @@ export struct ContextSheet {
 
       // 区块 C:动作列表
       List({ space: 0 }) {
-        ForEach(this.menuItems, (item: SheetItem, index: number) => {
+        Repeat(this.menuItems).each((itemRepeatItem: RepeatItem<SheetItem>) => {
           ListItem() {
             ContextItem({
-              item: item,
-              onItemClick: () => this.onItemTap(index),
+              item: itemRepeatItem.item,
+              onItemClick: () => this.onItemTap(itemRepeatItem.index),
             })
           }
-        }, (item: SheetItem) => item.title)
+        }).key((item: SheetItem) => item.title)
       }
       .width('100%')
       .scrollBar(BarState.Off)

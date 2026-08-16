@@ -98,11 +98,11 @@ export struct AuthorsActivityPage {
 
         // 作者列表(纵向滚动,layoutWeight1,paddingBottom 54vp)
         List() {
-          ForEach(this.vm.authors, (item: AuthorEntry) => {
+          Repeat(this.vm.authors).each((itemRepeatItem: RepeatItem<AuthorEntry>) => {
             ListItem() {
-              this.AuthorItem(item.name)
+              this.AuthorItem(itemRepeatItem.item.name)
             }
-          }, (item: AuthorEntry) => item.name)
+          }).key((item: AuthorEntry) => item.name).virtualScroll()
         }
         .width('100%')
         .layoutWeight(1)

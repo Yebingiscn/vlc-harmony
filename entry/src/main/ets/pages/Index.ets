@@ -35,6 +35,7 @@ import { BrowserMode, FileBrowserPage } from './FileBrowserPage';
 import { MrlPanelPage } from './MrlPanelPage';
 import { ParentalControlPage, ParentalControlParam } from './ParentalControlPage';
 import { FormatCompatibilityTestPage } from './FormatCompatibilityTestPage';
+import { HdsNavigation } from '@kit.UIDesignKit';
 
 /**
  * Index —— 应用入口(@Entry)。承载 Navigation + PageMap(所有 NavDestination 路由)。
@@ -139,7 +140,7 @@ struct Index {
   }
 
   build() {
-    Navigation(this.pathStack) {
+    HdsNavigation(this.pathStack) {
       // navBar 根(启动闪屏:VLC logo + 背景色)
       Column() {
         Image($r('app.media.ic_about_logo'))

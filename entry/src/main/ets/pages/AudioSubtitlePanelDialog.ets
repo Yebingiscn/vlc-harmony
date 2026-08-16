@@ -95,13 +95,13 @@ struct TrackSection {
           .fontSize(14).fontColor(AppColors.grey500)
           .width('100%').padding({ left: 24, top: 8, bottom: 8 })
       } else if (!this.collapsed) {
-        ForEach(this.tracks, (item: VlcTrack) => {
+        Repeat(this.tracks).each((itemRepeatItem: RepeatItem<VlcTrack>) => {
           TrackRow({
-            name: item.name,
-            selected: item.id === this.selectedId,
-            onRowClick: () => this.onTrackClick(item.id),
+            name: itemRepeatItem.item.name,
+            selected: itemRepeatItem.item.id === this.selectedId,
+            onRowClick: () => this.onTrackClick(itemRepeatItem.item.id),
           })
-        }, (item: VlcTrack) => `${item.id}`)
+        }).key((item: VlcTrack) => `${item.id}`)
       }
     }
     .width('100%').alignItems(HorizontalAlign.Start)

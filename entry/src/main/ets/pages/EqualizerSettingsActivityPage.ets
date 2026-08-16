@@ -308,11 +308,11 @@ export struct EqualizerSettingsActivityPage {
           }
           // 预设列表
           List() {
-            ForEach(this.vm.entries, (item: EqualizerEntry) => {
+            Repeat(this.vm.entries).each((itemRepeatItem: RepeatItem<EqualizerEntry>) => {
               ListItem() {
-                this.SettingItem(item)
+                this.SettingItem(itemRepeatItem.item)
               }
-            }, (item: EqualizerEntry) => `${item.id}`)
+            }).key((item: EqualizerEntry) => `${item.id}`).virtualScroll()
           }
           .width('100%')
           .layoutWeight(1)

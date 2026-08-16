@@ -1545,7 +1545,10 @@ export struct VideoPlayerPage {
         .bindMenu(this.advancedOptionsOpen!!, this.advancedOptionsMenu(), {
           placement: Placement.BottomRight,
           showInSubWindow: true,
-          backgroundColor: $r('app.color.background_default'),
+          backgroundColor: Color.Transparent,
+          backgroundBlurStyle: BlurStyle.COMPONENT_ULTRA_THICK,
+          outlineColor: Color.Transparent,
+          outlineWidth: 0,
           onDisappear: () => this.runPendingAdvancedAction(),
         })
     }
@@ -1716,13 +1719,13 @@ export struct VideoPlayerPage {
 
       // 音轨和字幕、屏幕方向、播放、宽高比、高级选项。
       Row() {
-        ForEach(buildVideoPlayerBottomActions(), (action: VideoPlayerBottomAction) => {
-          Image(this.bottomActionIcon(action))
-            .width(action.id === 'play' ? 56 : 32)
-            .height(action.id === 'play' ? 56 : 32)
+        Repeat(buildVideoPlayerBottomActions()).each((actionRepeatItem: RepeatItem<VideoPlayerBottomAction>) => {
+          Image(this.bottomActionIcon(actionRepeatItem.item))
+            .width(actionRepeatItem.item.id === 'play' ? 56 : 32)
+            .height(actionRepeatItem.item.id === 'play' ? 56 : 32)
             .fillColor('#FFFFFF')
-            .onClick(() => this.onBottomAction(action.id))
-        }, (action: VideoPlayerBottomAction): string => action.id)
+            .onClick(() => this.onBottomAction(actionRepeatItem.item.id))
+        }).key((action: VideoPlayerBottomAction): string => action.id)
         // 循环模式:0=关闭(白),1=列表循环(橙),2=单曲循环(橙 + 数字 1)
         Image(this.vm.repeatMode === 2 ? $r('app.media.ic_repeat_one_audio') : $r('app.media.ic_repeat_audio'))
           .width(32).height(32)

@@ -89,11 +89,11 @@ export struct EqualizerDialog {
       // 预设 Chip 横滑条
       Scroll() {
         Row() {
-          ForEach(this.presets, (p: EqualizerPreset) => {
-            Text(p.name)
+          Repeat(this.presets).each((pRepeatItem: RepeatItem<EqualizerPreset>) => {
+            Text(pRepeatItem.item.name)
               .fontSize(16)
-              .fontColor(this.presetIndex === p.id ? $r('app.color.list_title') : $r('app.color.font_light'))
-              .backgroundColor(this.presetIndex === p.id ? AppColors.orange800 : '#1AFF610A')
+              .fontColor(this.presetIndex === pRepeatItem.item.id ? $r('app.color.list_title') : $r('app.color.font_light'))
+              .backgroundColor(this.presetIndex === pRepeatItem.item.id ? AppColors.orange800 : '#1AFF610A')
               .borderRadius(16)
               .padding({
                 left: 16,
@@ -102,8 +102,8 @@ export struct EqualizerDialog {
                 bottom: 8
               })
               .margin({ left: 4, right: 4 })
-              .onClick(() => this.applyPreset(p))
-          }, (p: EqualizerPreset) => `${p.id}`)
+              .onClick(() => this.applyPreset(pRepeatItem.item))
+          }).key((p: EqualizerPreset) => `${p.id}`)
         }
         .padding({ left: 12, right: 12 })
       }
@@ -142,16 +142,16 @@ export struct EqualizerDialog {
 
         // 频段竖直条
         Row() {
-          ForEach(FREQ_LABELS, (label: string, idx: number) => {
+          Repeat(FREQ_LABELS).each((labelRepeatItem: RepeatItem<string>) => {
             EqualizerBar({
-              label: label,
-              value: this.bands[idx],
+              label: labelRepeatItem.item,
+              value: this.bands[labelRepeatItem.index],
               onChange: (v: number) => {
-                this.setBand(idx, v);
+                this.setBand(labelRepeatItem.index, v);
                 this.pushToPlayer();
               },
             })
-          }, (label: string) => label)
+          }).key((label: string) => label)
         }
         .layoutWeight(1)
         .justifyContent(FlexAlign.Center)

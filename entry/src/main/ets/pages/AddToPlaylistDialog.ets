@@ -18,7 +18,7 @@ export interface AddToPlaylistAction {
  *   2. 列表:可点歌单 Radio 切换选中。
  *   3. 底部「保存」:把当前勾选 + 替换开关 一次性提交给宿主。
  *
- * 数据:in-memory(本期不持久化),关闭弹框不丢,退出 app 才丢。
+ * 数据由 MediaLibrary 持久化；每次打开都强制刷新，确保能看到其它页面刚创建的播放列表。
  */
 
 @ComponentV2
@@ -38,8 +38,6 @@ export struct AddToPlaylistDialog {
   @Local playlists: Playlist[] = [];
   @Local selected: Set<number> = new Set<number>();
   @Local replace: boolean = false;
-  private idSeq: number = 1;
-
   @Event onClose: () => void = () => {
   };
 
@@ -48,8 +46,11 @@ export struct AddToPlaylistDialog {
   };
 
   async aboutToAppear(): Promise<void> {
-    await MediaLibrary.initPlaylistCache();
+    await MediaLibrary.reloadPlaylistCache();
     this.playlists = MediaLibrary.getPlaylists();
+    // 丢弃已被其它页面删除的旧选中项。
+    const validIds = new Set<number>(this.playlists.map((playlist: Playlist) => playlist.id));
+    this.selected = new Set<number>(Array.from(this.selected).filter((id: number) => validIds.has(id)));
   }
 
   // ── 顶栏 ─────────────────────────────────────────
@@ -164,6 +165,8 @@ export struct AddToPlaylistDialog {
     .height(48)
     .padding({ left: 20, right: 20 })
     .alignItems(VerticalAlign.Center)
+    .backgroundColor(this.selected.has(p.id) ? $r('app.color.history_selected_bg') : Color.Transparent)
+    .borderRadius(8)
     .onClick(() => this.toggleSelect(p.id))
   }
 
@@ -216,6 +219,11 @@ export struct AddToPlaylistDialog {
 
           // 现有列表段
           this.sectionHeader($r('app.string.add_to_existing_playlist'))
+          Text('点击下方播放列表进行选择')
+            .fontSize(12)
+            .fontColor(this.cDim)
+            .width('100%')
+            .padding({ left: 20, right: 20, bottom: 2 })
           Text($r('app.string.media_count_suffix', this.mediaCount))
             .fontSize(12).fontColor(this.cDim)
             .width('100%')
@@ -231,9 +239,9 @@ export struct AddToPlaylistDialog {
             .alignItems(HorizontalAlign.Center)
           } else {
             Column() {
-              ForEach(this.playlists, (p: Playlist) => {
-                this.playlistRow(p)
-              }, (p: Playlist) => `pl${p.id}`)
+              Repeat(this.playlists).each((pRepeatItem: RepeatItem<Playlist>) => {
+                this.playlistRow(pRepeatItem.item)
+              }).key((p: Playlist) => `pl${p.id}`)
             }
             .width('100%')
           }

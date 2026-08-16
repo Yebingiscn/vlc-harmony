@@ -1536,10 +1536,10 @@ export struct PreferencesPage {
         })
         Scroll() {
           Column() {
-            ForEach(this.groups, (group: PreferenceGroup) => {
+            Repeat(this.groups).each((groupRepeatItem: RepeatItem<PreferenceGroup>) => {
               // 分组标题(靠左)
-              if (group.title && (!this.isInterfaceScreen() || this.groupIndex(group) > 0)) {
-                Text(group.title)
+              if (groupRepeatItem.item.title && (!this.isInterfaceScreen() || this.groupIndex(groupRepeatItem.item) > 0)) {
+                Text(groupRepeatItem.item.title)
                   .fontSize(this.isInterfaceScreen() ? 18 : 14)
                   .fontWeight(FontWeight.Medium)
                   .fontColor($r('app.color.orange500'))
@@ -1552,16 +1552,16 @@ export struct PreferencesPage {
                     bottom: this.isInterfaceScreen() ? 12 : 8,
                   })
               }
-              ForEach(group.items, (item: PreferenceItem) => {
-                if (item.key === 'persistent_incognito') {
-                  this.persistentIncognitoRow(item)
+              Repeat(groupRepeatItem.item.items).each((itemRepeatItem: RepeatItem<PreferenceItem>) => {
+                if (itemRepeatItem.item.key === 'persistent_incognito') {
+                  this.persistentIncognitoRow(itemRepeatItem.item)
                 } else {
                   PreferenceRow({
-                    item: item,
-                    dependencyEnabled: this.dependencyEnabledFor(item),
+                    item: itemRepeatItem.item,
+                    dependencyEnabled: this.dependencyEnabledFor(itemRepeatItem.item),
                     showTrailingIndicator: !this.isInterfaceScreen(),
                     verticalPadding: this.isInterfaceScreen() ? 18 : 14,
-                    showDivider: this.shouldShowDivider(item),
+                    showDivider: this.shouldShowDivider(itemRepeatItem.item),
                     onNav: (it: PreferenceItem) => this.onNav(it),
                     onListSelect: (it: PreferenceItem) => this.onListSelect(it),
                     onNumberPicker: (it: PreferenceItem) => this.onNumberPicker(it),
@@ -1571,13 +1571,13 @@ export struct PreferencesPage {
                     onToggleChange: (it: PreferenceItem, newVal: boolean) => this.onToggleChange(it, newVal),
                   })
                 }
-              }, (item: PreferenceItem) => `${item.key}-${this.rowVersion}-${this.dependencyEnabledFor(item)}`)
-              if (this.isInterfaceScreen() && this.groupIndex(group) < this.groups.length - 1) {
+              }).key((item: PreferenceItem) => `${item.key}-${this.rowVersion}-${this.dependencyEnabledFor(item)}`)
+              if (this.isInterfaceScreen() && this.groupIndex(groupRepeatItem.item) < this.groups.length - 1) {
                 Divider()
                   .color($r('app.color.divider'))
                   .strokeWidth(1)
               }
-            }, (group: PreferenceGroup, idx: number) => `${idx}`)
+            }).key((group: PreferenceGroup, idx: number) => `${idx}`)
           }
           .width('100%')
           .alignItems(HorizontalAlign.Start)
@@ -2010,13 +2010,13 @@ export struct PreferencesPage {
       Text(this.sheetItem.title).fontSize(16).fontColor($r('app.color.list_title')).fontWeight(FontWeight.Medium)
         .margin({ top: 16, bottom: 8 })
       List() {
-        ForEach(this.sheetItem.options ?? [], (label: ResourceStr, idx: number) => {
+        Repeat(this.sheetItem.options ?? []).each((labelRepeatItem: RepeatItem<ResourceStr>) => {
           ListItem() {
             Row() {
-              Text(label).fontSize(14).fontColor($r('app.color.list_title')).layoutWeight(1)
+              Text(labelRepeatItem.item).fontSize(14).fontColor($r('app.color.list_title')).layoutWeight(1)
               Image($r('app.media.ic_check'))
                 .width(20).height(20).fillColor($r('app.color.orange500'))
-                .visibility(this.optionValueAt(idx) === this.listValue ?
+                .visibility(this.optionValueAt(labelRepeatItem.index) === this.listValue ?
                   Visibility.Visible : Visibility.Hidden)
             }
             .width('100%')
@@ -2026,9 +2026,9 @@ export struct PreferencesPage {
               top: 14,
               bottom: 14
             })
-            .onClick(() => this.onListConfirm(this.optionValueAt(idx)))
+            .onClick(() => this.onListConfirm(this.optionValueAt(labelRepeatItem.index)))
           }
-        }, (label: ResourceStr, idx: number) => `${idx}`)
+        }).key((label: ResourceStr, idx: number) => `${idx}`)
       }
       .divider({ strokeWidth: 0.5, color: $r('app.color.card_background') })
       .width('100%')
@@ -2078,16 +2078,16 @@ export struct PreferencesPage {
       Text(this.sheetItem.title).fontSize(16).fontColor($r('app.color.list_title')).fontWeight(FontWeight.Medium)
         .margin({ top: 16, bottom: 16 })
       Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center }) {
-        ForEach(COLOR_PALETTE, (c: number) => {
+        Repeat(COLOR_PALETTE).each((cRepeatItem: RepeatItem<number>) => {
           Column()
             .width(40)
             .height(40)
             .borderRadius(20)
-            .backgroundColor(c)
+            .backgroundColor(cRepeatItem.item)
             .margin(8)
-            .border({ width: this.colorDraft === c ? 3 : 0, color: $r('app.color.orange500') })
-            .onClick(() => this.onColorConfirm(c))
-        }, (c: number) => `${c}`)
+            .border({ width: this.colorDraft === cRepeatItem.item ? 3 : 0, color: $r('app.color.orange500') })
+            .onClick(() => this.onColorConfirm(cRepeatItem.item))
+        }).key((c: number) => `${c}`)
       }
       .width('90%')
       .margin({ bottom: 24 })

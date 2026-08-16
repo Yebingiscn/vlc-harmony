@@ -111,15 +111,15 @@ export struct AddToGroupDialog {
       // 列表容器
       Stack({ alignContent: Alignment.TopStart }) {
         List({ space: 0 }) {
-          ForEach(this.groupList, (item: MediaLibraryItem) => {
+          Repeat(this.groupList).each((itemRepeatItem: RepeatItem<MediaLibraryItem>) => {
             ListItem() {
               GroupListItem({
-                item: item,
-                cover: item.id === -1 ? $r('app.media.ic_add_to_group') : $r('app.media.ic_folder'),
-                onItemClick: () => this.onItemClick(item),
+                item: itemRepeatItem.item,
+                cover: itemRepeatItem.item.id === -1 ? $r('app.media.ic_add_to_group') : $r('app.media.ic_folder'),
+                onItemClick: () => this.onItemClick(itemRepeatItem.item),
               })
             }
-          }, (item: MediaLibraryItem) => `${item.id}`)
+          }).key((item: MediaLibraryItem) => `${item.id}`).virtualScroll()
         }
         .width('100%')
         .scrollBar(BarState.Off)

@@ -96,19 +96,19 @@ export struct SelectChapterDialog {
         .maxLines(1)
 
       List({ space: 0 }) {
-        ForEach(this.chapterData, (item: Chapter, index: number) => {
+        Repeat(this.chapterData).each((itemRepeatItem: RepeatItem<Chapter>) => {
           ListItem() {
             ChapterItem({
-              item: item,
-              selected: index === this.selectedIndex,
+              item: itemRepeatItem.item,
+              selected: itemRepeatItem.index === this.selectedIndex,
               onItemClick: () => {
-                this.selectedIndex = index;
-                this.onSelectChapter(index);
+                this.selectedIndex = itemRepeatItem.index;
+                this.onSelectChapter(itemRepeatItem.index);
                 this.onClose();
               },
             })
           }
-        }, (item: Chapter, index: number) => index.toString())
+        }).key((item: Chapter, index: number) => index.toString()).virtualScroll()
       }
       .lanes(1)
       .width('100%')

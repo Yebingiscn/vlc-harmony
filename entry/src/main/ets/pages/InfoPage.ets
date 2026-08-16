@@ -79,15 +79,15 @@ export struct InfoPage {
                   bottom: 8
                 })
               List() {
-                ForEach(this.infoItems, (it: MediaInfoItem) => {
+                Repeat(this.infoItems).each((itRepeatItem: RepeatItem<MediaInfoItem>) => {
                   ListItem() {
                     Column() {
-                      Text(it.title).fontSize(14).fontColor('#FFFFFF').fontWeight(FontWeight.Bold)
-                      Text(it.subtitle).fontSize(12).fontColor('#9E9E9E').margin({ top: 2 })
+                      Text(itRepeatItem.item.title).fontSize(14).fontColor('#FFFFFF').fontWeight(FontWeight.Bold)
+                      Text(itRepeatItem.item.subtitle).fontSize(12).fontColor('#9E9E9E').margin({ top: 2 })
                     }
                     .width('100%').alignItems(HorizontalAlign.Start).padding(16)
                   }
-                }, (it: MediaInfoItem, idx: number) => `${idx}`)
+                }).key((it: MediaInfoItem, idx: number) => `${idx}`)
               }
               .divider({
                 strokeWidth: 0.5,

@@ -91,17 +91,17 @@ export struct PlayerAdvancedOptions {
 
   build() {
     List({ space: 0 }) {
-      ForEach(this.items, (item: PlayerAdvancedOption) => {
+      Repeat(this.items).each((itemRepeatItem: RepeatItem<PlayerAdvancedOption>) => {
         ListItem() {
           Row() {
-            Image(item.icon)
+            Image(itemRepeatItem.item.icon)
               .width(26)
               .height(26)
-              .fillColor(this.activeIds.includes(item.id) ? '#FF8800' : $r('app.color.list_title'))
+              .fillColor(this.activeIds.includes(itemRepeatItem.item.id) ? '#FF8800' : $r('app.color.list_title'))
               .margin({ left: 18, right: 18 })
-            Text(item.title)
+            Text(itemRepeatItem.item.title)
               .fontSize(17)
-              .fontColor(this.activeIds.includes(item.id) ? '#FF8800' : $r('app.color.list_title'))
+              .fontColor(this.activeIds.includes(itemRepeatItem.item.id) ? '#FF8800' : $r('app.color.list_title'))
               .layoutWeight(1)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -110,15 +110,15 @@ export struct PlayerAdvancedOptions {
           .width('100%')
           .height(OPTION_ITEM_HEIGHT)
           .alignItems(VerticalAlign.Center)
-          .onClick((): void => this.onSelect(item.id))
+          .onClick((): void => this.onSelect(itemRepeatItem.item.id))
         }
-      }, (item: PlayerAdvancedOption): string => item.id)
+      }).key((item: PlayerAdvancedOption): string => item.id)
     }
     .width(268)
     // 高度随项数自适应：少则贴合内容，多则封顶滚动。
     .height(Math.min(this.items.length * OPTION_ITEM_HEIGHT, OPTION_MAX_HEIGHT))
     .scrollBar(BarState.Off)
-    .backgroundColor($r('app.color.background_default'))
-    .borderRadius(0)
+    // 菜单圆角和底色由 bindMenu 的系统容器统一绘制，避免内外两层颜色形成灰边。
+    .backgroundColor(Color.Transparent)
   }
 }

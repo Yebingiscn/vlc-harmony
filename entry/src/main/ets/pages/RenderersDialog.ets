@@ -80,19 +80,19 @@ export struct RenderersDialog {
         .width('100%')
 
       List({ space: 0 }) {
-        ForEach(this.renderers, (item: RendererEntry) => {
+        Repeat(this.renderers).each((itemRepeatItem: RepeatItem<RendererEntry>) => {
           ListItem() {
             RendererItemRow({
-              displayName: item.displayName,
-              type: item.type,
-              isCurrent: item.id === this.currentId,
+              displayName: itemRepeatItem.item.displayName,
+              type: itemRepeatItem.item.type,
+              isCurrent: itemRepeatItem.item.id === this.currentId,
               onItemClick: () => {
-                this.onConnect(item.id);
+                this.onConnect(itemRepeatItem.item.id);
                 this.onClose();
               },
             })
           }
-        }, (item: RendererEntry) => `${item.id}`)
+        }).key((item: RendererEntry) => `${item.id}`)
       }
       .width('100%')
       .layoutWeight(1)

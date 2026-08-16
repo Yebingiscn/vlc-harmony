@@ -55,10 +55,10 @@ export struct AudioDisplaySettingsDialog {
         // 列表/网格切换
         Row() {
           Image(this.displayAsList ? $r('app.media.ic_view_list') : $r('app.media.ic_view_grid'))
-            .width(24).height(24).fillColor(AppColors.grey600)
+            .width(24).height(24).fillColor($r('app.color.list_subtitle'))
           Text(this.displayAsList ? '以列表形式显示' : '以网格形式显示')
             .fontSize(16)
-            .fontColor(AppColors.grey900)
+            .fontColor($r('app.color.list_title'))
             .margin({ left: 24 })
             .layoutWeight(1)
             .maxLines(1)
@@ -73,10 +73,10 @@ export struct AudioDisplaySettingsDialog {
         // 显示所有艺术家
         Row() {
           Image($r('app.media.ic_artist_big'))
-            .width(24).height(24).fillColor(AppColors.grey600)
+            .width(24).height(24).fillColor($r('app.color.list_subtitle'))
           Text('显示所有艺术家')
             .fontSize(16)
-            .fontColor(AppColors.grey900)
+            .fontColor($r('app.color.list_title'))
             .margin({ left: 24 })
             .layoutWeight(1)
             .maxLines(1)
@@ -97,10 +97,10 @@ export struct AudioDisplaySettingsDialog {
         // 只显示收藏
         Row() {
           Image($r('app.media.ic_favorite'))
-            .width(24).height(24).fillColor(AppColors.grey600)
+            .width(24).height(24).fillColor($r('app.color.list_subtitle'))
           Text('只显示收藏')
             .fontSize(16)
-            .fontColor(AppColors.grey900)
+            .fontColor($r('app.color.list_title'))
             .margin({ left: 24 })
             .layoutWeight(1)
             .maxLines(1)
@@ -121,16 +121,16 @@ export struct AudioDisplaySettingsDialog {
         // 「播放」动作
         Row() {
           Image($r('app.media.ic_play'))
-            .width(24).height(24).fillColor(AppColors.grey600)
+            .width(24).height(24).fillColor($r('app.color.list_subtitle'))
           Column() {
             Text('「播放」动作')
               .fontSize(16)
-              .fontColor(AppColors.grey900)
+              .fontColor($r('app.color.list_title'))
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
             Text('艺术家')
               .fontSize(12)
-              .fontColor(AppColors.grey600)
+              .fontColor($r('app.color.list_subtitle'))
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
           }
@@ -141,6 +141,7 @@ export struct AudioDisplaySettingsDialog {
           Select(this.playActions.map((v: string): SelectOption => ({ value: v })))
             .selected(this.playActionIndex)
             .value(this.playActions[this.playActionIndex])
+            .fontColor($r('app.color.list_title'))
             .margin({ left: 8 })
             .width('40%')
             .onSelect((idx: number) => {
@@ -170,10 +171,10 @@ export struct AudioDisplaySettingsDialog {
         Row() {
           Image($r('app.media.ic_sort_alpha'))
             .width(24).height(24)
-            .fillColor(AppColors.grey600)
+            .fillColor($r('app.color.list_subtitle'))
           Text('名称')
             .fontSize(16)
-            .fontColor(AppColors.grey900)
+            .fontColor($r('app.color.list_title'))
             .margin({ left: 24 })
             .width(100)
             .maxLines(1)
@@ -183,7 +184,7 @@ export struct AudioDisplaySettingsDialog {
             Row() {
               Text('A -> Z')
                 .fontSize(14)
-                .fontColor(!this.sortDesc ? AppColors.orange500 : AppColors.grey900)
+                .fontColor(!this.sortDesc ? AppColors.orange500 : $r('app.color.list_title'))
               if (!this.sortDesc) {
                 Image($r('app.media.ic_check_large'))
                   .width(20).height(20)
@@ -200,7 +201,7 @@ export struct AudioDisplaySettingsDialog {
             Row() {
               Text('Z -> A')
                 .fontSize(14)
-                .fontColor(this.sortDesc ? AppColors.orange500 : AppColors.grey900)
+                .fontColor(this.sortDesc ? AppColors.orange500 : $r('app.color.list_title'))
               if (this.sortDesc) {
                 Image($r('app.media.ic_check_large'))
                   .width(20).height(20)
@@ -232,5 +233,6 @@ export struct AudioDisplaySettingsDialog {
     .width('100%')
     .layoutWeight(1)
     .scrollBar(BarState.Auto)
+    .backgroundColor($r('app.color.bottom_sheet_background'))
   }
 }

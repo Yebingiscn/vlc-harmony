@@ -64,15 +64,15 @@ export struct PreferenceMultiSelectDialog {
         .margin({ bottom: 12 })
 
       List() {
-        ForEach(this.item.options ?? [], (entry: ResourceStr, index: number) => {
+        Repeat(this.item.options ?? []).each((entryRepeatItem: RepeatItem<ResourceStr>) => {
           ListItem() {
             Row() {
-              Text(entry)
+              Text(entryRepeatItem.item)
                 .fontSize(16)
                 .layoutWeight(1)
-              Toggle({ type: ToggleType.Checkbox, isOn: this.checked[index] })
+              Toggle({ type: ToggleType.Checkbox, isOn: this.checked[entryRepeatItem.index] })
                 .selectedColor($r('app.color.orange500'))
-                .onChange((on: boolean) => this.onCheckChange(index, on))
+                .onChange((on: boolean) => this.onCheckChange(entryRepeatItem.index, on))
             }
             .width('100%')
             .padding({
@@ -83,7 +83,7 @@ export struct PreferenceMultiSelectDialog {
             })
             .alignItems(VerticalAlign.Center)
           }
-        }, (entry: ResourceStr, index: number) => `${index}`)
+        }).key((entry: ResourceStr, index: number) => `${index}`)
       }
       .width('100%')
       .scrollBar(BarState.Off)

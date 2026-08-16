@@ -388,20 +388,20 @@ export struct HistoryFragmentPage {
           } else {
             Refresh({ refreshing: $$this.isRefreshing }) {
               List({ space: 0 }) {
-                ForEach(this.vm.dataset, (item: PlaybackHistoryEntry, index: number) => {
+                Repeat(this.vm.dataset).each((itemRepeatItem: RepeatItem<PlaybackHistoryEntry>) => {
                   ListItem() {
                     Row() {
                       // 多选模式: 左侧勾选圆
                       if (this.isSelectionMode) {
                         Row() {
-                          this.selectionDot(item.uri)
+                          this.selectionDot(itemRepeatItem.item.uri)
                         }
                         .margin({ left: AppDimens.kl_normal })
                       }
 
                       // 缩略图区(16:10 比例占位,40vp 高)
                       Stack() {
-                        Image(this.showVideoThumbnails && item.artworkUrl.length > 0 ? item.artworkUrl :
+                        Image(this.showVideoThumbnails && itemRepeatItem.item.artworkUrl.length > 0 ? itemRepeatItem.item.artworkUrl :
                           $r('app.media.tv_channel_default'))
                           .width('100%')
                           .height('100%')
@@ -419,14 +419,14 @@ export struct HistoryFragmentPage {
 
                       // 中间文字区
                       Column() {
-                        Text(item.title)
+                        Text(itemRepeatItem.item.title)
                           .fontSize(16)
                           .fontColor($r('app.color.list_title'))
                           .maxLines(2)
                           .textOverflow({ overflow: TextOverflow.Ellipsis })
                           .width('100%')
-                        if (item.length > 0) {
-                          Text(formatDuration(item.length))
+                        if (itemRepeatItem.item.length > 0) {
+                          Text(formatDuration(itemRepeatItem.item.length))
                             .fontSize(13)
                             .fontColor($r('app.color.list_subtitle'))
                             .maxLines(1)
@@ -441,20 +441,20 @@ export struct HistoryFragmentPage {
                     .width('100%')
                     .alignItems(VerticalAlign.Center)
                     .backgroundColor(
-                      this.isSelectionMode && this.isSelected(item.uri) ? $r('app.color.history_selected_bg') :
+                      this.isSelectionMode && this.isSelected(itemRepeatItem.item.uri) ? $r('app.color.history_selected_bg') :
                         Color.Transparent)
                     .onClick(() => {
                       if (this.isSelectionMode) {
-                        this.toggleSelection(item.uri);
+                        this.toggleSelection(itemRepeatItem.item.uri);
                       } else {
-                        this.onItemClick(item);
+                        this.onItemClick(itemRepeatItem.item);
                       }
                     })
                     .gesture(
                       LongPressGesture({ repeat: false, duration: 500 })
                         .onAction(() => {
                           if (!this.isSelectionMode) {
-                            this.enterSelectionMode(item.uri);
+                            this.enterSelectionMode(itemRepeatItem.item.uri);
                           }
                         })
                     )
@@ -462,14 +462,14 @@ export struct HistoryFragmentPage {
                   .swipeAction({
                     end: {
                       builder: () => {
-                        this.swipeDeleteButton(item)
+                        this.swipeDeleteButton(itemRepeatItem.item)
                       },
                       onAction: () => {
-                        void this.deleteHistoryEntry(item.uri);
+                        void this.deleteHistoryEntry(itemRepeatItem.item.uri);
                       }
                     }
                   })
-                }, (item: PlaybackHistoryEntry) => item.uri)
+                }).key((item: PlaybackHistoryEntry) => item.uri).virtualScroll()
               }
               .alignListItem(ListItemAlign.Start)
               .width('100%')
@@ -551,7 +551,7 @@ export struct HistoryFragmentPage {
       return;
     }
     const queue: QueueItem[] = entries.map((item, index) =>
-    new QueueItem(index, item.title, item.uri, '', '', item.artworkUrl)
+    new QueueItem(index, item.title, item.uri, item.artistName, item.albumName, item.artworkUrl)
     );
     PlaybackService.playList(queue, 0, true);
     const first = entries[0];
@@ -693,7 +693,7 @@ export struct HistoryFragmentPage {
     const audioExts = ['.mp3', '.flac', '.ogg', '.wav', '.aac', '.m4a', '.wma', '.opus'];
     const isAudio = audioExts.some(e => lower.endsWith(e));
     if (isAudio) {
-      const qi = new QueueItem(0, item.title, item.uri, '', '', item.artworkUrl);
+      const qi = new QueueItem(0, item.title, item.uri, item.artistName, item.albumName, item.artworkUrl);
       PlaybackService.playList([qi], 0, true);
       NavController.push('AudioPlayer');
     } else {

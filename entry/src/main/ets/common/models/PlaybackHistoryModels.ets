@@ -1,17 +1,29 @@
-/** 一条可持久化的本地视频播放历史。 */
+/** 一条可持久化的本地媒体播放历史。 */
 export class PlaybackHistoryEntry {
   uri: string;
   title: string;
   length: number;
   artworkUrl: string;
   playedAt: number;
+  artistName: string;
+  albumName: string;
 
-  constructor(uri: string, title: string, length: number, artworkUrl: string, playedAt: number) {
+  constructor(
+    uri: string,
+    title: string,
+    length: number,
+    artworkUrl: string,
+    playedAt: number,
+    artistName: string = '',
+    albumName: string = '',
+  ) {
     this.uri = uri;
     this.title = title;
     this.length = length;
     this.artworkUrl = artworkUrl;
     this.playedAt = playedAt;
+    this.artistName = artistName;
+    this.albumName = albumName;
   }
 }
 

@@ -38,7 +38,6 @@ type SheetMode = 'none' | 'create' | 'ctxmenu' | 'rename';
 class PlaylistsVM {
   @Trace playlists: PlaylistCard[] = [];
   @Trace loading: boolean = true;
-  private searchQuery: string = '';
 
   async load(forceScan: boolean = false): Promise<void> {
     this.loading = true;
@@ -88,8 +87,7 @@ class PlaylistsVM {
     }
   }
 
-  applySearch(q: string): void {
-    this.searchQuery = q;
+  applySearch(_q: string): void {
     this.rebuildCards();
   }
 
@@ -131,7 +129,7 @@ export struct PlaylistsPage {
   async aboutToAppear(): Promise<void> {
     await MediaLibrary.initPlaylistCache();
     await this.vm.load();
-    this.playlistsChangedHandler = (data: emitter.EventData): void => {
+    this.playlistsChangedHandler = (): void => {
       void this.vm.load();
     };
     emitter.on(MediaLibrary.EVENT_PLAYLISTS_CHANGED, this.playlistsChangedHandler);
@@ -229,6 +227,11 @@ export struct PlaylistsPage {
 
   closeSheet(): void {
     this.showSheet = false;
+  }
+
+  /** Sheet 退出动画结束后再清理内容，避免只剩遮罩层。 */
+  finishCloseSheet(): void {
+    this.showSheet = false;
     this.sheetMode = 'none';
     this.ctxCard = null;
   }
@@ -254,7 +257,7 @@ export struct PlaylistsPage {
                   .type(ButtonType.Normal)
                   .borderRadius(4)
                   .backgroundColor('#FF8800')
-                  .fontColor('#FFFFFF')
+                  .fontColor($r('app.color.list_title'))
                   .fontSize(14)
                   .margin({ top: 16 })
                   .onClick(() => {
@@ -265,11 +268,11 @@ export struct PlaylistsPage {
             }
           } else {
             Grid() {
-              ForEach(this.vm.playlists, (card: PlaylistCard) => {
+              Repeat(this.vm.playlists).each((cardRepeatItem: RepeatItem<PlaylistCard>) => {
                 GridItem() {
                   Column() {
                     Stack({ alignContent: Alignment.TopEnd }) {
-                      Image(card.artwork.length > 0 ? card.artwork : $r('app.media.ic_playlist_big'))
+                      Image(cardRepeatItem.item.artwork.length > 0 ? cardRepeatItem.item.artwork : $r('app.media.ic_playlist_big'))
                         .width('100%')
                         .aspectRatio(1)
                         .objectFit(ImageFit.Cover)
@@ -280,18 +283,18 @@ export struct PlaylistsPage {
                         .fillColor($r('app.color.list_title'))
                         .margin(4)
                         .onClick(() => {
-                          this.openCtxMenu(card);
+                          this.openCtxMenu(cardRepeatItem.item);
                         })
                     }
                     .width('100%')
 
-                    Text(card.name)
+                    Text(cardRepeatItem.item.name)
                       .fontSize(14)
                       .fontColor($r('app.color.list_title'))
                       .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
                       .margin({ top: 6, left: 8, right: 8 })
-                    Text(`${card.trackCount} 首`).fontSize(12).fontColor($r('app.color.list_subtitle'))
+                    Text(`${cardRepeatItem.item.trackCount} 首`).fontSize(12).fontColor($r('app.color.list_subtitle'))
                       .margin({ bottom: 6 })
                   }
                   .width('100%')
@@ -300,10 +303,10 @@ export struct PlaylistsPage {
                   .border({ width: 0.5, color: $r('app.color.card_border') })
                   .shadow({ radius: 4, color: '#1A000000', offsetY: 2 })
                   .onClick(() => {
-                    this.openPlaylist(card);
+                    this.openPlaylist(cardRepeatItem.item);
                   })
                 }
-              }, (card: PlaylistCard) => `pl${card.id}`)
+              }).key((card: PlaylistCard) => `pl${card.id}`).virtualScroll()
             }
             .columnsTemplate('1fr 1fr')
             .columnsGap(10)
@@ -335,7 +338,7 @@ export struct PlaylistsPage {
       .borderRadius(24)
       .backgroundColor('#FF8800')
       .shadow({ radius: 8, color: '#44000000', offsetY: 4 })
-      .position({ right: 16, bottom: 16 })
+      .position({ right: 16, bottom: 152 })
       .onClick(() => {
         this.openCreate();
       })
@@ -345,8 +348,9 @@ export struct PlaylistsPage {
     // 唯一的 bindSheet,内部按 sheetMode 切换内容
     .bindSheet(this.showSheet, this.unifiedSheet(), {
       height: SheetSize.FIT_CONTENT, dragBar: true,
+      backgroundColor: $r('app.color.bottom_sheet_background'),
       onDisappear: () => {
-        this.closeSheet();
+        this.finishCloseSheet();
       },
     })
   }
@@ -382,10 +386,10 @@ export struct PlaylistsPage {
       PlaylistDialog({
         onClose: () => {
           this.closeSheet();
-          this.vm.load();
         },
         onCreate: async (name: string) => {
           await MediaLibrary.createPlaylist(name);
+          await this.vm.load();
         },
       }).width('100%')
     } else if (this.sheetMode === 'ctxmenu') {

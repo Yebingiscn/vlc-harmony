@@ -101,33 +101,33 @@ export struct PreferenceSearchPage {
         Divider().color('#424242').strokeWidth(1).margin({ top: 4 })
         // 结果列表
         List() {
-          ForEach(this.results, (entry: PreferenceSearchEntry) => {
+          Repeat(this.results).each((entryRepeatItem: RepeatItem<PreferenceSearchEntry>) => {
             ListItem() {
               Column() {
-                Text(this.highlightText(entry.title))
+                Text(this.highlightText(entryRepeatItem.item.title))
                   .fontSize(16)
                   .fontColor('#E0E0E0')
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
                   .margin({ left: 72, top: 8, right: 8 })
-                if (entry.summary !== '') {
-                  Text(this.highlightText(entry.summary))
+                if (entryRepeatItem.item.summary !== '') {
+                  Text(this.highlightText(entryRepeatItem.item.summary))
                     .fontSize(13)
                     .fontColor('#9E9E9E')
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                     .margin({ left: 72, right: 8 })
                 }
-                Text(entry.category)
+                Text(entryRepeatItem.item.category)
                   .fontSize(11)
                   .fontColor($r('app.color.orange500'))
                   .margin({ left: 72 })
                 Divider().color($r('app.color.divider')).strokeWidth(0.5).margin({ left: 72, top: 8 })
               }
               .width('100%')
-              .onClick(() => this.onItemClick(entry))
+              .onClick(() => this.onItemClick(entryRepeatItem.item))
             }
-          }, (entry: PreferenceSearchEntry) => entry.key)
+          }).key((entry: PreferenceSearchEntry) => entry.key).virtualScroll()
         }
         .width('100%')
         .layoutWeight(1)

@@ -190,11 +190,11 @@ export struct LibrariesActivityPage {
         // 库许可列表(纵向滚动,layoutWeight1,paddingBottom 48vp)
         Column() {
           List() {
-            ForEach(this.vm.licenses, (item: LibraryWithLicense) => {
+            Repeat(this.vm.licenses).each((itemRepeatItem: RepeatItem<LibraryWithLicense>) => {
               ListItem() {
-                this.LibraryItemRow(item)
+                this.LibraryItemRow(itemRepeatItem.item)
               }
-            }, (item: LibraryWithLicense) => item.title)
+            }).key((item: LibraryWithLicense) => item.title).virtualScroll()
           }
           .width('100%')
           .height('100%')

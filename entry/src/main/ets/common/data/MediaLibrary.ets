@@ -223,6 +223,7 @@ export class MediaLibrary {
   static async importVideoUris(uris: string[]): Promise<void> {
     const uniqueUris = Array.from(new Set(uris));
     const existingUris = new Set(MediaLibrary.videos.map((v: MediaWrapper) => v.uri));
+    const loadThumbnails: boolean = await Settings.getBoolean(Settings.SHOW_VIDEO_THUMBNAILS, true);
     let addedCount = 0;
     for (let i = 0; i < uniqueUris.length; i++) {
       const uri = uniqueUris[i];
@@ -243,6 +244,13 @@ export class MediaLibrary {
       video.height = meta.videoHeight;
       video.resolution = video.width > 0 && video.height > 0 ? `${video.width}x${video.height}` : '';
       video.artworkUrl = meta.artworkPath;
+      // 视频文件带有内嵌封面时优先保留；没有封面才截取视频帧。
+      if (loadThumbnails && !MediaLibrary.artworkExists(video.artworkUrl)) {
+        const thumbnail: string = await MediaLibrary.createVideoThumbnail(uri);
+        if (thumbnail.length > 0) {
+          video.artworkUrl = thumbnail;
+        }
+      }
       try {
         const stat = fs.statSync(uri);
         video.size = stat.size;
@@ -1162,6 +1170,79 @@ export class MediaLibrary {
     return raw;
   }
 
+  /** 判断持久化的封面/缩略图文件是否仍然存在。 */
+  private static artworkExists(artworkUrl: string): boolean {
+    if (artworkUrl.length === 0) {
+      return false;
+    }
+    try {
+      return fs.statSync(MediaLibrary.normalizePath(artworkUrl)).size > 0;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * 从视频 1 秒附近的同步帧生成缩略图。
+   * 视频只保存源文件 URI；生成的 JPEG 位于应用缓存目录，不复制视频本体。
+   */
+  private static async createVideoThumbnail(rawPath: string): Promise<string> {
+    const cacheName = `video_thumb_${Math.abs(MediaLibrary.hashCode(rawPath))}.jpg`;
+    const cachePath = `${AppContext.get().cacheDir}/${cacheName}`;
+    const artworkUrl = `file://${cachePath}`;
+    if (MediaLibrary.artworkExists(artworkUrl)) {
+      return artworkUrl;
+    }
+
+    let generator: media.AVImageGenerator | null = null;
+    let file: fs.File | null = null;
+    try {
+      file = fs.openSync(rawPath, fs.OpenMode.READ_ONLY);
+      generator = await media.createAVImageGenerator();
+      generator.fdSrc = file;
+      const outputSize: media.OutputSize = { width: 320, height: 0 };
+      const pixelMap = await generator.fetchScaledFrameByTime(
+        1000000,
+        media.AVImageQueryOptions.AV_IMAGE_QUERY_CLOSEST_SYNC,
+        outputSize,
+      );
+      try {
+        const packer = image.createImagePacker();
+        try {
+          const options: image.PackingOption = { format: 'image/jpeg', quality: 82 };
+          const buffer = await packer.packToData(pixelMap, options);
+          const output = fs.openSync(cachePath,
+            fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
+          try {
+            fs.writeSync(output.fd, buffer);
+          } finally {
+            fs.closeSync(output);
+          }
+        } finally {
+          packer.release();
+        }
+      } finally {
+        pixelMap.release();
+      }
+      HILog(`video thumbnail created: ${artworkUrl}`);
+      return artworkUrl;
+    } catch (e) {
+      HILog(`createVideoThumbnail failed for ${rawPath}: ${(e as Error).message ?? String(e)}`);
+      return '';
+    } finally {
+      if (generator !== null) {
+        try {
+          await generator.release();
+        } catch (e) { /* ignore */ }
+      }
+      if (file !== null) {
+        try {
+          fs.closeSync(file);
+        } catch (e) { /* ignore */ }
+      }
+    }
+  }
+
   // ---- 视频收藏(按 uri) ----
 
   /** 通过系统 AVMetadataExtractor 提取元数据,每次新建实例(避免复用缓存上一文件的元数据)。 */
@@ -1352,6 +1433,8 @@ export class MediaLibrary {
       if (!Array.isArray(items)) {
         return;
       }
+      const loadThumbnails: boolean = await Settings.getBoolean(Settings.SHOW_VIDEO_THUMBNAILS, true);
+      let thumbnailsChanged: boolean = false;
       const existing = new Set(MediaLibrary.videos.map((video: MediaWrapper) => video.uri));
       for (const item of items) {
         if (item.uri.length === 0 || existing.has(item.uri) || !(await DocumentPermission.activate(item.uri))) {
@@ -1365,11 +1448,28 @@ export class MediaLibrary {
         video.height = item.height;
         video.size = item.size;
         video.resolution = item.width > 0 && item.height > 0 ? `${item.width}x${item.height}` : '';
-        video.artworkUrl = item.artworkUrl;
+        video.artworkUrl = item.artworkUrl ?? '';
+        if (loadThumbnails && !MediaLibrary.artworkExists(video.artworkUrl)) {
+          // 缓存失效后先重新检查文件内嵌封面，仍无封面时才回退到视频截帧。
+          const meta: AudioMeta = await MediaLibrary.parseFileMeta(item.uri);
+          if (MediaLibrary.artworkExists(meta.artworkPath)) {
+            video.artworkUrl = meta.artworkPath;
+            thumbnailsChanged = true;
+          } else {
+            const thumbnail: string = await MediaLibrary.createVideoThumbnail(item.uri);
+            if (thumbnail.length > 0) {
+              video.artworkUrl = thumbnail;
+              thumbnailsChanged = true;
+            }
+          }
+        }
         video.dateAdded = item.dateAdded;
         video.dateModified = item.dateModified;
         MediaLibrary.videos.push(video);
         existing.add(item.uri);
+      }
+      if (thumbnailsChanged) {
+        await MediaLibrary.saveVideoLibrary();
       }
     } catch (e) {
       HILog(`loadVideoLibrary error: ${(e as Error).message ?? String(e)}`);

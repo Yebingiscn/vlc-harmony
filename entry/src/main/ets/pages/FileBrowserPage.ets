@@ -67,11 +67,11 @@ export struct FileBrowserPage {
         } else {
           Refresh({ refreshing: $$this.refreshing }) {
             List() {
-              ForEach(this.vm.dataset, (item: SheetItem) => {
+              Repeat(this.vm.dataset).each((itemRepeatItem: RepeatItem<SheetItem>) => {
                 ListItem() {
-                  this.browserItem(item)
+                  this.browserItem(itemRepeatItem.item)
                 }
-              }, (item: SheetItem) => item.title)
+              }).key((item: SheetItem) => item.title).virtualScroll()
             }
             .width('100%').height('100%')
             .divider({

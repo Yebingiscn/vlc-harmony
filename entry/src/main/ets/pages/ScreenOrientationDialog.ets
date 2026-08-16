@@ -46,17 +46,17 @@ export struct ScreenOrientationDialog {
         .width('100%')
         .margin({ bottom: 12 })
 
-      ForEach(this.labels, (label: string, index: number) => {
+      Repeat(this.labels).each((labelRepeatItem: RepeatItem<string>) => {
         Row() {
-          Radio({ value: this.valueAt(index), group: 'screen_orientation' })
-            .checked(this.selectedValue === this.valueAt(index))
+          Radio({ value: this.valueAt(labelRepeatItem.index), group: 'screen_orientation' })
+            .checked(this.selectedValue === this.valueAt(labelRepeatItem.index))
             .radioStyle({ checkedBackgroundColor: AppColors.orange500 })
             .onChange((on: boolean) => {
               if (on) {
-                this.onSelect(this.valueAt(index));
+                this.onSelect(this.valueAt(labelRepeatItem.index));
               }
             })
-          Text(label)
+          Text(labelRepeatItem.item)
             .fontSize(16)
             .fontColor($r('app.color.list_title'))
             .margin({ left: 12 })
@@ -70,8 +70,8 @@ export struct ScreenOrientationDialog {
           bottom: 16
         })
         .alignItems(VerticalAlign.Center)
-        .onClick(() => this.onSelect(this.valueAt(index)))
-      }, (label: string, index: number) => `${index}`)
+        .onClick(() => this.onSelect(this.valueAt(labelRepeatItem.index)))
+      }).key((label: string, index: number) => `${index}`)
 
       Button($r('app.string.cancel'))
         .type(ButtonType.Normal)

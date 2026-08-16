@@ -22,13 +22,13 @@ export struct PreferenceChoiceDialog {
         .margin({ bottom: 12 })
 
       List() {
-        ForEach(this.labels, (label: ResourceStr, index: number) => {
+        Repeat(this.labels).each((labelRepeatItem: RepeatItem<ResourceStr>) => {
           ListItem() {
             Row() {
-              Text(label)
+              Text(labelRepeatItem.item)
                 .fontSize(16)
                 .layoutWeight(1)
-              if (this.valueAt(index) === this.selectedValue) {
+              if (this.valueAt(labelRepeatItem.index) === this.selectedValue) {
                 SymbolGlyph($r('sys.symbol.checkmark'))
                   .fontSize(22)
                   .fontColor([$r('sys.color.icon_primary')])
@@ -44,9 +44,9 @@ export struct PreferenceChoiceDialog {
               top: 16,
               bottom: 16
             })
-            .onClick(() => this.onSelect(this.valueAt(index)))
+            .onClick(() => this.onSelect(this.valueAt(labelRepeatItem.index)))
           }
-        }, (label: ResourceStr, index: number) => `${index}`)
+        }).key((label: ResourceStr, index: number) => `${index}`)
       }
       .width('100%')
       .height(this.labels.length > 5 ? 360 : undefined)

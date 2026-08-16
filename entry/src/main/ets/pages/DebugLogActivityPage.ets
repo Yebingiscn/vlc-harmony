@@ -124,11 +124,11 @@ export struct DebugLogActivityPage {
 
           // 日志列表(paddingTop 10vp)
           List() {
-            ForEach(this.vm.logList, (line: string, idx: number) => {
+            Repeat(this.vm.logList).each((lineRepeatItem: RepeatItem<string>) => {
               ListItem() {
-                this.LogItem(line)
+                this.LogItem(lineRepeatItem.item)
               }
-            }, (line: string, idx: number) => `${idx}`)
+            }).key((line: string, idx: number) => `${idx}`).virtualScroll()
           }
           .width('100%')
           .layoutWeight(1)

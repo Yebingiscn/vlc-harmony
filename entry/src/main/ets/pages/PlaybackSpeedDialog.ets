@@ -205,22 +205,22 @@ export struct PlaybackSpeedDialog {
   @Builder
   presetRow() {
     Row() {
-      ForEach([0.8, 1.0, 1.25, 1.5, 2.0], (p: number) => {
+      Repeat([0.8, 1.0, 1.25, 1.5, 2.0]).each((pRepeatItem: RepeatItem<number>) => {
         Column() {
-          Text(`${p.toFixed(p % 1 === 0 ? 0 : 2)}x`)
+          Text(`${pRepeatItem.item.toFixed(pRepeatItem.item % 1 === 0 ? 0 : 2)}x`)
             .fontSize(12).fontWeight(FontWeight.Medium)
-            .fontColor(Math.abs(this.speed - p) < 0.005 ? $r('app.color.list_title') : this.cDim)
+            .fontColor(Math.abs(this.speed - pRepeatItem.item) < 0.005 ? $r('app.color.list_title') : this.cDim)
         }
         .width(52)
         .height(36)
         .borderRadius(18)
-        .border({ width: 1, color: Math.abs(this.speed - p) < 0.005 ? this.cAccent : this.cBorder })
-        .backgroundColor(Math.abs(this.speed - p) < 0.005 ? '#33FF8800' : Color.Transparent)
+        .border({ width: 1, color: Math.abs(this.speed - pRepeatItem.item) < 0.005 ? this.cAccent : this.cBorder })
+        .backgroundColor(Math.abs(this.speed - pRepeatItem.item) < 0.005 ? '#33FF8800' : Color.Transparent)
         .justifyContent(FlexAlign.Center)
         .alignItems(HorizontalAlign.Center)
         .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.95 })
-        .onClick(() => this.applyPreset(p))
-      }, (p: number) => `p${p}`)
+        .onClick(() => this.applyPreset(pRepeatItem.item))
+      }).key((p: number) => `p${p}`)
     }
     .width('100%')
     .padding({ left: 24, right: 24, top: 14 })

@@ -235,7 +235,7 @@ export struct VlcToolbar {
               .bindMenu(this.moreOpen, this.moreMenu(), {
                 placement: Placement.BottomRight,
                 showInSubWindow: true,
-                backgroundColor: '#FFFFFF',
+                backgroundColor: $r('app.color.bottom_sheet_background'),
                 onDisappear: () => this.moreOpen = false,
               })
           }

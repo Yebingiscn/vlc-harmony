@@ -108,19 +108,19 @@ export struct SearchPage {
           EmptyStateView({ state: EmptyLoadingState.EMPTY_SEARCH, filterQuery: this.vm.query })
         } else {
           List() {
-            ForEach(this.vm.results, (item: MediaLibraryItem) => {
+            Repeat(this.vm.results).each((itemRepeatItem: RepeatItem<MediaLibraryItem>) => {
               ListItem() {
                 SearchItem({
-                  item: item,
+                  item: itemRepeatItem.item,
                   onItemClick: () => {
-                    if (item instanceof MediaWrapper && (item as MediaWrapper).isVideo()) {
-                      const video = item as MediaWrapper;
+                    if (itemRepeatItem.item instanceof MediaWrapper && (itemRepeatItem.item as MediaWrapper).isVideo()) {
+                      const video = itemRepeatItem.item as MediaWrapper;
                       void PlaybackService.getInstance().prepareList([video], 0, true).then(() => {
                         const vparam: VideoParam = { uri: video.uri, title: video.title };
                         NavController.push('VideoPlayer', vparam);
                       });
                     } else {
-                      const track = item as Track;
+                      const track = itemRepeatItem.item as Track;
                       const mw = new MediaWrapper(track.id, track.title, track.uri, 1);
                       void PlaybackService.getInstance().playList([mw], 0, true);
                       NavController.push('AudioPlayer');
@@ -128,7 +128,7 @@ export struct SearchPage {
                   },
                 })
               }
-            }, (item: MediaLibraryItem) => `${item.id}-${item.title}`)
+            }).key((item: MediaLibraryItem) => `${item.id}-${item.title}`).virtualScroll()
           }
           .divider({
             strokeWidth: 0.5,

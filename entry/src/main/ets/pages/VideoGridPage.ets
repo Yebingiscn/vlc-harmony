@@ -6,7 +6,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { NavController } from '../common/data/NavController';
-import { RouteName } from '../common/constants/AppConstants';
+import { AppColors, RouteName } from '../common/constants/AppConstants';
 import { EmptyStateView } from '../common/components/EmptyStateView';
 import { MediaGridCard } from '../common/components/MediaGridCard';
 import { MediaListCard } from '../common/components/MediaListCard';
@@ -204,12 +204,15 @@ export struct VideoGridPage {
   @Param selectionActionVersion: number = 0;
   @Param selectionActionType: string = '';
   private removeSettingsListener: (() => void) | null = null;
+  /** 防止播放器导航动画期间连续点击，重复压入 VideoPlayer 页面。 */
+  private videoPlayerOpening: boolean = false;
   @Event onSearchGlobal: () => void = () => {
   };
   @Event onSelectionChange: (active: boolean, count: number) => void = () => {
   };
 
   aboutToAppear(): void {
+    this.videoPlayerOpening = false;
     if (this.removeSettingsListener === null) {
       this.removeSettingsListener = Settings.observe((key: string) => {
         if (key === Settings.SHOW_VIDEO_THUMBNAILS) {
@@ -295,7 +298,10 @@ export struct VideoGridPage {
     });
   }
 
-  async playVideo(item: MediaWrapper): Promise<void> {
+  playVideo(item: MediaWrapper): void {
+    if (this.videoPlayerOpening) {
+      return;
+    }
     const items = this.vm.items;
     // 设置页返回时可能触发列表重建，卡片事件里保留的 item 与当前
     // vm.items 中的对象不一定还是同一个引用。用 URI 定位才能保证点击
@@ -313,7 +319,13 @@ export struct VideoGridPage {
       list: list,
       index: index >= 0 ? index : 0,
     };
+    this.videoPlayerOpening = true;
     NavController.push('VideoPlayer', param);
+    // MainPage 常驻时不保证子组件每次返回都重新触发 aboutToAppear，
+    // 因此锁只覆盖一次导航动画窗口。
+    setTimeout(() => {
+      this.videoPlayerOpening = false;
+    }, 800);
   }
 
   /** 长按/更多 → 打开 ContextSheet。 */
@@ -465,6 +477,23 @@ export struct VideoGridPage {
       }
       .width('100%')
       .height('100%')
+
+      // 与音频页保持一致：已有视频后也能继续通过系统文件选择器添加。
+      if (!this.searchMode && !this.inSelection) {
+        Button() {
+          Image($r('app.media.ic_add'))
+            .width(22)
+            .height(22)
+            .fillColor($r('app.color.colorOnPrimary'))
+        }
+        .width(48)
+        .height(48)
+        .borderRadius(24)
+        .backgroundColor(AppColors.orange500)
+        .shadow({ radius: 8, color: '#44000000', offsetY: 4 })
+        .position({ right: 16, bottom: 152 })
+        .onClick(() => this.onAddVideo())
+      }
     }
     .width('100%')
     .height('100%')
@@ -472,7 +501,7 @@ export struct VideoGridPage {
     .bindSheet(this.showContext, this.contextSheet(), {
       height: SheetSize.FIT_CONTENT,
       dragBar: true,
-      backgroundColor: '#FFFFFF',
+      backgroundColor: $r('app.color.bottom_sheet_background'),
       showClose: false,
       onDisappear: () => {
         this.showContext = false;
@@ -509,7 +538,7 @@ export struct VideoGridPage {
             .alt($r('app.media.ic_no_thumbnail_1610'))
           Text(this.contextItem.title)
             .fontSize(16)
-            .fontColor('#212121')
+            .fontColor($r('app.color.list_title'))
             .fontWeight(FontWeight.Medium)
             .layoutWeight(1)
             .maxLines(2)
@@ -521,18 +550,18 @@ export struct VideoGridPage {
 
         Divider()
           .strokeWidth(0.5)
-          .color('#E0E0E0')
+          .color($r('app.color.divider'))
 
         // 播放
         Row() {
           Image($r('app.media.ic_play_player'))
             .width(24)
             .height(24)
-            .fillColor('#212121')
+            .fillColor($r('app.color.list_title'))
             .margin({ right: 12 })
           Text('播放')
             .fontSize(15)
-            .fontColor('#212121')
+            .fontColor($r('app.color.list_title'))
         }
         .width('100%')
         .padding({
@@ -552,11 +581,11 @@ export struct VideoGridPage {
           Image(this.contextItemFav ? $r('app.media.ic_fav_remove') : $r('app.media.ic_fav_add'))
             .width(24)
             .height(24)
-            .fillColor('#212121')
+            .fillColor($r('app.color.list_title'))
             .margin({ right: 12 })
           Text(this.contextItemFav ? '取消收藏' : '添加到收藏夹')
             .fontSize(15)
-            .fontColor('#212121')
+            .fontColor($r('app.color.list_title'))
         }
         .width('100%')
         .padding({
@@ -579,11 +608,11 @@ export struct VideoGridPage {
           Image($r('app.media.ic_information'))
             .width(24)
             .height(24)
-            .fillColor('#212121')
+            .fillColor($r('app.color.list_title'))
             .margin({ right: 12 })
           Text('视频信息')
             .fontSize(15)
-            .fontColor('#212121')
+            .fontColor($r('app.color.list_title'))
         }
         .width('100%')
         .padding({
@@ -604,11 +633,11 @@ export struct VideoGridPage {
           Image($r('app.media.ic_share'))
             .width(24)
             .height(24)
-            .fillColor('#212121')
+            .fillColor($r('app.color.list_title'))
             .margin({ right: 12 })
           Text('分享')
             .fontSize(15)
-            .fontColor('#212121')
+            .fontColor($r('app.color.list_title'))
         }
         .width('100%')
         .padding({
@@ -656,12 +685,12 @@ export struct VideoGridPage {
 
         Divider()
           .strokeWidth(0.5)
-          .color('#E0E0E0')
+          .color($r('app.color.divider'))
         Blank()
           .height(24)
       }
     }
-    .width('100%').backgroundColor('#FFFFFF')
+    .width('100%').backgroundColor($r('app.color.bottom_sheet_background'))
     .borderRadius({ topLeft: 16, topRight: 16 })
   }
 
@@ -675,7 +704,7 @@ export struct VideoGridPage {
         // 头部:文件夹名称
         Text(this.contextFolder.title)
           .fontSize(18)
-          .fontColor('#212121')
+          .fontColor($r('app.color.list_title'))
           .fontWeight(FontWeight.Medium)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -689,18 +718,18 @@ export struct VideoGridPage {
 
         Divider()
           .strokeWidth(0.5)
-          .color('#E0E0E0')
+          .color($r('app.color.divider'))
 
         // 播放(播放第一个视频)
         Row() {
           Image($r('app.media.ic_play_player'))
             .width(24)
             .height(24)
-            .fillColor('#212121')
+            .fillColor($r('app.color.list_title'))
             .margin({ right: 12 })
           Text('播放')
             .fontSize(15)
-            .fontColor('#212121')
+            .fontColor($r('app.color.list_title'))
         }
         .width('100%')
         .padding({
@@ -720,11 +749,11 @@ export struct VideoGridPage {
           Image($r('app.media.ic_folder'))
             .width(24)
             .height(24)
-            .fillColor('#212121')
+            .fillColor($r('app.color.list_title'))
             .margin({ right: 12 })
           Text('打开文件夹')
             .fontSize(15)
-            .fontColor('#212121')
+            .fontColor($r('app.color.list_title'))
         }
         .width('100%')
         .padding({
@@ -744,11 +773,11 @@ export struct VideoGridPage {
           Image(this.contextFolderFav ? $r('app.media.ic_fav_remove') : $r('app.media.ic_fav_add'))
             .width(24)
             .height(24)
-            .fillColor('#212121')
+            .fillColor($r('app.color.list_title'))
             .margin({ right: 12 })
           Text(this.contextFolderFav ? '取消收藏' : '添加到收藏夹')
             .fontSize(15)
-            .fontColor('#212121')
+            .fontColor($r('app.color.list_title'))
         }
         .width('100%')
         .padding({
@@ -771,11 +800,11 @@ export struct VideoGridPage {
           Image($r('app.media.ic_check'))
             .width(24)
             .height(24)
-            .fillColor('#212121')
+            .fillColor($r('app.color.list_title'))
             .margin({ right: 12 })
           Text('全部标记为已播放')
             .fontSize(15)
-            .fontColor('#212121')
+            .fontColor($r('app.color.list_title'))
         }
         .width('100%')
         .padding({
@@ -795,11 +824,11 @@ export struct VideoGridPage {
           Image($r('app.media.ic_close_small'))
             .width(24)
             .height(24)
-            .fillColor('#212121')
+            .fillColor($r('app.color.list_title'))
             .margin({ right: 12 })
           Text('全部标记为未播放')
             .fontSize(15)
-            .fontColor('#212121')
+            .fontColor($r('app.color.list_title'))
         }
         .width('100%')
         .padding({
@@ -816,13 +845,13 @@ export struct VideoGridPage {
 
         Divider()
           .strokeWidth(0.5)
-          .color('#E0E0E0')
+          .color($r('app.color.divider'))
         Blank()
           .height(24)
       }
     }
     .width('100%')
-    .backgroundColor('#FFFFFF')
+    .backgroundColor($r('app.color.bottom_sheet_background'))
     .borderRadius({ topLeft: 16, topRight: 16 })
   }
 
@@ -853,39 +882,39 @@ export struct VideoGridPage {
   @Builder
   gridMode() {
     Grid() {
-      ForEach(this.vm.items, (item: MediaWrapper) => {
+      Repeat(this.vm.items).each((itemRepeatItem: RepeatItem<MediaWrapper>) => {
         GridItem() {
           MediaGridCard({
-            item: item,
-            isFavorite: MediaLibrary.isVideoFav(item.uri),
-            selected: this.isSelected(item.uri),
+            item: itemRepeatItem.item,
+            isFavorite: MediaLibrary.isVideoFav(itemRepeatItem.item.uri),
+            selected: this.isSelected(itemRepeatItem.item.uri),
             inSelection: this.inSelection,
             showSeenMarker: this.vm.showSeenMarker,
             showThumbnail: this.vm.showThumbnails,
             onItemClick: () => {
               if (this.inSelection) {
-                this.toggleSelection(item.uri);
+                this.toggleSelection(itemRepeatItem.item.uri);
               } else {
-                this.playVideo(item);
+                this.playVideo(itemRepeatItem.item);
               }
             },
             onItemLongClick: () => {
               if (this.inSelection) {
-                this.toggleSelection(item.uri);
+                this.toggleSelection(itemRepeatItem.item.uri);
               } else {
-                this.enterSelection(item);
+                this.enterSelection(itemRepeatItem.item);
               }
             },
             onItemMoreClick: () => {
               if (this.inSelection) {
-                this.toggleSelection(item.uri);
+                this.toggleSelection(itemRepeatItem.item.uri);
               } else {
-                this.openContext(item);
+                this.openContext(itemRepeatItem.item);
               }
             },
           })
         }
-      }, (item: MediaWrapper) => item.uri + (MediaLibrary.isVideoFav(item.uri) ? '|1' : '|0'))
+      }).key((item: MediaWrapper) => item.uri + (MediaLibrary.isVideoFav(item.uri) ? '|1' : '|0')).virtualScroll()
     }
     .columnsTemplate('1fr 1fr')
     .columnsGap(8)
@@ -898,39 +927,39 @@ export struct VideoGridPage {
   @Builder
   listMode() {
     List({ space: 0 }) {
-      ForEach(this.vm.items, (item: MediaWrapper) => {
+      Repeat(this.vm.items).each((itemRepeatItem: RepeatItem<MediaWrapper>) => {
         ListItem() {
           MediaListCard({
-            item: item,
-            isFavorite: MediaLibrary.isVideoFav(item.uri),
-            selected: this.isSelected(item.uri),
+            item: itemRepeatItem.item,
+            isFavorite: MediaLibrary.isVideoFav(itemRepeatItem.item.uri),
+            selected: this.isSelected(itemRepeatItem.item.uri),
             inSelection: this.inSelection,
             showSeenMarker: this.vm.showSeenMarker,
             showThumbnail: this.vm.showThumbnails,
             onItemClick: () => {
               if (this.inSelection) {
-                this.toggleSelection(item.uri);
+                this.toggleSelection(itemRepeatItem.item.uri);
               } else {
-                this.playVideo(item);
+                this.playVideo(itemRepeatItem.item);
               }
             },
             onItemLongClick: () => {
               if (this.inSelection) {
-                this.toggleSelection(item.uri);
+                this.toggleSelection(itemRepeatItem.item.uri);
               } else {
-                this.enterSelection(item);
+                this.enterSelection(itemRepeatItem.item);
               }
             },
             onItemMoreClick: () => {
               if (this.inSelection) {
-                this.toggleSelection(item.uri);
+                this.toggleSelection(itemRepeatItem.item.uri);
               } else {
-                this.openContext(item);
+                this.openContext(itemRepeatItem.item);
               }
             },
           })
         }
-      }, (item: MediaWrapper) => item.uri + (MediaLibrary.isVideoFav(item.uri) ? '|1' : '|0'))
+      }).key((item: MediaWrapper) => item.uri + (MediaLibrary.isVideoFav(item.uri) ? '|1' : '|0')).virtualScroll()
     }
     .divider({
       strokeWidth: 0.5,
@@ -945,20 +974,20 @@ export struct VideoGridPage {
   @Builder
   folderGridMode() {
     Grid() {
-      ForEach(this.vm.folders, (folder: Folder) => {
+      Repeat(this.vm.folders).each((folderRepeatItem: RepeatItem<Folder>) => {
         GridItem() {
           Column() {
             Stack({ alignContent: Alignment.Top }) {
               // 文件夹封面:4+缩略图时用 2x2 拼图,否则单图/图标。
-              if (this.vm.showThumbnails && folder.thumbnailUrls.length >= 4) {
+              if (this.vm.showThumbnails && folderRepeatItem.item.thumbnailUrls.length >= 4) {
                 Column() {
                   Row() {
-                    Image(folder.thumbnailUrls[0])
+                    Image(folderRepeatItem.item.thumbnailUrls[0])
                       .width('50%')
                       .height('100%')
                       .objectFit(ImageFit.Cover)
                       .draggable(false)
-                    Image(folder.thumbnailUrls[1])
+                    Image(folderRepeatItem.item.thumbnailUrls[1])
                       .width('50%')
                       .height('100%')
                       .objectFit(ImageFit.Cover)
@@ -968,12 +997,12 @@ export struct VideoGridPage {
                   .height('50%')
 
                   Row() {
-                    Image(folder.thumbnailUrls[2])
+                    Image(folderRepeatItem.item.thumbnailUrls[2])
                       .width('50%')
                       .height('100%')
                       .objectFit(ImageFit.Cover)
                       .draggable(false)
-                    Image(folder.thumbnailUrls[3])
+                    Image(folderRepeatItem.item.thumbnailUrls[3])
                       .width('50%')
                       .height('100%')
                       .objectFit(ImageFit.Cover)
@@ -985,7 +1014,7 @@ export struct VideoGridPage {
                 .width('100%')
                 .height('100%')
               } else {
-                Image(this.vm.showThumbnails && folder.artworkUrl.length > 0 ? folder.artworkUrl :
+                Image(this.vm.showThumbnails && folderRepeatItem.item.artworkUrl.length > 0 ? folderRepeatItem.item.artworkUrl :
                   $r('app.media.ic_folder'))
                   .width('100%')
                   .height('100%')
@@ -1003,14 +1032,14 @@ export struct VideoGridPage {
                   .fillColor('#FFFFFF')
                   .backgroundColor($r('app.color.rounded_corners_black_more_transparent'))
                   .borderRadius(4)
-                  .onClick(() => this.openFolderContext(folder))
+                  .onClick(() => this.openFolderContext(folderRepeatItem.item))
               }
               .width('100%')
               .justifyContent(FlexAlign.SpaceBetween)
               .padding({ left: 4, right: 4, top: 4 })
 
               // 左下角:收藏角标(已收藏时显示)。
-              if (MediaLibrary.isFolderFav(folder.path)) {
+              if (MediaLibrary.isFolderFav(folderRepeatItem.item.path)) {
                 Row() {
                   Image($r('app.media.ic_emoji_favorite_white'))
                     .width(16)
@@ -1033,7 +1062,7 @@ export struct VideoGridPage {
             .clip(true)
             .width('100%')
 
-            Text(folder.title)
+            Text(folderRepeatItem.item.title)
               .fontSize(16)
               .fontColor($r('app.color.list_title'))
               .maxLines(1)
@@ -1041,7 +1070,7 @@ export struct VideoGridPage {
               .margin({ top: 6 })
               .width('100%')
 
-            Text(`${folder.mediaCount} 个视频`)
+            Text(`${folderRepeatItem.item.mediaCount} 个视频`)
               .fontSize(12)
               .fontColor($r('app.color.list_subtitle'))
               .maxLines(1)
@@ -1054,10 +1083,10 @@ export struct VideoGridPage {
           .backgroundColor($r('app.color.video_card_background'))
           .borderRadius(8)
           .clip(true)
-          .onClick(() => this.openFolder(folder))
-          .gesture(LongPressGesture().onAction(() => this.openFolderContext(folder)))
+          .onClick(() => this.openFolder(folderRepeatItem.item))
+          .gesture(LongPressGesture().onAction(() => this.openFolderContext(folderRepeatItem.item)))
         }
-      }, (folder: Folder) => folder.path.length > 0 ? folder.path : folder.title)
+      }).key((folder: Folder) => folder.path.length > 0 ? folder.path : folder.title).virtualScroll()
     }
     .columnsTemplate('1fr 1fr')
     .columnsGap(8)
@@ -1070,13 +1099,13 @@ export struct VideoGridPage {
   @Builder
   folderListMode() {
     List({ space: 0 }) {
-      ForEach(this.vm.folders, (folder: Folder) => {
+      Repeat(this.vm.folders).each((folderRepeatItem: RepeatItem<Folder>) => {
         ListItem() {
           Row() {
             // 左侧:文件夹缩略图/图标(80x50,与视频列表卡片一致)。
             Stack() {
-              Image(this.vm.showThumbnails && folder.artworkUrl.length > 0
-                ? folder.artworkUrl : $r('app.media.ic_folder'))
+              Image(this.vm.showThumbnails && folderRepeatItem.item.artworkUrl.length > 0
+                ? folderRepeatItem.item.artworkUrl : $r('app.media.ic_folder'))
                 .width(80)
                 .height(50)
                 .objectFit(ImageFit.Cover)
@@ -1091,12 +1120,12 @@ export struct VideoGridPage {
 
             // 中间:文件夹名 + 视频数。
             Column() {
-              Text(folder.title)
+              Text(folderRepeatItem.item.title)
                 .fontSize(16)
                 .fontColor($r('app.color.list_title'))
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
-              Text(`${folder.mediaCount} 个视频`)
+              Text(`${folderRepeatItem.item.mediaCount} 个视频`)
                 .fontSize(12)
                 .fontColor($r('app.color.list_subtitle'))
                 .maxLines(1)
@@ -1108,7 +1137,7 @@ export struct VideoGridPage {
             .margin({ right: 4 })
 
             // 收藏指示(已收藏时显示星标)。
-            if (MediaLibrary.isFolderFav(folder.path)) {
+            if (MediaLibrary.isFolderFav(folderRepeatItem.item.path)) {
               Image($r('app.media.ic_emoji_favorite'))
                 .width(24).height(24).objectFit(ImageFit.Contain).margin({ right: 4 })
             }
@@ -1125,15 +1154,15 @@ export struct VideoGridPage {
             .justifyContent(FlexAlign.Center)
             .alignItems(VerticalAlign.Center)
             .margin({ right: 4 })
-            .onClick(() => this.openFolderContext(folder))
+            .onClick(() => this.openFolderContext(folderRepeatItem.item))
           }
           .width('100%')
           .padding({ left: 8, top: 8, bottom: 8 })
           .backgroundColor($r('app.color.video_list_background'))
-          .onClick(() => this.openFolder(folder))
-          .gesture(LongPressGesture().onAction(() => this.openFolderContext(folder)))
+          .onClick(() => this.openFolder(folderRepeatItem.item))
+          .gesture(LongPressGesture().onAction(() => this.openFolderContext(folderRepeatItem.item)))
         }
-      }, (folder: Folder) => folder.path.length > 0 ? folder.path : folder.title)
+      }).key((folder: Folder) => folder.path.length > 0 ? folder.path : folder.title).virtualScroll()
     }
     .divider({
       strokeWidth: 0.5,

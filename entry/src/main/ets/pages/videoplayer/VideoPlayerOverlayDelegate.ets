@@ -390,9 +390,9 @@ export struct VideoPlayerOverlayHud {
       .alignItems(VerticalAlign.Center)
 
       Row() {
-        ForEach(buildVideoPlayerBottomActions(), (action: VideoPlayerBottomAction) => {
-          if (action.id === 'advanced') {
-            Image(action.icon)
+        Repeat(buildVideoPlayerBottomActions()).each((actionRepeatItem: RepeatItem<VideoPlayerBottomAction>) => {
+          if (actionRepeatItem.item.id === 'advanced') {
+            Image(actionRepeatItem.item.icon)
               .width(32)
               .height(32)
               .fillColor('#FFFFFF')
@@ -404,13 +404,13 @@ export struct VideoPlayerOverlayHud {
                 onDisappear: () => this.overlayDelegate.runPendingAdvancedAction(),
               })
           } else {
-            Image(this.overlayDelegate.bottomActionIcon(action))
-              .width(action.id === 'play' ? 56 : 32)
-              .height(action.id === 'play' ? 56 : 32)
+            Image(this.overlayDelegate.bottomActionIcon(actionRepeatItem.item))
+              .width(actionRepeatItem.item.id === 'play' ? 56 : 32)
+              .height(actionRepeatItem.item.id === 'play' ? 56 : 32)
               .fillColor('#FFFFFF')
-              .onClick(() => this.overlayDelegate.onBottomAction(action.id))
+              .onClick(() => this.overlayDelegate.onBottomAction(actionRepeatItem.item.id))
           }
-        }, (action: VideoPlayerBottomAction): string => action.id)
+        }).key((action: VideoPlayerBottomAction): string => action.id)
       }
       .width('100%')
       .padding({

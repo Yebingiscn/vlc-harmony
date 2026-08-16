@@ -117,13 +117,13 @@ export struct NetworkServerDialog {
   @Builder
   protocolMenu() {
     Menu() {
-      ForEach(this.protocols, (p: string, idx: number) => {
-        MenuItem({ content: p })
+      Repeat(this.protocols).each((pRepeatItem: RepeatItem<string>) => {
+        MenuItem({ content: pRepeatItem.item })
           .onClick(() => {
             this.protocolMenuOpen = false;
-            this.onProtocolSelected(idx);
+            this.onProtocolSelected(pRepeatItem.index);
           })
-      }, (p: string) => p)
+      }).key((p: string) => p)
     }
   }
 

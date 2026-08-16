@@ -1,6 +1,6 @@
 import { Settings } from './Settings';
 import { MediaLibrary } from './MediaLibrary';
-import { MediaWrapper } from '../models/MediaModels';
+import { MediaWrapper, Track } from '../models/MediaModels';
 import {
   PlaybackHistoryEntry,
   prependPlaybackHistory,
@@ -13,7 +13,11 @@ interface PersistedPlaybackHistoryEntry {
   length: number;
   artworkUrl: string;
   playedAt: number;
+  artistName?: string;
+  albumName?: string;
 }
+
+const AUDIO_EXTENSIONS: string[] = ['.mp3', '.flac', '.ogg', '.wav', '.aac', '.m4a', '.wma', '.opus'];
 
 type PlaybackHistoryListener = (entries: PlaybackHistoryEntry[]) => void;
 
@@ -29,19 +33,26 @@ export class PlaybackHistory {
 
   static async load(): Promise<PlaybackHistoryEntry[]> {
     await PlaybackHistory.ensureLoaded();
-    await PlaybackHistory.hydrateArtworkUrls();
+    await PlaybackHistory.hydrateMetadata();
     return PlaybackHistory.snapshot();
   }
 
   static async refresh(): Promise<PlaybackHistoryEntry[]> {
     PlaybackHistory.loaded = false;
     await PlaybackHistory.ensureLoaded();
-    await PlaybackHistory.hydrateArtworkUrls();
+    await PlaybackHistory.hydrateMetadata();
     PlaybackHistory.notify();
     return PlaybackHistory.snapshot();
   }
 
-  static async record(uri: string, title: string, length: number = 0, artworkUrl: string = ''): Promise<void> {
+  static async record(
+    uri: string,
+    title: string,
+    length: number = 0,
+    artworkUrl: string = '',
+    artistName: string = '',
+    albumName: string = '',
+  ): Promise<void> {
     await PlaybackHistory.ensureLoaded();
     const historyEnabled = await Settings.getBoolean(Settings.ENABLE_PLAYBACK_HISTORY, true);
     if (!historyEnabled) {
@@ -52,7 +63,15 @@ export class PlaybackHistory {
       return;
     }
     const resolvedArtworkUrl: string = artworkUrl.length > 0 ? artworkUrl : PlaybackHistory.artworkForUri(uri);
-    const entry = new PlaybackHistoryEntry(uri, title, length, resolvedArtworkUrl, Date.now());
+    const entry = new PlaybackHistoryEntry(
+      uri,
+      title,
+      length,
+      resolvedArtworkUrl,
+      Date.now(),
+      artistName,
+      albumName,
+    );
     PlaybackHistory.entries = prependPlaybackHistory(PlaybackHistory.entries, entry, PlaybackHistory.MAX_ENTRIES);
     await PlaybackHistory.persist();
     PlaybackHistory.notify();
@@ -121,6 +140,8 @@ export class PlaybackHistory {
                 typeof item.length === 'number' ? item.length : 0,
                 typeof item.artworkUrl === 'string' ? item.artworkUrl : '',
                 typeof item.playedAt === 'number' ? item.playedAt : 0,
+                typeof item.artistName === 'string' ? item.artistName : '',
+                typeof item.albumName === 'string' ? item.albumName : '',
               ));
             }
           }
@@ -138,24 +159,43 @@ export class PlaybackHistory {
   }
 
   /**
-   * 早期历史记录没有保存封面时，按 URI 从当前视频媒体库补齐。
-   * 补齐后立即持久化，后续打开历史不必再依赖本次扫描的内存对象。
+   * 早期历史记录没有保存音频元数据，按 URI 从当前媒体库补齐。
+   * 补齐后立即持久化，后续从历史恢复队列时可直接带回艺术家、专辑和封面。
    */
-  private static async hydrateArtworkUrls(): Promise<void> {
+  private static async hydrateMetadata(): Promise<void> {
     const hasMissingArtwork: boolean = PlaybackHistory.entries.some((entry: PlaybackHistoryEntry) =>
     entry.artworkUrl.length === 0);
-    if (!hasMissingArtwork) {
+    const hasMissingAudioMetadata: boolean = PlaybackHistory.entries.some((entry: PlaybackHistoryEntry) =>
+    PlaybackHistory.isAudioUri(entry.uri) && (entry.artistName.length === 0 || entry.albumName.length === 0));
+    if (!hasMissingArtwork && !hasMissingAudioMetadata) {
       return;
     }
     // 关闭缩略图时不会请求系统缩略图。之后重新开启时，媒体库虽已扫描过，
     // 内存中的 artworkUrl 仍会是空，因此只看 hasScanned() 会永远无法补齐历史。
     // scan() 会复用正在进行的扫描；已有封面的记录会在方法开头直接返回。
     const thumbnailsEnabled: boolean = await Settings.getBoolean(Settings.SHOW_VIDEO_THUMBNAILS, true);
-    if (thumbnailsEnabled || !MediaLibrary.hasScanned() || MediaLibrary.getVideos().length === 0) {
+    if (!MediaLibrary.hasScanned() ||
+      (hasMissingAudioMetadata && MediaLibrary.getAudios().length === 0) ||
+      (hasMissingArtwork && thumbnailsEnabled && MediaLibrary.getVideos().length === 0)) {
       await MediaLibrary.scan();
     }
     let changed: boolean = false;
     for (const entry of PlaybackHistory.entries) {
+      const audio: Track | undefined = MediaLibrary.getAudios().find((item: Track) => item.uri === entry.uri);
+      if (audio !== undefined) {
+        if (entry.artistName.length === 0 && audio.artistName.length > 0) {
+          entry.artistName = audio.artistName;
+          changed = true;
+        }
+        if (entry.albumName.length === 0 && audio.albumName.length > 0) {
+          entry.albumName = audio.albumName;
+          changed = true;
+        }
+        if (entry.artworkUrl.length === 0 && audio.artworkPath.length > 0) {
+          entry.artworkUrl = audio.artworkPath;
+          changed = true;
+        }
+      }
       if (entry.artworkUrl.length === 0) {
         const artworkUrl: string = PlaybackHistory.artworkForUri(entry.uri);
         if (artworkUrl.length > 0) {
@@ -170,8 +210,17 @@ export class PlaybackHistory {
   }
 
   private static artworkForUri(uri: string): string {
+    const audio = MediaLibrary.getAudios().find((item: Track) => item.uri === uri);
+    if (audio && audio.artworkPath.length > 0) {
+      return audio.artworkPath;
+    }
     const video = MediaLibrary.getVideos().find((item: MediaWrapper) => item.uri === uri);
     return video && video.artworkUrl.length > 0 ? video.artworkUrl : '';
+  }
+
+  private static isAudioUri(uri: string): boolean {
+    const lower: string = uri.toLowerCase();
+    return AUDIO_EXTENSIONS.some((extension: string) => lower.endsWith(extension));
   }
 
   private static snapshot(): PlaybackHistoryEntry[] {
@@ -181,6 +230,8 @@ export class PlaybackHistory {
       item.length,
       item.artworkUrl,
       item.playedAt,
+      item.artistName,
+      item.albumName,
     ));
   }
 

@@ -31,11 +31,11 @@ export struct TitleListView {
           .margin({ left: 12, bottom: 8 })
       } else {
         List({ space: 8 }) {
-          ForEach(this.items, (item: SheetItem, index: number) => {
+          Repeat(this.items).each((itemRepeatItem: RepeatItem<SheetItem>) => {
             ListItem() {
               Row() {
-                if (item.icon) {
-                  Image(item.icon)
+                if (itemRepeatItem.item.icon) {
+                  Image(itemRepeatItem.item.icon)
                     .width(28)
                     .height(28)
                     .objectFit(ImageFit.Contain)
@@ -43,13 +43,13 @@ export struct TitleListView {
                     .margin({ right: 8 })
                 }
                 Column() {
-                  Text(item.title)
+                  Text(itemRepeatItem.item.title)
                     .fontSize(14)
                     .fontColor($r('app.color.list_title'))
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
-                  if (item.subtitle.length > 0) {
-                    Text(item.subtitle)
+                  if (itemRepeatItem.item.subtitle.length > 0) {
+                    Text(itemRepeatItem.item.subtitle)
                       .fontSize(12)
                       .fontColor($r('app.color.list_subtitle'))
                       .maxLines(1)
@@ -67,9 +67,9 @@ export struct TitleListView {
               .borderColor($r('app.color.divider'))
               .backgroundColor($r('app.color.video_card_background'))
               .alignItems(VerticalAlign.Center)
-              .onClick(() => this.onItemClick(item, index))
+              .onClick(() => this.onItemClick(itemRepeatItem.item, itemRepeatItem.index))
             }
-          }, (item: SheetItem) => item.title)
+          }).key((item: SheetItem) => item.title).virtualScroll()
         }
         .width('100%')
         .height(88)

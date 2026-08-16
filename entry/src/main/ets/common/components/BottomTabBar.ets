@@ -33,9 +33,9 @@ export struct BottomTabBar {
 
   build() {
     Row() {
-      ForEach(VLC_TABS, (tab: TabItem) => {
-        this.tabItem(tab)
-      }, (tab: TabItem) => tab.id)
+      Repeat(VLC_TABS).each((tabRepeatItem: RepeatItem<TabItem>) => {
+        this.tabItem(tabRepeatItem.item)
+      }).key((tab: TabItem) => tab.id)
     }
     .width('100%')
     .backgroundColor($r('app.color.bottom_navigation_background'))

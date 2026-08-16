@@ -49,7 +49,7 @@ export struct FilePickerActivityPage {
               .fontColor(AppColors.grey700)
               .margin({ left: AppDimens.default_margin, top: AppDimens.default_margin })
             List() {
-              ForEach([0, 1, 2, 3, 4], (i: number) => {
+              Repeat([0, 1, 2, 3, 4]).each((iRepeatItem: RepeatItem<number>) => {
                 ListItem() {
                   Row() {
                     Image($r('app.media.ic_folder'))
@@ -57,7 +57,7 @@ export struct FilePickerActivityPage {
                       .height(24)
                       .fillColor(AppColors.grey700)
                       .margin({ right: AppDimens.default_margin })
-                    Text(`folder ${i}`)
+                    Text(`folder ${iRepeatItem.item}`)
                       .fontSize(AppDimens.audio_item_title_size)
                       .fontColor(AppColors.grey900)
                       .layoutWeight(1)
@@ -66,7 +66,7 @@ export struct FilePickerActivityPage {
                   .padding(AppDimens.default_margin)
                   .alignItems(VerticalAlign.Center)
                 }
-              }, (i: number) => `${i}`)
+              }).key((i: number) => `${i}`)
             }
             .width('100%')
             .layoutWeight(1)

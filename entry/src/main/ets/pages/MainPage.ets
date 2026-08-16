@@ -1,5 +1,4 @@
 import { UiFeedback } from '../common/utils/UiFeedback';
-import { BottomTabBar } from '../common/components/BottomTabBar';
 import { VlcToolbar } from '../common/components/VlcToolbar';
 import { MiniPlayer } from '../common/components/MiniPlayer';
 import { VideoGridPage } from './VideoGridPage';
@@ -11,12 +10,14 @@ import { Settings } from '../common/data/Settings';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { NavController } from '../common/data/NavController';
 import { AudioBrowserRequest } from '../common/data/AudioBrowserRequest';
-import { AppColors } from '../common/constants/AppConstants';
+import { AppColors, TabItem, VLC_TABS } from '../common/constants/AppConstants';
 import { DisplaySettingsDialog } from './DisplaySettingsDialog';
 import { AudioDisplaySettingsDialog } from './AudioDisplaySettingsDialog';
 import { NetworkServerDialog } from './NetworkServerDialog';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
 import { VideoParam, VideoPlayItem } from './VideoPlayerPage';
+import { DividerMode, HdsTabs, HdsTabsController, hdsMaterial } from '@kit.UIDesignKit';
+
 
 /**
  * MainPage —— MainActivity(透明 5-Tab 宿主)。
@@ -25,7 +26,9 @@ import { VideoParam, VideoPlayItem } from './VideoPlayerPage';
  */
 @ComponentV2
 export struct MainPage {
+  private tabsController: HdsTabsController = new HdsTabsController();
   @Local currentTab: string = 'video';
+  @Local currentTabIndex: number = 0;
   @Local scanning: boolean = false;
   @Local showFab: boolean = false;
   @Local showDisplaySettings: boolean = false;
@@ -58,6 +61,7 @@ export struct MainPage {
 
   onTabChange(id: string): void {
     this.currentTab = id;
+    this.currentTabIndex = this.indexOfTab(id);
     // 切换 Tab 时退出搜索和选择模式
     this.searchMode = false;
     this.searchQuery = '';
@@ -67,6 +71,26 @@ export struct MainPage {
     }
     Settings.put(Settings.KEY_FRAGMENT_ID, this.indexOfTab(id));
     this.showFab = id === 'video';
+  }
+
+  onTabIndexChange(index: number): void {
+    const tab: TabItem | undefined = VLC_TABS[index];
+    if (tab) {
+      this.onTabChange(tab.id);
+    }
+  }
+
+  tabBarStyle(tab: TabItem): BottomTabBarStyle {
+    return BottomTabBarStyle.of(tab.icon, tab.label)
+      .labelStyle({
+        font: { size: 12 },
+        selectedColor: AppColors.orange500,
+        unselectedColor: $r('app.color.list_subtitle'),
+      })
+      .iconStyle({
+        selectedColor: AppColors.orange500,
+        unselectedColor: $r('app.color.list_subtitle'),
+      });
   }
 
   indexOfTab(id: string): number {
@@ -210,70 +234,106 @@ export struct MainPage {
           .width('100%').padding(8)
         }
 
-        // 内容区:Stack + visibility 保留各 Tab 状态
-        Stack({ alignContent: Alignment.TopStart }) {
-          VideoGridPage({
-            settingsVersion: this.displaySettingsVersion,
-            searchMode: this.searchMode,
-            searchQuery: this.searchQuery,
-            selectionActionVersion: this.selectionActionVersion,
-            selectionActionType: this.selectionActionType,
-            onSearchGlobal: () => {
-              this.searchMode = false;
-              this.searchQuery = '';
-              NavController.push('Search');
-            },
-            onSelectionChange: (active: boolean, count: number) => {
-              this.selectionMode = active;
-              this.selectionCount = count;
+        Stack({ alignContent: Alignment.Bottom }) {
+          HdsTabs({
+            controller: this.tabsController,
+            barPosition: BarPosition.End,
+            index: this.currentTabIndex,
+          }) {
+          TabContent() {
+            VideoGridPage({
+              settingsVersion: this.displaySettingsVersion,
+              searchMode: this.searchMode,
+              searchQuery: this.searchQuery,
+              selectionActionVersion: this.selectionActionVersion,
+              selectionActionType: this.selectionActionType,
+              onSearchGlobal: () => {
+                this.searchMode = false;
+                this.searchQuery = '';
+                NavController.push('Search');
+              },
+              onSelectionChange: (active: boolean, count: number) => {
+                this.selectionMode = active;
+                this.selectionCount = count;
+              },
+            })
+          }
+          .tabBar(this.tabBarStyle(VLC_TABS[0]))
+
+          TabContent() {
+            AudioBrowserPage({
+              settingsVersion: this.audioSettingsVersion,
+              searchMode: this.searchMode,
+              searchQuery: this.searchQuery,
+              goToArtistName: this.goToArtistName,
+              goToArtistVersion: this.goToArtistVersion,
+              onSearchGlobal: () => {
+                this.searchMode = false;
+                this.searchQuery = '';
+                NavController.push('Search');
+              },
+            })
+          }
+          .tabBar(this.tabBarStyle(VLC_TABS[1]))
+
+          TabContent() {
+            MainBrowserPage()
+          }
+          .tabBar(this.tabBarStyle(VLC_TABS[2]))
+
+          TabContent() {
+            PlaylistsPage({
+              searchMode: this.searchMode,
+              searchQuery: this.searchQuery,
+              currentTab: this.currentTab,
+              playlistsVersion: this.playlistsVersion,
+              onSearchGlobal: () => {
+                this.searchMode = false;
+                this.searchQuery = '';
+                NavController.push('Search');
+              },
+            })
+          }
+          .tabBar(this.tabBarStyle(VLC_TABS[3]))
+
+          TabContent() {
+            MorePage()
+          }
+          .tabBar(this.tabBarStyle(VLC_TABS[4]))
+          }
+          .width('100%')
+          .height('100%')
+          .barWidth(328)
+          .barHeight(64)
+          .divider({ mode: DividerMode.NONE })
+          .vertical(false)
+          .barPosition(BarPosition.End)
+          .barOverlap(true)
+          .barFloatingStyle({
+            barBottomMargin: 28,
+            systemMaterialEffect: {
+              materialType: hdsMaterial.MaterialType.ADAPTIVE,
+              materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE,
             },
           })
-            .visibility(this.currentTab === 'video' ? Visibility.Visible : Visibility.None)
-          AudioBrowserPage({
-            settingsVersion: this.audioSettingsVersion,
-            searchMode: this.searchMode,
-            searchQuery: this.searchQuery,
-            goToArtistName: this.goToArtistName,
-            goToArtistVersion: this.goToArtistVersion,
-            onSearchGlobal: () => {
-              this.searchMode = false;
-              this.searchQuery = '';
-              NavController.push('Search');
-            },
+          .scrollable(false)
+          .cachedMaxCount(VLC_TABS.length, TabsCacheMode.CACHE_BOTH_SIDE)
+          .onChange((index: number) => this.onTabIndexChange(index))
+          .bindSheet(this.showFavoriteServer, this.favoriteServerSheet(), {
+            height: SheetSize.FIT_CONTENT,
+            dragBar: true,
+            backgroundColor: '#FFFFFF',
+            showClose: false,
+            onDisappear: () => this.showFavoriteServer = false,
           })
-            .visibility(this.currentTab === 'audio' ? Visibility.Visible : Visibility.None)
-          MainBrowserPage().visibility(this.currentTab === 'browse' ? Visibility.Visible : Visibility.None)
-          PlaylistsPage({
-            searchMode: this.searchMode,
-            searchQuery: this.searchQuery,
-            currentTab: this.currentTab,
-            playlistsVersion: this.playlistsVersion,
-            onSearchGlobal: () => {
-              this.searchMode = false;
-              this.searchQuery = '';
-              NavController.push('Search');
-            },
-          })
-            .visibility(this.currentTab === 'playlists' ? Visibility.Visible : Visibility.None)
-          MorePage().visibility(this.currentTab === 'more' ? Visibility.Visible : Visibility.None)
-        }
+
+          MiniPlayer()
+            .width(328)
+            .margin({ bottom: 100 })
+        }.borderRadius(16)
         .layoutWeight(1)
         .width('100%')
-        .bindSheet(this.showFavoriteServer, this.favoriteServerSheet(), {
-          height: SheetSize.FIT_CONTENT,
-          dragBar: true,
-          backgroundColor: '#FFFFFF',
-          showClose: false,
-          onDisappear: () => this.showFavoriteServer = false,
-        })
 
-        // 迷你播放条:无媒体时由 MiniPlayer 自身按 getCurrent()!=null 不渲染。
-        MiniPlayer()
-
-        BottomTabBar({
-          currentTab: this.currentTab,
-          onTabChange: (id: string) => this.onTabChange(id),
-        })
       }
       .width('100%')
       .height('100%')
@@ -281,7 +341,7 @@ export struct MainPage {
       .bindSheet(this.showDisplaySettings, this.displaySettingsSheet(), {
         detents: [SheetSize.MEDIUM, SheetSize.LARGE],
         dragBar: false,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: $r('app.color.bottom_sheet_background'),
         showClose: false,
         scrollSizeMode: ScrollSizeMode.CONTINUOUS,
         onDisappear: () => {
@@ -298,7 +358,7 @@ export struct MainPage {
       // 消费 AudioPlayer "转到艺人"请求:切到音频 tab,派发给 AudioBrowserPage 定位到该艺人。
       const artist = AudioBrowserRequest.consumeArtist();
       if (artist.length > 0) {
-        this.currentTab = 'audio';
+        this.onTabChange('audio');
         this.goToArtistName = artist;
         this.goToArtistVersion++;
       }
@@ -320,7 +380,7 @@ export struct MainPage {
     .bindSheet(this.showAudioDisplaySettings, this.audioDisplaySettingsSheet(), {
       detents: [SheetSize.MEDIUM, SheetSize.LARGE],
       dragBar: false,
-      backgroundColor: '#FFFFFF',
+      backgroundColor: $r('app.color.bottom_sheet_background'),
       showClose: false,
       scrollSizeMode: ScrollSizeMode.CONTINUOUS,
       onDisappear: () => {

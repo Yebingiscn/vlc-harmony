@@ -135,16 +135,16 @@ export struct BookmarkDialog {
         }
 
         // 书签点(红心形)
-        ForEach(this.bookmarks, (b: BookMark) => {
+        Repeat(this.bookmarks).each((bRepeatItem: RepeatItem<BookMark>) => {
           if (this.durationMs > 0) {
             Image($r('app.media.ic_bookmark_marker'))
               .width(14)
               .height(14)
               .fillColor(this.cAccent)
-              .offset({ x: `${Math.min(100, Math.max(0, b.timeMs * 100 / this.durationMs))}%`, y: -5 })
-              .onClick(() => this.onSeek(b.timeMs))
+              .offset({ x: `${Math.min(100, Math.max(0, bRepeatItem.item.timeMs * 100 / this.durationMs))}%`, y: -5 })
+              .onClick(() => this.onSeek(bRepeatItem.item.timeMs))
           }
-        }, (b: BookMark): string => `${b.id}`)
+        }).key((b: BookMark): string => `${b.id}`)
       }
       .width('100%')
       .height(16)
@@ -263,11 +263,11 @@ export struct BookmarkDialog {
             this.emptyState()
           }
         } else {
-          ForEach(this.bookmarks, (b: BookMark, index: number) => {
+          Repeat(this.bookmarks).each((bRepeatItem: RepeatItem<BookMark>) => {
             ListItem() {
-              this.listItem(b, index)
+              this.listItem(bRepeatItem.item, bRepeatItem.index)
             }
-          }, (b: BookMark): string => `${b.id}`)
+          }).key((b: BookMark): string => `${b.id}`).virtualScroll()
         }
         // 列表底部留白,避免最后一项贴边
         ListItem() {

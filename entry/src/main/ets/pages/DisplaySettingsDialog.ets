@@ -34,10 +34,10 @@ struct SortItem {
     Row() {
       Image(this.icon)
         .width(24).height(24)
-        .fillColor(AppColors.grey600)
+        .fillColor($r('app.color.list_subtitle'))
       Text(this.title)
         .fontSize(16)
-        .fontColor(AppColors.grey900)
+        .fontColor($r('app.color.list_title'))
         .margin({ left: 24 })
         .width(100)
         .maxLines(1)
@@ -47,7 +47,8 @@ struct SortItem {
         Row() {
           Text(this.ascText)
             .fontSize(14)
-            .fontColor(this.isCurrentSort && !this.currentSortDesc ? AppColors.orange500 : AppColors.grey900)
+            .fontColor(this.isCurrentSort && !this.currentSortDesc
+              ? AppColors.orange500 : $r('app.color.list_title'))
           if (this.isCurrentSort && !this.currentSortDesc) {
             Image($r('app.media.ic_check_large'))
               .width(20).height(20)
@@ -64,7 +65,8 @@ struct SortItem {
         Row() {
           Text(this.descText)
             .fontSize(14)
-            .fontColor(this.isCurrentSort && this.currentSortDesc ? AppColors.orange500 : AppColors.grey900)
+            .fontColor(this.isCurrentSort && this.currentSortDesc
+              ? AppColors.orange500 : $r('app.color.list_title'))
           if (this.isCurrentSort && this.currentSortDesc) {
             Image($r('app.media.ic_check_large'))
               .width(20).height(20)
@@ -162,10 +164,10 @@ export struct DisplaySettingsDialog {
         // 显示模式:当前为列表时显示"网格",当前为网格时显示"列表"
         Row() {
           Image(this.displayInCards ? $r('app.media.ic_view_list') : $r('app.media.ic_view_grid'))
-            .width(24).height(24).fillColor(AppColors.grey600)
+            .width(24).height(24).fillColor($r('app.color.list_subtitle'))
           Text(this.displayInCards ? '以列表形式显示' : '以网格形式显示')
             .fontSize(16)
-            .fontColor(AppColors.grey900)
+            .fontColor($r('app.color.list_title'))
             .margin({ left: 24 })
             .layoutWeight(1)
             .maxLines(1)
@@ -182,10 +184,10 @@ export struct DisplaySettingsDialog {
         // 只显示收藏
         Row() {
           Image($r('app.media.ic_favorite'))
-            .width(24).height(24).fillColor(AppColors.grey600)
+            .width(24).height(24).fillColor($r('app.color.list_subtitle'))
           Text('只显示收藏')
             .fontSize(16)
-            .fontColor(AppColors.grey900)
+            .fontColor($r('app.color.list_title'))
             .margin({ left: 24 })
             .layoutWeight(1)
             .maxLines(1)
@@ -205,10 +207,11 @@ export struct DisplaySettingsDialog {
 
         // 视频分组
         Row() {
-          Image($r('app.media.ic_group_display')).width(24).height(24).fillColor(AppColors.grey600)
+          Image($r('app.media.ic_group_display')).width(24).height(24)
+            .fillColor($r('app.color.list_subtitle'))
           Text('视频分组')
             .fontSize(16)
-            .fontColor(AppColors.grey900)
+            .fontColor($r('app.color.list_title'))
             .margin({ left: 24 })
             .layoutWeight(1)
             .maxLines(1)
@@ -216,6 +219,7 @@ export struct DisplaySettingsDialog {
           Select(this.videoGroupOptions.map((v: string): SelectOption => ({ value: v })))
             .selected(this.videoGroupIndex)
             .value(this.videoGroupOptions[this.videoGroupIndex])
+            .fontColor($r('app.color.list_title'))
             .margin({ left: 8 })
             .width('40%')
             .onSelect((idx: number) => {
@@ -234,16 +238,17 @@ export struct DisplaySettingsDialog {
 
         // 「播放」动作
         Row() {
-          Image($r('app.media.ic_play')).width(24).height(24).fillColor(AppColors.grey600)
+          Image($r('app.media.ic_play')).width(24).height(24)
+            .fillColor($r('app.color.list_subtitle'))
           Column() {
             Text('「播放」动作')
               .fontSize(16)
-              .fontColor(AppColors.grey900)
+              .fontColor($r('app.color.list_title'))
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
             Text('视频')
               .fontSize(12)
-              .fontColor(AppColors.grey600)
+              .fontColor($r('app.color.list_subtitle'))
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
           }
@@ -254,6 +259,7 @@ export struct DisplaySettingsDialog {
           Select(this.actionOptions.map((v: string): SelectOption => ({ value: v })))
             .selected(this.actionIndex)
             .value(this.actionOptions[this.actionIndex])
+            .fontColor($r('app.color.list_title'))
             .margin({ left: 8 })
             .width('40%')
             .onSelect((idx: number) => {
@@ -280,22 +286,22 @@ export struct DisplaySettingsDialog {
 
         // 排序列表(文件夹分组时仅显示名称排序)
         Column() {
-          ForEach(this.getVisibleSorts(), (meta: SortMeta) => {
+          Repeat(this.getVisibleSorts()).each((metaRepeatItem: RepeatItem<SortMeta>) => {
             SortItem({
-              title: meta.title,
-              ascText: meta.ascText,
-              descText: meta.descText,
-              icon: meta.icon,
-              isCurrentSort: this.currentSort === meta.key,
+              title: metaRepeatItem.item.title,
+              ascText: metaRepeatItem.item.ascText,
+              descText: metaRepeatItem.item.descText,
+              icon: metaRepeatItem.item.icon,
+              isCurrentSort: this.currentSort === metaRepeatItem.item.key,
               currentSortDesc: this.currentSortDesc,
               onSortAsc: () => {
-                this.setSort(meta.key, false);
+                this.setSort(metaRepeatItem.item.key, false);
               },
               onSortDesc: () => {
-                this.setSort(meta.key, true);
+                this.setSort(metaRepeatItem.item.key, true);
               },
             })
-          }, (meta: SortMeta) => `${meta.key}`)
+          }).key((meta: SortMeta) => `${meta.key}`)
         }
         .width('100%')
         .margin({ bottom: 16 })
@@ -310,5 +316,6 @@ export struct DisplaySettingsDialog {
       scrollForward: NestedScrollMode.PARENT_FIRST,
       scrollBackward: NestedScrollMode.PARENT_FIRST,
     })
+    .backgroundColor($r('app.color.bottom_sheet_background'))
   }
 }

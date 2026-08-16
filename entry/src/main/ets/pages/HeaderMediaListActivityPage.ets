@@ -351,7 +351,7 @@ export struct HeaderMediaListActivityPage {
             .alt($r('app.media.ic_no_thumbnail_1610'))
           Text(this.contextTrack.title)
             .fontSize(16)
-            .fontColor('#212121')
+            .fontColor($r('app.color.list_title'))
             .fontWeight(FontWeight.Medium)
             .layoutWeight(1)
             .maxLines(2)
@@ -359,12 +359,13 @@ export struct HeaderMediaListActivityPage {
         }
         .width('100%').padding(16).alignItems(VerticalAlign.Center)
 
-        Divider().strokeWidth(0.5).color('#E0E0E0')
+        Divider().strokeWidth(0.5).color($r('app.color.divider'))
 
         // 播放
         Row() {
-          Image($r('app.media.ic_play_player')).width(24).height(24).fillColor('#212121').margin({ right: 12 })
-          Text('播放').fontSize(15).fontColor('#212121')
+          Image($r('app.media.ic_play_player')).width(24).height(24)
+            .fillColor($r('app.color.list_title')).margin({ right: 12 })
+          Text('播放').fontSize(15).fontColor($r('app.color.list_title'))
         }
         .width('100%')
         .padding({
@@ -387,8 +388,9 @@ export struct HeaderMediaListActivityPage {
         // 添加到收藏夹 / 取消收藏
         Row() {
           Image(this.contextTrackFav ? $r('app.media.ic_fav_remove') : $r('app.media.ic_fav_add'))
-            .width(24).height(24).fillColor('#212121').margin({ right: 12 })
-          Text(this.contextTrackFav ? '取消收藏' : '添加到收藏夹').fontSize(15).fontColor('#212121')
+            .width(24).height(24).fillColor($r('app.color.list_title')).margin({ right: 12 })
+          Text(this.contextTrackFav ? '取消收藏' : '添加到收藏夹')
+            .fontSize(15).fontColor($r('app.color.list_title'))
         }
         .width('100%')
         .padding({
@@ -407,8 +409,9 @@ export struct HeaderMediaListActivityPage {
 
         // 视频信息
         Row() {
-          Image($r('app.media.ic_information')).width(24).height(24).fillColor('#212121').margin({ right: 12 })
-          Text('视频信息').fontSize(15).fontColor('#212121')
+          Image($r('app.media.ic_information')).width(24).height(24)
+            .fillColor($r('app.color.list_title')).margin({ right: 12 })
+          Text('视频信息').fontSize(15).fontColor($r('app.color.list_title'))
         }
         .width('100%')
         .padding({
@@ -426,8 +429,9 @@ export struct HeaderMediaListActivityPage {
 
         // 分享
         Row() {
-          Image($r('app.media.ic_share')).width(24).height(24).fillColor('#212121').margin({ right: 12 })
-          Text('分享').fontSize(15).fontColor('#212121')
+          Image($r('app.media.ic_share')).width(24).height(24)
+            .fillColor($r('app.color.list_title')).margin({ right: 12 })
+          Text('分享').fontSize(15).fontColor($r('app.color.list_title'))
         }
         .width('100%')
         .padding({
@@ -469,11 +473,11 @@ export struct HeaderMediaListActivityPage {
           });
         })
 
-        Divider().strokeWidth(0.5).color('#E0E0E0')
+        Divider().strokeWidth(0.5).color($r('app.color.divider'))
         Blank().height(24)
       }
     }
-    .width('100%').backgroundColor('#FFFFFF')
+    .width('100%').backgroundColor($r('app.color.bottom_sheet_background'))
     .borderRadius({ topLeft: 16, topRight: 16 })
   }
 
@@ -602,11 +606,11 @@ export struct HeaderMediaListActivityPage {
               this.emptyState()
             } else {
               List({ space: 0 }) {
-                ForEach(this.vm.tracks, (item: Track, idx: number) => {
+                Repeat(this.vm.tracks).each((itemRepeatItem: RepeatItem<Track>) => {
                   ListItem() {
-                    this.TrackItem(item, idx)
+                    this.TrackItem(itemRepeatItem.item, itemRepeatItem.index)
                   }
-                }, (item: Track) => item.uri)
+                }).key((item: Track) => item.uri).virtualScroll()
               }
               .width('100%')
               .layoutWeight(1)
@@ -639,7 +643,7 @@ export struct HeaderMediaListActivityPage {
     .bindSheet(this.showContext, this.trackContextSheet(), {
       height: SheetSize.FIT_CONTENT,
       dragBar: true,
-      backgroundColor: '#FFFFFF',
+      backgroundColor: $r('app.color.bottom_sheet_background'),
       showClose: false,
       onDisappear: () => {
         this.showContext = false;

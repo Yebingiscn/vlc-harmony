@@ -129,11 +129,11 @@ export struct MainBrowserPage {
             this.sectionTitle($r('app.string.favorites'))
             // ForEach+List 内联在 build() 中直接读 this.vm.favorites,避免 @Builder 参数快照问题
             List({ space: 8 }) {
-              ForEach(this.vm.favorites, (item: SheetItem) => {
+              Repeat(this.vm.favorites).each((itemRepeatItem: RepeatItem<SheetItem>) => {
                 ListItem() {
-                  this.cardItem(item, true)
+                  this.cardItem(itemRepeatItem.item, true)
                 }
-              }, (item: SheetItem) => item.title)
+              }).key((item: SheetItem) => item.title).virtualScroll()
             }
             .listDirection(Axis.Horizontal)
             .width('100%')
@@ -166,10 +166,10 @@ export struct MainBrowserPage {
           if (this.vm.storages.length > 0) {
             // 存储设备:直接平铺在 Scroll 内(不能再用纵向 List 嵌套,否则 List 拦截滚动手势,
             // 外层 Scroll 无法向下滚动),由外层 Scroll 统一滚动。
-            ForEach(this.vm.storages, (item: SheetItem, idx: number) => {
+            Repeat(this.vm.storages).each((itemRepeatItem: RepeatItem<SheetItem>) => {
               Column() {
-                this.storageRowItem(item)
-                if (idx < this.vm.storages.length - 1) {
+                this.storageRowItem(itemRepeatItem.item)
+                if (itemRepeatItem.index < this.vm.storages.length - 1) {
                   Divider()
                     .strokeWidth(0.5)
                     .color($r('app.color.divider'))
@@ -177,7 +177,7 @@ export struct MainBrowserPage {
                 }
               }
               .width('100%')
-            }, (item: SheetItem) => item.title)
+            }).key((item: SheetItem) => item.title)
           }
 
         }

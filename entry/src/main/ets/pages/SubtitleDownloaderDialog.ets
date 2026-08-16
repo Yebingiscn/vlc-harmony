@@ -151,10 +151,10 @@ export struct SubtitleDownloaderDialog {
             .alignItems(HorizontalAlign.Center)
           } else {
             List({ space: 0 }) {
-              ForEach(this.results, (item: string, index: number) => {
+              Repeat(this.results).each((itemRepeatItem: RepeatItem<string>) => {
                 ListItem() {
                   SubtitleResultRow({
-                    title: item,
+                    title: itemRepeatItem.item,
                     subtitle: '',
                     onDownload: () => {
                       // TODO(契约)：接入字幕数据源后调用下载接口并 addSubtitleSlave(uri)
@@ -162,7 +162,7 @@ export struct SubtitleDownloaderDialog {
                     },
                   })
                 }
-              }, (item: string, index: number) => index.toString())
+              }).key((item: string, index: number) => index.toString()).virtualScroll()
             }
             .width('100%').margin({ top: 12 })
             .layoutWeight(1)

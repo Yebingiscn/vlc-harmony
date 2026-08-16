@@ -64,7 +64,14 @@ class AudioPlayerViewModel {
         const uri = cur ? cur.uri : '';
         if (uri.length > 0 && uri !== this.lastRecordedUri) {
           this.lastRecordedUri = uri;
-          void PlaybackHistory.record(uri, this.title, s.duration, this.artworkPath);
+          void PlaybackHistory.record(
+            uri,
+            this.title,
+            s.duration,
+            this.artworkPath,
+            cur?.artistName ?? '',
+            cur?.albumName ?? '',
+          );
         }
       }
       if (this.onAbLoopCheck !== null) {
@@ -174,7 +181,10 @@ export struct AudioPlayerPage {
               .bindMenu(this.advancedOptionsOpen!!, this.advancedOptionsMenu(), {
                 placement: Placement.BottomLeft,
                 showInSubWindow: true,
-                backgroundColor: $r('app.color.background_default'),
+                backgroundColor: Color.Transparent,
+                backgroundBlurStyle: BlurStyle.COMPONENT_ULTRA_THICK,
+                outlineColor: Color.Transparent,
+                outlineWidth: 0,
               })
           }
           .width('100%')

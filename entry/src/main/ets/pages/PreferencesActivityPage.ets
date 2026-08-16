@@ -327,16 +327,16 @@ export struct PreferencesActivityPage {
         })
         Scroll() {
           Column() {
-            ForEach(this.sections, (section: SettingsHomeSection) => {
-              this.SectionHeader(section)
-              ForEach(section.items, (item: SettingsHomeItem) => {
-                this.SettingRow(item)
-              }, (item: SettingsHomeItem) => `${item.key}-${this.rowVersion}`)
+            Repeat(this.sections).each((sectionRepeatItem: RepeatItem<SettingsHomeSection>) => {
+              this.SectionHeader(sectionRepeatItem.item)
+              Repeat(sectionRepeatItem.item.items).each((itemRepeatItem: RepeatItem<SettingsHomeItem>) => {
+                this.SettingRow(itemRepeatItem.item)
+              }).key((item: SettingsHomeItem) => `${item.key}-${this.rowVersion}`)
               Divider()
                 .color($r('app.color.divider'))
                 .strokeWidth(1)
                 .margin({ top: 6 })
-            }, (section: SettingsHomeSection) => section.key)
+            }).key((section: SettingsHomeSection) => section.key)
           }
           .width('100%')
           .alignItems(HorizontalAlign.Start)

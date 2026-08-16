@@ -147,11 +147,11 @@ export struct PreferenceSearchActivityPage {
 
         // 结果列表
         List() {
-          ForEach(this.vm.filteredItems, (item: PreferenceItem) => {
+          Repeat(this.vm.filteredItems).each((itemRepeatItem: RepeatItem<PreferenceItem>) => {
             ListItem() {
-              this.PreferenceItemRow(item)
+              this.PreferenceItemRow(itemRepeatItem.item)
             }
-          }, (item: PreferenceItem) => item.key)
+          }).key((item: PreferenceItem) => item.key).virtualScroll()
         }
         .width('100%')
         .layoutWeight(1)

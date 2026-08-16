@@ -156,9 +156,9 @@ export struct MorePage {
     } else {
       Scroll() {
         Row() {
-          ForEach(this.vm.history, (item: PlaybackHistoryEntry) => {
-            this.HistoryCard(item)
-          }, (item: PlaybackHistoryEntry) => item.uri)
+          Repeat(this.vm.history).each((itemRepeatItem: RepeatItem<PlaybackHistoryEntry>) => {
+            this.HistoryCard(itemRepeatItem.item)
+          }).key((item: PlaybackHistoryEntry) => item.uri).virtualScroll()
         }
         .padding({ left: 16, right: 4 })
       }
@@ -226,7 +226,7 @@ export struct MorePage {
     const audioExts = ['.mp3', '.flac', '.ogg', '.wav', '.aac', '.m4a', '.wma', '.opus'];
     const isAudio = audioExts.some(e => lower.endsWith(e));
     if (isAudio) {
-      const qi = new QueueItem(0, item.title, item.uri, '', '', item.artworkUrl);
+      const qi = new QueueItem(0, item.title, item.uri, item.artistName, item.albumName, item.artworkUrl);
       PlaybackService.playList([qi], 0, true);
       NavController.push('AudioPlayer');
     } else {

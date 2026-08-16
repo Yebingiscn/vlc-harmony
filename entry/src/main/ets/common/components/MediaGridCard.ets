@@ -73,21 +73,12 @@ export struct MediaGridCard {
       }
 
       Blank()
-      // 右上:更多按钮(非选中态) 或 选中勾
+      // 选中勾仅作展示；更多按钮在 build 中作为播放区域的同级节点渲染。
       if (this.selected) {
         Image($r('app.media.ic_video_grid_check'))
           .width(16)
           .height(16)
           .fillColor('#FF8800')
-      } else {
-        // 更多按钮:直接 Image 定位在右上角,与分辨率同行,可点击拉起收藏半模态
-        Image($r('app.media.ic_more'))
-          .width(16)
-          .height(16)
-          .fillColor('#FFFFFF')
-          .backgroundColor($r('app.color.rounded_corners_black_more_transparent'))
-          .borderRadius(4)
-          .onClick(() => this.onItemMoreClick())
       }
     }
     .width('100%')
@@ -140,62 +131,81 @@ export struct MediaGridCard {
   }
 
   build() {
-    Column() {
-      Stack({ alignContent: Alignment.Top }) {
-        // 缩略图:artworkUrl 为媒体库 uri 时 Image 可直接渲染;为空/加载失败回落占位图。
-        Image(this.showThumbnail && this.item.artworkUrl.length > 0 ? this.item.artworkUrl :
-          $r('app.media.tv_channel_default'))
-          .width('100%')
-          .height('100%')
-          .objectFit(ImageFit.Cover)
-          .alt($r('app.media.tv_channel_default'))
-          .draggable(false)
-          .backgroundColor($r('app.color.card_background'))
-          .onClick(() => this.onItemClick())
-        if (!this.selected && !this.isPresent) {
-          Column()
+    Stack({ alignContent: Alignment.TopEnd }) {
+      Column() {
+        Stack({ alignContent: Alignment.Top }) {
+          // 缩略图:artworkUrl 为媒体库 uri 时 Image 可直接渲染;为空/加载失败回落占位图。
+          Image(this.showThumbnail && this.item.artworkUrl.length > 0 ? this.item.artworkUrl :
+            $r('app.media.tv_channel_default'))
             .width('100%')
             .height('100%')
-            .hitTestBehavior(HitTestMode.None)
-            .backgroundColor($r('app.color.disabled_overlay'))
+            .objectFit(ImageFit.Cover)
+            .alt($r('app.media.tv_channel_default'))
+            .draggable(false)
+            .backgroundColor($r('app.color.card_background'))
+          if (!this.selected && !this.isPresent) {
+            Column()
+              .width('100%')
+              .height('100%')
+              .hitTestBehavior(HitTestMode.None)
+              .backgroundColor($r('app.color.disabled_overlay'))
+          }
+          this.topOverlay()
+          this.bottomOverlay()
+          if (this.showProgress) {
+            LoadingProgress().width(32).height(32).hitTestBehavior(HitTestMode.None).color('#FFFFFF')
+          }
         }
-        this.topOverlay()
-        this.bottomOverlay()
-        if (this.showProgress) {
-          LoadingProgress().width(32).height(32).hitTestBehavior(HitTestMode.None).color('#FFFFFF')
-        }
+        .aspectRatio(1.6) // 16:10
+        .borderRadius(4)
+        .clip(true)
+        .width('100%')
+
+        Text(this.item.title)
+          .fontSize(16)
+          .fontColor($r('app.color.list_title'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .margin({ top: 6 })
+          .width('100%')
+          .opacity(this.isPresent ? 1 : 0.4)
+
+        // 时长行恒定渲染(无时长时留空占位)-- 否则同一行两张卡高度不一致,网格参差不齐。
+        Text(this.item.length > 0 ? formatDuration(this.item.length) : ' ')
+          .fontSize(12)
+          .fontColor($r('app.color.list_subtitle'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .margin({ top: 2 })
+          .width('100%')
+          .opacity(this.isPresent ? 1 : 0.4)
       }
-      .aspectRatio(1.6) // 16:10
-      .borderRadius(4)
-      .clip(true)
       .width('100%')
+      .padding(8)
+      .backgroundColor($r('app.color.video_card_background'))
+      .borderRadius(8)
+      .clip(true)
+      .onClick(() => this.onItemClick())
+      .gesture(LongPressGesture().onAction(() => this.onItemLongClick()))
 
-      Text(this.item.title)
-        .fontSize(16)
-        .fontColor($r('app.color.list_title'))
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .margin({ top: 6 })
-        .width('100%')
-        .opacity(this.isPresent ? 1 : 0.4)
-        .onClick(() => this.onItemClick())
-
-      // 时长行恒定渲染(无时长时留空占位)-- 否则同一行两张卡高度不一致,网格参差不齐。
-      Text(this.item.length > 0 ? formatDuration(this.item.length) : ' ')
-        .fontSize(12)
-        .fontColor($r('app.color.list_subtitle'))
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .margin({ top: 2 })
-        .width('100%')
-        .opacity(this.isPresent ? 1 : 0.4)
-        .onClick(() => this.onItemClick())
+      if (!this.selected) {
+        // 独立于整卡播放区域，点击更多不会触发父级播放事件。
+        Row() {
+          Image($r('app.media.ic_more'))
+            .width(16)
+            .height(16)
+            .fillColor('#FFFFFF')
+            .backgroundColor($r('app.color.rounded_corners_black_more_transparent'))
+            .borderRadius(4)
+        }
+        .width(32)
+        .height(32)
+        .margin({ top: 4, right: 4 })
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => this.onItemMoreClick())
+      }
     }
     .width('100%')
-    .padding(8)
-    .backgroundColor($r('app.color.video_card_background'))
-    .borderRadius(8)
-    .clip(true)
-    .gesture(LongPressGesture().onAction(() => this.onItemLongClick()))
   }
 }

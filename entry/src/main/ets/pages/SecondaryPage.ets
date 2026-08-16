@@ -149,14 +149,14 @@ export struct SecondaryPage {
   @Builder
   trackList() {
     List() {
-      ForEach(this.tracks, (t: Track) => {
+      Repeat(this.tracks).each((tRepeatItem: RepeatItem<Track>) => {
         ListItem() {
           Row() {
             Image($r('app.media.ic_song')).width(40).height(40).fillColor('#FF8800').margin({ right: 12 })
             Column() {
-              Text(t.title).fontSize(15).fontColor($r('app.color.list_title')).maxLines(1)
+              Text(tRepeatItem.item.title).fontSize(15).fontColor($r('app.color.list_title')).maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
-              Text(t.length > 0 ? formatDuration(t.length) : t.artistName)
+              Text(tRepeatItem.item.length > 0 ? formatDuration(tRepeatItem.item.length) : tRepeatItem.item.artistName)
                 .fontSize(12)
                 .fontColor($r('app.color.list_subtitle'))
                 .margin({ top: 2 })
@@ -170,9 +170,9 @@ export struct SecondaryPage {
             bottom: 8
           })
           .alignItems(VerticalAlign.Center)
-          .onClick(() => this.playTrack(t))
+          .onClick(() => this.playTrack(tRepeatItem.item))
         }
-      }, (t: Track) => `s${t.id}`)
+      }).key((t: Track) => `s${t.id}`).virtualScroll()
     }
     .divider({
       strokeWidth: 0.5,
