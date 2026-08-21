@@ -57,7 +57,12 @@ jobs:
             --output "${OHOS_SDK_ARCHIVE}" "${OHOS_SDK_URL}"
           curl --fail --location --retry 5 --retry-delay 5 \
             --output "${OHOS_SDK_ARCHIVE}.sha256" "${OHOS_SDK_URL}.sha256"
-          sha256sum --check "${OHOS_SDK_ARCHIVE}.sha256"
+          sdk_sha256="$(tr -d '[:space:]' < "${OHOS_SDK_ARCHIVE}.sha256")"
+          if [[ ! "${sdk_sha256}" =~ ^[[:xdigit:]]{64}$ ]]; then
+            echo "HarmonyOS SDK checksum file does not contain a valid SHA-256 value."
+            exit 1
+          fi
+          printf '%s  %s\n' "${sdk_sha256}" "${OHOS_SDK_ARCHIVE}" | sha256sum --check -
 
           tar -tzf "${OHOS_SDK_ARCHIVE}" > sdk-archive-entries.txt
           native_zip_entry="$(grep -E '(^|/)linux/[^/]*native[^/]*\.zip$' \
