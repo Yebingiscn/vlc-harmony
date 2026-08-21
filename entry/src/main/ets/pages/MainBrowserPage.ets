@@ -44,6 +44,7 @@ class BrowseVM {
 
 @ComponentV2
 export struct MainBrowserPage {
+  @Param contentScroller: Scroller = new Scroller();
   @Local vm: BrowseVM = new BrowseVM();
   @Local ctxItem: SheetItem | null = null;
   @Local ctxIsFavorite: boolean = false;
@@ -122,7 +123,7 @@ export struct MainBrowserPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      Scroll() {
+      Scroll(this.contentScroller) {
         Column() {
           // === 收藏 ===
           if (this.vm.favorites.length > 0) {
@@ -184,6 +185,7 @@ export struct MainBrowserPage {
         .width('100%')
         .alignItems(HorizontalAlign.Start)
       }
+      .clip(false)
       .width('100%')
       .height('100%')
       .align(Alignment.TopStart)

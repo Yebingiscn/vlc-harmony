@@ -10,10 +10,12 @@
 #include <dlfcn.h>
 #include <unistd.h>
 #include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <cstdarg>
 #include <cstring>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -57,12 +59,107 @@ struct MediaEntry {
     uint32_t libHandle = 0;
 };
 
+enum class SeekKind {
+    Time,
+    Position,
+};
+
+struct SeekRequest {
+    SeekKind kind = SeekKind::Time;
+    int64_t timeMs = 0;
+    float position = 0.0f;
+    uint64_t serial = 0;
+};
+
+/** 每个播放器一个 seek worker；等待中的请求采用 latest-wins。 */
+struct SeekWorker {
+    explicit SeekWorker(libvlc_media_player_t *player) : mp(player) {}
+
+    libvlc_media_player_t *mp = nullptr;
+    std::mutex mutex;
+    std::condition_variable condition;
+    bool stopping = false;
+    bool hasPending = false;
+    uint64_t nextSerial = 0;
+    SeekRequest pending;
+    std::thread thread;
+};
+
+void RunSeekWorker(const std::shared_ptr<SeekWorker> &worker)
+{
+    while (true) {
+        SeekRequest request;
+        {
+            std::unique_lock<std::mutex> lock(worker->mutex);
+            worker->condition.wait(lock, [&worker]() {
+                return worker->stopping || worker->hasPending;
+            });
+            if (worker->stopping) {
+                break;
+            }
+            request = worker->pending;
+            worker->hasPending = false;
+        }
+
+        if (request.kind == SeekKind::Time) {
+            libvlc_media_player_set_time(worker->mp, request.timeMs);
+        } else {
+            libvlc_media_player_set_position(worker->mp, request.position);
+        }
+        OH_LOG_DEBUG(LOG_APP, "seek applied serial=%{public}llu kind=%{public}d",
+                     static_cast<unsigned long long>(request.serial), static_cast<int>(request.kind));
+    }
+    libvlc_media_player_release(worker->mp);
+}
+
+std::shared_ptr<SeekWorker> CreateSeekWorker(libvlc_media_player_t *mp)
+{
+    libvlc_media_player_retain(mp);
+    auto worker = std::make_shared<SeekWorker>(mp);
+    worker->thread = std::thread([worker]() { RunSeekWorker(worker); });
+    return worker;
+}
+
+void QueueSeek(const std::shared_ptr<SeekWorker> &worker, SeekKind kind, int64_t timeMs, float position)
+{
+    if (!worker) {
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> lock(worker->mutex);
+        if (worker->stopping) {
+            return;
+        }
+        worker->pending = SeekRequest{kind, timeMs, position, ++worker->nextSerial};
+        worker->hasPending = true;
+    }
+    worker->condition.notify_one();
+}
+
+void ShutdownSeekWorker(const std::shared_ptr<SeekWorker> &worker)
+{
+    if (!worker) {
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> lock(worker->mutex);
+        worker->stopping = true;
+        worker->hasPending = false;
+    }
+    worker->condition.notify_one();
+    if (worker->thread.joinable()) {
+        worker->thread.join();
+    }
+}
+
 struct PlayerEntry {
     libvlc_media_player_t *mp = nullptr;
     uint32_t libHandle = 0;
     uint32_t mediaHandle = 0;
     std::string videoOutId;
     bool windowBound = false;
+    uint64_t boundSurfaceGeneration = 0;
+    std::shared_ptr<SeekWorker> seekWorker;
     napi_threadsafe_function tsfn = nullptr;
     napi_ref jsCallbackRef = nullptr;
 };
@@ -140,34 +237,42 @@ void SetOhosNativeWindow(libvlc_media_player_t *mp, OHNativeWindow *win, const s
     libvlc_media_player_set_ohos_nativewindow_ptr(mp, win);
 }
 
-void MarkWindowBoundLocked(const std::string &id, bool bound)
-{
-    for (auto &kv : g_players) {
-        PlayerEntry &pe = kv.second;
-        if (pe.videoOutId == id && pe.mp != nullptr) {
-            pe.windowBound = bound;
-        }
-    }
-}
+struct SurfaceBinding {
+    libvlc_media_player_t *mp = nullptr;
+    bool reloadVideoOutput = false;
+};
 
-void OnSurfaceReady(const std::string &id, OHNativeWindow *win)
+void OnSurfaceReady(const std::string &id, OHNativeWindow *win, uint64_t generation)
 {
-    std::vector<libvlc_media_player_t *> mps;
+    std::vector<SurfaceBinding> bindings;
     {
         std::lock_guard<std::mutex> lk(g_mtx);
-        OH_LOG_INFO(LOG_APP, "OnSurfaceReady id=%{public}s win=%{public}p", id.c_str(), win);
+        OH_LOG_INFO(LOG_APP, "OnSurfaceReady id=%{public}s win=%{public}p generation=%{public}llu",
+                    id.c_str(), win, static_cast<unsigned long long>(generation));
         for (auto &kv : g_players) {
-            if (!kv.second.videoOutId.empty() && kv.second.videoOutId == id && kv.second.mp != nullptr) {
-                mps.push_back(kv.second.mp);
+            PlayerEntry &pe = kv.second;
+            if (!pe.videoOutId.empty() && pe.videoOutId == id && pe.mp != nullptr) {
+                libvlc_media_player_retain(pe.mp);
+                bool reload = pe.boundSurfaceGeneration != 0 && pe.boundSurfaceGeneration != generation;
+                bindings.push_back(SurfaceBinding{pe.mp, reload});
+                pe.windowBound = true;
+                pe.boundSurfaceGeneration = generation;
             }
         }
     }
-    for (libvlc_media_player_t *mp : mps) {
-        SetOhosNativeWindow(mp, win, id);
-    }
-    {
-        std::lock_guard<std::mutex> lk(g_mtx);
-        MarkWindowBoundLocked(id, true);
+    for (const SurfaceBinding &binding : bindings) {
+        SetOhosNativeWindow(binding.mp, win, id);
+        if (binding.reloadVideoOutput) {
+            // NativeWindow 只在解码器创建时被继承；Surface 重建后强制重建视频输出链。
+            int track = libvlc_video_get_track(binding.mp);
+            if (track >= 0) {
+                libvlc_video_set_track(binding.mp, -1);
+                int rc = libvlc_video_set_track(binding.mp, track);
+                OH_LOG_INFO(LOG_APP, "reload video output id=%{public}s track=%{public}d rc=%{public}d",
+                            id.c_str(), track, rc);
+            }
+        }
+        libvlc_media_player_release(binding.mp);
     }
 }
 
@@ -181,14 +286,15 @@ void DetachNativeWindowById(const std::string &id)
         for (auto &kv : g_players) {
             PlayerEntry &pe = kv.second;
             if (pe.videoOutId == id && pe.mp != nullptr) {
+                libvlc_media_player_retain(pe.mp);
                 mps.push_back(pe.mp);
                 pe.windowBound = false;
-                pe.videoOutId.clear();
             }
         }
     }
     for (libvlc_media_player_t *mp : mps) {
         libvlc_media_player_set_ohos_nativewindow_ptr(mp, nullptr);
+        libvlc_media_player_release(mp);
     }
 }
 
@@ -447,7 +553,8 @@ napi_value LibvlcCreate(napi_env env, napi_callback_info info)
     std::vector<std::string> optStorage;
     std::vector<const char *> argvVlc;
     argvVlc.push_back(pp.c_str());
-    argvVlc.push_back("--verbose=2");
+    // Debug 级 libVLC 日志会和 4K 解码线程争用 hilog；默认仅保留错误/警告。
+    argvVlc.push_back("--verbose=0");
     argvVlc.push_back("--no-media-library");
     argvVlc.push_back("--ignore-config");
     argvVlc.push_back("--stats");
@@ -952,6 +1059,7 @@ napi_value MediaPlayerCreate(napi_env env, napi_callback_info info)
     PlayerEntry pe;
     pe.mp = mp;
     pe.libHandle = libH;
+    pe.seekWorker = CreateSeekWorker(mp);
     g_players[h] = pe;
     AttachPlayerEventsLocked(h, g_players[h]);
     OH_LOG_INFO(LOG_APP, "mediaPlayerCreate h=%{public}u mp=%{public}p", h, mp);
@@ -968,6 +1076,7 @@ napi_value MediaPlayerRelease(napi_env env, napi_callback_info info)
         return nullptr;
     }
     libvlc_media_player_t *mp = nullptr;
+    std::shared_ptr<SeekWorker> seekWorker;
     {
         std::lock_guard<std::mutex> lk(g_mtx);
         auto it = g_players.find(h);
@@ -984,10 +1093,12 @@ napi_value MediaPlayerRelease(napi_env env, napi_callback_info info)
             it->second.jsCallbackRef = nullptr;
         }
         mp = it->second.mp;
+        seekWorker = it->second.seekWorker;
         it->second.mp = nullptr;
         g_players.erase(it);
     }
     // release outside lock: may join/stop internally and fire late events
+    ShutdownSeekWorker(seekWorker);
     if (mp != nullptr) {
         libvlc_media_player_release(mp);
     }
@@ -1004,6 +1115,7 @@ napi_value MediaPlayerReleaseAsync(napi_env env, napi_callback_info info)
         return nullptr;
     }
     libvlc_media_player_t *mp = nullptr;
+    std::shared_ptr<SeekWorker> seekWorker;
     {
         std::lock_guard<std::mutex> lk(g_mtx);
         auto it = g_players.find(h);
@@ -1022,11 +1134,13 @@ napi_value MediaPlayerReleaseAsync(napi_env env, napi_callback_info info)
             it->second.jsCallbackRef = nullptr;
         }
         mp = it->second.mp;
+        seekWorker = it->second.seekWorker;
         it->second.mp = nullptr;
         g_players.erase(it);
     }
     if (mp != nullptr) {
-        std::thread([mp]() {
+        std::thread([mp, seekWorker]() {
+            ShutdownSeekWorker(seekWorker);
             libvlc_media_player_stop(mp);
             libvlc_media_player_release(mp);
         }).detach();
@@ -1118,10 +1232,17 @@ napi_value MediaPlayerSetVideoOut(napi_env env, napi_callback_info info)
         }
         pe->videoOutId = id;
         pe->windowBound = false;
+        pe->boundSurfaceGeneration = 0;
         mp = pe->mp;
+        if (mp != nullptr) {
+            libvlc_media_player_retain(mp);
+        }
         win = xMgr.GetNativeWindow(id);
     }
     if (win == nullptr || mp == nullptr) {
+        if (mp != nullptr) {
+            libvlc_media_player_release(mp);
+        }
         return Bool(env, false);
     }
     SetOhosNativeWindow(mp, win, id);
@@ -1130,8 +1251,10 @@ napi_value MediaPlayerSetVideoOut(napi_env env, napi_callback_info info)
         PlayerEntry *pe = FindPlayerLocked(ph);
         if (pe != nullptr && pe->videoOutId == id) {
             pe->windowBound = true;
+            pe->boundSurfaceGeneration = xMgr.GetSurfaceGeneration(id);
         }
     }
+    libvlc_media_player_release(mp);
     return Bool(env, true);
 }
 
@@ -1153,10 +1276,13 @@ napi_value MediaPlayerDetachViews(napi_env env, napi_callback_info info)
             return nullptr;
         }
         mp = pe->mp;
+        libvlc_media_player_retain(mp);
         pe->windowBound = false;
         pe->videoOutId.clear();
+        pe->boundSurfaceGeneration = 0;
     }
     libvlc_media_player_set_ohos_nativewindow_ptr(mp, nullptr);
+    libvlc_media_player_release(mp);
     return nullptr;
 }
 
@@ -1191,6 +1317,7 @@ napi_value MediaPlayerPlay(napi_env env, napi_callback_info info)
             return nullptr;
         }
         mp = pe->mp;
+        libvlc_media_player_retain(mp);
         if (!pe->windowBound && !pe->videoOutId.empty()) {
             pendingId = pe->videoOutId;
             pendingWin = xMgr.GetNativeWindow(pe->videoOutId);
@@ -1202,10 +1329,12 @@ napi_value MediaPlayerPlay(napi_env env, napi_callback_info info)
         PlayerEntry *pe = FindPlayerLocked(h);
         if (pe != nullptr && pe->videoOutId == pendingId) {
             pe->windowBound = true;
+            pe->boundSurfaceGeneration = xMgr.GetSurfaceGeneration(pendingId);
         }
     }
     // Call outside g_mtx: play may emit events that re-enter on_player_event → g_mtx.
     libvlc_media_player_play(mp);
+    libvlc_media_player_release(mp);
     return nullptr;
 }
 
@@ -1251,6 +1380,7 @@ napi_value MediaPlayerStop(napi_env env, napi_callback_info info)
         return nullptr;
     }
     libvlc_media_player_t *mp = nullptr;
+    std::shared_ptr<SeekWorker> seekWorker;
     {
         std::lock_guard<std::mutex> lk(g_mtx);
         auto it = g_players.find(h);
@@ -1259,6 +1389,7 @@ napi_value MediaPlayerStop(napi_env env, napi_callback_info info)
         }
         PlayerEntry &pe = it->second;
         mp = pe.mp;
+        seekWorker = pe.seekWorker;
         if (pe.tsfn) {
             napi_release_threadsafe_function(pe.tsfn, napi_tsfn_release);
             pe.tsfn = nullptr;
@@ -1270,7 +1401,8 @@ napi_value MediaPlayerStop(napi_env env, napi_callback_info info)
         g_players.erase(it);
     }
     if (mp != nullptr) {
-        std::thread([mp]() {
+        std::thread([mp, seekWorker]() {
+            ShutdownSeekWorker(seekWorker);
             libvlc_media_player_stop(mp);
             libvlc_media_player_release(mp);
         }).detach();
@@ -1305,21 +1437,15 @@ napi_value MediaPlayerSetTime(napi_env env, napi_callback_info info)
     if (argc < 2 || !GetU32(env, argv[0], &h) || !GetI64(env, argv[1], &t)) {
         return nullptr;
     }
-    // Off UI + outside g_mtx: set_time can block (ISO/DVD) and emits events that need g_mtx
-    // (same deadlock class as stop/play: THREAD_BLOCK while Slider → setTime).
-    std::thread([h, t]() {
-        libvlc_media_player_t *mp = nullptr;
-        {
-            std::lock_guard<std::mutex> lk(g_mtx);
-            PlayerEntry *pe = FindPlayerLocked(h);
-            if (pe && pe->mp) {
-                mp = pe->mp;
-            }
+    std::shared_ptr<SeekWorker> worker;
+    {
+        std::lock_guard<std::mutex> lk(g_mtx);
+        PlayerEntry *pe = FindPlayerLocked(h);
+        if (pe && pe->mp) {
+            worker = pe->seekWorker;
         }
-        if (mp != nullptr) {
-            libvlc_media_player_set_time(mp, t);
-        }
-    }).detach();
+    }
+    QueueSeek(worker, SeekKind::Time, t, 0.0f);
     return nullptr;
 }
 
@@ -1333,21 +1459,15 @@ napi_value MediaPlayerSetPosition(napi_env env, napi_callback_info info)
     if (argc < 2 || !GetU32(env, argv[0], &h) || !GetF64(env, argv[1], &pos)) {
         return nullptr;
     }
-    // Same async pattern as set_time: position seek on ISO/DVD can block and
-    // emits events that require g_mtx.
-    std::thread([h, pos]() {
-        libvlc_media_player_t *mp = nullptr;
-        {
-            std::lock_guard<std::mutex> lk(g_mtx);
-            PlayerEntry *pe = FindPlayerLocked(h);
-            if (pe && pe->mp) {
-                mp = pe->mp;
-            }
+    std::shared_ptr<SeekWorker> worker;
+    {
+        std::lock_guard<std::mutex> lk(g_mtx);
+        PlayerEntry *pe = FindPlayerLocked(h);
+        if (pe && pe->mp) {
+            worker = pe->seekWorker;
         }
-        if (mp != nullptr) {
-            libvlc_media_player_set_position(mp, static_cast<float>(pos));
-        }
-    }).detach();
+    }
+    QueueSeek(worker, SeekKind::Position, 0, static_cast<float>(pos));
     return nullptr;
 }
 

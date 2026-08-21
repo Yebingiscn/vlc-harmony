@@ -20,6 +20,8 @@ export interface ControlsState {
   fastPlayback: boolean;
 }
 
+type ToggleField = 'audioBoost' | 'volGesture' | 'brightGesture' | 'swipeSeek' | 'pinchZoom' | 'doubleTapPlayPause' | 'fastPlayback';
+
 @ComponentV2
 export struct VideoControlsSettingsDialog {
   // 主题感知:浅色=白底深字,深色=深底浅字。资源定义见 base/dark element/color.json。
@@ -47,6 +49,51 @@ export struct VideoControlsSettingsDialog {
   @Event onConfirm: (s: ControlsState) => void = () => {
   };
 
+  private isChecked(field: ToggleField): boolean {
+    switch (field) {
+      case 'audioBoost':
+        return this.state.audioBoost;
+      case 'volGesture':
+        return this.state.volGesture;
+      case 'brightGesture':
+        return this.state.brightGesture;
+      case 'swipeSeek':
+        return this.state.swipeSeek;
+      case 'pinchZoom':
+        return this.state.pinchZoom;
+      case 'doubleTapPlayPause':
+        return this.state.doubleTapPlayPause;
+      case 'fastPlayback':
+        return this.state.fastPlayback;
+    }
+  }
+
+  private toggleField(field: ToggleField): void {
+    switch (field) {
+      case 'audioBoost':
+        this.state.audioBoost = !this.state.audioBoost;
+        break;
+      case 'volGesture':
+        this.state.volGesture = !this.state.volGesture;
+        break;
+      case 'brightGesture':
+        this.state.brightGesture = !this.state.brightGesture;
+        break;
+      case 'swipeSeek':
+        this.state.swipeSeek = !this.state.swipeSeek;
+        break;
+      case 'pinchZoom':
+        this.state.pinchZoom = !this.state.pinchZoom;
+        break;
+      case 'doubleTapPlayPause':
+        this.state.doubleTapPlayPause = !this.state.doubleTapPlayPause;
+        break;
+      case 'fastPlayback':
+        this.state.fastPlayback = !this.state.fastPlayback;
+        break;
+    }
+  }
+
   /** 0.5px 分隔线 —— 1px 在低 dpi 屏有时会粗,0.5 更细。 */
   @Builder
   thinDivider() {
@@ -55,9 +102,9 @@ export struct VideoControlsSettingsDialog {
       .backgroundColor(this.cDivider)
   }
 
-  /** 复选项行 —— 自绘 checkbox(避坑 @Builder 响应式),整行可点。 */
+  /** 复选项行 —— 自绘 checkbox,整行可点。builder 内直接读 this.state 保证响应式。 */
   @Builder
-  toggleRow(title: string, summary: string, checked: boolean, onTap: () => void) {
+  toggleRow(title: string, summary: string, field: ToggleField) {
     Row() {
       Column() {
         Text(title)
@@ -80,12 +127,12 @@ export struct VideoControlsSettingsDialog {
           .width(20)
           .height(20)
           .borderRadius(4)
-          .backgroundColor(checked ? AppColors.orange500 : Color.Transparent)
+          .backgroundColor(this.isChecked(field) ? AppColors.orange500 : Color.Transparent)
           .border({
-            width: checked ? 0 : 1.5,
-            color: checked ? AppColors.orange500 : this.cSubtle,
+            width: this.isChecked(field) ? 0 : 1.5,
+            color: this.isChecked(field) ? AppColors.orange500 : this.cSubtle,
           })
-        if (checked) {
+        if (this.isChecked(field)) {
           Image($r('app.media.ic_check'))
             .width(14).height(14).fillColor('#FFFFFF')
         }
@@ -100,7 +147,7 @@ export struct VideoControlsSettingsDialog {
       bottom: 14
     })
     .alignItems(VerticalAlign.Center)
-    .onClick(() => onTap())
+    .onClick(() => this.toggleField(field))
   }
 
   /** 不可点的行(灰色 + 不可交互)。 */
@@ -171,78 +218,76 @@ export struct VideoControlsSettingsDialog {
       bottom: 14
     })
     .alignItems(VerticalAlign.Center)
-    // 整行可点切换开关;「10 秒」在视觉上是入口但本期不做二级弹窗(用户没要求)。
     .onClick(() => this.state.doubleTapSeek = !this.state.doubleTapSeek)
   }
 
   build() {
     Column() {
-      // ── 标题 ──────────────────────────────────────────
-      Text('控制设置')
-        .fontSize(19)
-        .fontWeight(600)
-        .fontColor($r('app.color.list_title'))
+      Scroll() {
+        Column() {
+          // ── 标题 ──────────────────────────────────────────
+          Text('控制设置')
+            .fontSize(19)
+            .fontWeight(600)
+            .fontColor($r('app.color.list_title'))
+            .width('100%')
+            .padding({
+              left: 20,
+              right: 20,
+              top: 16,
+              bottom: 12
+            })
+            .textAlign(TextAlign.Start)
+
+          this.thinDivider()
+
+          // ── 音频增强 ──────────────────────────────────────
+          this.toggleRow('音频增强', '允许音量放大到 200%', 'audioBoost')
+          this.thinDivider()
+
+          // ── 手势段标题(橙色) ─────────────────────────────
+          Text('手势')
+            .fontSize(13)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(AppColors.orange500)
+            .width('100%')
+            .padding({
+              left: 20,
+              right: 20,
+              top: 18,
+              bottom: 8
+            })
+
+          this.toggleRow('音量手势', '在视频回放过程中,通过手势控制音量', 'volGesture')
+          this.thinDivider()
+
+          this.toggleRow('亮度手势', '在视频回放过程中,通过手势控制显示亮度', 'brightGesture')
+          this.thinDivider()
+
+          this.toggleRow('滑动可进退', '左右滑动手指可控制进度条', 'swipeSeek')
+          this.thinDivider()
+
+          this.toggleRow('双指缩放', '用两根手指进行放大/缩小操作', 'pinchZoom')
+          this.thinDivider()
+
+          this.doubleTapSeekRow()
+          this.thinDivider()
+
+          this.toggleRow('轻按两下可播放/暂停', '在屏幕中央轻按两下可播放/暂停', 'doubleTapPlayPause')
+          this.thinDivider()
+
+          this.disabledRow('抓取截图', '已禁用')
+          this.thinDivider()
+
+          this.toggleRow('启用「快放」功能', '长按按钮快进/快退,可加快播放速度', 'fastPlayback')
+        }
         .width('100%')
-        .padding({
-          left: 20,
-          right: 20,
-          top: 16,
-          bottom: 12
-        })
-        .textAlign(TextAlign.Start)
-
-      this.thinDivider()
-
-      // ── 音频增强 ──────────────────────────────────────
-      this.toggleRow('音频增强', '允许音量放大到 200%', this.state.audioBoost,
-        () => this.state.audioBoost = !this.state.audioBoost)
-      this.thinDivider()
-
-      // ── 手势段标题(橙色) ─────────────────────────────
-      Text('手势')
-        .fontSize(13)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(AppColors.orange500)
-        .width('100%')
-        .padding({
-          left: 20,
-          right: 20,
-          top: 18,
-          bottom: 8
-        })
-
-      this.toggleRow('音量手势', '在视频回放过程中,通过手势控制音量', this.state.volGesture,
-        () => this.state.volGesture = !this.state.volGesture)
-      this.thinDivider()
-
-      this.toggleRow('亮度手势', '在视频回放过程中,通过手势控制显示亮度', this.state.brightGesture,
-        () => this.state.brightGesture = !this.state.brightGesture)
-      this.thinDivider()
-
-      this.toggleRow('滑动可进退', '左右滑动手指可控制进度条', this.state.swipeSeek,
-        () => this.state.swipeSeek = !this.state.swipeSeek)
-      this.thinDivider()
-
-      this.toggleRow('双指缩放', '用两根手指进行放大/缩小操作', this.state.pinchZoom,
-        () => this.state.pinchZoom = !this.state.pinchZoom)
-      this.thinDivider()
-
-      this.doubleTapSeekRow()
-      this.thinDivider()
-
-      this.toggleRow('轻按两下可播放/暂停', '在屏幕中央轻按两下可播放/暂停', this.state.doubleTapPlayPause,
-        () => this.state.doubleTapPlayPause = !this.state.doubleTapPlayPause)
-      this.thinDivider()
-
-      this.disabledRow('抓取截图', '已禁用')
-      this.thinDivider()
-
-      this.toggleRow('启用「快放」功能', '长按按钮快进/快退,可加快播放速度', this.state.fastPlayback,
-        () => this.state.fastPlayback = !this.state.fastPlayback)
+      }
+      .width('100%')
+      .layoutWeight(1)
+      .scrollBar(BarState.Off)
 
       // ── 底部 [取消][保存] ────────────────────────────
-      Blank().layoutWeight(1)
-
       Row({ space: 10 }) {
         Button('取消')
           .type(ButtonType.Capsule)

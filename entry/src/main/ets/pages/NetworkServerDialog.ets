@@ -1,42 +1,13 @@
-import { AppColors } from '../common/constants/AppConstants';
-
 /**
- * OutlinedInput -- 带焦点态边框变色的 outlined 输入框。
- */
-@ComponentV2
-struct OutlinedInput {
-  @Param text: string = '';
-  @Param placeholder: ResourceStr = '';
-  @Local focused: boolean = false;
-  @Event onChange: (v: string) => void = () => {
-  };
-
-  build() {
-    TextInput({ text: this.text, placeholder: this.placeholder })
-      .type(InputType.Normal)
-      .backgroundColor(Color.Transparent)
-      .border({ width: 1, color: this.focused ? AppColors.orange500 : AppColors.grey900, radius: 4 })
-      .fontSize(16)
-      .fontColor(AppColors.grey900)
-      .placeholderColor(AppColors.grey400)
-      .width('100%')
-      .height(52)
-      .padding({ left: 12, right: 12 })
-      .onFocus(() => this.focused = true)
-      .onBlur(() => this.focused = false)
-      .onChange((v: string) => this.onChange(v))
-  }
-}
-
-/**
- * NetworkServerDialog -- 添加/编辑网络服务器 BottomSheet。
- * 顶部 URL 预览 + 协议橙色圆形下拉 + 端口下划线(焦点态变色) + outlined 输入框(焦点态橙色边框) + 取消/确定按钮。
+ * NetworkServerDialog -- 添加/编辑网络服务器半模态(鸿蒙风格)。
+ * 标题 + URL 预览 + 协议 Select + 端口输入 + 表单输入框 + [取消][确定] 按钮。
+ * 主题色橙色保留;其余配色用 sys.color 系统色,自动适配深浅模式。
  */
 @ComponentV2
 export struct NetworkServerDialog {
+  @Param title: ResourceStr = '添加服务器';
   readonly protocols: string[] = ['FTP', 'FTPS', 'FTPES', 'SFTP', 'SMB', 'NFS'];
   @Local protocolIndex: number = 0;
-  @Local protocolMenuOpen: boolean = false;
   @Local address: string = '';
   @Local port: string = '';
   @Local folder: string = '';
@@ -45,7 +16,6 @@ export struct NetworkServerDialog {
   @Local portEnabled: boolean = true;
   @Local userEnabled: boolean = true;
   @Local url: string = '';
-  @Local portFocused: boolean = false;
 
   get canSave(): boolean {
     return this.address.length > 0;
@@ -114,80 +84,55 @@ export struct NetworkServerDialog {
     this.url = sb;
   }
 
-  @Builder
-  protocolMenu() {
-    Menu() {
-      Repeat(this.protocols).each((pRepeatItem: RepeatItem<string>) => {
-        MenuItem({ content: pRepeatItem.item })
-          .onClick(() => {
-            this.protocolMenuOpen = false;
-            this.onProtocolSelected(pRepeatItem.index);
-          })
-      }).key((p: string) => p)
-    }
-  }
-
   build() {
     Scroll() {
-      Column() {
-        // URL 预览
-        Text(this.url)
-          .fontSize(16)
-          .fontColor(AppColors.grey900)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      Column({ space: 20 }) {
+        // 标题
+        Text(this.title)
+          .fontSize(20)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('sys.color.font_primary'))
           .width('100%')
-          .margin({ top: 16, bottom: 16 })
 
-        Divider().color(AppColors.grey200).strokeWidth(1).width('100%')
+        // URL 预览
+        Column() {
+          Text('地址预览')
+            .fontSize(14)
+            .fontColor($r('sys.color.font_secondary'))
+          Text(this.url)
+            .fontSize(16)
+            .fontColor($r('sys.color.font_primary'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .width('100%')
+            .margin({ top: 4 })
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
 
-        // 协议 + Port 行
+        // 协议 + 端口
         Row() {
-          // 协议文本 + 橙色按钮(整体可点击拉起菜单)
-          Row() {
-            Text(this.protocols[this.protocolIndex])
-              .fontSize(16)
-              .fontColor(AppColors.grey900)
-              .padding({ left: 16, right: 16 })
-
-            Column() {
-              Image($r('app.media.ic_collapse_arrow'))
-                .width(24).height(24)
-                .fillColor('#FFFFFF')
-            }
-            .width(40)
-            .height(40)
-            .borderRadius(20)
-            .backgroundColor(AppColors.orange500)
-            .justifyContent(FlexAlign.Center)
-            .alignItems(HorizontalAlign.Center)
-          }
-          .onClick(() => this.protocolMenuOpen = true)
-          .bindMenu(this.protocolMenuOpen, this.protocolMenu(), {
-            placement: Placement.BottomLeft,
-            onDisappear: () => this.protocolMenuOpen = false,
-          })
-
-          Blank().layoutWeight(1)
+          Text('协议')
+            .fontSize(14)
+            .fontColor($r('sys.color.font_secondary'))
+          Select(this.protocols.map((v: string): SelectOption => ({ value: v })))
+            .selected(this.protocolIndex)
+            .value(this.protocols[this.protocolIndex])
+            .fontColor($r('sys.color.font_primary'))
+            .margin({ left: 8 })
+            .layoutWeight(1)
+            .onSelect((idx: number) => this.onProtocolSelected(idx))
 
           if (this.portEnabled) {
-            Text('端口:')
+            Text('端口')
               .fontSize(14)
-              .fontColor(AppColors.grey600)
-          }
-          if (this.portEnabled) {
+              .fontColor($r('sys.color.font_secondary'))
+              .margin({ left: 16 })
             TextInput({ text: this.port })
               .type(InputType.Number)
-              .backgroundColor(Color.Transparent)
-              .borderRadius(0)
-              .padding(0)
-              .border({ width: { bottom: 1 }, color: this.portFocused ? AppColors.orange500 : AppColors.grey900 })
               .fontSize(16)
-              .fontColor(AppColors.grey900)
-              .width(48)
-              .textAlign(TextAlign.End)
-              .onFocus(() => this.portFocused = true)
-              .onBlur(() => this.portFocused = false)
+              .fontColor($r('sys.color.font_primary'))
+              .width(72)
               .onChange((v: string) => {
                 this.port = v;
                 this.updateUrl();
@@ -195,75 +140,91 @@ export struct NetworkServerDialog {
           }
         }
         .width('100%')
-        .height(56)
         .alignItems(VerticalAlign.Center)
-        .margin({ top: 8 })
 
         // 表单输入框
-        Column({ space: 16 }) {
-          OutlinedInput({
-            text: this.address,
-            placeholder: this.addressHint,
-            onChange: (v: string) => {
-              this.address = v;
-              this.updateUrl();
-            },
+        TextInput({ placeholder: this.addressHint })
+          .type(InputType.Normal)
+          .fontSize(16)
+          .fontColor($r('sys.color.font_primary'))
+          .placeholderColor($r('sys.color.font_secondary'))
+          .width('100%')
+          .onChange((v: string) => {
+            this.address = v;
+            this.updateUrl();
           })
 
-          if (this.userEnabled) {
-            OutlinedInput({
-              text: this.username,
-              placeholder: $r('app.string.server_username_hint'),
-              onChange: (v: string) => {
-                this.username = v;
-                this.updateUrl();
-              },
+        if (this.userEnabled) {
+          TextInput({ placeholder: $r('app.string.server_username_hint') })
+            .type(InputType.Normal)
+            .fontSize(16)
+            .fontColor($r('sys.color.font_primary'))
+            .placeholderColor($r('sys.color.font_secondary'))
+            .width('100%')
+            .onChange((v: string) => {
+              this.username = v;
+              this.updateUrl();
             })
-          }
-
-          OutlinedInput({
-            text: this.folder,
-            placeholder: $r('app.string.server_folder_hint'),
-            onChange: (v: string) => {
-              this.folder = v;
-              this.updateUrl();
-            },
-          })
-
-          OutlinedInput({
-            text: this.servername,
-            placeholder: $r('app.string.server_servername_hint'),
-            onChange: () => {
-            },
-          })
         }
-        .width('100%')
-        .margin({ top: 24 })
+
+        TextInput({ placeholder: $r('app.string.server_folder_hint') })
+          .type(InputType.Normal)
+          .fontSize(16)
+          .fontColor($r('sys.color.font_primary'))
+          .placeholderColor($r('sys.color.font_secondary'))
+          .width('100%')
+          .onChange((v: string) => {
+            this.folder = v;
+            this.updateUrl();
+          })
+
+        TextInput({ placeholder: $r('app.string.server_servername_hint') })
+          .type(InputType.Normal)
+          .fontSize(16)
+          .fontColor($r('sys.color.font_primary'))
+          .placeholderColor($r('sys.color.font_secondary'))
+          .width('100%')
+          .onChange(() => {
+          })
 
         // 按钮行
         Row() {
           Text($r('app.string.cancel'))
             .fontSize(16)
-            .fontColor(AppColors.orange500)
+            .fontColor($r('sys.color.font_secondary'))
+            .padding({
+              left: 12,
+              right: 12,
+              top: 8,
+              bottom: 8
+            })
             .onClick(() => this.onClose())
 
-          Text($r('app.string.ok'))
+          Button($r('app.string.ok'))
+            .type(ButtonType.Capsule)
+            .backgroundColor($r('app.color.orange500'))
+            .fontColor($r('app.color.colorOnPrimary'))
             .fontSize(16)
-            .fontColor(this.canSave ? AppColors.grey500 : AppColors.grey400)
-            .margin({ left: 40 })
+            .height(40)
+            .padding({ left: 24, right: 24 })
+            .margin({ left: 16 })
             .enabled(this.canSave)
-            .onClick(() => {
-              this.onClose();
-            })
+            .onClick(() => this.onClose())
         }
         .width('100%')
         .justifyContent(FlexAlign.End)
-        .margin({ top: 32, bottom: 8 })
+        .alignItems(VerticalAlign.Center)
       }
       .width('100%')
-      .padding({ left: 24, right: 24, bottom: 16 })
+      .padding({
+        left: 24,
+        right: 24,
+        top: 8,
+        bottom: 24
+      })
       .alignItems(HorizontalAlign.Start)
     }
+    .clip(false)
     .width('100%')
     .layoutWeight(1)
     .scrollBar(BarState.Auto)

@@ -1,0 +1,229 @@
+diff --git a/modules/codec/avcodec/video.c b/modules/codec/avcodec/video.c
+index 487c3cf..738e05b 100644
+--- a/modules/codec/avcodec/video.c
++++ b/modules/codec/avcodec/video.c
+@@ -35,6 +35,7 @@
+ #include <vlc_cpu.h>
+ #include <vlc_atomic.h>
+ #include <assert.h>
++#include <time.h>
+
+ #include <libavcodec/avcodec.h>
+ #include <libavutil/mem.h>
+@@ -47,9 +48,7 @@
+ #include "va.h"
+
+ #ifdef HAVE_OHOS
+-    #include <libavcodec/ohosavcodec.h>
+-    #include <libavutil/buffer.h>
+-    #include "../../video_output/ohos/display.h"
++# include <libavcodec/ohosavcodec.h>
+ #endif
+
+ #include "../../packetizer/av1_obu.h"
+@@ -101,6 +100,12 @@ struct decoder_sys_t
+     int level;
+
+     vlc_sem_t sem_mt;
++
++#ifdef HAVE_OHOS
++    /* Surface output bypasses VLC's picture queue, so it needs its own clock. */
++    int64_t i_ohos_next_present_ns;
++    vlc_tick_t i_ohos_last_pts;
++#endif
+ };
+
+ static inline void wait_mt(decoder_sys_t *sys)
+@@ -114,30 +119,64 @@ static inline void post_mt(decoder_sys_t *sys)
+ }
+
+ #ifdef HAVE_OHOS
+-static void ohos_pic_ctx_destroy(picture_context_t *ctx)
++static int64_t ohos_monotonic_ns(void)
++{
++    struct timespec ts;
++    clock_gettime(CLOCK_MONOTONIC, &ts);
++    return (int64_t)ts.tv_sec * INT64_C(1000000000) + ts.tv_nsec;
++}
++
++static int64_t ohos_frame_period_ns(const decoder_t *p_dec)
+ {
+-    ohos_picture_context_t *octx = (ohos_picture_context_t *)ctx;
+-    if (!octx) return;
+-    if (octx->buf_ref) {
+-        AVBufferRef *ref = (AVBufferRef *)octx->buf_ref;
+-        av_buffer_unref(&ref);
+-        octx->buf_ref = NULL;
+-    }
+-    free(octx);
++    const video_format_t *fmt = &p_dec->fmt_out.video;
++    if (fmt->i_frame_rate > 0 && fmt->i_frame_rate_base > 0)
++    {
++        int64_t period = INT64_C(1000000000) * fmt->i_frame_rate_base /
++                         fmt->i_frame_rate;
++        if (period >= INT64_C(4000000) && period <= INT64_C(100000000))
++            return period;
++    }
++    return INT64_C(16666667);
++}
++
++static bool ohos_is_surface_frame(const AVFrame *frame)
++{
++    return frame->data[3] != NULL && frame->buf[0] != NULL &&
++           frame->linesize[0] == 0;
+ }
+
+-static picture_context_t *ohos_pic_ctx_copy(picture_context_t *ctx)
++/* Convert VLC's input clock to CLOCK_MONOTONIC, the clock expected by
++ * OH_VideoDecoder_RenderOutputBufferAtTime. Keep timestamps close to now:
++ * buffers scheduled too far ahead are retained by the Surface and make seek
++ * cancellation sluggish. */
++static int64_t ohos_presentation_time_ns(decoder_t *p_dec, vlc_tick_t i_pts)
+ {
+-    ohos_picture_context_t *src = (ohos_picture_context_t *)ctx;
+-    ohos_picture_context_t *dst = malloc(sizeof(*dst));
+-    if (!dst) return NULL;
+-    *dst = *src;
+-    dst->buf_ref = NULL;
+-    dst->s.destroy = ohos_pic_ctx_destroy;
+-    dst->s.copy = ohos_pic_ctx_copy;
+-    if (src->buf_ref)
+-        dst->buf_ref = (void *)av_buffer_ref((AVBufferRef *)src->buf_ref);
+-    return &dst->s;
++    decoder_sys_t *p_sys = p_dec->p_sys;
++    const int64_t now_ns = ohos_monotonic_ns();
++    const int64_t period_ns = ohos_frame_period_ns(p_dec);
++    int64_t target_ns = 0;
++
++    if (i_pts > VLC_TICK_INVALID)
++    {
++        const vlc_tick_t display_date = decoder_GetDisplayDate(p_dec, i_pts);
++        if (display_date > VLC_TICK_INVALID)
++        {
++            const vlc_tick_t delta = display_date - mdate();
++            if (delta >= -2 * (period_ns / 1000) && delta <= 100000)
++                target_ns = now_ns + (delta > 0 ? delta * 1000 : 0);
++        }
++    }
++
++    if (target_ns == 0)
++    {
++        target_ns = p_sys->i_ohos_next_present_ns;
++        if (target_ns < now_ns || target_ns > now_ns + INT64_C(100000000))
++            target_ns = now_ns;
++    }
++
++    p_sys->i_ohos_next_present_ns = target_ns + period_ns;
++    p_sys->i_ohos_last_pts = i_pts;
++    return target_ns;
+ }
+ #endif
+
+@@ -630,6 +669,10 @@ static int InitVideoDecCommon( decoder_t *p_dec )
+     p_sys->i_late_frames = 0;
+     p_sys->b_from_preroll = false;
+     p_sys->b_draining = false;
++#ifdef HAVE_OHOS
++    p_sys->i_ohos_next_present_ns = 0;
++    p_sys->i_ohos_last_pts = VLC_TICK_INVALID;
++#endif
+
+     /* Set output properties */
+     if( GetVlcChroma( &p_dec->fmt_out.video, p_context->pix_fmt ) != VLC_SUCCESS )
+@@ -911,6 +954,10 @@ static void Flush( decoder_t *p_dec )
+     date_Set(&p_sys->pts, VLC_TICK_INVALID); /* To make sure we recover properly */
+     p_sys->i_late_frames = 0;
+     p_sys->b_draining = false;
++#ifdef HAVE_OHOS
++    p_sys->i_ohos_next_present_ns = 0;
++    p_sys->i_ohos_last_pts = VLC_TICK_INVALID;
++#endif
+     cc_Flush( &p_sys->cc );
+
+     /* Abort pictures in order to unblock all avcodec workers threads waiting
+@@ -939,6 +986,10 @@ static bool check_block_validity( decoder_sys_t *p_sys, block_t *block )
+         cc_Flush( &p_sys->cc );
+
+         p_sys->i_late_frames = 0;
++#ifdef HAVE_OHOS
++        p_sys->i_ohos_next_present_ns = 0;
++        p_sys->i_ohos_last_pts = VLC_TICK_INVALID;
++#endif
+         if( block->i_flags & BLOCK_FLAG_CORRUPTED )
+         {
+             block_Release( block );
+@@ -1390,12 +1441,32 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
+
+         update_late_frame_count( p_dec, p_block, current_time, i_pts, i_next_pts);
+
+-        if( !b_need_output_picture ||
+-            ( !p_sys->p_va && !frame->linesize[0]
+ #ifdef HAVE_OHOS
+-            && p_context->pix_fmt != AV_PIX_FMT_NV21
++        if (ohos_is_surface_frame(frame))
++        {
++            const bool corrupted = p_dec->b_frame_drop_allowed &&
++                                   (frame->flags & AV_FRAME_FLAG_CORRUPT) &&
++                                   !p_sys->b_show_corrupted;
++            if (b_need_output_picture && !corrupted)
++            {
++                OHOSAVCodecSurfaceCtx *surface_ctx =
++                    (OHOSAVCodecSurfaceCtx *)frame->data[3];
++                const int64_t present_ns =
++                    ohos_presentation_time_ns(p_dec, i_pts);
++                if (av_ohosavcodec_render_buffer_at_time(surface_ctx,
++                                                         present_ns) < 0)
++                    msg_Warn(p_dec, "failed to present OHCodec surface frame");
++            }
++            /* Freeing a rendered context only releases its AVBufferRef. For
++             * preroll/corrupt frames it returns the output buffer without
++             * rendering, so pre-seek pictures can never flash on screen. */
++            av_frame_free(&frame);
++            continue;
++        }
+ #endif
+-            ) ||
++
++        if( !b_need_output_picture ||
++            ( !p_sys->p_va && !frame->linesize[0] ) ||
+            ( p_dec->b_frame_drop_allowed && (frame->flags & AV_FRAME_FLAG_CORRUPT) &&
+              !p_sys->b_show_corrupted ) )
+         {
+@@ -1456,37 +1527,6 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
+                 picture_Release( p_pic );
+                 break;
+             }
+-#ifdef HAVE_OHOS
+-            if( p_context->pix_fmt == AV_PIX_FMT_NV21)
+-            {
+-                OHOSAVCodecSurfaceCtx *surface_ctx = (OHOSAVCodecSurfaceCtx *)frame->data[3];
+-                if( surface_ctx && frame->buf[0] )
+-                {
+-                    ohos_picture_context_t *octx = malloc( sizeof(*octx) );
+-                    if( octx )
+-                    {
+-                        av_ohosavcodec_render_buffer_at_time(surface_ctx, 0);
+-                    }
+-                    else
+-                    {
+-                        av_frame_free(&frame);
+-                        picture_Release( p_pic );
+-                        *error = true;
+-                        break;
+-                    }
+-                }
+-            }
+-            else
+-#endif
+-            {
+-                /* Fill picture_t from AVFrame */
+-                if( lavc_CopyPicture( p_dec, p_pic, frame ) != VLC_SUCCESS )
+-                {
+-                    av_frame_free(&frame);
+-                    picture_Release( p_pic );
+-                    break;
+-                }
+-            }
+         }
+         else
+         {

@@ -1,0 +1,12 @@
+--- a/HPKBUILD
++++ b/HPKBUILD
+@@ -38,4 +38,9 @@ prepare() {
+     then
+         git clone -b ohosdecoder_surface_dev https://gitee.com/openharmony-tpc-incubate/FFmpeg.git
++        patch -d "$builddir" -p1 < 0006-ohosavcodec-seek-safety-and-input-pacing.patch >> $publicbuildlog 2>&1
++        if [ $? -ne 0 ]; then
++            echo "apply local OHCodec seek/pacing patch failed"
++            return -1
++        fi
+         cloneflag=false
+     fi

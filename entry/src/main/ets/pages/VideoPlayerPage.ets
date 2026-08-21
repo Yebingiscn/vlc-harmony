@@ -2111,15 +2111,18 @@ export struct VideoPlayerPage {
    * - speed / savePlaylist 半屏(MEDIUM)。
    * - 其余自适应内容(FIT_CONTENT)。
    */
-  private sheetHeight(): SheetSize | Length {
-    if (this.sheetKind === 'audioSubInfo') {
-      return '40%';
-    }
-    if (this.sheetKind === 'speed' || this.sheetKind === 'savePlaylist') {
-      return SheetSize.MEDIUM;
-    }
-    return SheetSize.FIT_CONTENT;
-  }
+   private sheetHeight(): SheetSize | Length {
+     if (this.sheetKind === 'audioSubInfo') {
+       return '40%';
+     }
+     if (this.sheetKind === 'speed' || this.sheetKind === 'savePlaylist') {
+       return SheetSize.MEDIUM;
+     }
+     if (this.sheetKind === 'controls') {
+       return SheetSize.LARGE;
+     }
+     return SheetSize.FIT_CONTENT;
+   }
 
   private armSleepTimer(): void {
     if (this.sleepMillis <= 0) {

@@ -1,0 +1,528 @@
+From: vlc-harmony maintainers
+Subject: [PATCH] ohosavcodec: make seek flush and large access units safe
+
+Serialize decoder generations across Flush, clear callback queues, reject stale
+surface output, avoid 0ms busy polling, and split compressed access units with
+AVCODEC_BUFFER_FLAGS_INCOMPLETE_FRAME when they exceed an OHCodec input slot.
+diff --git a/libavcodec/ohosavcodecdec.c b/libavcodec/ohosavcodecdec.c
+index 78ef311..cfcab9f 100644
+--- a/libavcodec/ohosavcodecdec.c
++++ b/libavcodec/ohosavcodecdec.c
+@@ -118,7 +118,7 @@ static int ohosavcodec_receive_frame(struct AVCodecContext *avctx, struct AVFram
+     s->ctx->isSend = false;
+     while(1) {
+         if (s->buffered_pkt.size > 0) {
+-            ret = ff_ohosavcodec_dec_send(avctx, s->ctx, &s->buffered_pkt, false);
++            ret = ff_ohosavcodec_dec_send(avctx, s->ctx, &s->buffered_pkt, true);
+             if (ret >= 0) {
+                 s->buffered_pkt.size -= ret;
+                 s->buffered_pkt.data += ret;
+@@ -133,6 +133,12 @@ static int ohosavcodec_receive_frame(struct AVCodecContext *avctx, struct AVFram
+                 return AVERROR_EXTERNAL;
+             }
+             if (s->buffered_pkt.size > 0) {
++                /* 大访问单元会拆成多个 OHCodec 输入槽。每段均标记
++                 * INCOMPLETE_FRAME，同时穿插取输出，避免输入/输出池互相等待。 */
++                ret = ff_ohosavcodec_dec_receive(avctx, s->ctx, frame, false);
++                if (ret != AVERROR(EAGAIN)) {
++                    return ret;
++                }
+                 continue;
+             }
+         }
+diff --git a/libavcodec/ohoscodecdata.cpp b/libavcodec/ohoscodecdata.cpp
+index 6c172b5..6373629 100644
+--- a/libavcodec/ohoscodecdata.cpp
++++ b/libavcodec/ohoscodecdata.cpp
+@@ -15,6 +15,7 @@
+
+ #include "ohoscodecdata.h"
+ #include "ohosvideodecoder.h"
++#include <algorithm>
+ #include <thread>
+
+ namespace ohos {
+@@ -39,6 +40,12 @@ bool CodecData::InputReady() const
+
+ int32_t CodecData::InputData(const uint8_t *data, size_t size, OH_AVCodecBufferAttr *attr, int *indx,
+                              std::chrono::milliseconds waitTime)
++{
++    return InputData(data, size, attr, indx, nullptr, waitTime);
++}
++
++int32_t CodecData::InputData(const uint8_t *data, size_t size, OH_AVCodecBufferAttr *attr, int *indx, size_t *written,
++                             std::chrono::milliseconds waitTime)
+ {
+     if (attr == nullptr) {
+         OH_LOG_Print(LOG_APP, LOG_ERROR, LOG_DOMAIN, "DecoderData", "OH_AVCodecBufferAttr can't be NULL!");
+@@ -46,16 +53,19 @@ int32_t CodecData::InputData(const uint8_t *data, size_t size, OH_AVCodecBufferA
+     }
+
+     std::unique_lock<std::mutex> lock(inputMutex_);
+-    bool waitForTimeout = !inputCond_.wait_for(lock, waitTime, [this](){
+-        return !this->inputBufferQueue_.empty();
+-    });
+-
+-    if (waitForTimeout) {
+-        OH_LOG_Print(LOG_APP, LOG_ERROR, LOG_DOMAIN, "DecoderData", "inputBufferQueue wait %{public}lld ms timeout!", waitTime.count());
++    bool ready = !inputBufferQueue_.empty();
++    if (!ready && waitTime.count() > 0) {
++        ready = inputCond_.wait_for(lock, waitTime, [this]() {
++            return !acceptingCallbacks_.load(std::memory_order_acquire) || !inputBufferQueue_.empty();
++        });
++    }
++    if (!acceptingCallbacks_.load(std::memory_order_acquire)) {
++        return ERRCODE_DECODE_ERRSTAT;
++    }
++    if (!ready) {
+         return ERRCODE_TIMEOUT;
+     }
+     if (inputBufferQueue_.empty()) {
+-        OH_LOG_Print(LOG_APP, LOG_WARN, LOG_DOMAIN, "DecoderData", "inputBufferInfoQueue is empty");
+         return ERRCODE_QUEUE_EMPTY;
+     }
+
+@@ -64,26 +74,41 @@ int32_t CodecData::InputData(const uint8_t *data, size_t size, OH_AVCodecBufferA
+     inputFrameCount_++;
+     lock.unlock();
+
+-    bufferInfo.Attr(attr);
++    int32_t capacity = bufferInfo.AvBufferSize();
++    if (capacity < 0) {
++        return ERRCODE_UNKNOWN;
++    }
++    size_t copySize = std::min(size, static_cast<size_t>(capacity));
++    OH_AVCodecBufferAttr localAttr = *attr;
++    localAttr.size = copySize;
++    if (copySize < size) {
++        localAttr.flags |= AVCODEC_BUFFER_FLAGS_INCOMPLETE_FRAME;
++    }
+
+-    if (data != nullptr && size > 0) {
++    if (data != nullptr && copySize > 0) {
+         uint8_t *avBufferAddr = bufferInfo.AvBufferAddr();
+-        // 判断avbuffer大小，循环写入
+-        if (avBufferAddr == nullptr || size > bufferInfo.AvBufferSize()) {
++        if (avBufferAddr == nullptr) {
+             OH_LOG_Print(LOG_APP, LOG_ERROR, LOG_DOMAIN, "DecoderData", "AV buffAddr is nullptr");
+             return ERRCODE_UNKNOWN;
+         }
+-        memcpy(avBufferAddr, data, size);
++        memcpy(avBufferAddr, data, copySize);
++    }
++    if (bufferInfo.Attr(&localAttr) != 0) {
++        return ERRCODE_UNKNOWN;
+     }
+
+     OH_LOG_Print(LOG_APP, LOG_DEBUG, LOG_DOMAIN, "CodecData", "input data size: %{public}zu,"
+-        "buffer size: %{public}zu, index: %{public}d", size, bufferInfo.AvBufferSize(), bufferInfo.Index());
++        " written: %{public}zu, buffer size: %{public}d, index: %{public}d",
++        size, copySize, capacity, bufferInfo.Index());
+
+     if (indx != nullptr) {
+         *indx = bufferInfo.Index();
+     }
++    if (written != nullptr) {
++        *written = copySize;
++    }
+
+-    if (attr->flags & AVCODEC_BUFFER_FLAGS_EOS) {
++    if (localAttr.flags & AVCODEC_BUFFER_FLAGS_EOS) {
+         OH_LOG_Print(LOG_APP, LOG_INFO, LOG_DOMAIN, "DecoderData", "Catch EOS");
+     }
+
+@@ -98,25 +123,31 @@ bool CodecData::OutputReady() const
+
+ int32_t CodecData::OutputData(AvBufferInfo &buff, std::chrono::milliseconds waitTime)
+ {
+-    std::unique_lock<std::mutex> lock(this->outputMutex_);
+-    bool waitForTimeout = !outputCond_.wait_for(lock, waitTime, [this](){
+-        return !this->outputBufferQueue_.empty();
+-    });
+-
+-    if (waitForTimeout && outputBufferQueue_.empty()) {
+-        OH_LOG_Print(LOG_APP, LOG_ERROR, LOG_DOMAIN, "DecoderData", "outputBufferQueue wait %{public}lld ms timeout!", waitTime.count());
+-        return ERRCODE_TIMEOUT;
+-    }
++    while (true) {
++        std::unique_lock<std::mutex> lock(this->outputMutex_);
++        bool ready = !outputBufferQueue_.empty();
++        if (!ready && waitTime.count() > 0) {
++            ready = outputCond_.wait_for(lock, waitTime, [this]() {
++                return !acceptingCallbacks_.load(std::memory_order_acquire) || !outputBufferQueue_.empty();
++            });
++        }
++        if (!acceptingCallbacks_.load(std::memory_order_acquire)) {
++            return ERRCODE_DECODE_ERRSTAT;
++        }
++        if (!ready) {
++            return ERRCODE_TIMEOUT;
++        }
++        if (outputBufferQueue_.empty()) {
++            return ERRCODE_QUEUE_EMPTY;
++        }
+
+-    if (outputBufferQueue_.empty()) {
+-        OH_LOG_Print(LOG_APP, LOG_ERROR, LOG_DOMAIN, "DecoderData", "outputBufferQueue_ is empty");
+-        return ERRCODE_QUEUE_EMPTY;
++        buff = outputBufferQueue_.front();
++        outputBufferQueue_.pop();
++        if (buff.Generation() == generation_.load(std::memory_order_acquire)) {
++            outputFrameCount_++;
++            return ERRCODE_OK;
++        }
+     }
+-
+-    buff = outputBufferQueue_.front();
+-    outputBufferQueue_.pop();
+-    outputFrameCount_++;
+-    return ERRCODE_OK;
+ }
+
+ int32_t CodecData::GetOutputBuffer(AvBufferInfo &buff, std::chrono::milliseconds waitTime)
+@@ -127,12 +158,10 @@ int32_t CodecData::GetOutputBuffer(AvBufferInfo &buff, std::chrono::milliseconds
+     });
+
+     if (waitForTimeout && outputBufferQueue_.empty()) {
+-        OH_LOG_Print(LOG_APP, LOG_ERROR, LOG_DOMAIN, "DecoderData", "outputBufferQueue wait timeout!");
+         return ERRCODE_TIMEOUT;
+     }
+
+     if (outputBufferQueue_.empty()) {
+-        OH_LOG_Print(LOG_APP, LOG_ERROR, LOG_DOMAIN, "DecoderData", "outputBufferQueue_ is empty");
+         return ERRCODE_QUEUE_EMPTY;
+     }
+
+@@ -150,12 +179,10 @@ int32_t CodecData::GetInputBuffer(AvBufferInfo &buff, std::chrono::milliseconds
+     });
+
+     if (waitForTimeout && inputBufferQueue_.empty()) {
+-        OH_LOG_Print(LOG_APP, LOG_ERROR, LOG_DOMAIN, "DecoderData", "inputBufferQueue wait timeout!");
+         return ERRCODE_TIMEOUT;
+     }
+
+     if (inputBufferQueue_.empty()) {
+-        OH_LOG_Print(LOG_APP, LOG_ERROR, LOG_DOMAIN, "DecoderData", "inputBufferQueue is empty");
+         return ERRCODE_QUEUE_EMPTY;
+     }
+
+@@ -168,7 +195,10 @@ int32_t CodecData::GetInputBuffer(AvBufferInfo &buff, std::chrono::milliseconds
+ int32_t CodecData::NeedInputBuffer(uint32_t index, OH_AVBuffer *buffer)
+ {
+     std::unique_lock<std::mutex> lock(inputMutex_);
+-    inputBufferQueue_.emplace(index, buffer);
++    if (!acceptingCallbacks_.load(std::memory_order_acquire)) {
++        return ERRCODE_DECODE_ERRSTAT;
++    }
++    inputBufferQueue_.emplace(index, buffer, generation_.load(std::memory_order_acquire));
+     inputCond_.notify_all();
+
+     return 0;
+@@ -177,7 +207,10 @@ int32_t CodecData::NeedInputBuffer(uint32_t index, OH_AVBuffer *buffer)
+ int32_t CodecData::NewOutputBuffer(uint32_t index, OH_AVBuffer *buffer)
+ {
+     std::unique_lock<std::mutex> lock(outputMutex_);
+-    outputBufferQueue_.emplace(index, buffer);
++    if (!acceptingCallbacks_.load(std::memory_order_acquire)) {
++        return ERRCODE_DECODE_ERRSTAT;
++    }
++    outputBufferQueue_.emplace(index, buffer, generation_.load(std::memory_order_acquire));
+     outputCond_.notify_all();
+
+     return 0;
+@@ -193,16 +226,40 @@ uint32_t CodecData::OutputFrame() const
+     return outputFrameCount_;
+ }
+
+-void CodecData::Release()
++void CodecData::BeginFlush()
+ {
+-    inputFrameCount_ = 0;
+-    outputFrameCount_ = 0;
+-
+-    while (!inputBufferQueue_.empty()) {
+-        inputBufferQueue_.pop();
++    acceptingCallbacks_.store(false, std::memory_order_release);
++    generation_.fetch_add(1, std::memory_order_acq_rel);
++    {
++        std::lock_guard<std::mutex> lock(inputMutex_);
++        while (!inputBufferQueue_.empty()) {
++            inputBufferQueue_.pop();
++        }
++        inputFrameCount_ = 0;
+     }
+-    while (!outputBufferQueue_.empty()) {
+-        outputBufferQueue_.pop();
++    {
++        std::lock_guard<std::mutex> lock(outputMutex_);
++        while (!outputBufferQueue_.empty()) {
++            outputBufferQueue_.pop();
++        }
++        outputFrameCount_ = 0;
+     }
++    inputCond_.notify_all();
++    outputCond_.notify_all();
++}
++
++void CodecData::EndFlush()
++{
++    acceptingCallbacks_.store(true, std::memory_order_release);
++}
++
++uint64_t CodecData::Generation() const
++{
++    return generation_.load(std::memory_order_acquire);
++}
++
++void CodecData::Release()
++{
++    BeginFlush();
+ }
+ } // namespace ohos
+diff --git a/libavcodec/ohoscodecdata.h b/libavcodec/ohoscodecdata.h
+index 64ce216..bb19416 100644
+--- a/libavcodec/ohoscodecdata.h
++++ b/libavcodec/ohoscodecdata.h
+@@ -32,6 +32,8 @@ public:
+     bool InputReady() const;
+     int32_t InputData(const uint8_t *data, size_t size, OH_AVCodecBufferAttr *attr, int *indx,
+                       std::chrono::milliseconds waitTime = (std::chrono::milliseconds)0);
++    int32_t InputData(const uint8_t *data, size_t size, OH_AVCodecBufferAttr *attr, int *indx, size_t *written,
++                      std::chrono::milliseconds waitTime = (std::chrono::milliseconds)0);
+     int32_t NeedInputBuffer(uint32_t index, OH_AVBuffer *buffer);
+     uint32_t InputFrame() const;
+
+@@ -42,18 +44,23 @@ public:
+
+     int32_t GetInputBuffer(AvBufferInfo &buff, std::chrono::milliseconds waitTime = (std::chrono::milliseconds)0);
+     int32_t GetOutputBuffer(AvBufferInfo &buff, std::chrono::milliseconds waitTime = (std::chrono::milliseconds)0);
++    void BeginFlush();
++    void EndFlush();
++    uint64_t Generation() const;
+ private:
+     void Release();
+
+     mutable std::mutex inputMutex_;
+     std::condition_variable inputCond_;
+     std::queue<AvBufferInfo> inputBufferQueue_;
+-    uint32_t inputFrameCount_ {0};
++    std::atomic<uint32_t> inputFrameCount_ {0};
+
+     mutable std::mutex outputMutex_;
+     std::condition_variable outputCond_;
+     std::queue<AvBufferInfo> outputBufferQueue_;
+-    uint32_t outputFrameCount_ {0};
++    std::atomic<uint32_t> outputFrameCount_ {0};
++    std::atomic<uint64_t> generation_ {1};
++    std::atomic<bool> acceptingCallbacks_ {true};
+ };
+ } // namespace ohos
+
+diff --git a/libavcodec/ohosdec_common.cpp b/libavcodec/ohosdec_common.cpp
+index c14bd42..33902fe 100644
+--- a/libavcodec/ohosdec_common.cpp
++++ b/libavcodec/ohosdec_common.cpp
+@@ -22,10 +22,11 @@
+
+ namespace ohos {
+
+-AvBufferInfo::AvBufferInfo(int32_t indx, OH_AVBuffer *buff)
++AvBufferInfo::AvBufferInfo(int32_t indx, OH_AVBuffer *buff, uint64_t generation)
+ {
+     index_ = indx;
+     buff_ = buff;
++    generation_ = generation;
+ }
+
+ AvBufferInfo::~AvBufferInfo()
+@@ -37,6 +38,11 @@ int32_t AvBufferInfo::Index() const
+     return index_;
+ }
+
++uint64_t AvBufferInfo::Generation() const
++{
++    return generation_;
++}
++
+ uint8_t *AvBufferInfo::AvBufferAddr()
+ {
+     AVCODEC_CHECK (buff_ == nullptr, "avbuffer is not initted!", nullptr);
+diff --git a/libavcodec/ohosdec_common.h b/libavcodec/ohosdec_common.h
+index ca8a128..1357d63 100644
+--- a/libavcodec/ohosdec_common.h
++++ b/libavcodec/ohosdec_common.h
+@@ -56,7 +56,7 @@ struct VideoFormat {
+
+ class AvBufferInfo {
+ public:
+-    AvBufferInfo(int32_t indx, OH_AVBuffer *buff);
++    AvBufferInfo(int32_t indx, OH_AVBuffer *buff, uint64_t generation = 0);
+     ~AvBufferInfo();
+     uint8_t *AvBufferAddr();
+     int32_t Attr(OH_AVCodecBufferAttr *attr);
+@@ -65,10 +65,12 @@ public:
+     uint32_t Flag();
+     int64_t Pts();
+     int32_t AvBufferSize();
++    uint64_t Generation() const;
+ private:
+     int32_t index_{-1};
+     OH_AVCodecBufferAttr attr_{0, 0, 0, AVCODEC_BUFFER_FLAGS_NONE};
+     OH_AVBuffer* buff_{nullptr};
++    uint64_t generation_{0};
+ };
+ }  // namespace ohos
+ #endif // OHOSDEC_COMMON
+diff --git a/libavcodec/ohosvideodecoder.cpp b/libavcodec/ohosvideodecoder.cpp
+index a833ebe..2392525 100644
+--- a/libavcodec/ohosvideodecoder.cpp
++++ b/libavcodec/ohosvideodecoder.cpp
+@@ -121,9 +121,15 @@ int32_t VideoDecoder::Start()
+     AVCODEC_CHECK(state_ == State::RUNNING, "decoder has been started", -1);
+     AVCODEC_CHECK((state_ == State::UNKNOWN || state_ == State::RELEASE), "decoder has not be ready", -1);
+
+-    // 启动编码器，开始编码
++    if (data_ != nullptr) {
++        // Start 可能同步触发输入回调，必须先重新开放 callback 队列。
++        data_->EndFlush();
++    }
+     int ret = OH_VideoDecoder_Start(decoder_);
+     if (ret != AV_ERR_OK) {
++        if (data_ != nullptr) {
++            data_->BeginFlush();
++        }
+         OH_LOG_Print(LOG_APP, LOG_ERROR, LOG_DOMAIN, "VideoDecoder", "OH_VideoDecoder_Start Failed!");
+         errorCode_ = ret;
+         return -1;
+@@ -136,7 +142,10 @@ int32_t VideoDecoder::Start()
+ int32_t VideoDecoder::Flush()
+ {
+     AVCODEC_CHECK(decoder_ == nullptr, "decoder is NULL", -1);
+-    // 启动编码器，开始编码
++    if (data_ != nullptr) {
++        // 先让阻塞中的输入/输出等待退出并作废旧回调，再 Flush 系统解码器。
++        data_->BeginFlush();
++    }
+     int ret = OH_VideoDecoder_Flush(decoder_);
+     if (ret != AV_ERR_OK) {
+         OH_LOG_Print(LOG_APP, LOG_ERROR, LOG_DOMAIN, "VideoDecoder", "OH_VideoDecoder_Flush Failed!");
+@@ -161,14 +170,18 @@ int32_t VideoDecoder::PushInputData(uint8_t *pktData, size_t dataSize, int64_t p
+     attr.flags = flag;
+     CodecData *codecData = data_.get();
+     int indx = -1;
+-    int ret = codecData->InputData(pktData, dataSize, &attr, &indx, waitTimes);
++    size_t written = 0;
++    int ret = codecData->InputData(pktData, dataSize, &attr, &indx, &written, waitTimes);
+     if (ret != ERRCODE_OK) {
+-        OH_LOG_Print(LOG_APP, LOG_ERROR, LOG_DOMAIN, "VideoDecoder", "codec data set InputData failed,\
+-                     errcode=%{public}d", ret);
++        if (ret != ERRCODE_TIMEOUT && ret != ERRCODE_QUEUE_EMPTY && ret != ERRCODE_DECODE_ERRSTAT) {
++            OH_LOG_Print(LOG_APP, LOG_ERROR, LOG_DOMAIN, "VideoDecoder", "codec data set InputData failed,\
++                         errcode=%{public}d", ret);
++        }
+         return ret;
+     }
+
+-    return FreeInputData(indx);
++    ret = FreeInputData(indx);
++    return ret == ERRCODE_OK ? static_cast<int32_t>(written) : ret;
+ }
+
+ // 获取解码帧
+@@ -197,6 +210,9 @@ int32_t VideoDecoder::FreeOutputData(uint32_t index)
+
+ int32_t VideoDecoder::Stop()
+ {
++    if (data_ != nullptr) {
++        data_->BeginFlush();
++    }
+     state_ = VideoDecoder::State::STOP;
+     AVCODEC_CHECK(decoder_ == nullptr, "decoder is NULL", -1);
+     int32_t ret = AV_ERR_INVALID_VAL;
+diff --git a/libavcodec/ohosvideodecoder_wrapper.cpp b/libavcodec/ohosvideodecoder_wrapper.cpp
+index 0042b39..91e0ad4 100644
+--- a/libavcodec/ohosvideodecoder_wrapper.cpp
++++ b/libavcodec/ohosvideodecoder_wrapper.cpp
+@@ -195,14 +195,15 @@ int ff_ohosavcodec_dec_send(AVCodecContext *avctx, OhosAvcodecDecContext *s,
+     OhosVideoCodecWrapper *codec = s->codec_wrapper;
+     int64_t pts = 0;
+     uint32_t frameType = 0; // OH_AVCodecBufferFlags
+-    int64_t timeoutUs = 0;
++    // 单位是毫秒；0ms 会在解码器预热/Flush 后忙轮询并打爆 hilog。
++    int64_t timeoutMs = INPUT_QUEUE_TIMEOUT_MS;
++    (void)wait;
+
+     if (pkt->size == 0) {
+         frameType = AVCODEC_BUFFER_FLAGS_EOS;
+     }
+-
+-    if (wait) {
+-        timeoutUs = INPUT_QUEUE_TIMEOUT_MS;
++    if (pkt->flags & AV_PKT_FLAG_KEY) {
++        frameType |= AVCODEC_BUFFER_FLAGS_SYNC_FRAME;
+     }
+     pts = pkt->pts;
+     if (pts == AV_NOPTS_VALUE) {
+@@ -213,7 +214,7 @@ int ff_ohosavcodec_dec_send(AVCodecContext *avctx, OhosAvcodecDecContext *s,
+         pts = av_rescale_q(pts, avctx->pkt_timebase, AV_TIME_BASE_Q);
+     }
+
+-    int ret = ff_OhosAvcodec_PushInput(codec, pkt->data, pkt->size, 0, pts, frameType, timeoutUs);
++    int ret = ff_OhosAvcodec_PushInput(codec, pkt->data, pkt->size, 0, pts, frameType, timeoutMs);
+     if (ret >= 0) {
+         s->isSend = true;
+         if (pkt->size == 0) {
+@@ -267,7 +268,9 @@ int ff_ohosavcodec_dec_flush(AVCodecContext *avctx, OhosAvcodecDecContext *s)
+     if (ret < 0) {
+         return ret;
+     }
+-
++    s->eos = 0;
++    s->last_pkt = 0;
++    s->isSend = false;
+     return 0;
+ }
+
+@@ -372,10 +375,12 @@ int ff_OhosAvcodec_flush(OhosVideoCodecWrapper *codec)
+     if (codec == nullptr || codec->videoDecoder == nullptr) {
+         return -1;
+     }
+-    codec->videoDecoder->Flush();
++    int ret = codec->videoDecoder->Flush();
++    if (ret != 0) {
++        return ret;
++    }
+     // ffmpeg 要求 codec flush 后，解码器能继续工作
+-    codec->videoDecoder->Start();
+-    return 0;
++    return codec->videoDecoder->Start();
+ }
+
+ /* 输入待解码数据 */
+@@ -390,15 +395,16 @@ int ff_OhosAvcodec_PushInput(OhosVideoCodecWrapper *codec, uint8_t *data, size_t
+         return AVERROR_EXTERNAL;
+     }
+
++    size_t remaining = data == nullptr ? 0 : size - static_cast<size_t>(offset);
+     uint8_t *pdata = (data == nullptr) ? data : (data + offset);
+-    int ret = codec->videoDecoder->PushInputData(pdata, size, pts, flag, std::chrono::milliseconds(wait_time));
+-    if (ret != ohos::ERRCODE_OK) {
++    int ret = codec->videoDecoder->PushInputData(pdata, remaining, pts, flag, std::chrono::milliseconds(wait_time));
++    if (ret < 0) {
+         if (ret == ohos::ERRCODE_TIMEOUT || ret == ohos::ERRCODE_QUEUE_EMPTY) {
+             return AVERROR(EAGAIN);
+         }
+         return AVERROR_EXTERNAL;
+     }
+-    return size;
++    return ret;
+ }
+
+ int ff_OhosAvcodec_GetCodecInfo(OhosVideoCodecWrapper *codec)
+@@ -598,4 +604,4 @@ int ff_OhosAvcodec_RenderOutputBufferAtTime(struct OhosVideoCodecWrapper *codec,
+         return AVERROR_EXTERNAL;
+     }
+     return OH_VideoDecoder_RenderOutputBufferAtTime(codec->videoDecoder->GetDecoder(), index, time);
+-}
+\ No newline at end of file
++}

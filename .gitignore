@@ -63,6 +63,8 @@ docs/
 oh_modules
 # AI coding tool local workspace
 .codegenie
+.codegraph/
+*.dmp
 # Signing material (private keys, certs) - never commit
 sign/
 sign/**

@@ -1,8 +1,16 @@
 import { NavController } from '../common/data/NavController';
-import { BackTitleBar } from '../common/components/BackTitleBar';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { EmptyStateView } from '../common/components/EmptyStateView';
 import { EmptyLoadingState, Folder, SheetItem } from '../common/models/MediaModels';
+import { NetworkServerDialog } from './NetworkServerDialog';
+import { LengthMetrics } from '@kit.ArkUI';
+import {
+  DividerShowType,
+  hdsMaterial,
+  HdsNavDestination,
+  HdsNavDestinationTitleMode,
+  ScrollEffectType
+} from '@kit.UIDesignKit';
 
 /** 浏览模式。 */
 export type BrowserMode = 'file' | 'network' | 'storage' | 'picker';
@@ -55,15 +63,33 @@ export struct FileBrowserPage {
     this.vm.browseRoot();
   }
 
-  build() {
-    NavDestination() {
-      Column() {
-        BackTitleBar({
-          title: this.mode === 'network' ? '网络' : '存储设备',
-        })
+  @Local showServerDialog: boolean = false;
 
+  onAddClick(): void {
+    if (this.mode === 'network') {
+      this.showServerDialog = true;
+    }
+  }
+
+  @Builder
+  serverSheet() {
+    Column() {
+      NetworkServerDialog({
+        onClose: () => this.showServerDialog = false,
+      }).width('100%')
+    }
+    .width('100%')
+    .backgroundColor($r('sys.color.background_primary'))
+  }
+
+  build() {
+    HdsNavDestination() {
+      Column() {
         if (this.vm.emptyState !== EmptyLoadingState.NONE) {
-          EmptyStateView({ state: this.vm.emptyState }).layoutWeight(1)
+          EmptyStateView({
+            state: this.vm.emptyState,
+            onPickFile: () => this.onAddClick()
+          }).layoutWeight(1)
         } else {
           Refresh({ refreshing: $$this.refreshing }) {
             List() {
@@ -91,8 +117,84 @@ export struct FileBrowserPage {
       }
       .width('100%').height('100%')
       .backgroundColor($r('app.color.background_default'))
+      .bindSheet(this.showServerDialog, this.serverSheet(), {
+        height: SheetSize.FIT_CONTENT,
+        dragBar: true,
+        onDisappear: () => this.showServerDialog = false,
+      })
     }
-    .hideTitleBar(true)
+    .titleBar({
+      avoidLayoutSafeArea: true,
+      enableComponentSafeArea: true,
+      padding: {
+        start: LengthMetrics.vp(5),
+        end: LengthMetrics.vp(5)
+      },
+      style: {
+        scrollEffectOpts: {
+          enableScrollEffect: true,
+          scrollEffectType: ScrollEffectType.GRADIENT_BLUR,
+          blurEffectiveStartOffset: LengthMetrics.vp(0),
+          blurEffectiveEndOffset: LengthMetrics.vp(20)
+        },
+        systemMaterialEffect: {
+          materialType: hdsMaterial.MaterialType.ADAPTIVE,
+          materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+        },
+        originalStyle: {
+          backgroundStyle: {
+            backgroundColor: $r('sys.color.ohos_id_color_background')
+          },
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('sys.color.font_primary'),
+              subTitleColor: $r('sys.color.font_secondary')
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
+          }
+        },
+        scrollEffectStyle: {
+          backgroundStyle: {
+            backgroundColor: $r('sys.color.ohos_id_color_background_transparent')
+          },
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('sys.color.font_primary'),
+              subTitleColor: $r('sys.color.font_secondary')
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
+          }
+        }
+      },
+      content: {
+        title: {
+          mainTitle: this.mode === 'network' ? '网络' : '存储设备'
+        },
+        backIcon: {
+          icon: $r('app.media.ic_arrow_back'),
+          label: '返回',
+          action: () => NavController.pop()
+        },
+        divider: {
+          showType: DividerShowType.AUTO
+        }
+      }
+    })
+    .titleMode(HdsNavDestinationTitleMode.MINI)
     .onBackPressed(() => {
       NavController.pop();
       return true;

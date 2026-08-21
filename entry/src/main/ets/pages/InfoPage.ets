@@ -100,6 +100,7 @@ export struct InfoPage {
             .width('100%')
             .alignItems(HorizontalAlign.Start)
           }
+          .clip(false)
           .layoutWeight(1)
           .width('100%')
           .backgroundColor($r('app.color.background_default'))

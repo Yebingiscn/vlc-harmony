@@ -234,7 +234,7 @@ export class MediaSessionManager {
     }
     let defaultSource: image.ImageSource | null = null;
     try {
-      const content: Uint8Array = AppContext.get().resourceManager.getMediaContentSync($r('app.media.ic_launcher').id);
+      const content: Uint8Array = AppContext.get().resourceManager.getMediaContentSync($r('app.media.ic_about_logo').id);
       defaultSource = image.createImageSource(content.buffer);
       return await defaultSource.createPixelMap({
         desiredSize: { width: 512, height: 512 },

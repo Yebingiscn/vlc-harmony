@@ -4,23 +4,22 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$ROOT_DIR/.." && pwd)"
-OHOS_LIBS="${REPO_ROOT}/ohos_vlc/library/libs/arm64-v8a"
-DIST_USR="${REPO_ROOT}/dist/usr"
+OHOS_LIBS="${ROOT_DIR}/ohos_vlc/library/libs/arm64-v8a"
+DIST_USR="${ROOT_DIR}/dist/usr"
 DEST_LIBS="${ROOT_DIR}/entry/libs/arm64-v8a"
 DEST_LINK="${ROOT_DIR}/entry/src/main/cpp/third_party/libvlc/arm64-v8a"
 
 mkdir -p "$DEST_LIBS" "$DEST_LINK"
 
-if [[ -d "$OHOS_LIBS" && -f "$OHOS_LIBS/libvlc.so" ]]; then
+if [[ -d "$OHOS_LIBS" && -f "$OHOS_LIBS/libvlc.so.5" && -f "$OHOS_LIBS/libvlccore.so.9" ]]; then
   echo "Sync runtime libs from ohos_vlc: $OHOS_LIBS"
   rm -rf "$DEST_LIBS"
   mkdir -p "$DEST_LIBS"
   cp -a "$OHOS_LIBS"/. "$DEST_LIBS"/
-  cp -f "$OHOS_LIBS/libvlc.so" "$DEST_LINK/libvlc.so"
-  cp -f "$OHOS_LIBS/libvlccore.so" "$DEST_LINK/libvlccore.so"
-  cp -f "$OHOS_LIBS/libvlc.so" "$DEST_LINK/libvlc.so.5"
-  cp -f "$OHOS_LIBS/libvlccore.so" "$DEST_LINK/libvlccore.so.9"
+  cp -fL "$OHOS_LIBS/libvlc.so.5" "$DEST_LINK/libvlc.so"
+  cp -fL "$OHOS_LIBS/libvlccore.so.9" "$DEST_LINK/libvlccore.so"
+  cp -fL "$OHOS_LIBS/libvlc.so.5" "$DEST_LINK/libvlc.so.5"
+  cp -fL "$OHOS_LIBS/libvlccore.so.9" "$DEST_LINK/libvlccore.so.9"
 else
   echo "ohos_vlc libs missing, fallback to dist (dereference versioned ELF)"
   mkdir -p "$DEST_LIBS"

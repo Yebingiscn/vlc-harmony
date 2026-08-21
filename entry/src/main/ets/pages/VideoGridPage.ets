@@ -6,7 +6,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { NavController } from '../common/data/NavController';
-import { AppColors, RouteName } from '../common/constants/AppConstants';
+import { AppColors, AppDimens, RouteName } from '../common/constants/AppConstants';
 import { EmptyStateView } from '../common/components/EmptyStateView';
 import { MediaGridCard } from '../common/components/MediaGridCard';
 import { MediaListCard } from '../common/components/MediaListCard';
@@ -189,6 +189,8 @@ class VideoGridViewModel {
 
 @ComponentV2
 export struct VideoGridPage {
+  /** 由主页 HdsNavDestination 注入，用于标题栏滚动联动。 */
+  @Param contentScroller: Scroller = new Scroller();
   @Local vm: VideoGridViewModel = new VideoGridViewModel();
   @Local refreshing: boolean = false;
   @Local contextItem: MediaWrapper | null = null;
@@ -198,6 +200,9 @@ export struct VideoGridPage {
   @Local contextFolderFav: boolean = false;
   @Local inSelection: boolean = false;
   @Local selectedUris: string[] = [];
+  @Local importActive: boolean = false;
+  @Local importCurrent: number = 0;
+  @Local importTotal: number = 0;
   @Param settingsVersion: number = 0;
   @Param searchMode: boolean = false;
   @Param searchQuery: string = '';
@@ -440,6 +445,15 @@ export struct VideoGridPage {
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
       Column() {
+        if (this.importActive) {
+          Row() {
+            Progress({ value: this.importCurrent, total: this.importTotal, type: ProgressType.Linear })
+              .layoutWeight(1)
+              .height(4)
+              .color(AppColors.orange500)
+          }
+          .width('100%').padding(8)
+        }
         if (this.searchMode) {
           this.searchGlobalButton()
         }
@@ -873,7 +887,7 @@ export struct VideoGridPage {
           bottom: 8
         })
         .onClick(() => this.onSearchGlobal())
-    }
+    }.borderRadius(4)
     .width('100%')
     .justifyContent(FlexAlign.Center)
     .padding({ top: 8, bottom: 8 })
@@ -881,7 +895,7 @@ export struct VideoGridPage {
 
   @Builder
   gridMode() {
-    Grid() {
+    Grid(this.contentScroller) {
       Repeat(this.vm.items).each((itemRepeatItem: RepeatItem<MediaWrapper>) => {
         GridItem() {
           MediaGridCard({
@@ -919,14 +933,15 @@ export struct VideoGridPage {
     .columnsTemplate('1fr 1fr')
     .columnsGap(8)
     .rowsGap(8)
-    .padding(4)
+    .padding({ left: 4, right: 4, top: 4 })
+    .contentEndOffset(AppDimens.floating_content_bottom_inset)
     .width('100%')
     .layoutWeight(1)
   }
 
   @Builder
   listMode() {
-    List({ space: 0 }) {
+    List({ space: 0, scroller: this.contentScroller }) {
       Repeat(this.vm.items).each((itemRepeatItem: RepeatItem<MediaWrapper>) => {
         ListItem() {
           MediaListCard({
@@ -967,13 +982,14 @@ export struct VideoGridPage {
       startMargin: 8,
       endMargin: 8
     })
+    .contentEndOffset(AppDimens.floating_content_bottom_inset)
     .width('100%')
     .layoutWeight(1)
   }
 
   @Builder
   folderGridMode() {
-    Grid() {
+    Grid(this.contentScroller) {
       Repeat(this.vm.folders).each((folderRepeatItem: RepeatItem<Folder>) => {
         GridItem() {
           Column() {
@@ -1091,14 +1107,15 @@ export struct VideoGridPage {
     .columnsTemplate('1fr 1fr')
     .columnsGap(8)
     .rowsGap(8)
-    .padding(4)
+    .padding({ left: 4, right: 4, top: 4 })
+    .contentEndOffset(AppDimens.floating_content_bottom_inset)
     .width('100%')
     .layoutWeight(1)
   }
 
   @Builder
   folderListMode() {
-    List({ space: 0 }) {
+    List({ space: 0, scroller: this.contentScroller }) {
       Repeat(this.vm.folders).each((folderRepeatItem: RepeatItem<Folder>) => {
         ListItem() {
           Row() {
@@ -1170,6 +1187,7 @@ export struct VideoGridPage {
       startMargin: 8,
       endMargin: 8
     })
+    .contentEndOffset(AppDimens.floating_content_bottom_inset)
     .width('100%')
     .layoutWeight(1)
   }
@@ -1186,10 +1204,18 @@ export struct VideoGridPage {
       options.mergeMode = picker.MergeTypeMode.VIDEO;
       const uris = await new picker.DocumentViewPicker(ctx).select(options);
       if (uris.length > 0) {
-        await MediaLibrary.importVideoUris(uris);
+        this.importActive = true;
+        this.importCurrent = 0;
+        this.importTotal = uris.length;
+        await MediaLibrary.importVideoUris(uris, (current: number, total: number): void => {
+          this.importCurrent = current;
+          this.importTotal = total;
+        });
+        this.importActive = false;
         await this.vm.rebuild();
       }
     } catch (e) {
+      this.importActive = false;
       hilog.warn(0x0001, 'VLC', '[VLC] onAddVideo: %{public}s', (e as Error).message ?? String(e));
     }
   }

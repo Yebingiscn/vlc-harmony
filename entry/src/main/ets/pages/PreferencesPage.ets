@@ -1,5 +1,5 @@
 import { UiFeedback } from '../common/utils/UiFeedback';
-import { VlcToolbar } from '../common/components/VlcToolbar';
+
 import { PreferenceRow } from '../common/components/PreferenceRow';
 import { PreferenceChoiceDialog } from '../common/components/PreferenceChoiceDialog';
 import { PreferenceNumberPickerDialog } from './PreferenceNumberPickerDialog';
@@ -12,6 +12,15 @@ import { AppTheme } from '../common/data/AppTheme';
 import { PreferenceGroup, PreferenceItem, PreferenceScreen } from '../common/models/PreferenceModels';
 import { PreferencesScreenParam } from '../common/models/MediaModels';
 import { i18n } from '@kit.LocalizationKit';
+import { LengthMetrics } from '@kit.ArkUI';
+import {
+  DividerShowType,
+  hdsMaterial,
+  HdsNavDestination,
+  HdsNavDestinationTitleMode,
+  HdsNavigationMenuItemOptions,
+  ScrollEffectType
+} from '@kit.UIDesignKit';
 
 /** 字幕/控件颜色调色板(对应 VLC ColorPreferenceCompat 预设)。 */
 const COLOR_PALETTE: number[] = [
@@ -1521,24 +1530,33 @@ export struct PreferencesPage {
     return this.groups.indexOf(group);
   }
 
+  private createTitleMenuItem(icon: ResourceStr, label: ResourceStr,
+    action: () => void): HdsNavigationMenuItemOptions {
+    return {
+      content: {
+        icon: icon,
+        label: label,
+        action: action
+      }
+    };
+  }
+
+  private titleMenuItems(): HdsNavigationMenuItemOptions[] {
+    return [
+      this.createTitleMenuItem($r('app.media.ic_search'), '搜索',
+        () => UiFeedback.showToast({ message: '搜索功能暂未实现' }))
+    ];
+  }
+
   build() {
-    NavDestination() {
+    HdsNavDestination() {
       Column() {
-        VlcToolbar({
-          title: this.title,
-          showBack: true,
-          showSearch: true,
-          titleColor: (this.isInterfaceScreen() || this.screenKey === 'video_category') ? $r('app.color.orange500') :
-            '',
-          currentTab: '',
-          onBack: () => NavController.pop(),
-          onSearch: () => UiFeedback.showToast({ message: '搜索功能暂未实现' }),
-        })
         Scroll() {
           Column() {
             Repeat(this.groups).each((groupRepeatItem: RepeatItem<PreferenceGroup>) => {
               // 分组标题(靠左)
-              if (groupRepeatItem.item.title && (!this.isInterfaceScreen() || this.groupIndex(groupRepeatItem.item) > 0)) {
+              if (groupRepeatItem.item.title &&
+                (!this.isInterfaceScreen() || this.groupIndex(groupRepeatItem.item) > 0)) {
                 Text(groupRepeatItem.item.title)
                   .fontSize(this.isInterfaceScreen() ? 18 : 14)
                   .fontWeight(FontWeight.Medium)
@@ -1546,43 +1564,45 @@ export struct PreferencesPage {
                   .width('100%')
                   .textAlign(TextAlign.Start)
                   .padding({
-                    left: 16,
-                    right: 16,
-                    top: this.isInterfaceScreen() ? 26 : 16,
-                    bottom: this.isInterfaceScreen() ? 12 : 8,
+                    left: 24,
+                    right: 24,
+                    top: 24,
+                    bottom: 8,
                   })
               }
-              Repeat(groupRepeatItem.item.items).each((itemRepeatItem: RepeatItem<PreferenceItem>) => {
-                if (itemRepeatItem.item.key === 'persistent_incognito') {
-                  this.persistentIncognitoRow(itemRepeatItem.item)
-                } else {
-                  PreferenceRow({
-                    item: itemRepeatItem.item,
-                    dependencyEnabled: this.dependencyEnabledFor(itemRepeatItem.item),
-                    showTrailingIndicator: !this.isInterfaceScreen(),
-                    verticalPadding: this.isInterfaceScreen() ? 18 : 14,
-                    showDivider: this.shouldShowDivider(itemRepeatItem.item),
-                    onNav: (it: PreferenceItem) => this.onNav(it),
-                    onListSelect: (it: PreferenceItem) => this.onListSelect(it),
-                    onNumberPicker: (it: PreferenceItem) => this.onNumberPicker(it),
-                    onMultiselect: (it: PreferenceItem) => this.onMultiselect(it),
-                    onTextEdit: (it: PreferenceItem) => this.onTextEdit(it),
-                    onColorPick: (it: PreferenceItem) => this.onColorPick(it),
-                    onToggleChange: (it: PreferenceItem, newVal: boolean) => this.onToggleChange(it, newVal),
-                  })
-                }
-              }).key((item: PreferenceItem) => `${item.key}-${this.rowVersion}-${this.dependencyEnabledFor(item)}`)
-              if (this.isInterfaceScreen() && this.groupIndex(groupRepeatItem.item) < this.groups.length - 1) {
-                Divider()
-                  .color($r('app.color.divider'))
-                  .strokeWidth(1)
+              Column() {
+                Repeat(groupRepeatItem.item.items).each((itemRepeatItem: RepeatItem<PreferenceItem>) => {
+                  if (itemRepeatItem.item.key === 'persistent_incognito') {
+                    this.persistentIncognitoRow(itemRepeatItem.item)
+                  } else {
+                    PreferenceRow({
+                      item: itemRepeatItem.item,
+                      dependencyEnabled: this.dependencyEnabledFor(itemRepeatItem.item),
+                      showTrailingIndicator: !this.isInterfaceScreen(),
+                      verticalPadding: this.isInterfaceScreen() ? 16 : 14,
+                      showDivider: itemRepeatItem.index < groupRepeatItem.item.items.length - 1,
+                      onNav: (it: PreferenceItem) => this.onNav(it),
+                      onListSelect: (it: PreferenceItem) => this.onListSelect(it),
+                      onNumberPicker: (it: PreferenceItem) => this.onNumberPicker(it),
+                      onMultiselect: (it: PreferenceItem) => this.onMultiselect(it),
+                      onTextEdit: (it: PreferenceItem) => this.onTextEdit(it),
+                      onColorPick: (it: PreferenceItem) => this.onColorPick(it),
+                      onToggleChange: (it: PreferenceItem, newVal: boolean) => this.onToggleChange(it, newVal),
+                    })
+                  }
+                }).key((item: PreferenceItem) => `${item.key}-${this.rowVersion}-${this.dependencyEnabledFor(item)}`)
               }
-            }).key((group: PreferenceGroup, idx: number) => `${idx}`)
+              .borderRadius(20)
+              .backgroundColor($r('app.color.card_background'))
+              .clip(true)
+              .margin({ left: 12, right: 12, bottom: 16 })
+            }).key((_group: PreferenceGroup, idx: number) => `${idx}`)
           }
           .width('100%')
           .alignItems(HorizontalAlign.Start)
           .padding({ bottom: 24 })
         }
+        .clip(false)
         .width('100%')
         .layoutWeight(1)
         .scrollBar(BarState.Off)
@@ -1607,7 +1627,82 @@ export struct PreferencesPage {
         },
       })
     }
-    .hideTitleBar(true)
+    .titleBar({
+      avoidLayoutSafeArea: true,
+      enableComponentSafeArea: true,
+      padding: {
+        start: LengthMetrics.vp(5),
+        end: LengthMetrics.vp(5)
+      },
+      style: {
+        scrollEffectOpts: {
+          enableScrollEffect: true,
+          scrollEffectType: ScrollEffectType.GRADIENT_BLUR,
+          blurEffectiveStartOffset: LengthMetrics.vp(0),
+          blurEffectiveEndOffset: LengthMetrics.vp(20)
+        },
+        systemMaterialEffect: {
+          materialType: hdsMaterial.MaterialType.ADAPTIVE,
+          materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+        },
+        originalStyle: {
+          backgroundStyle: {
+            backgroundColor: $r('sys.color.ohos_id_color_background')
+          },
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('sys.color.font_primary'),
+              subTitleColor: $r('sys.color.font_secondary')
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
+          }
+        },
+        scrollEffectStyle: {
+          backgroundStyle: {
+            backgroundColor: $r('sys.color.ohos_id_color_background_transparent')
+          },
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('sys.color.font_primary'),
+              subTitleColor: $r('sys.color.font_secondary')
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
+          }
+        }
+      },
+      content: {
+        title: {
+          mainTitle: this.title
+        },
+        backIcon: {
+          icon: $r('app.media.ic_arrow_back'),
+          label: '返回',
+          action: () => NavController.pop()
+        },
+        menu: {
+          value: this.titleMenuItems(),
+          maxCount: 3
+        },
+        divider: {
+          showType: DividerShowType.AUTO
+        }
+      }
+    })
+    .titleMode(HdsNavDestinationTitleMode.MINI)
     .bindSheet(this.sleepSheetOpen, this.sleepTimerSheet(), {
       height: SheetSize.FIT_CONTENT,
       dragBar: true,
@@ -1793,19 +1888,23 @@ export struct PreferencesPage {
   openPreferenceDialog(kind: string): void {
     this.dialogKind = kind;
     try {
-      this.getUIContext().getPromptAction().openCustomDialog({
-        builder: () => {
-          this.preferenceCustomDialog();
-        },
-        alignment: kind === 'sleep' ? DialogAlignment.Bottom : DialogAlignment.Center,
-        autoCancel: true,
-        maskColor: $r('app.color.dialog_mask'),
-        backgroundColor: Color.Transparent,
-      }).then((dialogId: number) => {
-        this.preferenceDialogId = dialogId;
-      }).catch(() => {
-        this.preferenceDialogId = -1;
-      });
+      this.getUIContext()
+        .getPromptAction()
+        .openCustomDialog({
+          builder: () => {
+            this.preferenceCustomDialog();
+          },
+          alignment: kind === 'sleep' ? DialogAlignment.Bottom : DialogAlignment.Center,
+          autoCancel: true,
+          maskColor: $r('app.color.dialog_mask'),
+          backgroundColor: Color.Transparent,
+        })
+        .then((dialogId: number) => {
+          this.preferenceDialogId = dialogId;
+        })
+        .catch(() => {
+          this.preferenceDialogId = -1;
+        });
     } catch (error) {
       this.preferenceDialogId = -1;
     }

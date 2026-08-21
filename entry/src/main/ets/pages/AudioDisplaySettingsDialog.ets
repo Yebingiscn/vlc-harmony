@@ -230,6 +230,7 @@ export struct AudioDisplaySettingsDialog {
       .width('100%')
       .alignItems(HorizontalAlign.Start)
     }
+    .clip(false)
     .width('100%')
     .layoutWeight(1)
     .scrollBar(BarState.Auto)

@@ -113,6 +113,7 @@ interface StoredPlaylist {
 
 @ComponentV2
 export struct PlaylistsPage {
+  @Param contentScroller: Scroller = new Scroller();
   @Local vm: PlaylistsVM = new PlaylistsVM();
   @Local refreshing: boolean = false;
   /** 统一半模态状态:一个组件只能有一个 bindSheet。 */
@@ -257,7 +258,7 @@ export struct PlaylistsPage {
                   .type(ButtonType.Normal)
                   .borderRadius(4)
                   .backgroundColor('#FF8800')
-                  .fontColor($r('app.color.list_title'))
+                  .fontColor($r('app.color.colorOnPrimary'))
                   .fontSize(14)
                   .margin({ top: 16 })
                   .onClick(() => {
@@ -267,7 +268,7 @@ export struct PlaylistsPage {
               .width('100%').height('100%').justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
             }
           } else {
-            Grid() {
+            Grid(this.contentScroller) {
               Repeat(this.vm.playlists).each((cardRepeatItem: RepeatItem<PlaylistCard>) => {
                 GridItem() {
                   Column() {
@@ -361,9 +362,9 @@ export struct PlaylistsPage {
     Row() {
       Button($r('app.string.search_global'))
         .type(ButtonType.Normal)
-        .borderRadius(4)
         .backgroundColor($r('app.color.background_default'))
         .fontColor('#FF8800')
+        .borderRadius(4)
         .border({ width: 1, color: $r('app.color.card_border') })
         .fontSize(14)
         .padding({
@@ -374,6 +375,7 @@ export struct PlaylistsPage {
         })
         .onClick(() => this.onSearchGlobal())
     }
+    .borderRadius(4)
     .width('100%')
     .justifyContent(FlexAlign.Center)
     .padding({ top: 8, bottom: 8 })

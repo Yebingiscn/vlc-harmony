@@ -107,6 +107,7 @@ export struct EqualizerDialog {
         }
         .padding({ left: 12, right: 12 })
       }
+      .clip(false)
       .scrollable(ScrollDirection.Horizontal)
       .scrollBar(BarState.Off)
       .width('100%')

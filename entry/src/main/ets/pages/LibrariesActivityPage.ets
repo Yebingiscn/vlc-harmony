@@ -4,6 +4,14 @@ import { LibEntry, LicenseInfo, RawData } from '../common/data/RawData';
 import { OpenLink } from '../common/data/OpenLink';
 import { AppColors, AppDimens } from '../common/constants/AppConstants';
 import { LicenseDialog } from './LicenseDialog';
+import { LengthMetrics } from '@kit.ArkUI';
+import {
+  DividerShowType,
+  hdsMaterial,
+  HdsNavDestination,
+  HdsNavDestinationTitleMode,
+  ScrollEffectType
+} from '@kit.UIDesignKit';
 
 /** 库许可条目(LibraryWithLicense data class)。 */
 export class LibraryWithLicense {
@@ -158,35 +166,8 @@ export struct LibrariesActivityPage {
   }
 
   build() {
-    NavDestination() {
+    HdsNavDestination() {
       Column() {
-        // AppBar:height 56vp,background_actionbar=#FFFFFF,elevation=0
-        Row() {
-          Image($r('app.media.ic_close_up'))
-            .width(24)
-            .height(24)
-            .fillColor(AppColors.orange800)
-            .margin({ left: AppDimens.default_margin })
-            .onClick(() => NavController.pop())
-          Image($r('app.media.ic_incognito'))
-            .width(32)
-            .height(32)
-            .objectFit(ImageFit.Contain)
-          Text('VLC')
-            .fontSize(20)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(AppColors.grey700)
-            .margin({ left: AppDimens.kl_normal, right: AppDimens.kl_normal })
-          Text('Libraries')
-            .fontSize(20)
-            .fontColor(AppColors.orange800)
-            .margin({ left: AppDimens.default_margin })
-        }
-        .width('100%')
-        .height(56)
-        .backgroundColor(AppColors.white)
-        .alignItems(VerticalAlign.Center)
-
         // 库许可列表(纵向滚动,layoutWeight1,paddingBottom 48vp)
         Column() {
           List() {
@@ -200,21 +181,91 @@ export struct LibrariesActivityPage {
           .height('100%')
           .padding({ bottom: 48 })
           .scrollBar(BarState.Auto)
-          .backgroundColor(AppColors.white)
         }
         .width('100%')
         .layoutWeight(1)
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(AppColors.white)
+      .backgroundColor($r('app.color.background_default'))
       .bindSheet($$this.vm.dialogVisible, this.LicenseSheet(), {
         height: SheetSize.LARGE,
         dragBar: true,
-        backgroundColor: AppColors.white,
+        backgroundColor: $r('app.color.background_default'),
       })
     }
-    .hideTitleBar(true)
+    .titleBar({
+      avoidLayoutSafeArea: true,
+      enableComponentSafeArea: true,
+      padding: {
+        start: LengthMetrics.vp(5),
+        end: LengthMetrics.vp(5)
+      },
+      style: {
+        scrollEffectOpts: {
+          enableScrollEffect: true,
+          scrollEffectType: ScrollEffectType.GRADIENT_BLUR,
+          blurEffectiveStartOffset: LengthMetrics.vp(0),
+          blurEffectiveEndOffset: LengthMetrics.vp(20)
+        },
+        systemMaterialEffect: {
+          materialType: hdsMaterial.MaterialType.ADAPTIVE,
+          materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+        },
+        originalStyle: {
+          backgroundStyle: {
+            backgroundColor: $r('sys.color.ohos_id_color_background')
+          },
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('sys.color.font_primary'),
+              subTitleColor: $r('sys.color.font_secondary')
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
+          }
+        },
+        scrollEffectStyle: {
+          backgroundStyle: {
+            backgroundColor: $r('sys.color.ohos_id_color_background_transparent')
+          },
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('sys.color.font_primary'),
+              subTitleColor: $r('sys.color.font_secondary')
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
+          }
+        }
+      },
+      content: {
+        title: {
+          mainTitle: 'Libraries'
+        },
+        backIcon: {
+          icon: $r('app.media.ic_arrow_back'),
+          label: '返回',
+          action: () => NavController.pop()
+        },
+        divider: {
+          showType: DividerShowType.AUTO
+        }
+      }
+    })
+    .titleMode(HdsNavDestinationTitleMode.MINI)
     .onBackPressed(() => {
       NavController.pop();
       return true;

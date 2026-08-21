@@ -1,4 +1,5 @@
-import { VlcToolbar } from '../common/components/VlcToolbar';
+import { HdsNavDestination, HdsNavDestinationTitleMode, DividerShowType, ScrollEffectType, hdsMaterial } from '@kit.UIDesignKit';
+import { LengthMetrics } from '@kit.ArkUI';
 import { NavController } from '../common/data/NavController';
 import { FileBrowserParam, formatDuration, SecondaryParam, Track } from '../common/models/MediaModels';
 import { MediaLibrary } from '../common/data/MediaLibrary';
@@ -99,13 +100,8 @@ export struct SecondaryPage {
   }
 
   build() {
-    NavDestination() {
+    HdsNavDestination() {
       Column() {
-        VlcToolbar({
-          title: this.title.length > 0 ? this.title : this.resolveTitle(),
-          showBack: true,
-          onBack: () => NavController.pop()
-        })
         // 内容区:按 fragment 派发。
         Column() {
           if (this.param.fragment === 'ABOUT') {
@@ -139,7 +135,78 @@ export struct SecondaryPage {
       .height('100%')
       .backgroundColor($r('app.color.background_default'))
     }
-    .hideTitleBar(true)
+    .titleBar({
+      avoidLayoutSafeArea: true,
+      enableComponentSafeArea: true,
+      padding: {
+        start: LengthMetrics.vp(5),
+        end: LengthMetrics.vp(5)
+      },
+      style: {
+        scrollEffectOpts: {
+          enableScrollEffect: true,
+          scrollEffectType: ScrollEffectType.GRADIENT_BLUR,
+          blurEffectiveStartOffset: LengthMetrics.vp(0),
+          blurEffectiveEndOffset: LengthMetrics.vp(20)
+        },
+        systemMaterialEffect: {
+          materialType: hdsMaterial.MaterialType.ADAPTIVE,
+          materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+        },
+        originalStyle: {
+          backgroundStyle: {
+            backgroundColor: $r('sys.color.ohos_id_color_background')
+          },
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('sys.color.font_primary'),
+              subTitleColor: $r('sys.color.font_secondary')
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
+          }
+        },
+        scrollEffectStyle: {
+          backgroundStyle: {
+            backgroundColor: $r('sys.color.ohos_id_color_background_transparent')
+          },
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('sys.color.font_primary'),
+              subTitleColor: $r('sys.color.font_secondary')
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
+          }
+        }
+      },
+      content: {
+        title: {
+          mainTitle: this.title.length > 0 ? this.title : this.resolveTitle()
+        },
+        backIcon: {
+          icon: $r('app.media.ic_arrow_back'),
+          label: '返回',
+          action: () => NavController.pop()
+        },
+        divider: {
+          showType: DividerShowType.AUTO
+        }
+      }
+    })
+    .titleMode(HdsNavDestinationTitleMode.MINI)
     .onBackPressed(() => {
       NavController.pop();
       return true;
@@ -198,6 +265,7 @@ export struct SecondaryPage {
       .width('100%')
       .alignItems(HorizontalAlign.Center)
     }
+    .clip(false)
     .width('100%')
     .layoutWeight(1)
   }

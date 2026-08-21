@@ -1,10 +1,17 @@
 import { UiFeedback } from '../common/utils/UiFeedback';
-import { VlcToolbar } from '../common/components/VlcToolbar';
 import { NavController } from '../common/data/NavController';
 import { AppContext } from '../common/data/AppContext';
 import { AppColors, AppDimens } from '../common/constants/AppConstants';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
+import { LengthMetrics } from '@kit.ArkUI';
+import {
+  DividerShowType,
+  hdsMaterial,
+  HdsNavDestination,
+  HdsNavDestinationTitleMode,
+  ScrollEffectType
+} from '@kit.UIDesignKit';
 
 /**
  * DebugLogActivityPage —— 调试日志采集页(DebugLogActivity)。
@@ -97,11 +104,8 @@ export struct DebugLogActivityPage {
   }
 
   build() {
-    NavDestination() {
+    HdsNavDestination() {
       Column() {
-        // 顶部标题栏
-        VlcToolbar({ title: $r('app.string.debug_logs'), showBack: true, onBack: () => NavController.pop() })
-
         // 主体(padding 16vp)
         Column() {
           // 第 1 行:start_log / clear_log
@@ -138,13 +142,83 @@ export struct DebugLogActivityPage {
         .width('100%')
         .layoutWeight(1)
         .padding(AppDimens.kl_normal)
-        .backgroundColor(AppColors.white)
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(AppColors.white)
+      .backgroundColor($r('app.color.background_default'))
     }
-    .hideTitleBar(true)
+    .titleBar({
+      avoidLayoutSafeArea: true,
+      enableComponentSafeArea: true,
+      padding: {
+        start: LengthMetrics.vp(5),
+        end: LengthMetrics.vp(5)
+      },
+      style: {
+        scrollEffectOpts: {
+          enableScrollEffect: true,
+          scrollEffectType: ScrollEffectType.GRADIENT_BLUR,
+          blurEffectiveStartOffset: LengthMetrics.vp(0),
+          blurEffectiveEndOffset: LengthMetrics.vp(20)
+        },
+        systemMaterialEffect: {
+          materialType: hdsMaterial.MaterialType.ADAPTIVE,
+          materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+        },
+        originalStyle: {
+          backgroundStyle: {
+            backgroundColor: $r('sys.color.ohos_id_color_background')
+          },
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('sys.color.font_primary'),
+              subTitleColor: $r('sys.color.font_secondary')
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
+          }
+        },
+        scrollEffectStyle: {
+          backgroundStyle: {
+            backgroundColor: $r('sys.color.ohos_id_color_background_transparent')
+          },
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('sys.color.font_primary'),
+              subTitleColor: $r('sys.color.font_secondary')
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
+          }
+        }
+      },
+      content: {
+        title: {
+          mainTitle: $r('app.string.debug_logs')
+        },
+        backIcon: {
+          icon: $r('app.media.ic_arrow_back'),
+          label: '返回',
+          action: () => NavController.pop()
+        },
+        divider: {
+          showType: DividerShowType.AUTO
+        }
+      }
+    })
+    .titleMode(HdsNavDestinationTitleMode.MINI)
     .onBackPressed(() => {
       // TODO(契约,infra): client.release() 释放服务绑定。
       NavController.pop();

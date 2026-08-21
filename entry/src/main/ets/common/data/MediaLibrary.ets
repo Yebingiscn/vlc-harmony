@@ -102,6 +102,7 @@ export class MediaLibrary {
   private static scanned: boolean = false;
   private static scanning: boolean = false;
   private static scanPromise: Promise<void> | null = null;
+  private static libLock: Promise<void> = Promise.resolve();
   private static readonly KEY_STORAGE_FILES = 'browser_storage_files';
   private static storageItems: SheetItem[] = [];
   private static readonly KEY_FAVORITES: string = 'browser_favorites';
@@ -122,6 +123,16 @@ export class MediaLibrary {
 
   static hasScanned(): boolean {
     return MediaLibrary.scanned;
+  }
+
+  /** 串行化 import/scan,避免 async 竞态导致 videos 被清空丢失。 */
+  private static async acquireLock(): Promise<() => void> {
+    const prev = MediaLibrary.libLock;
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r: () => void): void => { release = r; });
+    MediaLibrary.libLock = prev.then(() => gate);
+    await prev;
+    return release;
   }
 
   /** 触发媒体库扫描(对应 Medialibrary.getInstance().startTimer/scan)。 */
@@ -175,7 +186,9 @@ export class MediaLibrary {
   }
 
   /** 将 DocumentViewPicker 选中的音频按 URI 引用加入媒体库，不复制媒体文件。 */
-  static async importAudioUris(uris: string[]): Promise<void> {
+  static async importAudioUris(uris: string[], onProgress?: (current: number, total: number) => void): Promise<void> {
+    const release = await MediaLibrary.acquireLock();
+    try {
     if (uris.length === 0) {
       return;
     }
@@ -190,6 +203,7 @@ export class MediaLibrary {
     const startIndex = MediaLibrary.audios.length;
     let addedCount = 0;
     for (let i = 0; i < newByUri.length; i++) {
+      onProgress?.(i, newByUri.length);
       const pickerUri = newByUri[i];
       HILog(`importAudioUris[${i}]: ${pickerUri}`);
       if (!(await DocumentPermission.persist(pickerUri))) {
@@ -216,16 +230,21 @@ export class MediaLibrary {
       MediaLibrary.deriveFromMeta();
       await MediaLibrary.saveAudioLibrary();
     }
+    onProgress?.(newByUri.length, newByUri.length);
     HILog(`importAudioUris done, added ${addedCount}, total audios: ${MediaLibrary.audios.length}`);
+    } finally { release(); }
   }
 
   /** 将 DocumentViewPicker 选中的视频按 URI 引用加入媒体库，不复制媒体文件。 */
-  static async importVideoUris(uris: string[]): Promise<void> {
+  static async importVideoUris(uris: string[], onProgress?: (current: number, total: number) => void): Promise<void> {
+    const release = await MediaLibrary.acquireLock();
+    try {
     const uniqueUris = Array.from(new Set(uris));
     const existingUris = new Set(MediaLibrary.videos.map((v: MediaWrapper) => v.uri));
     const loadThumbnails: boolean = await Settings.getBoolean(Settings.SHOW_VIDEO_THUMBNAILS, true);
     let addedCount = 0;
     for (let i = 0; i < uniqueUris.length; i++) {
+      onProgress?.(i, uniqueUris.length);
       const uri = uniqueUris[i];
       if (uri.length === 0 || existingUris.has(uri)) {
         continue;
@@ -266,7 +285,9 @@ export class MediaLibrary {
     if (addedCount > 0) {
       await MediaLibrary.saveVideoLibrary();
     }
+    onProgress?.(uniqueUris.length, uniqueUris.length);
     HILog(`importVideoUris done, added ${addedCount}, total videos: ${MediaLibrary.videos.length}`);
+    } finally { release(); }
   }
 
   /** 从给定的视频列表派生文件夹分组(供 VideoGridPage 按文件夹分组展示)。 */
@@ -325,6 +346,7 @@ export class MediaLibrary {
 
   /** 仅扫描视频(浏览页使用,不触发慢速音频扫描)。 */
   static async scanVideosOnly(): Promise<void> {
+    const release = await MediaLibrary.acquireLock();
     MediaLibrary.scanning = true;
     try {
       MediaLibrary.videos = [];
@@ -332,6 +354,7 @@ export class MediaLibrary {
       MediaLibrary.scanned = true;
     } finally {
       MediaLibrary.scanning = false;
+      release();
     }
   }
 
@@ -740,6 +763,7 @@ export class MediaLibrary {
   }
 
   private static async doScan(): Promise<void> {
+    const release = await MediaLibrary.acquireLock();
     MediaLibrary.scanning = true;
     try {
       HILog('load imported media start');
@@ -754,6 +778,7 @@ export class MediaLibrary {
       HILog(`scan error: ${(e as Error).message ?? String(e)}`);
     } finally {
       MediaLibrary.scanning = false;
+      release();
     }
   }
 
@@ -1328,9 +1353,29 @@ export class MediaLibrary {
   /** 由文件路径推导显示名(去扩展名)。 */
   private static fileNameTitle(filePath: string): string {
     const lastSlash = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
-    const name = lastSlash >= 0 ? filePath.slice(lastSlash + 1) : filePath;
+    let name = lastSlash >= 0 ? filePath.slice(lastSlash + 1) : filePath;
+    const suffixStart = name.search(/[?#]/);
+    if (suffixStart >= 0) {
+      name = name.slice(0, suffixStart);
+    }
+    name = MediaLibrary.decodeUriText(name);
     const dot = name.lastIndexOf('.');
     return dot > 0 ? name.slice(0, dot) : name;
+  }
+
+  /**
+   * 文件选择器 URI 的路径段使用 UTF-8 百分号编码；显示前安全解码。
+   * 非法或不完整的百分号序列保持原文，避免单个异常文件中断整批导入。
+   */
+  private static decodeUriText(value: string): string {
+    if (!/%[0-9a-fA-F]{2}/.test(value)) {
+      return value;
+    }
+    try {
+      return decodeURIComponent(value);
+    } catch (e) {
+      return value;
+    }
   }
 
   /** 简单哈希(用于缓存文件名)。 */
@@ -1434,14 +1479,23 @@ export class MediaLibrary {
         return;
       }
       const loadThumbnails: boolean = await Settings.getBoolean(Settings.SHOW_VIDEO_THUMBNAILS, true);
-      let thumbnailsChanged: boolean = false;
+      let persistedDataChanged: boolean = false;
       const existing = new Set(MediaLibrary.videos.map((video: MediaWrapper) => video.uri));
       for (const item of items) {
         if (item.uri.length === 0 || existing.has(item.uri) || !(await DocumentPermission.activate(item.uri))) {
           continue;
         }
-        const video = new MediaWrapper(MediaLibrary.videos.length, item.title, item.uri, 0);
-        video.displayName = item.displayName;
+        const storedTitle: string = item.title ?? '';
+        const storedDisplayName: string = item.displayName ?? '';
+        const fileNameTitle: string = MediaLibrary.fileNameTitle(item.uri);
+        const title: string = storedTitle.length > 0 ? MediaLibrary.decodeUriText(storedTitle) : fileNameTitle;
+        const displayName: string = storedDisplayName.length > 0
+          ? MediaLibrary.decodeUriText(storedDisplayName) : fileNameTitle;
+        if (title !== storedTitle || displayName !== storedDisplayName) {
+          persistedDataChanged = true;
+        }
+        const video = new MediaWrapper(MediaLibrary.videos.length, title, item.uri, 0);
+        video.displayName = displayName;
         video.filePath = item.filePath;
         video.length = item.length;
         video.width = item.width;
@@ -1454,12 +1508,12 @@ export class MediaLibrary {
           const meta: AudioMeta = await MediaLibrary.parseFileMeta(item.uri);
           if (MediaLibrary.artworkExists(meta.artworkPath)) {
             video.artworkUrl = meta.artworkPath;
-            thumbnailsChanged = true;
+            persistedDataChanged = true;
           } else {
             const thumbnail: string = await MediaLibrary.createVideoThumbnail(item.uri);
             if (thumbnail.length > 0) {
               video.artworkUrl = thumbnail;
-              thumbnailsChanged = true;
+              persistedDataChanged = true;
             }
           }
         }
@@ -1468,7 +1522,7 @@ export class MediaLibrary {
         MediaLibrary.videos.push(video);
         existing.add(item.uri);
       }
-      if (thumbnailsChanged) {
+      if (persistedDataChanged) {
         await MediaLibrary.saveVideoLibrary();
       }
     } catch (e) {
@@ -1513,11 +1567,18 @@ export class MediaLibrary {
       }
       const existing = new Set(MediaLibrary.audios.map((t: Track) => t.uri));
       let added = 0;
+      let persistedDataChanged: boolean = false;
       for (const item of arr) {
         if (item.uri.length === 0 || existing.has(item.uri) || !(await DocumentPermission.activate(item.uri))) {
           continue;
         }
-        const t = new Track(MediaLibrary.audios.length, item.title, item.uri);
+        const storedTitle: string = item.title ?? '';
+        const fileNameTitle: string = MediaLibrary.fileNameTitle(item.uri);
+        const title: string = storedTitle.length > 0 ? MediaLibrary.decodeUriText(storedTitle) : fileNameTitle;
+        if (title !== storedTitle) {
+          persistedDataChanged = true;
+        }
+        const t = new Track(MediaLibrary.audios.length, title, item.uri);
         t.artistName = item.artistName;
         t.albumName = item.albumName;
         t.genre = item.genre;
@@ -1525,7 +1586,7 @@ export class MediaLibrary {
         t.year = item.year;
         t.length = item.length;
         t.artworkPath = item.artworkPath ?? '';
-        t.displayName = item.title;
+        t.displayName = title;
         t.filePath = item.uri;
         MediaLibrary.audios.push(t);
         added++;
@@ -1533,6 +1594,9 @@ export class MediaLibrary {
       if (added > 0) {
         MediaLibrary.deriveFromMeta();
         HILog(`loaded ${added} persisted tracks`);
+      }
+      if (persistedDataChanged) {
+        await MediaLibrary.saveAudioLibrary();
       }
     } catch (e) {
       HILog(`loadAudioLibrary error: ${(e as Error).message ?? String(e)}`);

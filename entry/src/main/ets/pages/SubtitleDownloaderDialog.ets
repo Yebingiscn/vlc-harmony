@@ -194,6 +194,7 @@ export struct SubtitleDownloaderDialog {
         }
         .width('100%').alignItems(HorizontalAlign.Start)
       }
+      .clip(false)
       .layoutWeight(1).width('100%').scrollBar(BarState.Auto)
     }
     .width('100%').height('100%')

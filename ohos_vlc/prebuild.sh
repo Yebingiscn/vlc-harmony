@@ -21,6 +21,7 @@ LYCIUM_TOOLS_URL=https://gitcode.com/openharmony-sig/tpc_c_cplusplus.git
 LYCIUM_ROOT_DIR=$ROOT_DIR/tpc_c_cplusplus
 LYCIUM_TOOLS_DIR=$LYCIUM_ROOT_DIR/lycium
 LYCIUM_THIRDPARTY_DIR=$LYCIUM_ROOT_DIR/thirdparty
+LYCIUM_COMMUNITY_DIR=$LYCIUM_ROOT_DIR/community
 
 function prepare_lycium_tools()
 {
@@ -142,11 +143,20 @@ function install_vlc_patches()
     cp -f "$ROOT_DIR/patches/0003-vcd-mode1-2048-iso.patch" "$vlc_recipe_dir/"
     cp -f "$ROOT_DIR/patches/0004-bluray-seek-fix.patch" "$vlc_recipe_dir/"
     cp -f "$ROOT_DIR/patches/0005-vcd-iso9660-no-cue.patch" "$vlc_recipe_dir/"
-    patch -d "$vlc_recipe_dir" -p0 < "$ROOT_DIR/patches/vlc-hpkbuild-apply-local-patches.patch"
+    cp -f "$ROOT_DIR/patches/0007-vlc-ohos-surface-clocked-present.patch" "$vlc_recipe_dir/"
+    patch -d "$vlc_recipe_dir" -p1 < "$ROOT_DIR/patches/vlc-hpkbuild-apply-local-patches.patch"
     if [ $? -ne 0 ]; then
         return 1
     fi
     patch -d "$vlc_recipe_dir" -p0 < "$ROOT_DIR/patches/vlc-hpkbuild-build-dvbpsi.patch"
+    return $?
+}
+
+function install_ffmpeg_patches()
+{
+    local ffmpeg_recipe_dir=$LYCIUM_COMMUNITY_DIR/FFmpeg-surface-dev
+    cp -f "$ROOT_DIR/patches/0006-ohosavcodec-seek-safety-and-input-pacing.patch" "$ffmpeg_recipe_dir/"
+    patch -d "$ffmpeg_recipe_dir" -p1 < "$ROOT_DIR/patches/ffmpeg-hpkbuild-apply-local-patches.patch"
     return $?
 }
 
@@ -155,8 +165,8 @@ function install_depends()
     mkdir -p $ROOT_DIR/library/libs/arm64-v8a/
     local install_dir=$ROOT_DIR/library/libs/arm64-v8a/
     cp -arf $LYCIUM_TOOLS_DIR/usr/vlc/arm64-v8a/lib/vlc "$install_dir"
-    cp -f $LYCIUM_TOOLS_DIR/usr/vlc/arm64-v8a/lib/libvlc.so.5 "$install_dir"
-    cp -f $LYCIUM_TOOLS_DIR/usr/vlc/arm64-v8a/lib/libvlccore.so.9 "$install_dir"
+    cp -fL $LYCIUM_TOOLS_DIR/usr/vlc/arm64-v8a/lib/libvlc.so.5 "$install_dir/libvlc.so.5"
+    cp -fL $LYCIUM_TOOLS_DIR/usr/vlc/arm64-v8a/lib/libvlccore.so.9 "$install_dir/libvlccore.so.9"
     cp -f $LYCIUM_TOOLS_DIR/usr/a52dec/arm64-v8a/lib/liba52.so.0 "$install_dir"
     cp -f $LYCIUM_TOOLS_DIR/usr/aribb24/arm64-v8a/lib/libaribb24.so.0 "$install_dir"
     cp -f $LYCIUM_TOOLS_DIR/usr/FFmpeg/arm64-v8a/lib/libavcodec.so.60 "$install_dir"
@@ -197,6 +207,13 @@ function prebuild()
         return 1
     fi
 
+    install_ffmpeg_patches
+    if [ $? -ne 0 ]
+    then
+        echo "ERROR: install ffmpeg patches failed!!!"
+        return 1
+    fi
+
     install_vlc_patches
     if [ $? -ne 0 ]
     then
@@ -216,6 +233,16 @@ function prebuild()
     then
         echo "ERROR: install depends failed!!!"
         return 1
+    fi
+
+    if [ -f "$ROOT_DIR/../sync_native_libs.sh" ]
+    then
+        bash "$ROOT_DIR/../sync_native_libs.sh"
+        if [ $? -ne 0 ]
+        then
+            echo "ERROR: sync native libs failed!!!"
+            return 1
+        fi
     fi
     echo "prebuild success!!"
     return 0

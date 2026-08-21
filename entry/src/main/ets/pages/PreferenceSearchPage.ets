@@ -2,6 +2,8 @@ import { PreferenceScreen, PreferenceSearchEntry } from '../common/models/Prefer
 import { NavController } from '../common/data/NavController';
 import { PreferencesPage } from './PreferencesPage';
 import { PreferencesScreenParam } from '../common/models/MediaModels';
+import { HdsNavDestination, HdsNavDestinationTitleMode, DividerShowType, ScrollEffectType, hdsMaterial } from '@kit.UIDesignKit';
+import { LengthMetrics } from '@kit.ArkUI';
 
 /**
  * PreferenceSearchPage —— 偏好搜索页(@ComponentV2 NavDestination)。
@@ -72,23 +74,18 @@ export struct PreferenceSearchPage {
   }
 
   build() {
-    NavDestination() {
+    HdsNavDestination() {
       Column() {
-        // 顶部搜索栏:close + TextInput + (translate 按英语环境隐藏)
+        // 搜索栏
         Row() {
-          Image($r('app.media.ic_close_small'))
-            .width(24)
-            .height(24)
-            .fillColor('#9E9E9E')
-            .margin({ left: 8 })
-            .onClick(() => NavController.pop())
           TextInput({ text: this.query, placeholder: $r('app.string.search_prefs') })
             .layoutWeight(1)
             .height(48)
-            .margin({ left: 8, right: 8 })
+            .margin({ left: 12, right: 12 })
             .fontSize(16)
-            .fontColor('#E0E0E0')
-            .backgroundColor(Color.Transparent)
+            .fontColor($r('app.color.list_title'))
+            .backgroundColor($r('app.color.card_background'))
+            .borderRadius(24)
             .onChange((v: string) => {
               this.query = v;
               this.applyFilter();
@@ -98,7 +95,7 @@ export struct PreferenceSearchPage {
         .alignItems(VerticalAlign.Center)
         .padding({ top: 8, bottom: 4 })
 
-        Divider().color('#424242').strokeWidth(1).margin({ top: 4 })
+        Divider().color($r('app.color.divider')).strokeWidth(1).margin({ top: 4 })
         // 结果列表
         List() {
           Repeat(this.results).each((entryRepeatItem: RepeatItem<PreferenceSearchEntry>) => {
@@ -106,14 +103,14 @@ export struct PreferenceSearchPage {
               Column() {
                 Text(this.highlightText(entryRepeatItem.item.title))
                   .fontSize(16)
-                  .fontColor('#E0E0E0')
+                  .fontColor($r('app.color.list_title'))
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
                   .margin({ left: 72, top: 8, right: 8 })
                 if (entryRepeatItem.item.summary !== '') {
                   Text(this.highlightText(entryRepeatItem.item.summary))
                     .fontSize(13)
-                    .fontColor('#9E9E9E')
+                    .fontColor($r('app.color.font_light'))
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                     .margin({ left: 72, right: 8 })
@@ -137,7 +134,79 @@ export struct PreferenceSearchPage {
       .height('100%')
       .backgroundColor($r('app.color.background_default'))
     }
-    .hideTitleBar(true)
+    .titleBar({
+      avoidLayoutSafeArea: true,
+      enableComponentSafeArea: true,
+      padding: {
+        start: LengthMetrics.vp(5),
+        end: LengthMetrics.vp(5)
+      },
+      style: {
+        scrollEffectOpts: {
+          enableScrollEffect: true,
+          scrollEffectType: ScrollEffectType.GRADIENT_BLUR,
+          blurEffectiveStartOffset: LengthMetrics.vp(0),
+          blurEffectiveEndOffset: LengthMetrics.vp(20)
+        },
+        systemMaterialEffect: {
+          materialType: hdsMaterial.MaterialType.ADAPTIVE,
+          materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+        },
+        originalStyle: {
+          backgroundStyle: {
+            backgroundColor: $r('sys.color.ohos_id_color_background')
+          },
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('sys.color.font_primary'),
+              subTitleColor: $r('sys.color.font_secondary')
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
+          }
+        },
+        scrollEffectStyle: {
+          backgroundStyle: {
+            backgroundColor: $r('sys.color.ohos_id_color_background_transparent')
+          },
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('sys.color.font_primary'),
+              subTitleColor: $r('sys.color.font_secondary')
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
+          }
+        }
+      },
+      content: {
+        title: {
+          mainTitle: $r('app.string.search_prefs')
+        },
+        backIcon: {
+          icon: $r('app.media.ic_arrow_back'),
+          label: '返回',
+          action: () => NavController.pop()
+        },
+        divider: {
+          showType: DividerShowType.AUTO
+        }
+      }
+    })
+    .titleMode(HdsNavDestinationTitleMode.MINI)
+    .hideTitleBar(false)
     .onBackPressed(() => {
       NavController.pop();
       return true;

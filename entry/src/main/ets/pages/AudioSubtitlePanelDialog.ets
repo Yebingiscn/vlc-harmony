@@ -281,6 +281,7 @@ export struct AudioSubtitlePanelDialog {
         }
         .width('100%').padding({ bottom: 32 }).alignItems(HorizontalAlign.Start)
       }
+      .clip(false)
       .layoutWeight(1).width('100%').scrollBar(BarState.Auto)
     }
     .width('100%').height('100%')

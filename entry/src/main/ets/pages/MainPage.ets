@@ -1,5 +1,4 @@
 import { UiFeedback } from '../common/utils/UiFeedback';
-import { VlcToolbar } from '../common/components/VlcToolbar';
 import { MiniPlayer } from '../common/components/MiniPlayer';
 import { VideoGridPage } from './VideoGridPage';
 import { AudioBrowserPage } from './AudioBrowserPage';
@@ -16,17 +15,40 @@ import { AudioDisplaySettingsDialog } from './AudioDisplaySettingsDialog';
 import { NetworkServerDialog } from './NetworkServerDialog';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
 import { VideoParam, VideoPlayItem } from './VideoPlayerPage';
-import { DividerMode, HdsTabs, HdsTabsController, hdsMaterial } from '@kit.UIDesignKit';
+import { LengthMetrics } from '@kit.ArkUI';
+import {
+  DividerMode,
+  DividerShowType,
+  hdsMaterial,
+  HdsNavDestination,
+  HdsNavDestinationTitleMode,
+  HdsNavigationMenuItemOptions,
+  HdsTabs,
+  HdsTabsController,
+  HideMode,
+  ScrollEffectType
+} from '@kit.UIDesignKit';
 
 
 /**
  * MainPage —— MainActivity(透明 5-Tab 宿主)。
- * 顶部 VlcToolbar + 内容区(visibility 切换保留各 Tab 状态)+ 扫描进度条 + FAB + BottomTabBar。
+ * HDS 动态标题栏 + 5 个 HdsTabs 内容页 + 扫描进度条 + FAB + 悬浮底栏。
  * 默认 Tab=Video。状态保留用 Stack+visibility(非条件渲染)。
  */
 @ComponentV2
 export struct MainPage {
   private tabsController: HdsTabsController = new HdsTabsController();
+  private videoScroller: Scroller = new Scroller();
+  private audioArtistScroller: Scroller = new Scroller();
+  private audioAlbumListScroller: Scroller = new Scroller();
+  private audioAlbumGridScroller: Scroller = new Scroller();
+  private audioTrackListScroller: Scroller = new Scroller();
+  private audioTrackGridScroller: Scroller = new Scroller();
+  private audioGenreListScroller: Scroller = new Scroller();
+  private audioGenreGridScroller: Scroller = new Scroller();
+  private browseScroller: Scroller = new Scroller();
+  private playlistsScroller: Scroller = new Scroller();
+  private moreScroller: Scroller = new Scroller();
   @Local currentTab: string = 'video';
   @Local currentTabIndex: number = 0;
   @Local scanning: boolean = false;
@@ -158,6 +180,124 @@ export struct MainPage {
     this.showFavoriteServer = true;
   }
 
+  private createTitleMenuItem(icon: ResourceStr, label: ResourceStr,
+    action: () => void): HdsNavigationMenuItemOptions {
+    return {
+      content: {
+        icon: icon,
+        label: label,
+        action: action
+      }
+    };
+  }
+
+  private titleMenuItems(): HdsNavigationMenuItemOptions[] {
+    const items: HdsNavigationMenuItemOptions[] = [];
+    if (this.selectionMode) {
+      items.push(this.createTitleMenuItem($r('app.media.ic_play_player'), '播放', () => {
+        this.selectionActionType = 'play';
+        this.selectionActionVersion++;
+      }));
+      items.push(this.createTitleMenuItem($r('app.media.ic_fav_add'), '收藏', () => {
+        this.selectionActionType = 'fav';
+        this.selectionActionVersion++;
+      }));
+      items.push(this.createTitleMenuItem($r('app.media.ic_delete'), '删除', () => {
+        this.selectionActionType = 'delete';
+        this.selectionActionVersion++;
+      }));
+      return items;
+    }
+    if (this.searchMode) {
+      return items;
+    }
+    if (this.currentTab === 'video' || this.currentTab === 'audio' || this.currentTab === 'playlists') {
+      items.push(this.createTitleMenuItem($r('app.media.ic_search'), '搜索', () => {
+        this.searchMode = true;
+        this.searchQuery = '';
+      }));
+    }
+    if (this.currentTab === 'video') {
+      items.push(this.createTitleMenuItem($r('app.media.ic_resume_playback'), $r('app.string.resume'), () => {
+        void this.resumePlayback();
+      }));
+      items.push(this.createTitleMenuItem($r('app.media.ic_display_settings'),
+        $r('app.string.menu_display_settings'), () => this.openDisplaySettings()));
+    } else if (this.currentTab === 'audio') {
+      items.push(this.createTitleMenuItem($r('app.media.ic_display_settings'), '音频显示设置',
+        () => this.openAudioDisplaySettings()));
+    } else if (this.currentTab === 'browse') {
+      items.push(this.createTitleMenuItem($r('app.media.ic_view_list'), $r('app.string.menu_display_as_list'), () => {
+        void this.toggleDisplayAsList();
+      }));
+      items.push(this.createTitleMenuItem($r('app.media.ic_network_big'), $r('app.string.menu_browse_network'),
+        () => NavController.pushSecondary('NETWORK')));
+      items.push(this.createTitleMenuItem($r('app.media.ic_favorite'), $r('app.string.menu_favorite_server'),
+        () => this.openFavoriteServer()));
+    }
+    items.push(this.createTitleMenuItem($r('app.media.ic_incognito'), $r('app.string.incognito_mode'),
+      () => this.toggleIncognito()));
+    items.push(this.createTitleMenuItem($r('app.media.ic_refresh'), $r('app.string.menu_refresh'), () => {
+      void this.refreshMediaLibrary();
+    }));
+    return items;
+  }
+
+  private boundScrollers(): Scroller[] {
+    return [
+      this.videoScroller,
+      this.audioArtistScroller,
+      this.audioAlbumListScroller,
+      this.audioAlbumGridScroller,
+      this.audioTrackListScroller,
+      this.audioTrackGridScroller,
+      this.audioGenreListScroller,
+      this.audioGenreGridScroller,
+      this.browseScroller,
+      this.playlistsScroller,
+      this.moreScroller
+    ];
+  }
+
+  private closeTransientMode(): void {
+    if (this.selectionMode) {
+      this.selectionActionType = 'exit';
+      this.selectionActionVersion++;
+      return;
+    }
+    this.searchMode = false;
+    this.searchQuery = '';
+  }
+
+  @Builder
+  titleSearchBuilder() {
+    Row({ space: 8 }) {
+      Search({ value: this.searchQuery, placeholder: $r('app.string.search_in_current_list') })
+        .height(40)
+        .layoutWeight(1)
+        .fontColor($r('app.color.list_title'))
+        .placeholderColor($r('app.color.list_subtitle'))
+        .backgroundColor($r('app.color.card_background'))
+        .defaultFocus(true)
+        .onChange((value: string) => {
+          this.searchQuery = value;
+        })
+      if (this.searchQuery.length > 0) {
+        Image($r('app.media.ic_close_small'))
+          .width(24)
+          .height(24)
+          .fillColor($r('app.color.list_subtitle'))
+          .onClick(() => {
+            this.searchQuery = '';
+          })
+      }
+    }
+    .width('100%')
+    .height(56)
+    .padding({ left: 12, right: 12, bottom: 8 })
+    .alignItems(VerticalAlign.Center)
+  }
+
   /** 显示设置 BottomSheet(自定义组件 builder 必须 .width('100%'))。 */
   @Builder
   displaySettingsSheet() {
@@ -173,57 +313,8 @@ export struct MainPage {
   }
 
   build() {
-    NavDestination() {
+    HdsNavDestination() {
       Column() {
-        VlcToolbar({
-          title: $r('app.string.app_name'),
-          showBack: false,
-          showSearch: !this.searchMode && !this.selectionMode &&
-            (this.currentTab === 'video' || this.currentTab === 'audio' || this.currentTab === 'playlists'),
-          showMore: !this.selectionMode,
-          currentTab: this.currentTab,
-          incognitoMode: this.incognitoMode,
-          searchMode: this.searchMode,
-          searchQuery: this.searchQuery,
-          selectionMode: this.selectionMode,
-          selectionCount: this.selectionCount,
-          onSearch: () => {
-            this.searchMode = true;
-            this.searchQuery = '';
-          },
-          onSearchBack: () => {
-            this.searchMode = false;
-            this.searchQuery = '';
-          },
-          onSearchQueryChange: (q: string) => {
-            this.searchQuery = q;
-          },
-          onSelectionBack: () => {
-            this.selectionActionType = 'exit';
-            this.selectionActionVersion++;
-          },
-          onSelectionPlay: () => {
-            this.selectionActionType = 'play';
-            this.selectionActionVersion++;
-          },
-          onSelectionFav: () => {
-            this.selectionActionType = 'fav';
-            this.selectionActionVersion++;
-          },
-          onSelectionDelete: () => {
-            this.selectionActionType = 'delete';
-            this.selectionActionVersion++;
-          },
-          onMoreSettings: () => this.openDisplaySettings(),
-          onMoreIncognito: () => this.toggleIncognito(),
-          onMoreDisplayAsList: () => this.toggleDisplayAsList(),
-          onMoreBrowseNetwork: () => NavController.pushSecondary('NETWORK'),
-          onMoreFavoriteServer: () => this.openFavoriteServer(),
-          onMoreRefresh: () => this.refreshMediaLibrary(),
-          onResumePlayback: () => this.resumePlayback(),
-          onAudioDisplaySettings: () => this.openAudioDisplaySettings(),
-        })
-
         if (this.scanning) {
           Row() {
             Progress({ value: 50, total: 100, type: ProgressType.Linear })
@@ -240,66 +331,75 @@ export struct MainPage {
             barPosition: BarPosition.End,
             index: this.currentTabIndex,
           }) {
-          TabContent() {
-            VideoGridPage({
-              settingsVersion: this.displaySettingsVersion,
-              searchMode: this.searchMode,
-              searchQuery: this.searchQuery,
-              selectionActionVersion: this.selectionActionVersion,
-              selectionActionType: this.selectionActionType,
-              onSearchGlobal: () => {
-                this.searchMode = false;
-                this.searchQuery = '';
-                NavController.push('Search');
-              },
-              onSelectionChange: (active: boolean, count: number) => {
-                this.selectionMode = active;
-                this.selectionCount = count;
-              },
-            })
-          }
-          .tabBar(this.tabBarStyle(VLC_TABS[0]))
+            TabContent() {
+              VideoGridPage({
+                contentScroller: this.videoScroller,
+                settingsVersion: this.displaySettingsVersion,
+                searchMode: this.searchMode,
+                searchQuery: this.searchQuery,
+                selectionActionVersion: this.selectionActionVersion,
+                selectionActionType: this.selectionActionType,
+                onSearchGlobal: () => {
+                  this.searchMode = false;
+                  this.searchQuery = '';
+                  NavController.push('Search');
+                },
+                onSelectionChange: (active: boolean, count: number) => {
+                  this.selectionMode = active;
+                  this.selectionCount = count;
+                },
+              })
+            }
+            .tabBar(this.tabBarStyle(VLC_TABS[0]))
 
-          TabContent() {
-            AudioBrowserPage({
-              settingsVersion: this.audioSettingsVersion,
-              searchMode: this.searchMode,
-              searchQuery: this.searchQuery,
-              goToArtistName: this.goToArtistName,
-              goToArtistVersion: this.goToArtistVersion,
-              onSearchGlobal: () => {
-                this.searchMode = false;
-                this.searchQuery = '';
-                NavController.push('Search');
-              },
-            })
-          }
-          .tabBar(this.tabBarStyle(VLC_TABS[1]))
+            TabContent() {
+              AudioBrowserPage({
+                artistScroller: this.audioArtistScroller,
+                albumListScroller: this.audioAlbumListScroller,
+                albumGridScroller: this.audioAlbumGridScroller,
+                trackListScroller: this.audioTrackListScroller,
+                trackGridScroller: this.audioTrackGridScroller,
+                genreListScroller: this.audioGenreListScroller,
+                genreGridScroller: this.audioGenreGridScroller,
+                settingsVersion: this.audioSettingsVersion,
+                searchMode: this.searchMode,
+                searchQuery: this.searchQuery,
+                goToArtistName: this.goToArtistName,
+                goToArtistVersion: this.goToArtistVersion,
+                onSearchGlobal: () => {
+                  this.searchMode = false;
+                  this.searchQuery = '';
+                  NavController.push('Search');
+                },
+              })
+            }
+            .tabBar(this.tabBarStyle(VLC_TABS[1]))
 
-          TabContent() {
-            MainBrowserPage()
-          }
-          .tabBar(this.tabBarStyle(VLC_TABS[2]))
+            TabContent() {
+              MainBrowserPage({ contentScroller: this.browseScroller })
+            }
+            .tabBar(this.tabBarStyle(VLC_TABS[2]))
 
-          TabContent() {
-            PlaylistsPage({
-              searchMode: this.searchMode,
-              searchQuery: this.searchQuery,
-              currentTab: this.currentTab,
-              playlistsVersion: this.playlistsVersion,
-              onSearchGlobal: () => {
-                this.searchMode = false;
-                this.searchQuery = '';
-                NavController.push('Search');
-              },
-            })
-          }
-          .tabBar(this.tabBarStyle(VLC_TABS[3]))
+            TabContent() {
+              PlaylistsPage({
+                contentScroller: this.playlistsScroller,
+                searchMode: this.searchMode,
+                searchQuery: this.searchQuery,
+                currentTab: this.currentTab,
+                playlistsVersion: this.playlistsVersion,
+                onSearchGlobal: () => {
+                  this.searchMode = false;
+                  this.searchQuery = '';
+                  NavController.push('Search');
+                },
+              })
+            }
+            .tabBar(this.tabBarStyle(VLC_TABS[3]))
 
-          TabContent() {
-            MorePage()
-          }
-          .tabBar(this.tabBarStyle(VLC_TABS[4]))
+            TabContent() {
+              MorePage({ contentScroller: this.moreScroller })
+            }
+            .tabBar(this.tabBarStyle(VLC_TABS[4]))
           }
           .width('100%')
           .height('100%')
@@ -315,6 +415,7 @@ export struct MainPage {
               materialType: hdsMaterial.MaterialType.ADAPTIVE,
               materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE,
             },
+            lightColor: $r('app.color.orange500')
           })
           .scrollable(false)
           .cachedMaxCount(VLC_TABS.length, TabsCacheMode.CACHE_BOTH_SIDE)
@@ -322,7 +423,7 @@ export struct MainPage {
           .bindSheet(this.showFavoriteServer, this.favoriteServerSheet(), {
             height: SheetSize.FIT_CONTENT,
             dragBar: true,
-            backgroundColor: '#FFFFFF',
+
             showClose: false,
             onDisappear: () => this.showFavoriteServer = false,
           })
@@ -350,7 +451,102 @@ export struct MainPage {
         },
       })
     }
-    .hideTitleBar(true)
+    .titleBar({
+      avoidLayoutSafeArea: true,
+      enableComponentSafeArea: true,
+      padding: {
+        start: LengthMetrics.vp(5),
+        end: LengthMetrics.vp(5)
+      },
+      style: {
+        scrollEffectOpts: {
+          enableScrollEffect: true,
+          scrollEffectType: ScrollEffectType.GRADIENT_BLUR,
+          blurEffectiveStartOffset: LengthMetrics.vp(0),
+          blurEffectiveEndOffset: LengthMetrics.vp(20)
+        },
+        systemMaterialEffect: {
+          materialType: hdsMaterial.MaterialType.ADAPTIVE,
+          materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+        },
+        originalStyle: {
+          backgroundStyle: {
+            backgroundColor: $r('sys.color.ohos_id_color_background')
+          },
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('sys.color.font_primary'),
+              subTitleColor: $r('sys.color.font_secondary')
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
+          }
+        },
+        scrollEffectStyle: {
+          backgroundStyle: {
+            backgroundColor: $r('sys.color.ohos_id_color_background_transparent')
+          },
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('sys.color.font_primary'),
+              subTitleColor: $r('sys.color.font_secondary')
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
+          }
+        }
+      },
+      content: {
+        title: {
+          mainTitle: this.selectionMode ? `已选择 ${this.selectionCount} 项` : $r('app.string.app_name')
+        },
+        subIcon: {
+          content: {
+            icon: this.incognitoMode ? $r('app.media.ic_incognito') : $r('app.media.ic_about_logo'),
+            label: $r('app.string.app_name'),
+            isEnabled: false
+          }
+        },
+        backIcon: {
+          icon: $r('app.media.ic_arrow_back'),
+          label: '退出',
+          action: () => this.closeTransientMode()
+        },
+        menu: {
+          value: this.titleMenuItems(),
+          maxCount: 3
+        },
+        bottomBuilder: this.searchMode ? {
+          builder: (): void => this.titleSearchBuilder(),
+          height: 56
+        } : undefined,
+        divider: {
+          showType: DividerShowType.AUTO
+        }
+      }
+    })
+    .titleMode(HdsNavDestinationTitleMode.MINI)
+    .hideBackButton(!this.searchMode && !this.selectionMode)
+    .hideToolBar(true)
+    .bindToScrollable(this.boundScrollers())
+    .dynamicHideTitleBar({
+      hideTitleArea: false,
+      hideBottomBuilder: true,
+      hideStatusBar: false,
+      mode: HideMode.SCROLL_UP
+    })
     .onShown(() => {
       // 从 VideoPlayer/AudioPlayer 等子页面返回时触发,
       // 自增版本号让 PlaylistsPage 通过 @Monitor('playlistsVersion') 重新拉数据。
@@ -395,9 +591,11 @@ export struct MainPage {
   favoriteServerSheet() {
     Column() {
       NetworkServerDialog({
+        title: '收藏服务器',
         onClose: () => this.showFavoriteServer = false,
       }).width('100%')
     }
     .width('100%')
+    .backgroundColor($r('sys.color.background_primary'))
   }
 }

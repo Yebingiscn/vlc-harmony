@@ -177,7 +177,7 @@ export struct VlcToolbar {
           }
           if (!this.showBack) {
             // 主屏工具栏:无痕模式开启时显示 ic_incognito,否则显示 VLC 交通锥 logo。
-            Image(this.incognitoMode ? $r('app.media.ic_incognito') : $r('app.media.ic_default_cone'))
+            Image(this.incognitoMode ? $r('app.media.ic_incognito') : $r('app.media.ic_about_logo'))
               .width(28)
               .height(28)
               .objectFit(ImageFit.Contain)

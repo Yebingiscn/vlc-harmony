@@ -45,6 +45,14 @@ int32_t XcomponentManager::RegisterCallback(OH_NativeXComponent *nativeXComponen
     callback_.DispatchTouchEvent = Callbacks::OnDispatchTouchEventCB;
     int32_t ret = OH_NativeXComponent_RegisterCallback(nativeXComponent, &callback_);
     OH_LOG_INFO(LOG_APP, "RegisterCallback component=%{public}p ret=%{public}d", nativeXComponent, ret);
+    OH_NativeXComponent_ExpectedRateRange range {60, 120, 120};
+    int32_t rateRet = OH_NativeXComponent_SetExpectedFrameRateRange(nativeXComponent, &range);
+    if (rateRet == OH_NATIVEXCOMPONENT_RESULT_SUCCESS) {
+        OH_LOG_INFO(LOG_APP, "ExpectedFrameRate min=%{public}d max=%{public}d expected=%{public}d",
+                    range.min, range.max, range.expected);
+    } else {
+        OH_LOG_WARN(LOG_APP, "SetExpectedFrameRateRange failed ret=%{public}d", rateRet);
+    }
     return ret;
 }
 
@@ -72,10 +80,10 @@ void XcomponentManager::Callbacks::OnSurfaceChangedCB(OH_NativeXComponent *compo
                 ret == OH_NATIVEXCOMPONENT_RESULT_SUCCESS ? id : "?", ret, window);
     if (ret == OH_NATIVEXCOMPONENT_RESULT_SUCCESS && window != nullptr) {
         // 尺寸变化时刷新 window 登记(缩放适配会改 XComponent 宽高)
-        xMgr.AddNativeWindow(id, reinterpret_cast<OHNativeWindow *>(window));
+        uint64_t generation = xMgr.AddNativeWindow(id, reinterpret_cast<OHNativeWindow *>(window), false);
         XcomponentManager::SurfaceReadyFn cb = xMgr.GetSurfaceReadyCallback();
         if (cb != nullptr) {
-            cb(std::string(id), reinterpret_cast<OHNativeWindow *>(window));
+            cb(std::string(id), reinterpret_cast<OHNativeWindow *>(window), generation);
         }
     }
 }
@@ -90,11 +98,11 @@ void XcomponentManager::Callbacks::OnSurfaceCreatedCB(OH_NativeXComponent *compo
         return;
     }
     OH_LOG_INFO(LOG_APP, "OnSurfaceCreated id=%{public}s win=%{public}p", id, window);
-    xMgr.AddNativeWindow(id, reinterpret_cast<OHNativeWindow *>(window));
+    uint64_t generation = xMgr.AddNativeWindow(id, reinterpret_cast<OHNativeWindow *>(window), true);
 
     XcomponentManager::SurfaceReadyFn cb = xMgr.GetSurfaceReadyCallback();
     if (cb != nullptr) {
-        cb(std::string(id), reinterpret_cast<OHNativeWindow *>(window));
+        cb(std::string(id), reinterpret_cast<OHNativeWindow *>(window), generation);
     }
 }
 
@@ -112,7 +120,9 @@ void XcomponentManager::Callbacks::OnSurfaceDestroyedCB(OH_NativeXComponent *com
     if (cb != nullptr) {
         cb(std::string(id));
     }
-    xMgr.Release(id);
+    // XComponent 本身仍然有效，后续可能用同一个 id 创建新的 Surface。
+    // 只移除失效的 NativeWindow，保留组件和 generation 以识别重建。
+    xMgr.ReleaseWindow(id);
 }
 
 int32_t XcomponentManager::AddNativeXcomponent(const std::string &id, OH_NativeXComponent *nativeXComponent)
@@ -123,12 +133,17 @@ int32_t XcomponentManager::AddNativeXcomponent(const std::string &id, OH_NativeX
     return 0;
 }
 
-int32_t XcomponentManager::AddNativeWindow(const std::string &id, OHNativeWindow *win)
+uint64_t XcomponentManager::AddNativeWindow(const std::string &id, OHNativeWindow *win, bool newSurface)
 {
     std::unique_lock<std::mutex> lock(mtx_);
-    OH_LOG_INFO(LOG_APP, "AddNativeWindow id=%{public}s win=%{public}p", id.c_str(), win);
+    uint64_t &generation = surfaceGenerationMap_[id];
+    if (newSurface || generation == 0) {
+        ++generation;
+    }
+    OH_LOG_INFO(LOG_APP, "AddNativeWindow id=%{public}s win=%{public}p generation=%{public}llu",
+                id.c_str(), win, static_cast<unsigned long long>(generation));
     OHNativeWindowMap_[id] = win;
-    return 0;
+    return generation;
 }
 
 OH_NativeXComponent *XcomponentManager::GetNativeXcomponent(const std::string &id)
@@ -153,16 +168,22 @@ OHNativeWindow *XcomponentManager::GetNativeWindow(const std::string &id)
     return item->second;
 }
 
+uint64_t XcomponentManager::GetSurfaceGeneration(const std::string &id)
+{
+    std::unique_lock<std::mutex> lock(mtx_);
+    auto item = surfaceGenerationMap_.find(id);
+    return item == surfaceGenerationMap_.end() ? 0 : item->second;
+}
+
 bool XcomponentManager::HasNativeWindow(const std::string &id)
 {
     std::unique_lock<std::mutex> lock(mtx_);
     return OHNativeWindowMap_.find(id) != OHNativeWindowMap_.end();
 }
 
-void XcomponentManager::Release(const std::string &id)
+void XcomponentManager::ReleaseWindow(const std::string &id)
 {
     std::unique_lock<std::mutex> lock(mtx_);
-    OH_LOG_INFO(LOG_APP, "Release id=%{public}s", id.c_str());
-    nativeXcomponentMap_.erase(id);
+    OH_LOG_INFO(LOG_APP, "ReleaseWindow id=%{public}s", id.c_str());
     OHNativeWindowMap_.erase(id);
 }

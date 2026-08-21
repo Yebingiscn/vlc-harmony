@@ -4,17 +4,12 @@ import { AppColors } from '../common/constants/AppConstants';
 
 enum OnboardingStep {
   WELCOME = 0,
-  ASK_PERMISSION = 1,
-  SCAN = 2,
-  NO_PERMISSION = 3,
-  NOTIFICATION_PERMISSION = 4,
-  THEME = 5,
+  THEME = 1,
 }
 
 /**
  * OnboardingPage —— OnboardingActivity(首启引导)。
- * 6 步状态机(WELCOME/ASK_PERMISSION/SCAN/NO_PERMISSION/NOTIFICATION_PERMISSION/THEME)。
- * 深蓝灰 #011422 背景 + 底部 Next/Skip 按钮 + 选择态(选中 scale1.0+圆角框 / 未选中 scale0.8)。
+ * 2 步状态机(WELCOME/THEME)。背景/文字使用资源引用,跟随系统深浅色。
  */
 @ComponentV2
 export struct OnboardingPage {
@@ -25,18 +20,6 @@ export struct OnboardingPage {
   next(): void {
     switch (this.step) {
       case OnboardingStep.WELCOME:
-        this.step = OnboardingStep.ASK_PERMISSION;
-        break;
-      case OnboardingStep.ASK_PERMISSION:
-        this.step = OnboardingStep.SCAN;
-        break;
-      case OnboardingStep.SCAN:
-        this.step = OnboardingStep.NOTIFICATION_PERMISSION;
-        break;
-      case OnboardingStep.NO_PERMISSION:
-        this.step = OnboardingStep.SCAN;
-        break;
-      case OnboardingStep.NOTIFICATION_PERMISSION:
         this.step = OnboardingStep.THEME;
         break;
       case OnboardingStep.THEME:
@@ -62,14 +45,6 @@ export struct OnboardingPage {
         Column() {
           if (this.step === OnboardingStep.WELCOME) {
             this.welcomeContent()
-          } else if (this.step === OnboardingStep.ASK_PERMISSION) {
-            this.permissionContent()
-          } else if (this.step === OnboardingStep.SCAN) {
-            this.scanContent()
-          } else if (this.step === OnboardingStep.NO_PERMISSION) {
-            this.noPermissionContent()
-          } else if (this.step === OnboardingStep.NOTIFICATION_PERMISSION) {
-            this.notificationContent()
           } else {
             this.themeContent()
           }
@@ -85,10 +60,10 @@ export struct OnboardingPage {
           Button($r('app.string.cancel'))
             .type(ButtonType.Normal)
             .borderRadius(4)
-            .backgroundColor('#33011422')
+            .backgroundColor($r('app.color.card_background'))
             .borderWidth(1)
-            .borderColor('#33FFFFFF')
-            .fontColor('#FFFFFF')
+            .borderColor($r('app.color.card_border'))
+            .fontColor($r('app.color.list_title'))
             .fontSize(14)
             .layoutWeight(1)
             .margin({ right: 8 })
@@ -107,7 +82,7 @@ export struct OnboardingPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(AppColors.onboarding_grey)
+      .backgroundColor($r('app.color.background_default'))
     }
     .hideTitleBar(true)
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
@@ -121,69 +96,23 @@ export struct OnboardingPage {
   welcomeContent() {
     Column() {
       Image($r('app.media.ic_about_logo')).width(96).height(96).objectFit(ImageFit.Contain).margin({ bottom: 24 })
-      Text($r('app.string.welcome_title')).fontSize(24).fontColor('#FFFFFF').fontWeight(FontWeight.Bold)
+      Text($r('app.string.welcome_title')).fontSize(24).fontColor($r('app.color.list_title')).fontWeight(FontWeight.Bold)
       Text($r('app.string.welcome_subtitle'))
         .fontSize(14)
-        .fontColor('#B3FFFFFF')
+        .fontColor($r('app.color.list_subtitle'))
         .margin({ top: 12 })
         .textAlign(TextAlign.Center)
     }.alignItems(HorizontalAlign.Center)
   }
 
   @Builder
-  permissionContent() {
-    Column() {
-      Image($r('app.media.ic_permission_big')).width(80).height(80).fillColor('#FFFFFF').margin({ bottom: 24 })
-      Text($r('app.string.permission_media'))
-        .fontSize(16)
-        .fontColor('#FFFFFF')
-        .textAlign(TextAlign.Center)
-        .margin({ top: 16 })
-      Text($r('app.string.permission_expanation_allow')).fontSize(12).fontColor('#B3FFFFFF').margin({ top: 12 })
-      Text($r('app.string.permission_expanation_no_allow')).fontSize(12).fontColor('#B3FFFFFF').margin({ top: 8 })
-    }.alignItems(HorizontalAlign.Center)
-  }
-
-  @Builder
-  scanContent() {
-    Column() {
-      Image($r('app.media.ic_onboarding_scan')).width(80).height(80).fillColor('#FF8800').margin({ bottom: 24 })
-      Text($r('app.string.onboarding_scan_title')).fontSize(20).fontColor('#FFFFFF').fontWeight(FontWeight.Medium)
-      Text($r('app.string.medialibrary_scan_explanation')).fontSize(13).fontColor('#B3FFFFFF')
-        .margin({ top: 12 }).textAlign(TextAlign.Center)
-    }.alignItems(HorizontalAlign.Center)
-  }
-
-  @Builder
-  noPermissionContent() {
-    Column() {
-      Image($r('app.media.ic_onboarding_no_permission'))
-        .width(80)
-        .height(80)
-        .fillColor('#FFFFFF')
-        .margin({ bottom: 24 })
-      Text($r('app.string.permission_not_granted')).fontSize(16).fontColor('#FFFFFF').textAlign(TextAlign.Center)
-    }.alignItems(HorizontalAlign.Center)
-  }
-
-  @Builder
-  notificationContent() {
-    Column() {
-      Image($r('app.media.ic_onboarding_notification')).width(80).height(80).fillColor('#FFFFFF').margin({ bottom: 24 })
-      Text($r('app.string.notification_permission')).fontSize(18).fontColor('#FFFFFF').fontWeight(FontWeight.Medium)
-      Text($r('app.string.notification_permission_explanation')).fontSize(12).fontColor('#B3FFFFFF')
-        .margin({ top: 12 }).textAlign(TextAlign.Center)
-    }.alignItems(HorizontalAlign.Center)
-  }
-
-  @Builder
   themeContent() {
     Column() {
-      Image($r('app.media.ic_theme')).width(80).height(80).fillColor('#FF8800').margin({ bottom: 24 })
-      Text($r('app.string.onboarding_theme_title')).fontSize(20).fontColor('#FFFFFF').fontWeight(FontWeight.Medium)
+      Image($r('app.media.ic_theme')).width(80).height(80).fillColor(AppColors.orange500).margin({ bottom: 24 })
+      Text($r('app.string.onboarding_theme_title')).fontSize(20).fontColor($r('app.color.list_title')).fontWeight(FontWeight.Medium)
       Row() {
-        Image($r('app.media.ic_theme_dark')).width(64).height(64).fillColor('#FFFFFF').margin({ right: 24 })
-        Image($r('app.media.ic_theme_daynight')).width(64).height(64).fillColor('#FF8800')
+        Image($r('app.media.ic_theme_dark')).width(64).height(64).fillColor($r('app.color.list_title')).margin({ right: 24 })
+        Image($r('app.media.ic_theme_daynight')).width(64).height(64).fillColor(AppColors.orange500)
       }.margin({ top: 24 })
     }.alignItems(HorizontalAlign.Center)
   }

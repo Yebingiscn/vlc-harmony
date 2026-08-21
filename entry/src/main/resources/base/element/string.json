@@ -54,11 +54,11 @@
     },
     {
       "name": "app_name",
-      "value": "VLC"
+      "value": "流心 VLC"
     },
     {
       "name": "app_name_full",
-      "value": "VLC for Android"
+      "value": "流心 VLC"
     },
     {
       "name": "apply_playqueue",
@@ -730,7 +730,7 @@
     },
     {
       "name": "nomedia",
-      "value": "未找到媒体文件，请传输一些文件到您的设备，或调整您的偏好设置。"
+      "value": "未找到媒体文件，请传输一些文件到您的设备。"
     },
     {
       "name": "noplaylist",
@@ -1366,11 +1366,11 @@
     },
     {
       "name": "welcome_subtitle",
-      "value": "自由开源的多媒体播放器"
+      "value": "基于VLC 的多媒体播放器"
     },
     {
       "name": "welcome_title",
-      "value": "欢迎使用 VLC!"
+      "value": "欢迎使用流心 VLC!"
     },
     {
       "name": "whats_new_37_android_auto",
@@ -1470,15 +1470,15 @@
     },
     {
       "name": "module_desc",
-      "value": "VLC 多媒体播放器"
+      "value": "流心VLC 多媒体播放器"
     },
     {
       "name": "EntryAbility_desc",
-      "value": "VLC 多媒体播放器"
+      "value": "流心VLC 多媒体播放器"
     },
     {
       "name": "EntryAbility_label",
-      "value": "VLC"
+      "value": "流心VLC"
     },
     {
       "name": "reason_internet",

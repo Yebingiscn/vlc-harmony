@@ -2,6 +2,8 @@ import { NavController } from '../common/data/NavController';
 import { Settings } from '../common/data/Settings';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
 import { AppDimens, RouteName } from '../common/constants/AppConstants';
+import { HdsNavDestination, HdsNavDestinationTitleMode, DividerShowType, ScrollEffectType, hdsMaterial } from '@kit.UIDesignKit';
+import { LengthMetrics } from '@kit.ArkUI';
 
 enum PageState {
   SETTINGS,
@@ -69,39 +71,8 @@ export struct ParentalControlPage {
   }
 
   build() {
-    NavDestination() {
+    HdsNavDestination() {
       Column() {
-        Row() {
-          Image($r('app.media.ic_arrow_back'))
-            .width(24)
-            .height(24)
-            .objectFit(ImageFit.Contain)
-            .fillColor($r('app.color.list_title'))
-            .margin({ left: 12 })
-            .onClick(() => NavController.pop())
-          Text($r('app.string.parental_control'))
-            .fontSize(20)
-            .fontWeight(FontWeight.Bold)
-            .fontColor($r('app.color.orange500'))
-            .margin({ left: AppDimens.kl_half })
-            .layoutWeight(1)
-            .maxLines(1)
-          Image($r('app.media.ic_search'))
-            .width(28).height(28)
-            .fillColor($r('app.color.list_title'))
-            .margin({ right: 16 })
-        }
-        .width('100%')
-        .height(92)
-        .alignItems(VerticalAlign.Center)
-        .padding({
-          left: 4,
-          right: 4,
-          top: 38,
-          bottom: 4
-        })
-        .backgroundColor($r('app.color.background_default'))
-
         if (this.isPinState()) {
           Column() {
             Text(this.getReasonText())
@@ -279,7 +250,78 @@ export struct ParentalControlPage {
       .height('100%')
       .backgroundColor($r('app.color.background_default'))
     }
-    .hideTitleBar(true)
+    .titleBar({
+      avoidLayoutSafeArea: true,
+      enableComponentSafeArea: true,
+      padding: {
+        start: LengthMetrics.vp(5),
+        end: LengthMetrics.vp(5)
+      },
+      style: {
+        scrollEffectOpts: {
+          enableScrollEffect: true,
+          scrollEffectType: ScrollEffectType.GRADIENT_BLUR,
+          blurEffectiveStartOffset: LengthMetrics.vp(0),
+          blurEffectiveEndOffset: LengthMetrics.vp(20)
+        },
+        systemMaterialEffect: {
+          materialType: hdsMaterial.MaterialType.ADAPTIVE,
+          materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+        },
+        originalStyle: {
+          backgroundStyle: {
+            backgroundColor: $r('sys.color.ohos_id_color_background')
+          },
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('sys.color.font_primary'),
+              subTitleColor: $r('sys.color.font_secondary')
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
+          }
+        },
+        scrollEffectStyle: {
+          backgroundStyle: {
+            backgroundColor: $r('sys.color.ohos_id_color_background_transparent')
+          },
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('sys.color.font_primary'),
+              subTitleColor: $r('sys.color.font_secondary')
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
+          }
+        }
+      },
+      content: {
+        title: {
+          mainTitle: $r('app.string.parental_control')
+        },
+        backIcon: {
+          icon: $r('app.media.ic_arrow_back'),
+          label: '返回',
+          action: () => NavController.pop()
+        },
+        divider: {
+          showType: DividerShowType.AUTO
+        }
+      }
+    })
+    .titleMode(HdsNavDestinationTitleMode.MINI)
     .onBackPressed(() => {
       NavController.pop();
       return true;

@@ -159,14 +159,13 @@ export struct MiniPlayerConfigureActivityPage {
             .fontColor(AppColors.orange800)
             .margin({ left: AppDimens.kl_normal, right: AppDimens.kl_normal })
           Blank()
-          // widget_info → 弹 WidgetExplanationDialog
+          // widget_info → 提示小组件说明
           Image($r('app.media.ic_information'))
             .width(24)
             .height(24)
             .fillColor(AppColors.grey700)
             .margin({ right: AppDimens.default_margin })
             .onClick(() => {
-              // TODO(契约): WidgetExplanationDialog().show("fragment_widget_explanation")(3 步引导)
               UiFeedback.showToast({ message: 'Widget explanation' });
             })
           // widget_configure_done → onMenuDone() 后 finish()
@@ -270,6 +269,7 @@ export struct MiniPlayerConfigureActivityPage {
           }
           .width('100%')
         }
+        .clip(false)
         .width('100%')
         .layoutWeight(1)
         .backgroundColor(AppColors.white)

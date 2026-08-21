@@ -298,7 +298,7 @@ export class PermissionCoordinator {
     }
   }
 
-  /* ─────────────────── 权限状态查询(供 PermissionsDialog 等 UI 使用) ─────────────────── */
+  /* ─────────────────── 权限状态查询(供权限管理 UI 使用) ─────────────────── */
 
   /** 通知权限是否已开启(对应安卓 canSendNotifications)。 */
   static async hasNotificationPermission(): Promise<boolean> {

@@ -7,6 +7,15 @@ import { AppDimens } from '../common/constants/AppConstants';
 import { FileBrowserParam, formatDuration, VideoNavParam } from '../common/models/MediaModels';
 import { PlaybackHistoryEntry } from '../common/models/PlaybackHistoryModels';
 import { ParentalControlAction, ParentalControlParam } from './ParentalControlPage';
+import { LengthMetrics } from '@kit.ArkUI';
+import {
+  HdsNavDestination,
+  HdsNavDestinationTitleMode,
+  HdsNavigationMenuItemOptions,
+  DividerShowType,
+  ScrollEffectType,
+  hdsMaterial
+} from '@kit.UIDesignKit';
 
 /**
  * HistoryViewModel —— HistoryFragment 的 VM。
@@ -44,7 +53,7 @@ export struct HistoryFragmentPage {
   @Local vm: HistoryViewModel = new HistoryViewModel();
   @Local isRefreshing: boolean = false;
   @Local incognitoMode: boolean = false;
-  @Local historyMenuOpen: boolean = false;
+
   @Local showVideoThumbnails: boolean = true;
   @Local isSelectionMode: boolean = false;
   @Local selectedUris: Set<string> = new Set();
@@ -87,56 +96,43 @@ export struct HistoryFragmentPage {
     this.exitSelectionMode();
   }
 
-  @Builder
-  selectionTitleBar() {
-    Row() {
-      Image($r('app.media.ic_arrow_back'))
-        .width(24)
-        .height(24)
-        .objectFit(ImageFit.Contain)
-        .fillColor($r('app.color.list_title'))
-        .margin({ left: 12 })
-        .onClick(() => this.exitSelectionMode())
-      Text($r('app.string.selected_items_count', this.selectedCount))
-        .fontSize(18)
-        .fontWeight(FontWeight.Medium)
-        .fontColor($r('app.color.orange500'))
-        .margin({ left: AppDimens.kl_half })
-        .layoutWeight(1)
-        .maxLines(1)
-      if (this.selectedUris.size === 1) {
-        Image($r('app.media.ic_information'))
-          .width(28)
-          .height(28)
-          .fillColor($r('app.color.list_title'))
-          .margin({ right: 20 })
-          .onClick(() => this.showFileInfo())
+  private createTitleMenuItem(icon: ResourceStr, label: ResourceStr,
+    action: () => void): HdsNavigationMenuItemOptions {
+    return {
+      content: {
+        icon: icon,
+        label: label,
+        action: action
       }
-      Image($r('app.media.ic_play'))
-        .width(28)
-        .height(28)
-        .fillColor($r('app.color.list_title'))
-        .margin({ right: 20 })
-        .onClick(() => this.playSelected())
+    };
+  }
+
+  private titleMenuItems(): HdsNavigationMenuItemOptions[] {
+    const items: HdsNavigationMenuItemOptions[] = [];
+    if (this.isSelectionMode) {
       if (this.selectedUris.size === 1) {
-        Image($r('app.media.ic_storage'))
-          .width(28)
-          .height(28)
-          .fillColor($r('app.color.list_title'))
-          .margin({ right: 16 })
-          .onClick(() => this.openStorageLocation())
+        items.push(this.createTitleMenuItem($r('app.media.ic_information'), '信息',
+          () => this.showFileInfo()));
       }
+      items.push(this.createTitleMenuItem($r('app.media.ic_play'), '播放',
+        () => this.playSelected()));
+      if (this.selectedUris.size === 1) {
+        items.push(this.createTitleMenuItem($r('app.media.ic_storage'), '存储位置',
+          () => this.openStorageLocation()));
+      }
+      return items;
     }
-    .width('100%')
-    .height(92)
-    .alignItems(VerticalAlign.Center)
-    .padding({
-      left: 4,
-      right: 4,
-      top: 38,
-      bottom: 4
-    })
-    .backgroundColor($r('app.color.background_default'))
+    items.push(this.createTitleMenuItem($r('app.media.ic_search'), '搜索',
+      () => UiFeedback.showToast({ message: '搜索功能暂未实现' })));
+    items.push(this.createTitleMenuItem($r('app.media.ic_delete'), '清空',
+      () => this.requestClearHistory()));
+    items.push(this.createTitleMenuItem(
+      this.incognitoMode ? $r('app.media.ic_incognito') : $r('app.media.ic_about_logo'),
+      $r('app.string.incognito_mode'),
+      () => void this.setIncognito(!this.incognitoMode)));
+    items.push(this.createTitleMenuItem($r('app.media.ic_refresh'), $r('app.string.menu_refresh'),
+      () => void this.refreshHistory(true)));
+    return items;
   }
 
   // ── 多选模式 ──────────────────────────────────────────
@@ -164,46 +160,7 @@ export struct HistoryFragmentPage {
   }
 
   @Builder
-  historyMenu() {
-    Column() {
-      Row() {
-        Text($r('app.string.incognito_mode'))
-          .fontSize(16)
-          .fontColor($r('app.color.list_title'))
-          .layoutWeight(1)
-          .onClick(() => void this.setHistoryMenuIncognito(!this.incognitoMode))
-        Toggle({ type: ToggleType.Checkbox, isOn: this.incognitoMode })
-          .selectedColor($r('app.color.orange500'))
-          .onChange((enabled: boolean) => void this.setHistoryMenuIncognito(enabled))
-      }
-      .width('100%')
-      .height(52)
-      .padding({ left: 16, right: 12 })
-      .alignItems(VerticalAlign.Center)
 
-      Divider()
-        .color($r('app.color.divider'))
-        .strokeWidth(1)
-      Text($r('app.string.menu_refresh'))
-        .fontSize(16)
-        .fontColor($r('app.color.list_title'))
-        .width('100%')
-        .padding({
-          left: 16,
-          right: 16,
-          top: 16,
-          bottom: 16
-        })
-        .onClick(() => {
-          this.historyMenuOpen = false;
-          void this.refreshHistory(true);
-        })
-    }
-    .width(220)
-    .borderRadius(12)
-  }
-
-  @Builder
   clearHistoryDialogContent() {
     Column() {
       Text($r('app.string.clear_playback_history'))
@@ -315,63 +272,9 @@ export struct HistoryFragmentPage {
   }
 
   build() {
-    NavDestination() {
+    HdsNavDestination() {
       Stack({ alignContent: Alignment.TopStart }) {
         Column() {
-          // ── 标题栏: 多选模式 / 普通模式 ──
-          if (this.isSelectionMode) {
-            this.selectionTitleBar()
-          } else {
-            Row() {
-              Image($r('app.media.ic_arrow_back'))
-                .width(24)
-                .height(24)
-                .objectFit(ImageFit.Contain)
-                .fillColor($r('app.color.list_title'))
-                .margin({ left: 12 })
-                .onClick(() => NavController.pop())
-              Text($r('app.string.history'))
-                .fontSize(20)
-                .fontWeight(FontWeight.Bold)
-                .fontColor($r('app.color.orange500'))
-                .margin({ left: AppDimens.kl_half })
-                .layoutWeight(1)
-                .maxLines(1)
-              Image($r('app.media.ic_search'))
-                .width(28).height(28).fillColor($r('app.color.list_title')).margin({ right: 24 })
-              Button({ type: ButtonType.Normal, stateEffect: true }) {
-                Image($r('app.media.ic_delete')).width(28).height(28).fillColor($r('app.color.list_title'))
-              }
-              .width(56).height(56).backgroundColor(Color.Transparent)
-              .onClick(() => this.requestClearHistory())
-
-              Button({ type: ButtonType.Normal, stateEffect: true }) {
-                SymbolGlyph($r('sys.symbol.dot_grid_1x2'))
-                  .fontSize(28).fontColor([$r('sys.color.icon_primary')])
-              }
-              .width(52)
-              .height(56)
-              .backgroundColor(Color.Transparent)
-              .margin({ right: 4 })
-              .onClick(() => this.historyMenuOpen = !this.historyMenuOpen)
-              .bindMenu(this.historyMenuOpen, this.historyMenu(), {
-                placement: Placement.BottomRight,
-                showInSubWindow: true,
-                onDisappear: () => this.historyMenuOpen = false,
-              })
-            }
-            .width('100%')
-            .height(92)
-            .alignItems(VerticalAlign.Center)
-            .padding({
-              left: 4,
-              right: 4,
-              top: 38,
-              bottom: 4
-            })
-            .backgroundColor($r('app.color.background_default'))
-          }
-
           // ── 内容区 ──
           if (this.vm.isEmpty) {
             Column() {
@@ -407,6 +310,7 @@ export struct HistoryFragmentPage {
                           .height('100%')
                           .objectFit(ImageFit.Cover)
                           .alt($r('app.media.tv_channel_default'))
+                          .borderRadius(4)
                       }
                       .width(96)
                       .height(60)
@@ -488,7 +392,89 @@ export struct HistoryFragmentPage {
       .width('100%')
       .height('100%')
     }
-    .hideTitleBar(true)
+    .titleBar({
+      avoidLayoutSafeArea: true,
+      enableComponentSafeArea: true,
+      padding: {
+        start: LengthMetrics.vp(5),
+        end: LengthMetrics.vp(5)
+      },
+      style: {
+        scrollEffectOpts: {
+          enableScrollEffect: true,
+          scrollEffectType: ScrollEffectType.GRADIENT_BLUR,
+          blurEffectiveStartOffset: LengthMetrics.vp(0),
+          blurEffectiveEndOffset: LengthMetrics.vp(20)
+        },
+        systemMaterialEffect: {
+          materialType: hdsMaterial.MaterialType.ADAPTIVE,
+          materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+        },
+        originalStyle: {
+          backgroundStyle: {
+            backgroundColor: $r('sys.color.ohos_id_color_background')
+          },
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('sys.color.font_primary'),
+              subTitleColor: $r('sys.color.font_secondary')
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
+          }
+        },
+        scrollEffectStyle: {
+          backgroundStyle: {
+            backgroundColor: $r('sys.color.ohos_id_color_background_transparent')
+          },
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('sys.color.font_primary'),
+              subTitleColor: $r('sys.color.font_secondary')
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
+          }
+        }
+      },
+      content: {
+        title: {
+          mainTitle: this.isSelectionMode ?
+            $r('app.string.selected_items_count', this.selectedCount) : $r('app.string.history')
+        },
+        backIcon: {
+          icon: $r('app.media.ic_arrow_back'),
+          label: '返回',
+          action: () => {
+            if (this.isSelectionMode) {
+              this.exitSelectionMode();
+            } else {
+              NavController.pop();
+            }
+          }
+        },
+        menu: {
+          value: this.titleMenuItems(),
+          maxCount: 4
+        },
+        divider: {
+          showType: DividerShowType.AUTO
+        }
+      }
+    })
+    .titleMode(HdsNavDestinationTitleMode.MINI)
     .onBackPressed(() => {
       if (this.isSelectionMode) {
         this.exitSelectionMode();
@@ -679,12 +665,6 @@ export struct HistoryFragmentPage {
     UiFeedback.showToast({ message: enabled ? $r('app.string.incognito_on') : $r('app.string.incognito_off') });
   }
 
-  // ── Builder: 滑动删除按钮 ─────────────────────────────
-
-  private async setHistoryMenuIncognito(enabled: boolean): Promise<void> {
-    await this.setIncognito(enabled);
-    this.historyMenuOpen = false;
-  }
 
   // ── Build ──────────────────────────────────────────────
 

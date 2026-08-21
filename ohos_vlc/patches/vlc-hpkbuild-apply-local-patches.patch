@@ -1,6 +1,6 @@
---- HPKBUILD
-+++ HPKBUILD
-@@ -39,6 +39,26 @@ prepare() {
+--- a/HPKBUILD
++++ b/HPKBUILD
+@@ -39,6 +39,30 @@ prepare() {
              return -1
          fi
          cd $builddir
@@ -24,7 +24,10 @@
 +        if [ $? -ne 0 ]; then
 +            return -1
 +        fi
++        patch -p1 < ../0007-vlc-ohos-surface-clocked-present.patch >> $publicbuildlog 2>&1
++        if [ $? -ne 0 ]; then
++            return -1
++        fi
          cd $OLDPWD
          cloneflag=false
      fi
-*** 

@@ -2,6 +2,14 @@ import { UiFeedback } from '../common/utils/UiFeedback';
 import { NavController } from '../common/data/NavController';
 import { AppColors, AppDimens } from '../common/constants/AppConstants';
 import { EqualizerPreset } from '../common/models/MediaModels';
+import { LengthMetrics } from '@kit.ArkUI';
+import {
+  DividerShowType,
+  hdsMaterial,
+  HdsNavDestination,
+  HdsNavDestinationTitleMode,
+  ScrollEffectType
+} from '@kit.UIDesignKit';
 
 /** 点击类型(对应 EqualizerSettingsAdapter.ClickType)。 */
 export enum EqClickType {
@@ -258,49 +266,8 @@ export struct EqualizerSettingsActivityPage {
   }
 
   build() {
-    NavDestination() {
+    HdsNavDestination() {
       Column() {
-        // 顶部 Toolbar:height actionBarSize,背景 background_actionbar,elevation=0
-        Row() {
-          Image($r('app.media.ic_close_up'))
-            .width(24)
-            .height(24)
-            .fillColor(AppColors.grey900)
-            .padding(12)
-            .margin({ left: AppDimens.half_default_margin })
-            .onClick(() => NavController.pop())
-          Text($r('app.string.equalizer'))
-            .fontSize(20)
-            .fontColor(AppColors.orange800)
-            .fontWeight(FontWeight.Medium)
-            .margin({ left: AppDimens.kl_normal })
-          Blank()
-          // show_equalizer → 弹 EqualizerDialog
-          Image($r('app.media.ic_equalizer'))
-            .width(24)
-            .height(24)
-            .fillColor(AppColors.grey900)
-            .padding(12)
-            .onClick(() => {
-              // TODO(契约): EqualizerFragmentDialog().show("equalizer")
-              UiFeedback.showToast({ message: 'Show equalizer' });
-            })
-          // equalizer_import → FilePickerActivity(code=10000)
-          Image($r('app.media.ic_import'))
-            .width(24)
-            .height(24)
-            .fillColor(AppColors.grey900)
-            .padding(12)
-            .onClick(() => {
-              // TODO(契约): startActivityForResult(FilePickerActivity, PickerType.EQUALIZER, code=10000)
-              UiFeedback.showToast({ message: 'Import equalizer' });
-            })
-        }
-        .width('100%')
-        .height(56)
-        .backgroundColor(AppColors.white)
-        .alignItems(VerticalAlign.Center)
-
         // 内容区
         Column() {
           if (this.vm.overwriteDialogVisible) {
@@ -319,16 +286,109 @@ export struct EqualizerSettingsActivityPage {
           .margin({ top: AppDimens.default_margin })
           .padding({ bottom: 48 })
           .scrollBar(BarState.Auto)
-          .backgroundColor(AppColors.white)
         }
         .width('100%')
         .layoutWeight(1)
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(AppColors.white)
+      .backgroundColor($r('app.color.background_default'))
     }
-    .hideTitleBar(true)
+    .titleBar({
+      avoidLayoutSafeArea: true,
+      enableComponentSafeArea: true,
+      padding: {
+        start: LengthMetrics.vp(5),
+        end: LengthMetrics.vp(5)
+      },
+      style: {
+        scrollEffectOpts: {
+          enableScrollEffect: true,
+          scrollEffectType: ScrollEffectType.GRADIENT_BLUR,
+          blurEffectiveStartOffset: LengthMetrics.vp(0),
+          blurEffectiveEndOffset: LengthMetrics.vp(20)
+        },
+        systemMaterialEffect: {
+          materialType: hdsMaterial.MaterialType.ADAPTIVE,
+          materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+        },
+        originalStyle: {
+          backgroundStyle: {
+            backgroundColor: $r('sys.color.ohos_id_color_background')
+          },
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('sys.color.font_primary'),
+              subTitleColor: $r('sys.color.font_secondary')
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
+          }
+        },
+        scrollEffectStyle: {
+          backgroundStyle: {
+            backgroundColor: $r('sys.color.ohos_id_color_background_transparent')
+          },
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('sys.color.font_primary'),
+              subTitleColor: $r('sys.color.font_secondary')
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
+          }
+        }
+      },
+      content: {
+        title: {
+          mainTitle: $r('app.string.equalizer')
+        },
+        backIcon: {
+          icon: $r('app.media.ic_arrow_back'),
+          label: '返回',
+          action: () => NavController.pop()
+        },
+        menu: {
+          value: [
+            {
+              content: {
+                icon: $r('app.media.ic_equalizer'),
+                label: 'Show',
+                action: () => {
+                  UiFeedback.showToast({ message: 'Show equalizer' });
+                }
+              }
+            },
+            {
+              content: {
+                icon: $r('app.media.ic_import'),
+                label: 'Import',
+                action: () => {
+                  UiFeedback.showToast({ message: 'Import equalizer' });
+                }
+              }
+            }
+          ],
+          maxCount: 3
+        },
+        divider: {
+          showType: DividerShowType.AUTO
+        }
+      }
+    })
+    .titleMode(HdsNavDestinationTitleMode.MINI)
     .onBackPressed(() => {
       NavController.pop();
       return true;

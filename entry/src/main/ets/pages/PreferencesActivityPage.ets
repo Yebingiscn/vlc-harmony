@@ -1,5 +1,12 @@
 import { UiFeedback } from '../common/utils/UiFeedback';
-import { VlcToolbar } from '../common/components/VlcToolbar';
+import {
+  DividerShowType,
+  hdsMaterial,
+  HdsNavDestination,
+  HdsNavDestinationTitleMode,
+  ScrollEffectType
+} from '@kit.UIDesignKit';
+import { LengthMetrics } from '@kit.ArkUI';
 import { NavController } from '../common/data/NavController';
 import { RouteName } from '../common/constants/AppConstants';
 import { PreferencesScreenParam } from '../common/models/MediaModels';
@@ -250,10 +257,10 @@ export struct PreferencesActivityPage {
       .fontColor('#FF8800')
       .width('100%')
       .padding({
-        left: 16,
-        right: 16,
-        top: 26,
-        bottom: 14
+        left: 24,
+        right: 24,
+        top: 24,
+        bottom: 8
       })
   }
 
@@ -299,8 +306,8 @@ export struct PreferencesActivityPage {
     .padding({
       left: 16,
       right: 16,
-      top: 18,
-      bottom: 18
+      top: 14,
+      bottom: 14
     })
     .alignItems(VerticalAlign.Center)
     .opacity(this.isItemEnabled(item) ? 1 : 0.45)
@@ -315,33 +322,33 @@ export struct PreferencesActivityPage {
   }
 
   build() {
-    NavDestination() {
+    HdsNavDestination() {
       Column() {
-        VlcToolbar({
-          title: $r('app.string.preferences'),
-          showBack: true,
-          showSearch: true,
-          currentTab: '',
-          onBack: () => NavController.pop(),
-          onSearch: () => this.onSearch(),
-        })
         Scroll() {
           Column() {
             Repeat(this.sections).each((sectionRepeatItem: RepeatItem<SettingsHomeSection>) => {
               this.SectionHeader(sectionRepeatItem.item)
-              Repeat(sectionRepeatItem.item.items).each((itemRepeatItem: RepeatItem<SettingsHomeItem>) => {
-                this.SettingRow(itemRepeatItem.item)
-              }).key((item: SettingsHomeItem) => `${item.key}-${this.rowVersion}`)
-              Divider()
-                .color($r('app.color.divider'))
-                .strokeWidth(1)
-                .margin({ top: 6 })
+              Column() {
+                Repeat(sectionRepeatItem.item.items).each((itemRepeatItem: RepeatItem<SettingsHomeItem>) => {
+                  this.SettingRow(itemRepeatItem.item)
+                  if (itemRepeatItem.index < sectionRepeatItem.item.items.length - 1) {
+                    Divider()
+                      .color($r('app.color.divider'))
+                      .strokeWidth(0.5)
+                      .margin({ left: 16, right: 16 })
+                  }
+                }).key((item: SettingsHomeItem) => `${item.key}-${this.rowVersion}`)
+              }
+              .borderRadius(20)
+              .backgroundColor($r('app.color.card_background'))
+              .clip(true)
+              .margin({ left: 12, right: 12, bottom: 16 })
             }).key((section: SettingsHomeSection) => section.key)
           }
           .width('100%')
           .alignItems(HorizontalAlign.Start)
           .padding({ bottom: 28 })
-        }
+        }.clip(false)
         .width('100%')
         .layoutWeight(1)
         .scrollBar(BarState.Off)
@@ -355,7 +362,88 @@ export struct PreferencesActivityPage {
       dragBar: true,
       onDisappear: () => this.cancelHistoryDisableSheet(),
     })
-    .hideTitleBar(true)
+    .titleBar({
+      avoidLayoutSafeArea: true,
+      enableComponentSafeArea: true,
+      padding: {
+        start: LengthMetrics.vp(5),
+        end: LengthMetrics.vp(5)
+      },
+      style: {
+        scrollEffectOpts: {
+          enableScrollEffect: true,
+          scrollEffectType: ScrollEffectType.GRADIENT_BLUR,
+          blurEffectiveStartOffset: LengthMetrics.vp(0),
+          blurEffectiveEndOffset: LengthMetrics.vp(20)
+        },
+        systemMaterialEffect: {
+          materialType: hdsMaterial.MaterialType.ADAPTIVE,
+          materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+        },
+        originalStyle: {
+          backgroundStyle: {
+            backgroundColor: $r('sys.color.ohos_id_color_background')
+          },
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('sys.color.font_primary'),
+              subTitleColor: $r('sys.color.font_secondary')
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
+          }
+        },
+        scrollEffectStyle: {
+          backgroundStyle: {
+            backgroundColor: $r('sys.color.ohos_id_color_background_transparent')
+          },
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('sys.color.font_primary'),
+              subTitleColor: $r('sys.color.font_secondary')
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
+          }
+        }
+      },
+      content: {
+        title: {
+          mainTitle: $r('app.string.preferences')
+        },
+        backIcon: {
+          icon: $r('app.media.ic_arrow_back'),
+          label: '返回',
+          action: () => NavController.pop()
+        },
+        menu: {
+          value: [{
+            content: {
+              icon: $r('app.media.ic_search'),
+              label: '搜索',
+              action: () => this.onSearch()
+            }
+          }],
+          maxCount: 3
+        },
+        divider: {
+          showType: DividerShowType.AUTO
+        }
+      }
+    })
+    .titleMode(HdsNavDestinationTitleMode.MINI)
     .onBackPressed(() => {
       NavController.pop();
       return true;
@@ -378,11 +466,11 @@ export struct PreferencesActivityPage {
         Image($r('app.media.ic_warning'))
           .width(54)
           .height(54)
-          .fillColor('#BDBDBD')
+          .fillColor($r('app.color.list_subtitle'))
         Text('播放历史')
           .fontSize(22)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#212121')
+          .fontColor($r('app.color.list_title'))
           .margin({ left: 16 })
       }
       .width('100%')
@@ -391,7 +479,7 @@ export struct PreferencesActivityPage {
       Text(
         '禁用播放历史将隐藏历史记录、媒体进度和已看标记。应用将继续保存您的活动，并在历史记录重新启用时恢复这些记录。\n\n如果您想完全停止保存活动，请改用无痕模式。\n\n您还可以在历史记录界面或高级设置中清除历史记录。')
         .fontSize(16)
-        .fontColor('#757575')
+        .fontColor($r('app.color.list_subtitle'))
         .lineHeight(24)
         .width('100%')
         .margin({ top: 24 })
@@ -399,12 +487,12 @@ export struct PreferencesActivityPage {
       Row() {
         Text('取消')
           .fontSize(16)
-          .fontColor('#FF8800')
+          .fontColor($r('app.color.orange500'))
           .padding(12)
           .onClick(() => this.cancelDisablePlaybackHistory())
         Text('确定')
           .fontSize(16)
-          .fontColor('#FF8800')
+          .fontColor($r('app.color.orange500'))
           .padding(12)
           .margin({ left: 22 })
           .onClick(() => this.confirmDisablePlaybackHistory())
@@ -420,7 +508,7 @@ export struct PreferencesActivityPage {
       top: 20,
       bottom: 16
     })
-    .backgroundColor('#FFFFFF')
+    .backgroundColor($r('app.color.background_default'))
   }
 
   @Builder
@@ -430,11 +518,11 @@ export struct PreferencesActivityPage {
         Image($r('app.media.ic_warning'))
           .width(54)
           .height(54)
-          .fillColor('#BDBDBD')
+          .fillColor($r('app.color.list_subtitle'))
         Text('音频播放队列历史')
           .fontSize(22)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#212121')
+          .fontColor($r('app.color.list_title'))
           .margin({ left: 16 })
       }
       .width('100%')
@@ -443,7 +531,7 @@ export struct PreferencesActivityPage {
       Text(
         '禁用音频播放队列历史可能会引发异常行为。\n禁用以后，您将无法在以下位置执行继续播放操作：\n\n－ 蓝牙设备\n－ 小工具\n－ 媒体通知界面')
         .fontSize(16)
-        .fontColor('#757575')
+        .fontColor($r('app.color.list_subtitle'))
         .lineHeight(24)
         .width('100%')
         .margin({ top: 24 })
@@ -451,12 +539,12 @@ export struct PreferencesActivityPage {
       Row() {
         Text('取消')
           .fontSize(16)
-          .fontColor('#FF8800')
+          .fontColor($r('app.color.orange500'))
           .padding(12)
           .onClick(() => this.cancelDisableAudioQueueHistory())
         Text('确定')
           .fontSize(16)
-          .fontColor('#FF8800')
+          .fontColor($r('app.color.orange500'))
           .padding(12)
           .margin({ left: 22 })
           .onClick(() => this.confirmDisableAudioQueueHistory())
@@ -472,7 +560,7 @@ export struct PreferencesActivityPage {
       top: 20,
       bottom: 16
     })
-    .backgroundColor('#FFFFFF')
+    .backgroundColor($r('app.color.background_default'))
   }
 
   private async loadOrientationSummary(): Promise<void> {
@@ -544,17 +632,22 @@ export struct PreferencesActivityPage {
   private openOrientationDialog(): void {
     Settings.getString(Settings.SCREEN_ORIENTATION, SCREEN_ORIENTATION_DEFAULT).then((value: string) => {
       this.orientationValue = value;
-      this.getUIContext().getPromptAction().openCustomDialog({
-        builder: () => {
-          this.orientationDialogContent();
-        },
-        alignment: DialogAlignment.Center,
-        autoCancel: true,
-        maskColor: $r('app.color.dialog_mask'),
-        backgroundColor: Color.Transparent,
-      }).then((dialogId: number) => {
-        this.orientationDialogId = dialogId;
-      });
+      this.getUIContext()
+        .getPromptAction()
+        .openCustomDialog({
+          builder: () => {
+            this.orientationDialogContent();
+          },
+          alignment: DialogAlignment.Center,
+          autoCancel: true,
+          maskColor: $r('app.color.dialog_mask'),
+          backgroundColor: Color.Transparent,
+        })
+        .then((dialogId: number) => {
+          this.orientationDialogId = dialogId;
+        })
+        .catch(() => {
+        })
     });
   }
 
@@ -579,17 +672,22 @@ export struct PreferencesActivityPage {
   private openHardwareAccelerationDialog(): void {
     Settings.getString(Settings.KEY_HARDWARE_ACCELERATION, HARDWARE_ACCELERATION_DEFAULT).then((value: string) => {
       this.hardwareAccelerationValue = value;
-      this.getUIContext().getPromptAction().openCustomDialog({
-        builder: () => {
-          this.hardwareAccelerationDialogContent();
-        },
-        alignment: DialogAlignment.Center,
-        autoCancel: true,
-        maskColor: $r('app.color.dialog_mask'),
-        backgroundColor: Color.Transparent,
-      }).then((dialogId: number) => {
-        this.hardwareAccelerationDialogId = dialogId;
-      });
+      this.getUIContext()
+        .getPromptAction()
+        .openCustomDialog({
+          builder: () => {
+            this.hardwareAccelerationDialogContent();
+          },
+          alignment: DialogAlignment.Center,
+          autoCancel: true,
+          maskColor: $r('app.color.dialog_mask'),
+          backgroundColor: Color.Transparent,
+        })
+        .then((dialogId: number) => {
+          this.hardwareAccelerationDialogId = dialogId;
+        })
+        .catch(() => {
+        })
     });
   }
 
@@ -613,17 +711,22 @@ export struct PreferencesActivityPage {
   private openBackgroundPipDialog(): void {
     Settings.getString(Settings.KEY_VIDEO_APP_SWITCH, BACKGROUND_PIP_DEFAULT).then((value: string) => {
       this.backgroundPipValue = value;
-      this.getUIContext().getPromptAction().openCustomDialog({
-        builder: () => {
-          this.backgroundPipDialogContent();
-        },
-        alignment: DialogAlignment.Center,
-        autoCancel: true,
-        maskColor: $r('app.color.dialog_mask'),
-        backgroundColor: Color.Transparent,
-      }).then((dialogId: number) => {
-        this.backgroundPipDialogId = dialogId;
-      });
+      this.getUIContext()
+        .getPromptAction()
+        .openCustomDialog({
+          builder: () => {
+            this.backgroundPipDialogContent();
+          },
+          alignment: DialogAlignment.Center,
+          autoCancel: true,
+          maskColor: $r('app.color.dialog_mask'),
+          backgroundColor: Color.Transparent,
+        })
+        .then((dialogId: number) => {
+          this.backgroundPipDialogId = dialogId;
+        })
+        .catch(() => {
+        })
     });
   }
 
@@ -665,17 +768,22 @@ export struct PreferencesActivityPage {
   private openMeteredConnectionDialog(): void {
     Settings.getString(Settings.KEY_METERED_CONNECTION, METERED_CONNECTION_DEFAULT).then((value: string) => {
       this.meteredConnectionValue = value;
-      this.getUIContext().getPromptAction().openCustomDialog({
-        builder: () => {
-          this.meteredConnectionDialogContent();
-        },
-        alignment: DialogAlignment.Center,
-        autoCancel: true,
-        maskColor: $r('app.color.dialog_mask'),
-        backgroundColor: Color.Transparent,
-      }).then((dialogId: number) => {
-        this.meteredConnectionDialogId = dialogId;
-      });
+      this.getUIContext()
+        .getPromptAction()
+        .openCustomDialog({
+          builder: () => {
+            this.meteredConnectionDialogContent();
+          },
+          alignment: DialogAlignment.Center,
+          autoCancel: true,
+          maskColor: $r('app.color.dialog_mask'),
+          backgroundColor: Color.Transparent,
+        })
+        .then((dialogId: number) => {
+          this.meteredConnectionDialogId = dialogId;
+        })
+        .catch(() => {
+        })
     });
   }
 

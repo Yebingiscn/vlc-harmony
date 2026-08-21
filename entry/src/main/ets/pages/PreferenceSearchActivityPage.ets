@@ -1,5 +1,7 @@
 import { NavController } from '../common/data/NavController';
 import { AppColors, AppDimens } from '../common/constants/AppConstants';
+import { HdsNavDestination, HdsNavDestinationTitleMode, DividerShowType, ScrollEffectType, hdsMaterial } from '@kit.UIDesignKit';
+import { LengthMetrics } from '@kit.ArkUI';
 
 /** 偏好搜索项(PreferenceItem data class)。 */
 export class PreferenceItem {
@@ -107,22 +109,16 @@ export struct PreferenceSearchActivityPage {
   }
 
   build() {
-    NavDestination() {
+    HdsNavDestination() {
       Column() {
-        // 顶部搜索栏行(close — searchText — translate,垂直居中于同一 48vp 行)
+        // 搜索栏
         Row() {
-          Image($r('app.media.ic_close_up'))
-            .width(24)
-            .height(24)
-            .fillColor(AppColors.grey700)
-            .margin({ left: AppDimens.default_margin })
-            .padding(AppDimens.half_default_margin)
-            .onClick(() => NavController.pop())
           TextInput({ text: this.vm.query, placeholder: $r('app.string.search_prefs') })
             .layoutWeight(1)
             .height(48)
             .margin({ left: AppDimens.default_margin, right: AppDimens.default_margin })
-            .backgroundColor(AppColors.transparent)
+            .backgroundColor($r('app.color.card_background'))
+            .borderRadius(24)
             .fontSize(16)
             .placeholderColor(AppColors.grey500)
             .onChange((v: string) => this.vm.onQueryChange(v))
@@ -143,7 +139,7 @@ export struct PreferenceSearchActivityPage {
         .alignItems(VerticalAlign.Center)
 
         // separator
-        Divider().height(1).color(AppColors.grey300).margin({ top: AppDimens.half_default_margin })
+        Divider().height(1).color($r('app.color.divider')).margin({ top: AppDimens.half_default_margin })
 
         // 结果列表
         List() {
@@ -156,13 +152,84 @@ export struct PreferenceSearchActivityPage {
         .width('100%')
         .layoutWeight(1)
         .scrollBar(BarState.Auto)
-        .backgroundColor(AppColors.white)
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(AppColors.white)
+      .backgroundColor($r('app.color.background_default'))
     }
-    .hideTitleBar(true)
+    .titleBar({
+      avoidLayoutSafeArea: true,
+      enableComponentSafeArea: true,
+      padding: {
+        start: LengthMetrics.vp(5),
+        end: LengthMetrics.vp(5)
+      },
+      style: {
+        scrollEffectOpts: {
+          enableScrollEffect: true,
+          scrollEffectType: ScrollEffectType.GRADIENT_BLUR,
+          blurEffectiveStartOffset: LengthMetrics.vp(0),
+          blurEffectiveEndOffset: LengthMetrics.vp(20)
+        },
+        systemMaterialEffect: {
+          materialType: hdsMaterial.MaterialType.ADAPTIVE,
+          materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+        },
+        originalStyle: {
+          backgroundStyle: {
+            backgroundColor: $r('sys.color.ohos_id_color_background')
+          },
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('sys.color.font_primary'),
+              subTitleColor: $r('sys.color.font_secondary')
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
+          }
+        },
+        scrollEffectStyle: {
+          backgroundStyle: {
+            backgroundColor: $r('sys.color.ohos_id_color_background_transparent')
+          },
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: $r('sys.color.font_primary'),
+              subTitleColor: $r('sys.color.font_secondary')
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
+          }
+        }
+      },
+      content: {
+        title: {
+          mainTitle: $r('app.string.search_prefs')
+        },
+        backIcon: {
+          icon: $r('app.media.ic_arrow_back'),
+          label: '返回',
+          action: () => NavController.pop()
+        },
+        divider: {
+          showType: DividerShowType.AUTO
+        }
+      }
+    })
+    .titleMode(HdsNavDestinationTitleMode.MINI)
+    .hideTitleBar(false)
     .onBackPressed(() => {
       NavController.pop();
       return true;

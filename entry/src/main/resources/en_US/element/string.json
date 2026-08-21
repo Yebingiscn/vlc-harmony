@@ -54,11 +54,11 @@
     },
     {
       "name": "app_name",
-      "value": "VLC"
+      "value": "SweetVLC"
     },
     {
       "name": "app_name_full",
-      "value": "VLC for Android"
+      "value": "Sweet VLC"
     },
     {
       "name": "apply_playqueue",
@@ -1310,7 +1310,7 @@
     },
     {
       "name": "welcome_title",
-      "value": "Welcome to VLC!"
+      "value": "Welcome to SweetVLC!"
     },
     {
       "name": "whats_new_37_android_auto",
@@ -1410,15 +1410,15 @@
     },
     {
       "name": "module_desc",
-      "value": "VLC multimedia player"
+      "value": "Sweet VLC multimedia player"
     },
     {
       "name": "EntryAbility_desc",
-      "value": "VLC multimedia player"
+      "value": "Sweet VLC multimedia player"
     },
     {
       "name": "EntryAbility_label",
-      "value": "VLC"
+      "value": "Sweet VLC"
     },
     {
       "name": "reason_internet",

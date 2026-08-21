@@ -37,8 +37,7 @@ export class AppColors {
   static readonly grey875: string = '#2a2a2a';
   static readonly grey900: string = '#212121';
   static readonly dark_background: string = '#131313';
-  static readonly onboarding_grey: string = '#011422';
-  static readonly onboarding_grey_transparent_75: string = '#BF011422';
+
   static readonly playerbackground: string = '#c0141414';
   static readonly status_bar_transparency: string = '#cb000000';
   static readonly black_more_transparent: string = '#88000000';
@@ -70,6 +69,8 @@ export class AppDimens {
   static readonly grid_card_subtitle_text_size: number = 10;
   static readonly tab_layout_height: number = 24;
   static readonly tab_layout_horizontal_padding: number = 5;
+  /** 悬浮底栏 + MiniPlayer 的内容避让高度，供主页各可滚动区域统一使用。 */
+  static readonly floating_content_bottom_inset: number = 160;
   static readonly navigation_margin: number = 0;
   static readonly player_peek_height: number = 72;
   static readonly audio_cover: number = 48;
@@ -128,7 +129,7 @@ export class RouteName {
   static readonly OTPCode: string = 'OTPCode';
   static readonly Authors: string = 'Authors';
   static readonly Feedback: string = 'Feedback';
-  static readonly BetaWelcome: string = 'BetaWelcome';
+
   static readonly FilePicker: string = 'FilePicker';
   static readonly Preferences: string = 'Preferences';
   static readonly PreferenceSearch: string = 'PreferenceSearch';

@@ -15,6 +15,7 @@ class MoreViewModel {
 /** 更多 tab：首页结构与安卓 VLC 对齐，串流保留为明确的功能占位。 */
 @ComponentV2
 export struct MorePage {
+  @Param contentScroller: Scroller = new Scroller();
   @Local vm: MoreViewModel = new MoreViewModel();
   @Local showVideoThumbnails: boolean = true;
   private removeHistoryListener: (() => void) | null = null;
@@ -158,10 +159,11 @@ export struct MorePage {
         Row() {
           Repeat(this.vm.history).each((itemRepeatItem: RepeatItem<PlaybackHistoryEntry>) => {
             this.HistoryCard(itemRepeatItem.item)
-          }).key((item: PlaybackHistoryEntry) => item.uri).virtualScroll()
+          }).key((item: PlaybackHistoryEntry) => item.uri)
         }
         .padding({ left: 16, right: 4 })
       }
+      .clip(false)
       .width('100%')
       .height(190)
       .scrollable(ScrollDirection.Horizontal)
@@ -171,7 +173,7 @@ export struct MorePage {
   }
 
   build() {
-    Scroll() {
+    Scroll(this.contentScroller) {
       Column() {
         Row() {
           Column() {
@@ -192,13 +194,12 @@ export struct MorePage {
         // this.SectionTitle('串流', () => NavController.push('MrlPanel'))
         // this.NewStreamCard()
 
-        if (this.vm.history.length > 0) {
-          this.SectionTitle('历史', () => this.openHistory())
-          this.HistoryPreview()
-        }
+        this.SectionTitle('历史', () => this.openHistory())
+        this.HistoryPreview()
       }
       .width('100%').alignItems(HorizontalAlign.Start).padding({ bottom: 28 })
     }
+    .clip(false)
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.background_default'))

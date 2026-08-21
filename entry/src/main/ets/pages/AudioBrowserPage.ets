@@ -8,6 +8,9 @@ import { Settings } from '../common/data/Settings';
 import { picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { CapsuleSegmentButtonV2, ColorMetrics, SegmentButtonV2ItemOptions, SegmentButtonV2Items } from '@kit.ArkUI';
+import { pinyin4js } from '@ohos/pinyin4js';
+import { AppColors, AppDimens } from '../common/constants/AppConstants';
 
 const TAG = 'VLC-Audio';
 
@@ -30,6 +33,7 @@ class AlbumCard {
 }
 
 class AlbumMapEntry {
+  name: string = '';
   artist: string = '';
   count: number = 0;
   art: string = '';
@@ -50,15 +54,65 @@ class AudioBrowserVM {
   @Trace tabIndex: number = 0;
   @Trace emptyState: EmptyLoadingState = EmptyLoadingState.LOADING;
   @Trace displayAsList: boolean = false;
+  /** 导入后递增，用于丢弃 Repeat 虚拟滚动缓存中的旧节点。 */
+  @Trace renderVersion: number = 0;
   private sortDesc: boolean = false;
-  private showAllArtists: boolean = false;
   private onlyFavs: boolean = false;
   private searchQuery: string = '';
+  private pinyinCache: Map<string, string> = new Map();
+  private static splitRegex = /(\d+)/g;
+  private static readonly COLLATOR = new Intl.Collator('zh-CN', {
+    sensitivity: 'variant',
+    numeric: true,
+    ignorePunctuation: false,
+    caseFirst: 'upper'
+  });
 
-  /** 按系统语言进行不区分大小写、支持数字段的名称排序，并统一处理升降序。 */
+  /** 与 SweetVideo 一致：先转简拼，再按中文区域规则进行自然排序。 */
   private compareNames(left: string, right: string): number {
-    const result = left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' });
+    const leftPinyin = this.getPinyin(left);
+    const rightPinyin = this.getPinyin(right);
+    let result = AudioBrowserVM.naturalCompare(leftPinyin, rightPinyin);
+    // 同音或简拼相同时再比较原名，避免不同名称的次序依赖媒体扫描顺序。
+    if (result === 0) {
+      result = AudioBrowserVM.COLLATOR.compare(left, right);
+    }
     return this.sortDesc ? -result : result;
+  }
+
+  private getPinyin(name: string): string {
+    const cached = this.pinyinCache.get(name);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const pinyin = pinyin4js.getShortPinyin(name) as string;
+    this.pinyinCache.set(name, pinyin);
+    return pinyin;
+  }
+
+  private static naturalCompare(left: string, right: string): number {
+    const leftParts = left.split(AudioBrowserVM.splitRegex).filter(Boolean);
+    const rightParts = right.split(AudioBrowserVM.splitRegex).filter(Boolean);
+    const count = Math.min(leftParts.length, rightParts.length);
+    for (let i = 0; i < count; i++) {
+      const leftPart = leftParts[i];
+      const rightPart = rightParts[i];
+      const leftIsNumber = /^\d+$/.test(leftPart);
+      const rightIsNumber = /^\d+$/.test(rightPart);
+      if (leftIsNumber && rightIsNumber) {
+        const leftNumber = parseInt(leftPart, 10);
+        const rightNumber = parseInt(rightPart, 10);
+        if (leftNumber !== rightNumber) {
+          return leftNumber - rightNumber;
+        }
+      } else {
+        const result = AudioBrowserVM.COLLATOR.compare(leftPart, rightPart);
+        if (result !== 0) {
+          return result;
+        }
+      }
+    }
+    return leftParts.length - rightParts.length;
   }
 
   async load(): Promise<void> {
@@ -66,7 +120,6 @@ class AudioBrowserVM {
     this.tabIndex = await Settings.getInt(Settings.KEY_AUDIO_CURRENT_TAB, 0);
     this.displayAsList = await Settings.getBoolean(Settings.KEY_DISPLAY_AS_LIST, false);
     this.sortDesc = await Settings.getBoolean(Settings.KEY_AUDIO_SORT_DESC, false);
-    this.showAllArtists = await Settings.getBoolean(Settings.KEY_ARTISTS_SHOW_ALL, false);
     this.onlyFavs = await Settings.getBoolean(Settings.KEY_AUDIO_ONLY_FAVS, false);
     // 尊重「自动重新扫描」开关:autoRescan 关闭时不自动扫描。
     // 手动刷新请走 vm.reload()(下拉刷新),不受此门控影响。
@@ -79,7 +132,6 @@ class AudioBrowserVM {
   async reloadSettings(): Promise<void> {
     this.displayAsList = await Settings.getBoolean(Settings.KEY_DISPLAY_AS_LIST, false);
     this.sortDesc = await Settings.getBoolean(Settings.KEY_AUDIO_SORT_DESC, false);
-    this.showAllArtists = await Settings.getBoolean(Settings.KEY_ARTISTS_SHOW_ALL, false);
     this.onlyFavs = await Settings.getBoolean(Settings.KEY_AUDIO_ONLY_FAVS, false);
     this.syncData();
   }
@@ -94,7 +146,7 @@ class AudioBrowserVM {
     this.loading = false;
   }
 
-  syncData(): void {
+  syncData(forceRebuild: boolean = false): void {
     const raw = MediaLibrary.getAudios();
     const trimmed = this.searchQuery.trim().toLowerCase();
     // 当前 Tab 内搜索:按标题/艺术家/专辑/流派过滤,四个子 Tab 共用过滤后的结果集
@@ -153,6 +205,7 @@ class AudioBrowserVM {
       const compositeKey = `${key}|${t.artistName}`;
       if (!albumMap.has(compositeKey)) {
         const ae = new AlbumMapEntry();
+        ae.name = key;
         ae.artist = t.artistName.length > 0 ? t.artistName : '未知艺术家';
         ae.art = t.artworkPath;
         albumMap.set(compositeKey, ae);
@@ -164,10 +217,13 @@ class AudioBrowserVM {
         alEntry.art = t.artworkPath;
       }
     }
-    this.albums = Array.from(albumMap.entries())
-      .sort((a, b) => this.compareNames(a[0], b[0]))
-      .map(e => new AlbumCard(e[0].split('|')[0], e[1].artist, e[1].count, e[1].art,
-        e[1].tracks.slice().sort((a, b) => this.compareNames(a.title, b.title))));
+    this.albums = Array.from(albumMap.values())
+      .sort((a, b) => {
+        const albumResult = this.compareNames(a.name, b.name);
+        return albumResult !== 0 ? albumResult : this.compareNames(a.artist, b.artist);
+      })
+      .map(e => new AlbumCard(e.name, e.artist, e.count, e.art,
+        e.tracks.slice().sort((a, b) => this.compareNames(a.title, b.title))));
 
     // 流派分组
     const genreMap = new Map<string, Track[]>();
@@ -198,6 +254,9 @@ class AudioBrowserVM {
     } else {
       this.emptyState = EmptyLoadingState.NONE;
     }
+    if (forceRebuild) {
+      this.renderVersion++;
+    }
   }
 
   applySearch(q: string): void {
@@ -220,9 +279,28 @@ export struct AudioBrowserPage {
   @Local sheetAlbum: AlbumCard | null = null;
   @Local showSheet: boolean = false;
   @Local sheetAlbumFav: boolean = false;
+  @Local segmentItems: SegmentButtonV2Items = new SegmentButtonV2Items([
+    { text: $r('app.string.artists') } as SegmentButtonV2ItemOptions,
+    { text: $r('app.string.albums') } as SegmentButtonV2ItemOptions,
+    { text: $r('app.string.tracks') } as SegmentButtonV2ItemOptions,
+    { text: $r('app.string.genres') } as SegmentButtonV2ItemOptions
+  ]);
+  @Local segmentSelectedBackgroundColor: ColorMetrics | undefined = undefined;
+  @Local segmentSelectedFontColor: ColorMetrics | undefined = undefined;
+  @Local importActive: boolean = false;
+  @Local importCurrent: number = 0;
+  @Local importTotal: number = 0;
   @Param settingsVersion: number = 0;
   @Param searchMode: boolean = false;
   @Param searchQuery: string = '';
+  /** 各视图独立 Scroller，供主页 HdsNavDestination 同时绑定滚动联动。 */
+  @Param artistScroller: Scroller = new Scroller();
+  @Param albumListScroller: Scroller = new Scroller();
+  @Param albumGridScroller: Scroller = new Scroller();
+  @Param trackListScroller: Scroller = new Scroller();
+  @Param trackGridScroller: Scroller = new Scroller();
+  @Param genreListScroller: Scroller = new Scroller();
+  @Param genreGridScroller: Scroller = new Scroller();
   /** "转到艺人"定位目标(配合 goToArtistVersion 触发 @Monitor)。 */
   @Param goToArtistName: string = '';
   /** "转到艺人"请求版本号:自增保证同名艺人连续定位也触发 @Monitor。 */
@@ -230,14 +308,17 @@ export struct AudioBrowserPage {
   private controller: TabsController = new TabsController();
   /** 防止播放器首次初始化期间连续点击同一专辑，重复压入 AudioPlayer 页面。 */
   private audioPlayerOpening: boolean = false;
-  /** 艺术家列表滚动控制器("转到艺人"时 scrollToIndex 到对应歌手分组)。 */
-  private artistScroller: Scroller = new Scroller();
   @Event onSearchGlobal: () => void = () => {
   };
 
   aboutToAppear(): void {
     // 从播放器返回后允许再次进入；成功 push 后则一直保持锁定到页面重新显示。
     this.audioPlayerOpening = false;
+    try {
+      this.segmentSelectedBackgroundColor = ColorMetrics.resourceColor($r('app.color.orange500'));
+      this.segmentSelectedFontColor = ColorMetrics.resourceColor($r('app.color.colorOnPrimary'));
+    } catch (_error) {
+    }
     this.vm.load();
   }
 
@@ -285,10 +366,18 @@ export struct AudioBrowserPage {
       const docPicker = new picker.DocumentViewPicker(ctx);
       const uris: string[] = await docPicker.select(opts);
       if (uris.length > 0) {
-        await MediaLibrary.importAudioUris(uris);
-        this.vm.syncData();
+        this.importActive = true;
+        this.importCurrent = 0;
+        this.importTotal = uris.length;
+        await MediaLibrary.importAudioUris(uris, (current: number, total: number): void => {
+          this.importCurrent = current;
+          this.importTotal = total;
+        });
+        this.importActive = false;
+        this.vm.syncData(true);
       }
-    } catch (e) { /* cancelled */
+    } catch (e) {
+      this.importActive = false;
     }
   }
 
@@ -328,7 +417,35 @@ export struct AudioBrowserPage {
   build() {
     Stack() {
       Refresh({ refreshing: $$this.refreshing }) {
-        Tabs({ barPosition: BarPosition.Start, controller: this.controller, index: this.vm.tabIndex }) {
+        Column() {
+          if (this.importActive) {
+            Row() {
+              Progress({ value: this.importCurrent, total: this.importTotal, type: ProgressType.Linear })
+                .layoutWeight(1)
+                .height(4)
+                .color(AppColors.orange500)
+            }
+            .width('100%').padding(8)
+          }
+          Row() {
+            CapsuleSegmentButtonV2({
+              items: this.segmentItems,
+              selectedIndex: this.vm.tabIndex,
+              buttonBackgroundBlurStyle: BlurStyle.BACKGROUND_THICK,
+              itemSelectedFontColor: this.segmentSelectedFontColor,
+              itemSelectedBackgroundColor: this.segmentSelectedBackgroundColor,
+              onItemClicked: (index: number) => {
+                this.vm.saveTab(index);
+                this.controller.changeIndex(index);
+              }
+            })
+              .width('100%')
+          }
+          .width('100%')
+          .padding({ left: 12, right: 12 })
+          .margin({ top: 6, bottom: 6 })
+
+          Tabs({ barPosition: BarPosition.Start, controller: this.controller, index: this.vm.tabIndex }) {
           // 艺术家(纵向分组列表:歌手名 → 曲目)
           TabContent() {
             Column() {
@@ -343,7 +460,7 @@ export struct AudioBrowserPage {
                 this.artistList()
               }
             }.width('100%').height('100%')
-          }.tabBar(this.tabBuilder($r('app.string.artists'), 0))
+          }
 
           // 专辑
           TabContent() {
@@ -361,7 +478,7 @@ export struct AudioBrowserPage {
                 this.albumGrid()
               }
             }.width('100%').height('100%')
-          }.tabBar(this.tabBuilder($r('app.string.albums'), 1))
+          }
 
           // 曲目
           TabContent() {
@@ -379,7 +496,7 @@ export struct AudioBrowserPage {
                 this.trackGrid()
               }
             }.width('100%').height('100%')
-          }.tabBar(this.tabBuilder($r('app.string.tracks'), 2))
+          }
 
           // 流派
           TabContent() {
@@ -397,13 +514,15 @@ export struct AudioBrowserPage {
                 this.genreGrid()
               }
             }.width('100%').height('100%')
-          }.tabBar(this.tabBuilder($r('app.string.genres'), 3))
+          }
+          }
+          .barHeight(0)
+          .onChange((index: number) => this.vm.saveTab(index))
+          .layoutWeight(1)
+          .width('100%')
         }
-        .barMode(BarMode.Scrollable)
-        .barHeight(40)
-        .onChange((index: number) => this.vm.saveTab(index))
-        .layoutWeight(1)
         .width('100%')
+        .height('100%')
       }
       .onRefreshing(() => this.doRefresh()).refreshOffset(64)
       .backgroundColor($r('app.color.background_default'))
@@ -457,25 +576,6 @@ export struct AudioBrowserPage {
     .padding({ top: 8, bottom: 8 })
   }
 
-  @Builder
-  tabBuilder(title: Resource, index: number) {
-    Column() {
-      Text(title).fontSize(16)
-        .fontColor(this.vm.tabIndex === index ? '#FF8800' : $r('app.color.list_subtitle'))
-        .fontWeight(this.vm.tabIndex === index ? FontWeight.Medium : FontWeight.Normal)
-      Divider()
-        .strokeWidth(2)
-        .color('#FF8800')
-        .width(20)
-        .margin({ top: 4 })
-        .visibility(this.vm.tabIndex === index ? Visibility.Visible : Visibility.Hidden)
-    }
-    .padding({ left: 10, right: 10 })
-    .height('100%')
-    .width('25%')
-    .justifyContent(FlexAlign.Center)
-  }
-
   // ---- 艺术家列表(歌手 → 专辑网格) ----
 
   @Builder
@@ -488,7 +588,8 @@ export struct AudioBrowserPage {
               Column() {
                 Repeat(albumsRepeatItem.item).each((cardRepeatItem: RepeatItem<AlbumCard>) => {
                   this.albumRow(cardRepeatItem.item)
-                }).key((card: AlbumCard) => `artist_list_${this.vm.artistNames[albumsRepeatItem.index]}_${card.name}`)
+                }).key((card: AlbumCard) =>
+                `artist_list_${this.vm.renderVersion}_${this.vm.artistNames[albumsRepeatItem.index]}_${card.name}`)
               }
               .width('100%')
             } else {
@@ -497,7 +598,8 @@ export struct AudioBrowserPage {
                   GridItem() {
                     this.albumCard(cardRepeatItem.item)
                   }
-                }).key((card: AlbumCard) => `artist_grid_${this.vm.artistNames[albumsRepeatItem.index]}_${card.name}`)
+                }).key((card: AlbumCard) =>
+                `artist_grid_${this.vm.renderVersion}_${this.vm.artistNames[albumsRepeatItem.index]}_${card.name}`)
               }
               .columnsTemplate('1fr 1fr')
               .columnsGap(10)
@@ -507,7 +609,8 @@ export struct AudioBrowserPage {
             }
           }
         }
-      }).key((_: AlbumCard[], idx: number) => this.vm.artistNames[idx]).virtualScroll()
+      }).key((_: AlbumCard[], idx: number) =>
+      `artist_${this.vm.renderVersion}_${this.vm.artistNames[idx]}`).virtualScroll()
     }
     .divider({
       strokeWidth: 0.5,
@@ -515,6 +618,7 @@ export struct AudioBrowserPage {
       startMargin: 16,
       endMargin: 8
     })
+    .contentEndOffset(AppDimens.floating_content_bottom_inset)
     .alignListItem(ListItemAlign.Start).width('100%').height('100%')
   }
 
@@ -572,12 +676,13 @@ export struct AudioBrowserPage {
 
   @Builder
   albumList() {
-    List() {
+    List({ scroller: this.albumListScroller }) {
       Repeat(this.vm.albums).each((cardRepeatItem: RepeatItem<AlbumCard>) => {
         ListItem() {
           this.albumRow(cardRepeatItem.item)
         }
-      }).key((card: AlbumCard) => `album_list_${card.name}|${card.artist}`).virtualScroll()
+      }).key((card: AlbumCard) =>
+      `album_list_${this.vm.renderVersion}_${card.name}|${card.artist}`).virtualScroll()
     }
     .divider({
       strokeWidth: 0.5,
@@ -585,6 +690,7 @@ export struct AudioBrowserPage {
       startMargin: 76,
       endMargin: 8
     })
+    .contentEndOffset(AppDimens.floating_content_bottom_inset)
     .alignListItem(ListItemAlign.Start)
     .width('100%')
     .height('100%')
@@ -629,7 +735,7 @@ export struct AudioBrowserPage {
 
   @Builder
   albumGrid() {
-    Grid() {
+    Grid(this.albumGridScroller) {
       Repeat(this.vm.albums).each((cardRepeatItem: RepeatItem<AlbumCard>) => {
         GridItem() {
           Column() {
@@ -664,12 +770,14 @@ export struct AudioBrowserPage {
           .width('100%').padding(6)
           .onClick(() => this.playAll(cardRepeatItem.item.tracks))
         }
-      }).key((card: AlbumCard) => `${card.name}|${card.artist}`).virtualScroll()
+      }).key((card: AlbumCard) =>
+      `album_grid_${this.vm.renderVersion}_${card.name}|${card.artist}`).virtualScroll()
     }
     .columnsTemplate('1fr 1fr')
     .columnsGap(8)
     .rowsGap(12)
-    .padding(8)
+    .padding({ left: 8, right: 8, top: 8 })
+    .contentEndOffset(AppDimens.floating_content_bottom_inset)
     .width('100%')
     .height('100%')
   }
@@ -678,12 +786,12 @@ export struct AudioBrowserPage {
 
   @Builder
   trackList() {
-    List() {
+    List({ scroller: this.trackListScroller }) {
       Repeat(this.vm.tracks).each((tRepeatItem: RepeatItem<Track>) => {
         ListItem() {
           this.trackRow(tRepeatItem.item, this.vm.tracks)
         }
-      }).key((t: Track) => `t${t.id}`).virtualScroll()
+      }).key((t: Track) => `track_list_${this.vm.renderVersion}_${t.uri}`).virtualScroll()
     }
     .divider({
       strokeWidth: 0.5,
@@ -691,22 +799,24 @@ export struct AudioBrowserPage {
       startMargin: 56,
       endMargin: 8
     })
+    .contentEndOffset(AppDimens.floating_content_bottom_inset)
     .alignListItem(ListItemAlign.Start).width('100%').height('100%')
   }
 
   @Builder
   trackGrid() {
-    Grid() {
+    Grid(this.trackGridScroller) {
       Repeat(this.vm.tracks).each((trackRepeatItem: RepeatItem<Track>) => {
         GridItem() {
           this.trackCard(trackRepeatItem.item, this.vm.tracks)
         }
-      }).key((track: Track) => `track_grid_${track.id}`).virtualScroll()
+      }).key((track: Track) => `track_grid_${this.vm.renderVersion}_${track.uri}`).virtualScroll()
     }
     .columnsTemplate('1fr 1fr')
     .columnsGap(8)
     .rowsGap(12)
-    .padding({ left: 8, right: 8, top: 8, bottom: 152 })
+    .padding({ left: 8, right: 8, top: 8 })
+    .contentEndOffset(AppDimens.floating_content_bottom_inset)
     .width('100%')
     .height('100%')
   }
@@ -742,16 +852,18 @@ export struct AudioBrowserPage {
 
   @Builder
   genreList() {
-    List() {
+    List({ scroller: this.genreListScroller }) {
       Repeat(this.vm.genres).each((tracksRepeatItem: RepeatItem<Track[]>) => {
         ListItemGroup({ header: this.genreHeader(this.vm.genreNames[tracksRepeatItem.index], tracksRepeatItem.item.length) }) {
           Repeat(tracksRepeatItem.item).each((tRepeatItem: RepeatItem<Track>) => {
             ListItem() {
               this.trackRow(tRepeatItem.item, tracksRepeatItem.item)
             }
-          }).key((t: Track) => `genre_${this.vm.genreNames[tracksRepeatItem.index]}_${t.id}`)
+          }).key((t: Track) =>
+          `genre_${this.vm.renderVersion}_${this.vm.genreNames[tracksRepeatItem.index]}_${t.uri}`)
         }
-      }).key((_: Track[], idx: number) => this.vm.genreNames[idx]).virtualScroll()
+      }).key((_: Track[], idx: number) =>
+      `genre_list_${this.vm.renderVersion}_${this.vm.genreNames[idx]}`).virtualScroll()
     }
     .divider({
       strokeWidth: 0.5,
@@ -759,6 +871,7 @@ export struct AudioBrowserPage {
       startMargin: 16,
       endMargin: 8
     })
+    .contentEndOffset(AppDimens.floating_content_bottom_inset)
     .alignListItem(ListItemAlign.Start).width('100%').height('100%')
   }
 
@@ -769,17 +882,19 @@ export struct AudioBrowserPage {
 
   @Builder
   genreGrid() {
-    Grid() {
+    Grid(this.genreGridScroller) {
       Repeat(this.vm.genres).each((tracksRepeatItem: RepeatItem<Track[]>) => {
         GridItem() {
           this.genreCard(this.vm.genreNames[tracksRepeatItem.index], tracksRepeatItem.item)
         }
-      }).key((_: Track[], index: number) => `genre_grid_${this.vm.genreNames[index]}`).virtualScroll()
+      }).key((_: Track[], index: number) =>
+      `genre_grid_${this.vm.renderVersion}_${this.vm.genreNames[index]}`).virtualScroll()
     }
     .columnsTemplate('1fr 1fr')
     .columnsGap(8)
     .rowsGap(12)
-    .padding({ left: 8, right: 8, top: 8, bottom: 152 })
+    .padding({ left: 8, right: 8, top: 8 })
+    .contentEndOffset(AppDimens.floating_content_bottom_inset)
     .width('100%')
     .height('100%')
   }

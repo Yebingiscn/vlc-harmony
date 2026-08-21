@@ -90,8 +90,6 @@ export struct EmptyStateView {
           .fontSize(14)
           .margin({ top: 8 })
           .onClick(() => this.onPickFile())
-      } else {
-        // NONE
       }
     }
     .width('100%')

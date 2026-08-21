@@ -155,6 +155,7 @@ export struct AudioInfoDialog {
         // 显式声明:子项全部从顶部开始堆叠,不被 Column 居中。
         .alignItems(HorizontalAlign.Start)
       }
+      .clip(false)
       .layoutWeight(1)
       .scrollBar(BarState.Off)
       .align(Alignment.TopStart)

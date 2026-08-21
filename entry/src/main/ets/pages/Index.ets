@@ -1,4 +1,4 @@
-import { MainPage } from './MainPage';
+  import { MainPage } from './MainPage';
 import { OnboardingPage } from './OnboardingPage';
 import { VideoParam, VideoPlayerPage } from './VideoPlayerPage';
 import { AudioPlayerPage } from './AudioPlayerPage';
@@ -19,7 +19,7 @@ import { PinCodeActivityPage, PinCodeParam } from './PinCodeActivityPage';
 import { OTPCodeActivityPage } from './OTPCodeActivityPage';
 import { AuthorsActivityPage } from './AuthorsActivityPage';
 import { FeedbackActivityPage } from './FeedbackActivityPage';
-import { BetaWelcomeActivityPage } from './BetaWelcomeActivityPage';
+
 import { FilePickerActivityPage, FilePickerParam } from './FilePickerActivityPage';
 import { PreferencesActivityPage } from './PreferencesActivityPage';
 import { PreferenceSearchActivityPage } from './PreferenceSearchActivityPage';
@@ -101,8 +101,7 @@ struct Index {
       AuthorsActivityPage()
     } else if (name === RouteName.Feedback) {
       FeedbackActivityPage()
-    } else if (name === RouteName.BetaWelcome) {
-      BetaWelcomeActivityPage()
+
     } else if (name === RouteName.FilePicker) {
       FilePickerActivityPage({ param: param as object as FilePickerParam })
     } else if (name === RouteName.Preferences) {

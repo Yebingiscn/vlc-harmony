@@ -117,6 +117,7 @@ export struct AboutVersionDialog {
       })
       .alignItems(HorizontalAlign.Start)
     }
+    .clip(false)
     .width('100%')
     .layoutWeight(1)
     .scrollBar(BarState.Off)

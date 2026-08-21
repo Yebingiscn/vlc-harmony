@@ -252,6 +252,7 @@ export struct AddToPlaylistDialog {
         .width('100%')
         .alignItems(HorizontalAlign.Start)
       }
+      .clip(false)
       .layoutWeight(1)
       .scrollBar(BarState.Off)
       .align(Alignment.TopStart)
