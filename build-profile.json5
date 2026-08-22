@@ -7,11 +7,11 @@
         "material": {
           "certpath": "C:\\Users\\a1309\\.ohos\\config\\default_vlc-harmony_2enwF20bSr7s37wmjMYBy2xh3ewuroznCqPVs3PSH8w=.cer",
           "keyAlias": "debugKey",
-          "keyPassword": "0000001A6A43FC0E00EEB93F2FB0C8764D496B0D8A892AF7D8170DEEA4F47BC2377F9E25E2965CD3E6E9",
+          "keyPassword": "0000001BC29A952AF97D4BCB7F49C2E28CC30E8D62E3F4798BD134FF645C43CF0D1A70DC2490CC145883C8",
           "profile": "C:\\Users\\a1309\\.ohos\\config\\default_vlc-harmony_2enwF20bSr7s37wmjMYBy2xh3ewuroznCqPVs3PSH8w=.p7b",
           "signAlg": "SHA256withECDSA",
           "storeFile": "C:\\Users\\a1309\\.ohos\\config\\default_vlc-harmony_2enwF20bSr7s37wmjMYBy2xh3ewuroznCqPVs3PSH8w=.p12",
-          "storePassword": "0000001A3DB364AC5124A894B379F68E691AE2BF3523733996F3FAC0904BCD4DA3E377D94DB227B47FC9"
+          "storePassword": "0000001BDC133303B16BCF7B6B2D3F1F5230025EDBDD4DE216954ED3388AF79E5927035333EDC12B4E7502"
         }
       }
     ],
