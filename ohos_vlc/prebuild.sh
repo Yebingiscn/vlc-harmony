@@ -80,7 +80,10 @@ function configure_lycium_build()
 {
     local a52_recipe="$LYCIUM_COMMUNITY_DIR/a52dec/HPKBUILD"
     local ffmpeg_recipe="$LYCIUM_COMMUNITY_DIR/FFmpeg-surface-dev/HPKBUILD"
+    local fribidi_recipe="$LYCIUM_THIRDPARTY_DIR/fribidi/HPKBUILD"
     local openssl_recipe="$LYCIUM_COMMUNITY_DIR/openssl_1_0_2u/HPKBUILD"
+    local zlib_recipe="$LYCIUM_THIRDPARTY_DIR/zlib/HPKBUILD"
+    local zlib_checksum="$LYCIUM_THIRDPARTY_DIR/zlib/SHA512SUM"
     local recipe
 
     # The application only ships arm64-v8a libraries. Avoid building unused
@@ -93,28 +96,65 @@ function configure_lycium_build()
         fi
     done < <(find "$LYCIUM_THIRDPARTY_DIR" "$LYCIUM_COMMUNITY_DIR" -type f -name HPKBUILD -print0)
 
-    # The original Adelie mirror is unavailable. GStreamer's mirror contains
-    # the exact same archive and still matches Lycium's committed SHA-512.
+    # The original Adelie mirror is unavailable and GStreamer's mirror can
+    # intermittently return 503. MIT's MacPorts mirror contains the exact same
+    # archive and still matches Lycium's committed SHA-512.
     sed -i \
-        's#https://distfiles.adelielinux.org/source/$pkgname/#https://gstreamer.freedesktop.org/src/mirror/a52dec/#' \
+        's#https://distfiles.adelielinux.org/source/$pkgname/#https://mirrors.mit.edu/macports/distfiles/a52dec/#' \
         "$a52_recipe"
     if ! grep -Fq \
-        'source="https://gstreamer.freedesktop.org/src/mirror/a52dec/$pkgname-$pkgver.tar.gz"' \
+        'source="https://mirrors.mit.edu/macports/distfiles/a52dec/$pkgname-$pkgver.tar.gz"' \
         "$a52_recipe"
     then
         echo "ERROR: patch a52dec download source failed!!!"
         return 1
     fi
 
-    # OpenSSL 1.0.2's generated object headers are not parallel-build safe.
-    # Parallel make can rewrite obj_mac.h while Clang is parsing it and crash
-    # the HarmonyOS SDK compiler, so serialize this one legacy dependency.
+    # Lycium exports MAKE="make -j8". Clearing MAKEFLAGS alone is insufficient
+    # because recursive OpenSSL make processes read that exported command and
+    # still regenerate obj_mac.h in parallel. Remove MAKE from this command's
+    # environment and serialize this one legacy dependency completely.
     sed -i \
-        '0,/\$MAKE >> \$buildlog 2>\&1/s//MAKEFLAGS= \$MAKE -j1 >> \$buildlog 2>\&1/' \
+        '0,/\$MAKE >> \$buildlog 2>\&1/s//env -u MAKE make -j1 >> \$buildlog 2>\&1/' \
         "$openssl_recipe"
-    if ! grep -Fq 'MAKEFLAGS= $MAKE -j1 >> $buildlog 2>&1' "$openssl_recipe"
+    if ! grep -Fq 'env -u MAKE make -j1 >> $buildlog 2>&1' "$openssl_recipe"
     then
         echo "ERROR: disable parallel OpenSSL 1.0.2 build failed!!!"
+        return 1
+    fi
+
+    # FriBidi 1.0.12 generates a shared version header from several recursive
+    # targets. Parallel generators can truncate that header while host tools
+    # are compiling, so serialize both its host helper and target build.
+    sed -i \
+        -e 's/\$MAKE VERBOSE=1 >> \$buildlog 2>\&1/env -u MAKE make -j1 VERBOSE=1 >> \$buildlog 2>\&1/g' \
+        -e 's/\$MAKE VERBOSE=1 >> "\$buildlog" 2>\&1/env -u MAKE make -j1 VERBOSE=1 >> "\$buildlog" 2>\&1/g' \
+        "$fribidi_recipe"
+    if [ "$(grep -Fc 'env -u MAKE make -j1 VERBOSE=1' "$fribidi_recipe")" -ne 2 ] ||
+        grep -Fq '$MAKE VERBOSE=1 >>' "$fribidi_recipe"
+    then
+        echo "ERROR: disable parallel FriBidi build failed!!!"
+        return 1
+    fi
+
+    # zlib.net currently serves an HTML error page for its 1.3.2 fossils URL.
+    # Use the upstream project's GitHub release asset and pin its SHA-512.
+    if ! grep -Fq 'pkgver=1.3.2' "$zlib_recipe"
+    then
+        echo "ERROR: unsupported zlib recipe version!!!"
+        return 1
+    fi
+    sed -i \
+        's#https://$pkgname.net/fossils/$pkgname-$pkgver.tar.gz#https://github.com/madler/zlib/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz#' \
+        "$zlib_recipe"
+    printf '%s  %s\n' \
+        '70963771ea5d763614278a69b474f09b7d237ef8f53b675a10fe31d9923aeef601504b35d7ebd1b1e7f347e9ebb048e6b3b47fffdf137e7bdc7e8d5eb4ec4692' \
+        'zlib-1.3.2.tar.gz' > "$zlib_checksum"
+    if ! grep -Fq \
+        'source="https://github.com/madler/zlib/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz"' \
+        "$zlib_recipe"
+    then
+        echo "ERROR: patch zlib download source failed!!!"
         return 1
     fi
 
