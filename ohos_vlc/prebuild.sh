@@ -79,6 +79,7 @@ function prepare_lycium()
 function configure_lycium_build()
 {
     local a52_recipe="$LYCIUM_COMMUNITY_DIR/a52dec/HPKBUILD"
+    local ffmpeg_recipe="$LYCIUM_COMMUNITY_DIR/FFmpeg-surface-dev/HPKBUILD"
     local openssl_recipe="$LYCIUM_COMMUNITY_DIR/openssl_1_0_2u/HPKBUILD"
     local recipe
 
@@ -114,6 +115,17 @@ function configure_lycium_build()
     if ! grep -Fq 'MAKEFLAGS= $MAKE -j1 >> $buildlog 2>&1' "$openssl_recipe"
     then
         echo "ERROR: disable parallel OpenSSL 1.0.2 build failed!!!"
+        return 1
+    fi
+
+    # The API 18 LLVM 15 archiver crashes while reading this FFmpeg fork's
+    # LTO bitcode ("Type mismatch in constant table"). Keep the normal O3
+    # optimization but emit regular object files for stable static archives.
+    sed -i 's/--enable-lto/--disable-lto/' "$ffmpeg_recipe"
+    if ! grep -Fq -- '--disable-lto' "$ffmpeg_recipe" ||
+        grep -Fq -- '--enable-lto' "$ffmpeg_recipe"
+    then
+        echo "ERROR: disable FFmpeg LTO failed!!!"
         return 1
     fi
 
