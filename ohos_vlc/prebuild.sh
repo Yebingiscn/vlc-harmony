@@ -119,11 +119,17 @@ function configure_lycium_build()
     fi
 
     # The API 18 LLVM 15 archiver crashes while reading this FFmpeg fork's
-    # LTO bitcode ("Type mismatch in constant table"). Keep the normal O3
-    # optimization but emit regular object files for stable static archives.
-    sed -i 's/--enable-lto/--disable-lto/' "$ffmpeg_recipe"
-    if ! grep -Fq -- '--disable-lto' "$ffmpeg_recipe" ||
-        grep -Fq -- '--enable-lto' "$ffmpeg_recipe"
+    # LTO bitcode ("Type mismatch in constant table"). This older FFmpeg
+    # configure script has no --disable-lto switch, so remove --enable-lto
+    # and keep its normal O3 optimization with regular object files.
+    if ! grep -Fq -- '--enable-lto' "$ffmpeg_recipe"
+    then
+        echo "ERROR: FFmpeg LTO option not found!!!"
+        return 1
+    fi
+    sed -i 's/ --enable-lto / /' "$ffmpeg_recipe"
+    if grep -Fq -- '--enable-lto' "$ffmpeg_recipe" ||
+        grep -Fq -- '--disable-lto' "$ffmpeg_recipe"
     then
         echo "ERROR: disable FFmpeg LTO failed!!!"
         return 1
