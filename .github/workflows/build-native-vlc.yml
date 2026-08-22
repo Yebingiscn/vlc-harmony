@@ -30,7 +30,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Free runner disk space
         shell: bash
@@ -42,7 +42,7 @@ jobs:
 
       - name: Restore HarmonyOS native SDK
         id: sdk-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .ohos-sdk/18
           key: harmonyos-native-sdk-5.1.0-release-api18-linux-v1
@@ -80,7 +80,7 @@ jobs:
 
       - name: Restore compiled native libraries
         id: native-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ohos_vlc/library/libs/arm64-v8a
           key: native-vlc-arm64-api18-v1-${{ hashFiles('ohos_vlc/prebuild.sh', 'ohos_vlc/patches/**', 'sync_native_libs.sh') }}
@@ -124,7 +124,7 @@ jobs:
           sha256sum "${archive}" > artifacts/SHA256SUMS
 
       - name: Upload native libraries
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vlc-harmony-native-arm64-${{ github.sha }}
           path: artifacts/
@@ -133,7 +133,7 @@ jobs:
 
       - name: Upload build logs after failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vlc-harmony-native-build-logs-${{ github.sha }}
           path: |

@@ -76,6 +76,50 @@ function prepare_lycium()
     return $ret
 }
 
+function configure_lycium_build()
+{
+    local a52_recipe="$LYCIUM_COMMUNITY_DIR/a52dec/HPKBUILD"
+    local openssl_recipe="$LYCIUM_COMMUNITY_DIR/openssl_1_0_2u/HPKBUILD"
+    local recipe
+
+    # The application only ships arm64-v8a libraries. Avoid building unused
+    # arm32/x86_64 variants of every transitive dependency.
+    while IFS= read -r -d '' recipe
+    do
+        if grep -Eq '^[[:space:]]*archs=.*"arm64-v8a"' "$recipe"
+        then
+            sed -i -E 's/^[[:space:]]*archs=.*/archs=("arm64-v8a")/' "$recipe"
+        fi
+    done < <(find "$LYCIUM_THIRDPARTY_DIR" "$LYCIUM_COMMUNITY_DIR" -type f -name HPKBUILD -print0)
+
+    # The original Adelie mirror is unavailable. GStreamer's mirror contains
+    # the exact same archive and still matches Lycium's committed SHA-512.
+    sed -i \
+        's#https://distfiles.adelielinux.org/source/$pkgname/#https://gstreamer.freedesktop.org/src/mirror/a52dec/#' \
+        "$a52_recipe"
+    if ! grep -Fq \
+        'source="https://gstreamer.freedesktop.org/src/mirror/a52dec/$pkgname-$pkgver.tar.gz"' \
+        "$a52_recipe"
+    then
+        echo "ERROR: patch a52dec download source failed!!!"
+        return 1
+    fi
+
+    # OpenSSL 1.0.2's generated object headers are not parallel-build safe.
+    # Parallel make can rewrite obj_mac.h while Clang is parsing it and crash
+    # the HarmonyOS SDK compiler, so serialize this one legacy dependency.
+    sed -i \
+        '0,/\$MAKE >> \$buildlog 2>\&1/s//MAKEFLAGS= \$MAKE -j1 >> \$buildlog 2>\&1/' \
+        "$openssl_recipe"
+    if ! grep -Fq 'MAKEFLAGS= $MAKE -j1 >> $buildlog 2>&1' "$openssl_recipe"
+    then
+        echo "ERROR: disable parallel OpenSSL 1.0.2 build failed!!!"
+        return 1
+    fi
+
+    return 0
+}
+
 function copy_depends()
 {
     local dir="$1"
@@ -204,6 +248,13 @@ function prebuild()
     if [ $? -ne 0 ]
     then
         echo "ERROR: prepare_lycium failed!!!"
+        return 1
+    fi
+
+    configure_lycium_build
+    if [ $? -ne 0 ]
+    then
+        echo "ERROR: configure Lycium build failed!!!"
         return 1
     fi
 
