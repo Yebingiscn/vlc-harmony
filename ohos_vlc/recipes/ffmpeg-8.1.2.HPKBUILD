@@ -45,8 +45,6 @@ prepare() {
             git -C $builddir apply --check "../$patch_name" || return -1
             git -C $builddir apply "../$patch_name" || return -1
         done
-        git -C $builddir apply --check ../0006b-ffmpeg-ohcodec-api18-compat.patch || return -1
-        git -C $builddir apply ../0006b-ffmpeg-ohcodec-api18-compat.patch || return -1
         cloneflag=false
     fi
 

@@ -15,7 +15,6 @@
 | `0004-bluray-seek-fix.patch`                                  | libbluray seek 定位修复                                              |
 | `0005-vcd-iso9660-no-cue.patch`                               | VCD 无 .cue 时自动解析 ISO9660 定位 `MPEGAV/AVSEQ*.DAT` 作为视频轨（单文件播放）     |
 | `0006-vlc-add-ffmpeg8-ohcodec-chroma.patch`                   | 为 FFmpeg 8 官方 `AV_PIX_FMT_OHCODEC` 恢复 VLC 像素格式映射                    |
-| `0006b-ffmpeg-ohcodec-api18-compat.patch`                    | 让 API 26 智能流畅参数在 API 18 SDK 编译，并在旧系统自动降级                    |
 | `0007-vlc-ohos-surface-clocked-present.patch`                 | VLC Surface 帧按播放时钟上屏；预滚/损坏帧只解码不显示，消除 seek 旧帧闪回             |
 | `0008-vlc-ffmpeg8-ohcodec-device-context.patch`               | 使用 FFmpeg 8 的 `AVHWDeviceContext` 向 OHCodec 传递 NativeWindow          |
 | `0009-vlc-forward-playback-speed-to-ohcodec.patch`            | 将 VLC 实际倍速传给 OHCodec，由系统按能力选择智能流畅策略                         |
@@ -28,7 +27,7 @@
 recipe，并从固定提交取得 libmpvnative 已验证的 OHCodec 补丁子集；同时从 VLC
 官方固定提交生成 3.0.21 之后的 FFmpeg 兼容补丁，再注入 OHOS VLC recipe。
 只重新编译 HAP 不会让原生改动生效，修改这些补丁后必须重新运行
-`ohos_vlc/prebuild.sh`（Linux 环境、API 18 SDK）。构建成功后脚本会自动调用项目根目录的
+`ohos_vlc/prebuild.sh`（Linux 环境、HarmonyOS 7.0 Beta1 API 26 SDK）。构建成功后脚本会自动调用项目根目录的
 `sync_native_libs.sh`，把新库同步到 `entry/libs/arm64-v8a` 和 NAPI 链接目录。
 
 当前原生版本基线：
@@ -45,7 +44,7 @@ Surface 与设备的可变刷新率能力共同决定。
 ## GitHub Actions 构建
 
 仓库中的 `.github/workflows/build-native-vlc.yml` 提供了与 `libmpvNative`
-类似的 Linux 云端构建流程。它会下载并校验 HarmonyOS 5.1.0 Release 的 API 18
+类似的 Linux 云端构建流程。它会下载并校验 HarmonyOS 7.0 Beta1 的 API 26
 原生 SDK，执行 `prebuild.sh`，然后上传
 `vlc-harmony-native-arm64-<commit>` 构建产物。产物同时包含
 `ohos_vlc/library/libs/arm64-v8a`、应用运行库目录和 NAPI 链接目录。
