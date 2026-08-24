@@ -273,6 +273,7 @@ function install_ffmpeg_patches()
     local patch_source_dir=$LYCIUM_ROOT_DIR/libmpv-ohos-patches
 
     cp -f "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD" "$ffmpeg_recipe_dir/HPKBUILD"
+    cp -f "$ROOT_DIR/recipes/brotli-v1.0.9.HPKBUILD" "$LYCIUM_COMMUNITY_DIR/brotli/HPKBUILD"
     git clone --filter=blob:none --depth=1 --no-checkout "$FFMPEG_OHCODEC_PATCH_REPO" "$patch_source_dir"
     if [ $? -ne 0 ]; then
         return 1
