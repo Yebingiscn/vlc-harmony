@@ -15,7 +15,7 @@ diff --git a/modules/codec/avcodec/video.c b/modules/codec/avcodec/video.c
      wait_mt( p_sys );
 +#ifdef HAVE_OHOS
 +    if( ret < 0 && codec->name != NULL &&
-+        strstr( codec->name, "ohosavcodec" ) != NULL )
++        strstr( codec->name, "_ohcodec" ) != NULL )
 +    {
 +        const AVCodec *fallback = avcodec_find_decoder( codec->id );
 +        if( fallback != NULL && fallback != codec )
@@ -24,11 +24,10 @@ diff --git a/modules/codec/avcodec/video.c b/modules/codec/avcodec/video.c
 +                      "falling back to software decoder %s",
 +                      codec->name, fallback->name );
 +
-+            /* avcodec_open2() has closed its failed private state. The
-+             * NativeWindow context is owned by VLC and must be released
-+             * before retrying a non-OHOS decoder on the same AVCodecContext. */
-+            if( ctx->hwaccel_context != NULL )
-+                av_ohosavcodec_default_free( ctx );
++            /* Drop the OHCodec device before retrying software decoding.
++             * The NativeWindow remains owned by VLC. */
++            av_buffer_unref( &ctx->hw_frames_ctx );
++            av_buffer_unref( &ctx->hw_device_ctx );
 +            ctx->pix_fmt = AV_PIX_FMT_NONE;
 +
 +            post_mt( p_sys );

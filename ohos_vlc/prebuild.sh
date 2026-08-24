@@ -22,6 +22,11 @@ LYCIUM_ROOT_DIR=$ROOT_DIR/tpc_c_cplusplus
 LYCIUM_TOOLS_DIR=$LYCIUM_ROOT_DIR/lycium
 LYCIUM_THIRDPARTY_DIR=$LYCIUM_ROOT_DIR/thirdparty
 LYCIUM_COMMUNITY_DIR=$LYCIUM_ROOT_DIR/community
+FFMPEG_OHCODEC_PATCH_REPO=https://github.com/Yebingiscn/libmpv-ohos-ErBW_s-5en.git
+FFMPEG_OHCODEC_PATCH_COMMIT=54f298cddd162f459ed49e58974e3b8e763db177
+VLC_UPSTREAM_REPO=https://github.com/videolan/vlc.git
+VLC_UPSTREAM_BASE_TAG=3.0.21
+VLC_UPSTREAM_COMPAT_COMMIT=1089af38fc26293d0b93a9456adf7ae4a5b0b930
 
 function prepare_lycium_tools()
 {
@@ -79,9 +84,9 @@ function prepare_lycium()
 function configure_lycium_build()
 {
     local a52_recipe="$LYCIUM_COMMUNITY_DIR/a52dec/HPKBUILD"
-    local ffmpeg_recipe="$LYCIUM_COMMUNITY_DIR/FFmpeg-surface-dev/HPKBUILD"
     local fribidi_recipe="$LYCIUM_THIRDPARTY_DIR/fribidi/HPKBUILD"
-    local openssl_recipe="$LYCIUM_COMMUNITY_DIR/openssl_1_0_2u/HPKBUILD"
+    local openssl_recipe="$LYCIUM_COMMUNITY_DIR/openssl_3.4.3/HPKBUILD"
+    local vlc_recipe="$LYCIUM_THIRDPARTY_DIR/vlc/HPKBUILD"
     local zlib_recipe="$LYCIUM_THIRDPARTY_DIR/zlib/HPKBUILD"
     local zlib_checksum="$LYCIUM_THIRDPARTY_DIR/zlib/SHA512SUM"
     local recipe
@@ -110,16 +115,18 @@ function configure_lycium_build()
         return 1
     fi
 
-    # Lycium exports MAKE="make -j8". Clearing MAKEFLAGS alone is insufficient
-    # because recursive OpenSSL make processes read that exported command and
-    # still regenerate obj_mac.h in parallel. Remove MAKE from this command's
-    # environment and serialize this one legacy dependency completely.
+    # Use the maintained OpenSSL 3.4.3 recipe for both FFmpeg and VLC, and keep
+    # one zlib provider in the dependency graph.
+    sed -i 's/depends=(zlib_1_3_1)/depends=(zlib)/' "$openssl_recipe"
     sed -i \
-        '0,/\$MAKE >> \$buildlog 2>\&1/s//env -u MAKE make -j1 >> \$buildlog 2>\&1/' \
-        "$openssl_recipe"
-    if ! grep -Fq 'env -u MAKE make -j1 >> $buildlog 2>&1' "$openssl_recipe"
+        -e 's/"openssl-3.4.0"/"openssl_3.4.3"/' \
+        -e 's#usr/openssl-3.4.0/#usr/openssl_3.4.3/#g' \
+        "$vlc_recipe"
+    if ! grep -Fq '"openssl_3.4.3"' "$vlc_recipe" ||
+        grep -Fq 'openssl-3.4.0' "$vlc_recipe" ||
+        ! grep -Fq 'depends=(zlib)' "$openssl_recipe"
     then
-        echo "ERROR: disable parallel OpenSSL 1.0.2 build failed!!!"
+        echo "ERROR: upgrade OpenSSL dependency failed!!!"
         return 1
     fi
 
@@ -155,23 +162,6 @@ function configure_lycium_build()
         "$zlib_recipe"
     then
         echo "ERROR: patch zlib download source failed!!!"
-        return 1
-    fi
-
-    # The API 18 LLVM 15 archiver crashes while reading this FFmpeg fork's
-    # LTO bitcode ("Type mismatch in constant table"). This older FFmpeg
-    # configure script has no --disable-lto switch, so remove --enable-lto
-    # and keep its normal O3 optimization with regular object files.
-    if ! grep -Fq -- '--enable-lto' "$ffmpeg_recipe"
-    then
-        echo "ERROR: FFmpeg LTO option not found!!!"
-        return 1
-    fi
-    sed -i 's/ --enable-lto / /' "$ffmpeg_recipe"
-    if grep -Fq -- '--enable-lto' "$ffmpeg_recipe" ||
-        grep -Fq -- '--disable-lto' "$ffmpeg_recipe"
-    then
-        echo "ERROR: disable FFmpeg LTO failed!!!"
         return 1
     fi
 
@@ -240,12 +230,35 @@ function start_build()
 function install_vlc_patches()
 {
     local vlc_recipe_dir=$LYCIUM_THIRDPARTY_DIR/vlc
+    local upstream_source_dir=$LYCIUM_ROOT_DIR/vlc-upstream-compat
+
+    git clone --filter=blob:none --depth=1 --no-checkout "$VLC_UPSTREAM_REPO" "$upstream_source_dir"
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+    git -C "$upstream_source_dir" fetch --depth=1 origin \
+        "refs/tags/$VLC_UPSTREAM_BASE_TAG:refs/tags/$VLC_UPSTREAM_BASE_TAG" || return 1
+    git -C "$upstream_source_dir" fetch --depth=1 origin \
+        "$VLC_UPSTREAM_COMPAT_COMMIT" || return 1
+    if [ "$(git -C "$upstream_source_dir" rev-parse FETCH_HEAD)" != "$VLC_UPSTREAM_COMPAT_COMMIT" ]; then
+        echo "ERROR: VLC compatibility source commit verification failed!!!"
+        return 1
+    fi
+    git -C "$upstream_source_dir" diff --binary \
+        --output="$vlc_recipe_dir/0000-vlc-upstream-ffmpeg8-compat.patch" \
+        "$VLC_UPSTREAM_BASE_TAG" "$VLC_UPSTREAM_COMPAT_COMMIT" -- \
+        modules/codec/avcodec modules/demux/avformat || return 1
+
+    cp -f "$ROOT_DIR/patches/0000-vlc-remove-legacy-ohos-chroma.patch" "$vlc_recipe_dir/"
+    cp -f "$ROOT_DIR/patches/0006-vlc-add-ffmpeg8-ohcodec-chroma.patch" "$vlc_recipe_dir/"
     cp -f "$ROOT_DIR/patches/0001-avcodec-respect-disabled-hardware-decoding.patch" "$vlc_recipe_dir/"
     cp -f "$ROOT_DIR/patches/0002-avcodec-fallback-to-software-on-hw-start-failure.patch" "$vlc_recipe_dir/"
     cp -f "$ROOT_DIR/patches/0003-vcd-mode1-2048-iso.patch" "$vlc_recipe_dir/"
     cp -f "$ROOT_DIR/patches/0004-bluray-seek-fix.patch" "$vlc_recipe_dir/"
     cp -f "$ROOT_DIR/patches/0005-vcd-iso9660-no-cue.patch" "$vlc_recipe_dir/"
     cp -f "$ROOT_DIR/patches/0007-vlc-ohos-surface-clocked-present.patch" "$vlc_recipe_dir/"
+    cp -f "$ROOT_DIR/patches/0008-vlc-ffmpeg8-ohcodec-device-context.patch" "$vlc_recipe_dir/"
+    cp -f "$ROOT_DIR/patches/0009-vlc-forward-playback-speed-to-ohcodec.patch" "$vlc_recipe_dir/"
     patch -d "$vlc_recipe_dir" -p1 < "$ROOT_DIR/patches/vlc-hpkbuild-apply-local-patches.patch"
     if [ $? -ne 0 ]; then
         return 1
@@ -257,9 +270,33 @@ function install_vlc_patches()
 function install_ffmpeg_patches()
 {
     local ffmpeg_recipe_dir=$LYCIUM_COMMUNITY_DIR/FFmpeg-surface-dev
-    cp -f "$ROOT_DIR/patches/0006-ohosavcodec-seek-safety-and-input-pacing.patch" "$ffmpeg_recipe_dir/"
-    patch -d "$ffmpeg_recipe_dir" -p1 < "$ROOT_DIR/patches/ffmpeg-hpkbuild-apply-local-patches.patch"
-    return $?
+    local patch_source_dir=$LYCIUM_ROOT_DIR/libmpv-ohos-patches
+
+    cp -f "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD" "$ffmpeg_recipe_dir/HPKBUILD"
+    git clone --filter=blob:none --depth=1 --no-checkout "$FFMPEG_OHCODEC_PATCH_REPO" "$patch_source_dir"
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+    git -C "$patch_source_dir" fetch --depth=1 origin "$FFMPEG_OHCODEC_PATCH_COMMIT"
+    git -C "$patch_source_dir" checkout --detach "$FFMPEG_OHCODEC_PATCH_COMMIT"
+    if [ "$(git -C "$patch_source_dir" rev-parse HEAD)" != "$FFMPEG_OHCODEC_PATCH_COMMIT" ]; then
+        echo "ERROR: OHCodec patch source commit verification failed!!!"
+        return 1
+    fi
+
+    local patch_name
+    for patch_name in \
+        0002-ffmpeg-support-OHCodec-zero-copy-decode.patch \
+        0003-ffmpeg-tune-OHCodec-decoder-frame-rate.patch \
+        0006-avcodec-ohcodec-auto-vrr-smart-fluency.patch \
+        0007-avcodec-ohcodec-fix-buffer-ownership-and-input-splitting.patch \
+        0009-avcodec-ohcodec-preserve-dovi-metadata.patch \
+        0010-avcodec-ohcodec-gate-dovi-metadata-parsing.patch
+    do
+        cp -f "$patch_source_dir/patches/ffmpeg/$patch_name" "$ffmpeg_recipe_dir/" || return 1
+    done
+    cp -f "$ROOT_DIR/patches/0006b-ffmpeg-ohcodec-api18-compat.patch" "$ffmpeg_recipe_dir/"
+    return 0
 }
 
 function install_depends()
@@ -271,16 +308,16 @@ function install_depends()
     cp -fL $LYCIUM_TOOLS_DIR/usr/vlc/arm64-v8a/lib/libvlccore.so.9 "$install_dir/libvlccore.so.9"
     cp -f $LYCIUM_TOOLS_DIR/usr/a52dec/arm64-v8a/lib/liba52.so.0 "$install_dir"
     cp -f $LYCIUM_TOOLS_DIR/usr/aribb24/arm64-v8a/lib/libaribb24.so.0 "$install_dir"
-    cp -f $LYCIUM_TOOLS_DIR/usr/FFmpeg/arm64-v8a/lib/libavcodec.so.60 "$install_dir"
-    cp -f $LYCIUM_TOOLS_DIR/usr/FFmpeg/arm64-v8a/lib/libavformat.so.60 "$install_dir"
-    cp -f $LYCIUM_TOOLS_DIR/usr/FFmpeg/arm64-v8a/lib/libavutil.so.58 "$install_dir"
+    cp -fL $LYCIUM_TOOLS_DIR/usr/FFmpeg/arm64-v8a/lib/libavcodec.so.62 "$install_dir/libavcodec.so.62"
+    cp -fL $LYCIUM_TOOLS_DIR/usr/FFmpeg/arm64-v8a/lib/libavformat.so.62 "$install_dir/libavformat.so.62"
+    cp -fL $LYCIUM_TOOLS_DIR/usr/FFmpeg/arm64-v8a/lib/libavutil.so.60 "$install_dir/libavutil.so.60"
     cp -f $LYCIUM_TOOLS_DIR/usr/libdca/arm64-v8a/lib/libdca.so.0 "$install_dir"
     cp -f $LYCIUM_TOOLS_DIR/usr/libkate/arm64-v8a/lib/libkate.so.1 "$install_dir"
     cp -f $LYCIUM_TOOLS_DIR/usr/libpng/arm64-v8a/lib/libpng16.so.16 "$install_dir"
     cp -f $LYCIUM_TOOLS_DIR/usr/speex/arm64-v8a/lib/libspeex.so.1 "$install_dir"
     cp -f $LYCIUM_TOOLS_DIR/usr/speexdsp/arm64-v8a/lib/libspeexdsp.so.1 "$install_dir"
-    cp -f $LYCIUM_TOOLS_DIR/usr/FFmpeg/arm64-v8a/lib/libswresample.so.4 "$install_dir"
-    cp -f $LYCIUM_TOOLS_DIR/usr/FFmpeg/arm64-v8a/lib/libswscale.so.7 "$install_dir"
+    cp -fL $LYCIUM_TOOLS_DIR/usr/FFmpeg/arm64-v8a/lib/libswresample.so.6 "$install_dir/libswresample.so.6"
+    cp -fL $LYCIUM_TOOLS_DIR/usr/FFmpeg/arm64-v8a/lib/libswscale.so.9 "$install_dir/libswscale.so.9"
     cp -f $LYCIUM_TOOLS_DIR/usr/libtheora/arm64-v8a/lib/libtheoradec.so.1 "$install_dir"
     cp -f $LYCIUM_TOOLS_DIR/usr/libtheora/arm64-v8a/lib/libtheoraenc.so.1 "$install_dir"
     # Transitive deps of libavcodec.so (required for h264/aac decode)

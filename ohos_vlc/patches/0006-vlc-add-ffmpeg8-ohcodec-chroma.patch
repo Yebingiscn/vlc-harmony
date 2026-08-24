@@ -1,0 +1,13 @@
+diff --git a/modules/codec/avcodec/chroma.c b/modules/codec/avcodec/chroma.c
+--- a/modules/codec/avcodec/chroma.c
++++ b/modules/codec/avcodec/chroma.c
+@@ -193,5 +193,10 @@ static const struct
+     {VLC_CODEC_XYZ12, AV_PIX_FMT_XYZ12, 0xfff0, 0xfff0, 0xfff0},
+ #endif
++
++#ifdef HAVE_OHOS
++    {VLC_CODEC_OHOS_OPAQUE, AV_PIX_FMT_OHCODEC, 0, 0, 0},
++#endif
++
+     { 0, 0, 0, 0, 0 }
+ };

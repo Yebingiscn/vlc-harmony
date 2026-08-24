@@ -1,4 +1,10 @@
-import { HdsNavDestination, HdsNavDestinationTitleMode, DividerShowType, ScrollEffectType, hdsMaterial } from '@kit.UIDesignKit';
+import {
+  DividerShowType,
+  hdsMaterial,
+  HdsNavDestination,
+  HdsNavDestinationTitleMode,
+  ScrollEffectType
+} from '@kit.UIDesignKit';
 import { LengthMetrics } from '@kit.ArkUI';
 import { NavController } from '../common/data/NavController';
 import { FileBrowserParam, formatDuration, SecondaryParam, Track } from '../common/models/MediaModels';
@@ -73,8 +79,7 @@ export struct SecondaryPage {
 
   resolveTitle(): Resource {
     switch (this.param.fragment) {
-      case 'ABOUT':
-        return $r('app.string.about');
+
       case 'STREAMS':
         return $r('app.string.streams');
       case 'HISTORY':
@@ -101,12 +106,8 @@ export struct SecondaryPage {
 
   build() {
     HdsNavDestination() {
-      Column() {
-        // 内容区:按 fragment 派发。
         Column() {
-          if (this.param.fragment === 'ABOUT') {
-            this.aboutContent()
-          } else if (this.param.fragment === 'ARTIST' || this.param.fragment === 'ALBUM' ||
+          if (this.param.fragment === 'ARTIST' || this.param.fragment === 'ALBUM' ||
             this.param.fragment === 'GENRE') {
             if (this.tracks.length === 0) {
               EmptyStateView({ state: 1 /* EMPTY */ })
@@ -129,11 +130,9 @@ export struct SecondaryPage {
         }
         .layoutWeight(1)
         .width('100%')
+        .height('100%')
         .backgroundColor($r('app.color.background_default'))
-      }
-      .width('100%')
-      .height('100%')
-      .backgroundColor($r('app.color.background_default'))
+
     }
     .titleBar({
       avoidLayoutSafeArea: true,
@@ -145,7 +144,7 @@ export struct SecondaryPage {
       style: {
         scrollEffectOpts: {
           enableScrollEffect: true,
-          scrollEffectType: ScrollEffectType.GRADIENT_BLUR,
+          scrollEffectType: ScrollEffectType.IMMERSIVE_GRADIENT_BLUR,
           blurEffectiveStartOffset: LengthMetrics.vp(0),
           blurEffectiveEndOffset: LengthMetrics.vp(20)
         },
@@ -247,26 +246,9 @@ export struct SecondaryPage {
       startMargin: 68,
       endMargin: 8
     })
+    .height('100%')
     .width('100%')
     .layoutWeight(1)
   }
 
-  @Builder
-  aboutContent() {
-    Scroll() {
-      Column() {
-        Image($r('app.media.ic_about_logo')).width(96).height(96).objectFit(ImageFit.Contain).margin({ top: 32 })
-        Text($r('app.string.app_name')).fontSize(24).fontColor($r('app.color.list_title')).fontWeight(FontWeight.Bold)
-          .margin({ top: 16 })
-        Text($r('app.string.welcome_subtitle')).fontSize(13).fontColor($r('app.color.list_subtitle')).margin({ top: 8 })
-        Text('© 1996-2026 VideoLAN').fontSize(12).fontColor('#757575').margin({ top: 24 })
-        Text('GPLv2').fontSize(12).fontColor('#757575').margin({ top: 4 })
-      }
-      .width('100%')
-      .alignItems(HorizontalAlign.Center)
-    }
-    .clip(false)
-    .width('100%')
-    .layoutWeight(1)
-  }
 }

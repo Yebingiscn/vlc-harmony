@@ -7,24 +7,40 @@
 
 | 补丁                                                            | 内容                                                               |
 |---------------------------------------------------------------|------------------------------------------------------------------|
+| `0000-vlc-remove-legacy-ohos-chroma.patch`                    | 移除旧 FFmpeg OHOS 私有像素格式映射，为官方 OHCodec 接口迁移做准备                  |
+| `0000-vlc-upstream-ffmpeg8-compat.patch`（构建时生成）          | 从 VLC 官方 3.0.x 固定提交提取 FFmpeg 8 兼容改动                              |
 | `0001-avcodec-respect-disabled-hardware-decoding.patch`       | avcodec 解码器尊重 `:avcodec-hw=none`（禁硬解时不再尝试硬件）                     |
 | `0002-avcodec-fallback-to-software-on-hw-start-failure.patch` | 硬解启动失败回退软解                                                       |
 | `0003-vcd-mode1-2048-iso.patch`                               | VCD access 支持 CUE `MODE1/2048` 的 ISO9660 镜像（修复 2352/2048 扇区错位花屏） |
 | `0004-bluray-seek-fix.patch`                                  | libbluray seek 定位修复                                              |
 | `0005-vcd-iso9660-no-cue.patch`                               | VCD 无 .cue 时自动解析 ISO9660 定位 `MPEGAV/AVSEQ*.DAT` 作为视频轨（单文件播放）     |
-| `0006-ohosavcodec-seek-safety-and-input-pacing.patch`         | FFmpeg OHCodec：Flush 代数隔离、回调队列清理、大访问单元分片和输入/输出交错推进            |
+| `0006-vlc-add-ffmpeg8-ohcodec-chroma.patch`                   | 为 FFmpeg 8 官方 `AV_PIX_FMT_OHCODEC` 恢复 VLC 像素格式映射                    |
+| `0006b-ffmpeg-ohcodec-api18-compat.patch`                    | 让 API 26 智能流畅参数在 API 18 SDK 编译，并在旧系统自动降级                    |
 | `0007-vlc-ohos-surface-clocked-present.patch`                 | VLC Surface 帧按播放时钟上屏；预滚/损坏帧只解码不显示，消除 seek 旧帧闪回             |
-| `ffmpeg-hpkbuild-apply-local-patches.patch`                   | 修改 FFmpeg-surface-dev HPKBUILD，自动应用 0006                         |
-| `vlc-hpkbuild-apply-local-patches.patch`                      | 修改 VLC HPKBUILD 的 `prepare()`，自动应用 0001–0005、0007               |
+| `0008-vlc-ffmpeg8-ohcodec-device-context.patch`               | 使用 FFmpeg 8 的 `AVHWDeviceContext` 向 OHCodec 传递 NativeWindow          |
+| `0009-vlc-forward-playback-speed-to-ohcodec.patch`            | 将 VLC 实际倍速传给 OHCodec，由系统按能力选择智能流畅策略                         |
+| `vlc-hpkbuild-apply-local-patches.patch`                      | 修改 VLC HPKBUILD，按顺序应用兼容与本地功能补丁                                |
 | `vlc-hpkbuild-build-dvbpsi.patch`                             | 修改 HPKBUILD 构建 dvbpsi 依赖                                         |
 
 ## 应用方式
 
-`prebuild.sh` 会分别把 0006 注入 Lycium 的 `community/FFmpeg-surface-dev`
-recipe，把其余补丁注入 `thirdparty/vlc` recipe，然后构建并同步新的 FFmpeg/VLC
-动态库。只重新编译 HAP 不会让 0006、0007 生效，修改这两份补丁后必须重新运行
+`prebuild.sh` 会用 `recipes/ffmpeg-8.1.2.HPKBUILD` 替换 Lycium 的旧 FFmpeg
+recipe，并从固定提交取得 libmpvnative 已验证的 OHCodec 补丁子集；同时从 VLC
+官方固定提交生成 3.0.21 之后的 FFmpeg 兼容补丁，再注入 OHOS VLC recipe。
+只重新编译 HAP 不会让原生改动生效，修改这些补丁后必须重新运行
 `ohos_vlc/prebuild.sh`（Linux 环境、API 18 SDK）。构建成功后脚本会自动调用项目根目录的
 `sync_native_libs.sh`，把新库同步到 `entry/libs/arm64-v8a` 和 NAPI 链接目录。
+
+当前原生版本基线：
+
+- OHOS VLC：`ohos-3.0.21`（保留其 HarmonyOS 平台端口）
+- FFmpeg：`n8.1.2`，提交 `38b88335f99e76ed89ff3c93f877fdefce736c13`
+- OpenSSL：`3.4.3`
+- OHCodec 补丁来源：libmpvnative 提交 `54f298cddd162f459ed49e58974e3b8e763db177`
+- VLC FFmpeg 兼容基线：官方提交 `1089af38fc26293d0b93a9456adf7ae4a5b0b930`
+
+没有设置固定 60 帧。视频上屏周期依据媒体帧率，显示刷新策略由 HarmonyOS、
+Surface 与设备的可变刷新率能力共同决定。
 
 ## GitHub Actions 构建
 
@@ -43,13 +59,10 @@ SDK 与编译结果分别缓存；补丁和构建脚本没有变化时会直接�
 手动应用（在 vlc 源码根目录）：
 
 ```bash
-for p in 0001-*.patch 0002-*.patch 0003-*.patch 0004-*.patch 0005-*.patch 0007-*.patch; do
+for p in 0001-*.patch 0002-*.patch 0003-*.patch 0004-*.patch 0005-*.patch 0007-*.patch 0008-*.patch 0009-*.patch; do
   patch -p1 < patches/$p
 done
 ```
 
-0006 需要在 FFmpeg `ohosdecoder_surface_dev` 分支源码根目录单独应用：
-
-```bash
-patch -p1 < patches/0006-ohosavcodec-seek-safety-and-input-pacing.patch
-```
+FFmpeg 8 与官方 VLC 兼容补丁由构建脚本按固定仓库提交生成和应用，建议不要手动
+拼装，以免遗漏应用顺序。

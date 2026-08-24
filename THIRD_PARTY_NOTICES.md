@@ -18,6 +18,14 @@ Some files under `ohos_vlc/`, imported headers, generated files, and bundled
 assets contain their own copyright or license notices. Those notices take
 precedence for the corresponding files.
 
+The reproducible native build currently uses OHOS VLC 3.0.21, FFmpeg 8.1.2,
+and OpenSSL 3.4.3. Its FFmpeg OHCodec patch subset is derived from
+`Yebingiscn/libmpv-ohos-ErBW_s-5en` at commit
+`54f298cddd162f459ed49e58974e3b8e763db177`; each imported patch retains its
+upstream authorship and license terms. VLC's FFmpeg compatibility changes are
+derived from the official VLC 3.0.x history at the commit pinned in
+`ohos_vlc/prebuild.sh`.
+
 Before distributing an application package, review the exact native plugins
 and libraries included in that package and satisfy their source-code,
 attribution, relinking, and notice obligations. The VLC name and traffic-cone

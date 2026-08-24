@@ -1,9 +1,21 @@
 --- a/HPKBUILD
 +++ b/HPKBUILD
-@@ -39,6 +39,30 @@ prepare() {
+@@ -39,6 +39,50 @@ prepare() {
              return -1
          fi
          cd $builddir
++        patch -p1 < ../0000-vlc-remove-legacy-ohos-chroma.patch >> $publicbuildlog 2>&1
++        if [ $? -ne 0 ]; then
++            return -1
++        fi
++        patch -p1 < ../0000-vlc-upstream-ffmpeg8-compat.patch >> $publicbuildlog 2>&1
++        if [ $? -ne 0 ]; then
++            return -1
++        fi
++        patch -p1 < ../0006-vlc-add-ffmpeg8-ohcodec-chroma.patch >> $publicbuildlog 2>&1
++        if [ $? -ne 0 ]; then
++            return -1
++        fi
 +        patch -p1 < ../0001-avcodec-respect-disabled-hardware-decoding.patch >> $publicbuildlog 2>&1
 +        if [ $? -ne 0 ]; then
 +            return -1
@@ -25,6 +37,14 @@
 +            return -1
 +        fi
 +        patch -p1 < ../0007-vlc-ohos-surface-clocked-present.patch >> $publicbuildlog 2>&1
++        if [ $? -ne 0 ]; then
++            return -1
++        fi
++        patch -p1 < ../0008-vlc-ffmpeg8-ohcodec-device-context.patch >> $publicbuildlog 2>&1
++        if [ $? -ne 0 ]; then
++            return -1
++        fi
++        patch -p1 < ../0009-vlc-forward-playback-speed-to-ohcodec.patch >> $publicbuildlog 2>&1
 +        if [ $? -ne 0 ]; then
 +            return -1
 +        fi

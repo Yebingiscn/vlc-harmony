@@ -45,14 +45,8 @@ int32_t XcomponentManager::RegisterCallback(OH_NativeXComponent *nativeXComponen
     callback_.DispatchTouchEvent = Callbacks::OnDispatchTouchEventCB;
     int32_t ret = OH_NativeXComponent_RegisterCallback(nativeXComponent, &callback_);
     OH_LOG_INFO(LOG_APP, "RegisterCallback component=%{public}p ret=%{public}d", nativeXComponent, ret);
-    OH_NativeXComponent_ExpectedRateRange range {60, 120, 120};
-    int32_t rateRet = OH_NativeXComponent_SetExpectedFrameRateRange(nativeXComponent, &range);
-    if (rateRet == OH_NATIVEXCOMPONENT_RESULT_SUCCESS) {
-        OH_LOG_INFO(LOG_APP, "ExpectedFrameRate min=%{public}d max=%{public}d expected=%{public}d",
-                    range.min, range.max, range.expected);
-    } else {
-        OH_LOG_WARN(LOG_APP, "SetExpectedFrameRateRange failed ret=%{public}d", rateRet);
-    }
+    // Do not force a fixed refresh range. HarmonyOS can select the display
+    // cadence from the decoded stream, playback speed and device VRR policy.
     return ret;
 }
 

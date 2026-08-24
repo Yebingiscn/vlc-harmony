@@ -1,0 +1,58 @@
+diff --git a/modules/codec/avcodec/video.c b/modules/codec/avcodec/video.c
+--- a/modules/codec/avcodec/video.c
++++ b/modules/codec/avcodec/video.c
+@@ -577,7 +577,7 @@ static int InitVideoDecCommon( decoder_t *p_dec )
+     int i_thread_count = p_sys->b_hardware_only ? 1 : var_InheritInteger( p_dec, "avcodec-threads" );
+ #ifdef HAVE_OHOS
+     /* OHOS hardware decoders manage their own threading */
+-    if (p_codec->wrapper_name && !strcmp( p_codec->wrapper_name, "ohosavcodec"))
++    if (p_codec->wrapper_name && !strcmp( p_codec->wrapper_name, "ohcodec"))
+         i_thread_count = 1;
+ #endif
+     if( i_thread_count <= 0 )
+@@ -650,19 +650,26 @@ static int InitVideoDecCommon( decoder_t *p_dec )
+         p_sys->palette_sent = true;
+ 
+ #ifdef HAVE_OHOS
+-    if (p_codec->wrapper_name && !strcmp( p_codec->wrapper_name, "ohosavcodec"))
++    if (p_codec->wrapper_name && !strcmp( p_codec->wrapper_name, "ohcodec"))
+     {
+-        OHOSAVCodecContext *ohos_ctx = av_ohosavcodec_alloc_context();
+-        if (ohos_ctx)
++        void *native_window = var_InheritAddress(p_dec,
++                                                  "drawable-ohos-nativewindow-ptr");
++        if (native_window)
+         {
+-            void *native_window = var_InheritAddress(p_dec, "drawable-ohos-nativewindow-ptr");
+-            if (native_window)
++            AVBufferRef *device_ref =
++                av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_OHCODEC);
++            if (device_ref)
+             {
+-                av_ohosavcodec_default_init( p_context, ohos_ctx, native_window );
+-                p_context->pix_fmt = AV_PIX_FMT_OHOSCODEC;
+-            } else {
+-                av_free( ohos_ctx );
+-                /* buffer 模式, pix_fmt 保持 NV21 */
++                AVHWDeviceContext *device_ctx =
++                    (AVHWDeviceContext *)device_ref->data;
++                AVOHCodecDeviceContext *ohos_ctx =
++                    (AVOHCodecDeviceContext *)device_ctx->hwctx;
++                ohos_ctx->native_window = native_window;
++                ohos_ctx->direct_surface = 1;
++                if (av_hwdevice_ctx_init(device_ref) == 0)
++                    p_context->hw_device_ctx = device_ref;
++                else
++                    av_buffer_unref(&device_ref);
+             }
+         }
+     }
+@@ -755,7 +762,7 @@ static const enum PixelFormat hwfmts[] =
+     AV_PIX_FMT_VDPAU,
+ #endif
+ #ifdef HAVE_OHOS
+-    AV_PIX_FMT_OHOSCODEC,
++    AV_PIX_FMT_OHCODEC,
+ #endif
+     AV_PIX_FMT_NONE,
+ };

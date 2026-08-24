@@ -1,0 +1,67 @@
+diff --git a/modules/codec/avcodec/video.c b/modules/codec/avcodec/video.c
+--- a/modules/codec/avcodec/video.c
++++ b/modules/codec/avcodec/video.c
+@@ -31,6 +31,7 @@
+ #include <vlc_common.h>
+ #include <vlc_codec.h>
+ #include <vlc_avcodec.h>
++#include <vlc_input.h>
+ #include <vlc_cpu.h>
+ #include <vlc_atomic.h>
+ #include <assert.h>
+@@ -105,6 +106,7 @@ struct decoder_sys_t
+     /* Surface output bypasses VLC's picture queue, so it needs its own clock. */
+     int64_t i_ohos_next_present_ns;
+     vlc_tick_t i_ohos_last_pts;
++    int i_ohos_last_display_rate;
+ #endif
+ };
+@@ -181,6 +183,29 @@ static int64_t ohos_presentation_time_ns(decoder_t *p_dec, vlc_tick_t i_pts)
+     p_sys->i_ohos_last_pts = i_pts;
+     return target_ns;
+ }
++
++static void ohos_update_playback_speed(decoder_t *p_dec)
++{
++    decoder_sys_t *p_sys = p_dec->p_sys;
++    const AVCodec *codec = p_sys->p_codec;
++    if (!codec || !codec->wrapper_name ||
++        strcmp(codec->wrapper_name, "ohcodec") != 0)
++        return;
++
++    const int display_rate = decoder_GetDisplayRate(p_dec);
++    if (display_rate <= 0 || display_rate == p_sys->i_ohos_last_display_rate)
++        return;
++
++    p_sys->i_ohos_last_display_rate = display_rate;
++    const double speed = (double)INPUT_RATE_DEFAULT / display_rate;
++    const int ret = avcodec_ohcodec_set_playback_speed(p_sys->p_context,
++                                                       speed);
++    if (ret < 0)
++        msg_Dbg(p_dec, "OHCodec playback policy unavailable for speed %.3f",
++                speed);
++    else
++        msg_Dbg(p_dec, "OHCodec playback speed updated to %.3f", speed);
++}
+ #endif
+ 
+ /*****************************************************************************
+  * Local prototypes
+@@ -703,6 +728,7 @@ static int InitVideoDecCommon( decoder_t *p_dec )
+ #ifdef HAVE_OHOS
+     p_sys->i_ohos_next_present_ns = 0;
+     p_sys->i_ohos_last_pts = VLC_TICK_INVALID;
++    p_sys->i_ohos_last_display_rate = -1;
+ #endif
+ 
+     /* Set output properties */
+@@ -1280,6 +1306,10 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
+         return NULL;
+     }
+ 
++#ifdef HAVE_OHOS
++    ohos_update_playback_speed(p_dec);
++#endif
++
+     if( !check_block_validity( p_sys, p_block ) )
+         return NULL;

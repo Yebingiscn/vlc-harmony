@@ -17,7 +17,9 @@ index 487c3cf..738e05b 100644
 -    #include <libavcodec/ohosavcodec.h>
 -    #include <libavutil/buffer.h>
 -    #include "../../video_output/ohos/display.h"
-+# include <libavcodec/ohosavcodec.h>
++# include <libavcodec/ohcodec_buffer.h>
++# include <libavutil/hwcontext.h>
++# include <libavutil/hwcontext_oh.h>
  #endif
 
  #include "../../packetizer/av1_obu.h"
@@ -69,8 +71,8 @@ index 487c3cf..738e05b 100644
 +
 +static bool ohos_is_surface_frame(const AVFrame *frame)
 +{
-+    return frame->data[3] != NULL && frame->buf[0] != NULL &&
-+           frame->linesize[0] == 0;
++    return frame->format == AV_PIX_FMT_OHCODEC && frame->data[3] != NULL &&
++           frame->buf[0] != NULL;
  }
 
 -static picture_context_t *ohos_pic_ctx_copy(picture_context_t *ctx)
@@ -167,12 +169,12 @@ index 487c3cf..738e05b 100644
 +                                   !p_sys->b_show_corrupted;
 +            if (b_need_output_picture && !corrupted)
 +            {
-+                OHOSAVCodecSurfaceCtx *surface_ctx =
-+                    (OHOSAVCodecSurfaceCtx *)frame->data[3];
++                AVOHCodecBuffer *surface_buffer =
++                    (AVOHCodecBuffer *)frame->data[3];
 +                const int64_t present_ns =
 +                    ohos_presentation_time_ns(p_dec, i_pts);
-+                if (av_ohosavcodec_render_buffer_at_time(surface_ctx,
-+                                                         present_ns) < 0)
++                if (av_ohcodec_release_buffer_at_time(surface_buffer,
++                                                      present_ns) < 0)
 +                    msg_Warn(p_dec, "failed to present OHCodec surface frame");
 +            }
 +            /* Freeing a rendered context only releases its AVBufferRef. For

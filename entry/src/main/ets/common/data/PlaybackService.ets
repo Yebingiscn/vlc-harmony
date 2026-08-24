@@ -1687,6 +1687,10 @@ export class PlaybackService {
     // iso/bluray 光碟不进此分支,保持下方强制软解(对应 Android MEDIA_NO_HWACCEL)。
     const isDiscMrl: boolean = mrl.startsWith('bluray://') || mrl.toLowerCase().endsWith('.iso');
     if (!isDiscMrl) {
+      // Prefer the nearest synchronization point for interactive seeks. Exact
+      // preroll on long-GOP 4K HEVC files can otherwise stall OHCodec for
+      // several seconds after every scrub/double-tap operation.
+      media.addOption(':input-fast-seek');
       const hwAccel: string = await Settings.getString(
         Settings.KEY_HARDWARE_ACCELERATION, Settings.HARDWARE_ACCELERATION_DEFAULT);
       if (hwAccel === '0') {
@@ -1702,7 +1706,7 @@ export class PlaybackService {
       }
     }
 
-    // Blu-ray 主视频为 H.264/HEVC。OHOS 补丁默认优先 h264_ohosavcodec 硬解,
+    // Blu-ray 主视频为 H.264/HEVC。OHOS 补丁默认优先 h264_ohcodec 硬解,
     // 但该硬解器对部分流(实测 H.264 m2ts)会 "cannot start codec" 导致黑屏且不回退。
     // 按媒体注入软解选项(必须在 setMedia 前),对齐 Android Media.setHWDecoderEnabled 的 per-media 开关。
     // 注意: .iso 一律注入 —— libbluray access_demux 会自动探测 ISO(文件名可能被 MediaLibrary

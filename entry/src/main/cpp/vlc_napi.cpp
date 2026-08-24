@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <chrono>
 #include <condition_variable>
+#include <cmath>
 #include <cstdio>
 #include <cstdarg>
 #include <cstring>
@@ -82,8 +83,15 @@ struct SeekWorker {
     bool hasPending = false;
     uint64_t nextSerial = 0;
     SeekRequest pending;
+    SeekRequest inFlight;
+    bool hasInFlight = false;
+    SeekRequest lastApplied;
+    bool hasLastApplied = false;
+    std::chrono::steady_clock::time_point lastAppliedAt;
     std::thread thread;
 };
+
+constexpr auto SEEK_COALESCE_WINDOW = std::chrono::milliseconds(24);
 
 void RunSeekWorker(const std::shared_ptr<SeekWorker> &worker)
 {
@@ -97,14 +105,42 @@ void RunSeekWorker(const std::shared_ptr<SeekWorker> &worker)
             if (worker->stopping) {
                 break;
             }
+            // Slider End/Click and other adjacent UI callbacks can enqueue the
+            // same seek twice. Wait for a short quiet period and only deliver
+            // the newest request to libVLC. This also prevents two consecutive
+            // decoder Flush operations for one user action.
+            uint64_t observedSerial = worker->pending.serial;
+            while (!worker->stopping) {
+                const bool changed = worker->condition.wait_for(
+                    lock, SEEK_COALESCE_WINDOW, [&worker, observedSerial]() {
+                        return worker->stopping ||
+                               (worker->hasPending && worker->pending.serial != observedSerial);
+                    });
+                if (!changed || worker->stopping) {
+                    break;
+                }
+                observedSerial = worker->pending.serial;
+            }
+            if (worker->stopping) {
+                break;
+            }
             request = worker->pending;
             worker->hasPending = false;
+            worker->inFlight = request;
+            worker->hasInFlight = true;
         }
 
         if (request.kind == SeekKind::Time) {
             libvlc_media_player_set_time(worker->mp, request.timeMs);
         } else {
             libvlc_media_player_set_position(worker->mp, request.position);
+        }
+        {
+            std::lock_guard<std::mutex> lock(worker->mutex);
+            worker->lastApplied = request;
+            worker->hasLastApplied = true;
+            worker->lastAppliedAt = std::chrono::steady_clock::now();
+            worker->hasInFlight = false;
         }
         OH_LOG_DEBUG(LOG_APP, "seek applied serial=%{public}llu kind=%{public}d",
                      static_cast<unsigned long long>(request.serial), static_cast<int>(request.kind));
@@ -128,6 +164,23 @@ void QueueSeek(const std::shared_ptr<SeekWorker> &worker, SeekKind kind, int64_t
     {
         std::lock_guard<std::mutex> lock(worker->mutex);
         if (worker->stopping) {
+            return;
+        }
+        const auto sameTarget = [kind, timeMs, position](const SeekRequest &request) {
+            return request.kind == kind &&
+                   (kind == SeekKind::Time
+                       ? request.timeMs == timeMs
+                       : std::fabs(request.position - position) < 0.000001f);
+        };
+        if (worker->hasPending && sameTarget(worker->pending)) {
+            return;
+        }
+        if (worker->hasInFlight && sameTarget(worker->inFlight)) {
+            return;
+        }
+        const auto now = std::chrono::steady_clock::now();
+        if (worker->hasLastApplied && sameTarget(worker->lastApplied) &&
+            now - worker->lastAppliedAt < std::chrono::milliseconds(250)) {
             return;
         }
         worker->pending = SeekRequest{kind, timeMs, position, ++worker->nextSerial};

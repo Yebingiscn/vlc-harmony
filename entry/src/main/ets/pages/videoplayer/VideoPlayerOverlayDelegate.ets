@@ -53,6 +53,8 @@ function fmtSleepSpan(ms: number): string {
 export class VideoPlayerOverlayDelegate {
   @Trace seeking: boolean = false;
   @Trace seekPercent: number = 0;
+  private lastSliderSeekMs: number = -1;
+  private lastSliderSeekAt: number = 0;
   @Trace sleepArmed: boolean = false;
   @Trace sheetOpen: boolean = false;
   @Trace sheetKind: string = '';
@@ -222,6 +224,18 @@ export class VideoPlayerOverlayDelegate {
     return vm.position;
   }
 
+  commitSliderSeek(percent: number): void {
+    const vm = this.requireVm();
+    const targetMs: number = Math.floor(vm.duration * percent / 100);
+    const now: number = Date.now();
+    if (targetMs === this.lastSliderSeekMs && now - this.lastSliderSeekAt < 250) {
+      return;
+    }
+    this.lastSliderSeekMs = targetMs;
+    this.lastSliderSeekAt = now;
+    vm.seekTo(targetMs);
+  }
+
   bottomActionIcon(action: VideoPlayerBottomAction): Resource {
     if (action.id === 'play') {
       return this.requireVm().state === PlayState.PLAYING
@@ -375,10 +389,10 @@ export struct VideoPlayerOverlayHud {
               this.overlayDelegate.seekPercent = v;
             } else if (mode === SliderChangeMode.Moving) {
               this.overlayDelegate.seekPercent = v;
-            } else {
+            } else if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
               this.overlayDelegate.seekPercent = v;
               this.overlayDelegate.seeking = false;
-              this.vm.seekTo(Math.floor(this.vm.duration * v / 100));
+              this.overlayDelegate.commitSliderSeek(v);
             }
             this.overlayDelegate.resetHudTimer();
           })

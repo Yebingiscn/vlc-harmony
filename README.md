@@ -56,6 +56,11 @@ and [`sync_native_libs.sh`](sync_native_libs.sh). Rebuilding libVLC requires a
 Linux environment, an OpenHarmony/HarmonyOS native SDK, and the dependencies
 installed by the prebuild script.
 
+The reproducible native pipeline keeps the OHOS VLC 3.0.21 platform port and
+builds it against FFmpeg 8.1.2 and OpenSSL 3.4.3. OHCodec output uses source
+timestamps and the system's refresh-rate policy; the app does not force a
+fixed 60 Hz or 120 Hz display cadence.
+
 ## Tests
 
 Unit tests live in `entry/src/test` and device tests live in

@@ -1,6 +1,8 @@
 import { NavController } from '../common/data/NavController';
 import { OpenLink } from '../common/data/OpenLink';
 import { LengthMetrics } from '@kit.ArkUI';
+import { bundleManager } from '@kit.AbilityKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import {
   HdsNavDestination,
   HdsNavDestinationTitleMode,
@@ -10,10 +12,33 @@ import {
 } from '@kit.UIDesignKit';
 
 const SOURCE_CODE_URL: string = 'https://github.com/Yebingiscn/vlc-harmony';
+const DOMAIN: number = 0x0001;
+const TAG: string = 'AboutFragmentPage';
 
 /** 精简的应用信息页。 */
 @ComponentV2
 export struct AboutFragmentPage {
+  @Local versionText: string = '';
+
+  aboutToAppear(): void {
+    this.loadVersion();
+  }
+
+  private async loadVersion(): Promise<void> {
+    try {
+      if (canIUse('SystemCapability.BundleManager.BundleFramework.Core')) {
+        const bundleInfo = await bundleManager.getBundleInfoForSelf(
+          bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION);
+        this.versionText = `${bundleInfo.versionName}(${bundleInfo.versionCode})`;
+      } else {
+        this.versionText = '未知版本';
+      }
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, 'get bundleInfo failed, error is %{public}s', JSON.stringify(error));
+      this.versionText = '未知版本';
+    }
+  }
+
   build() {
     HdsNavDestination() {
       Column() {
@@ -32,6 +57,10 @@ export struct AboutFragmentPage {
 
           Text('基于 VLC')
             .fontSize(16)
+            .fontColor($r('app.color.list_subtitle'))
+
+          Text(this.versionText)
+            .fontSize(14)
             .fontColor($r('app.color.list_subtitle'))
 
           Text('MIT 协议')
@@ -74,7 +103,7 @@ export struct AboutFragmentPage {
       style: {
         scrollEffectOpts: {
           enableScrollEffect: true,
-          scrollEffectType: ScrollEffectType.GRADIENT_BLUR,
+          scrollEffectType: ScrollEffectType.IMMERSIVE_GRADIENT_BLUR,
           blurEffectiveStartOffset: LengthMetrics.vp(0),
           blurEffectiveEndOffset: LengthMetrics.vp(20)
         },

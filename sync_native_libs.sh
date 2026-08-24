@@ -29,16 +29,16 @@ else
     "vlc/arm64-v8a/lib/libvlccore.so.9.0.1:libvlccore.so.9" \
     "a52dec/arm64-v8a/lib/liba52.so.0:liba52.so.0" \
     "aribb24/arm64-v8a/lib/libaribb24.so.0:libaribb24.so.0" \
-    "FFmpeg/arm64-v8a/lib/libavcodec.so.60:libavcodec.so.60" \
-    "FFmpeg/arm64-v8a/lib/libavformat.so.60:libavformat.so.60" \
-    "FFmpeg/arm64-v8a/lib/libavutil.so.58:libavutil.so.58" \
+    "FFmpeg/arm64-v8a/lib/libavcodec.so.62:libavcodec.so.62" \
+    "FFmpeg/arm64-v8a/lib/libavformat.so.62:libavformat.so.62" \
+    "FFmpeg/arm64-v8a/lib/libavutil.so.60:libavutil.so.60" \
     "libdca/arm64-v8a/lib/libdca.so.0:libdca.so.0" \
     "libkate/arm64-v8a/lib/libkate.so.1:libkate.so.1" \
     "libpng/arm64-v8a/lib/libpng16.so.16:libpng16.so.16" \
     "speex/arm64-v8a/lib/libspeex.so.1:libspeex.so.1" \
     "speexdsp/arm64-v8a/lib/libspeexdsp.so.1:libspeexdsp.so.1" \
-    "FFmpeg/arm64-v8a/lib/libswresample.so.4:libswresample.so.4" \
-    "FFmpeg/arm64-v8a/lib/libswscale.so.7:libswscale.so.7" \
+    "FFmpeg/arm64-v8a/lib/libswresample.so.6:libswresample.so.6" \
+    "FFmpeg/arm64-v8a/lib/libswscale.so.9:libswscale.so.9" \
     "libtheora/arm64-v8a/lib/libtheoradec.so.1:libtheoradec.so.1" \
     "libtheora/arm64-v8a/lib/libtheoraenc.so.1:libtheoraenc.so.1" \
     "dav1d/arm64-v8a/lib/libdav1d.so.7:libdav1d.so.7" \

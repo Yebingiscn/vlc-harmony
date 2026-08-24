@@ -83,7 +83,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ohos_vlc/library/libs/arm64-v8a
-          key: native-vlc-arm64-api18-v1-${{ hashFiles('ohos_vlc/prebuild.sh', 'ohos_vlc/patches/**', 'sync_native_libs.sh') }}
+          key: native-vlc-arm64-api18-ffmpeg8-v2-${{ hashFiles('ohos_vlc/prebuild.sh', 'ohos_vlc/recipes/**', 'ohos_vlc/patches/**', 'sync_native_libs.sh') }}
 
       - name: Build FFmpeg and VLC
         if: steps.native-cache.outputs.cache-hit != 'true'
@@ -106,8 +106,11 @@ jobs:
           set -euo pipefail
           test -s entry/libs/arm64-v8a/libvlc.so.5
           test -s entry/libs/arm64-v8a/libvlccore.so.9
-          test -s entry/libs/arm64-v8a/libavcodec.so.60
-          test -s entry/libs/arm64-v8a/libavformat.so.60
+          test -s entry/libs/arm64-v8a/libavcodec.so.62
+          test -s entry/libs/arm64-v8a/libavformat.so.62
+          test -s entry/libs/arm64-v8a/libavutil.so.60
+          test -s entry/libs/arm64-v8a/libswresample.so.6
+          test -s entry/libs/arm64-v8a/libswscale.so.9
           test -s entry/src/main/cpp/third_party/libvlc/arm64-v8a/libvlc.so
           file entry/libs/arm64-v8a/libvlc.so.5
 
