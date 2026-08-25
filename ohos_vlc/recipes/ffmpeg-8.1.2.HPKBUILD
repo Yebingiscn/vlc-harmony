@@ -10,7 +10,7 @@ pkgdesc="FFmpeg 8.1.2 with OpenHarmony OHCodec zero-copy decoding"
 url="https://ffmpeg.org/"
 archs=("arm64-v8a")
 license=("LGPL-2.1-or-later")
-depends=("openssl_3.4.3" "libvorbis" "libogg" "openh264" "dav1d" "lame" "freetype2" "zlib" "bzip2" "brotli" "libpng" "harfbuzz" "fribidi" "libxml2" "fontconfig" "opus")
+depends=("openssl_3.4.3" "libvorbis" "libogg" "openh264" "dav1d" "lame" "freetype2" "zlib" "bzip2_1_0_8" "brotli" "libpng" "harfbuzz" "fribidi" "libxml2" "fontconfig" "opus")
 makedepends=()
 
 autounpack=false
@@ -59,11 +59,13 @@ prepare() {
     fi
 
     export LDFLAGS="$LYCIUM_ROOT/usr/libogg/$ARCH/lib/libogg.a -L$LYCIUM_ROOT/usr/lame/$ARCH/lib/ \
-                    -L$LYCIUM_ROOT/usr/libvorbis/$ARCH/lib/ -lvorbis $LDFLAGS"
+                    -L$LYCIUM_ROOT/usr/libvorbis/$ARCH/lib/ -lvorbis \
+                    -L$LYCIUM_ROOT/usr/bzip2_1_0_8/$ARCH/lib $LDFLAGS"
     # FFmpeg 8 probes <libxml2/libxml/xmlversion.h>, while libxml2.pc adds
     # include/libxml2 for the conventional <libxml/...> form. Add the parent
     # include directory as well so the cross-compile probe resolves both.
     export CFLAGS="-I$LYCIUM_ROOT/usr/lame/$ARCH/include/ \
+                   -I$LYCIUM_ROOT/usr/bzip2_1_0_8/$ARCH/include \
                    -I$LYCIUM_ROOT/usr/libxml2/$ARCH/include $CFLAGS"
 }
 
