@@ -340,15 +340,24 @@ function install_depends()
     cp -f $LYCIUM_TOOLS_DIR/usr/dav1d/arm64-v8a/lib/libdav1d.so.7 "$install_dir"
     cp -f $LYCIUM_TOOLS_DIR/usr/lame/arm64-v8a/lib/libmp3lame.so.0 "$install_dir"
     cp -f $LYCIUM_TOOLS_DIR/usr/openh264/arm64-v8a/lib/libopenh264.so.8 "$install_dir"
-    cp -f $LYCIUM_TOOLS_DIR/usr/opus/arm64-v8a/lib/libopus.so.0 "$install_dir"
-    cp -f $LYCIUM_TOOLS_DIR/usr/libogg/arm64-v8a/lib/libogg.so.0 "$install_dir"
-    cp -f $LYCIUM_TOOLS_DIR/usr/libvorbis/arm64-v8a/lib/libvorbis.so.0 "$install_dir"
-    cp -f $LYCIUM_TOOLS_DIR/usr/libvorbis/arm64-v8a/lib/libvorbisenc.so.2 "$install_dir"
+    # Opus, Ogg and Vorbis recipes produce static archives for HarmonyOS.
+    # They are linked into their consumers and therefore have no runtime .so
+    # files to copy into the HAP.
     cp -f $LYCIUM_TOOLS_DIR/usr/libxml2/arm64-v8a/lib/libxml2.so.2 "$install_dir"
     cp -f $LYCIUM_TOOLS_DIR/usr/xz/arm64-v8a/lib/liblzma.so.5 "$install_dir"
     cp -f $LYCIUM_TOOLS_DIR/usr/openssl_3.4.3/arm64-v8a/lib/libssl.so.3 "$install_dir"
     cp -f $LYCIUM_TOOLS_DIR/usr/openssl_3.4.3/arm64-v8a/lib/libcrypto.so.3 "$install_dir"
     cp -f $LYCIUM_TOOLS_DIR/usr/zlib/arm64-v8a/lib/libz.so.1 "$install_dir"
+
+    local runtime_lib
+    while IFS= read -r runtime_lib
+    do
+        if [ -n "$runtime_lib" ] && [ ! -s "$install_dir/$runtime_lib" ]
+        then
+            echo "ERROR: required runtime library was not installed: $runtime_lib"
+            return 1
+        fi
+    done < "$ROOT_DIR/runtime-libs-arm64.txt"
 
     mkdir -p $ROOT_DIR/library/src/main/cpp/thirdpart/include/
     cp -arf $LYCIUM_TOOLS_DIR/usr/vlc/arm64-v8a/include/* $ROOT_DIR/library/src/main/cpp/thirdpart/include/

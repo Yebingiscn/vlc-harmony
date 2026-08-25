@@ -124,21 +124,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -s entry/libs/arm64-v8a/libvlc.so.5
-          test -s entry/libs/arm64-v8a/libvlccore.so.9
-          test -s entry/libs/arm64-v8a/libavcodec.so.62
-          test -s entry/libs/arm64-v8a/libavformat.so.62
-          test -s entry/libs/arm64-v8a/libavutil.so.60
-          test -s entry/libs/arm64-v8a/libswresample.so.6
-          test -s entry/libs/arm64-v8a/libswscale.so.9
-          test -s entry/libs/arm64-v8a/libopus.so.0
-          test -s entry/libs/arm64-v8a/libogg.so.0
-          test -s entry/libs/arm64-v8a/libvorbis.so.0
-          test -s entry/libs/arm64-v8a/libvorbisenc.so.2
-          test -s entry/libs/arm64-v8a/libxml2.so.2
-          test -s entry/libs/arm64-v8a/liblzma.so.5
-          test -s entry/libs/arm64-v8a/libssl.so.3
-          test -s entry/libs/arm64-v8a/libcrypto.so.3
+          while IFS= read -r runtime_lib; do
+            if [[ -n "${runtime_lib}" && ! -s "entry/libs/arm64-v8a/${runtime_lib}" ]]; then
+              echo "Missing required runtime library: ${runtime_lib}"
+              exit 1
+            fi
+          done < ohos_vlc/runtime-libs-arm64.txt
           test -s entry/src/main/cpp/third_party/libvlc/arm64-v8a/libvlc.so
           file entry/libs/arm64-v8a/libvlc.so.5
 
