@@ -64,6 +64,22 @@ fetch_with_retry() {
 
 clone_with_retry "$WORK_DIR/vlc" --depth=1 --branch "$VLC_BRANCH" "$VLC_REPO"
 test "$(git -C "$WORK_DIR/vlc" rev-parse HEAD)" = "$VLC_COMMIT"
+
+# The FFmpeg compatibility patch may use VLC public identifiers, but it must
+# not assume APIs from a newer VLC branch. Catch that mismatch during the
+# inexpensive preflight instead of after the full native dependency build.
+grep '^+[^+]' "$VLC_PATCH" |
+    grep -oE 'VLC_[A-Z][A-Z0-9_]*|vlc_[A-Za-z][A-Za-z0-9_]*' |
+    sort -u > "$WORK_DIR/added-vlc-identifiers.txt" || true
+while IFS= read -r identifier
+do
+    if ! git -C "$WORK_DIR/vlc" grep -q -F "$identifier" HEAD
+    then
+        echo "ERROR: consolidated VLC patch references an identifier absent from VLC 3.0.21: $identifier"
+        exit 1
+    fi
+done < "$WORK_DIR/added-vlc-identifiers.txt"
+
 git -C "$WORK_DIR/vlc" apply --check "$VLC_PATCH"
 git -C "$WORK_DIR/vlc" apply "$VLC_PATCH"
 
