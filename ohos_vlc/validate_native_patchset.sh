@@ -10,6 +10,7 @@ VLC_REPO=https://gitcode.com/OpenHarmony-ApplicationTPC/ohos_vlc.git
 VLC_BRANCH=ohos-3.0.21
 VLC_COMMIT=14a0483eb294e62305e596dc0d158c74e6a04cc9
 VLC_PATCH=$ROOT_DIR/patches/0000-vlc-ffmpeg8-ohcodec-consolidated.patch
+VLC_REALTIME_PATCH=$ROOT_DIR/patches/0010-vlc-ohos-realtime-audio-ring.patch
 
 FFMPEG_REPO=https://github.com/FFmpeg/FFmpeg.git
 FFMPEG_TAG=n8.1.2
@@ -82,6 +83,25 @@ done < "$WORK_DIR/added-vlc-identifiers.txt"
 
 git -C "$WORK_DIR/vlc" apply --check "$VLC_PATCH"
 git -C "$WORK_DIR/vlc" apply "$VLC_PATCH"
+git -C "$WORK_DIR/vlc" apply --check "$VLC_REALTIME_PATCH"
+git -C "$WORK_DIR/vlc" apply "$VLC_REALTIME_PATCH"
+
+grep -q 'AUDIO_RING_CAPACITY' \
+    "$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
+grep -q 'SetRendererWriteDataCallbackAdvanced' \
+    "$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
+if grep -q 'audio_buffer_t' \
+    "$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
+then
+    echo "ERROR: VLC OHAudio still uses the per-block linked-list queue"
+    exit 1
+fi
+if grep -q '\[OHOS-DBG\] frame received:' \
+    "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
+then
+    echo "ERROR: VLC still logs every decoded video frame"
+    exit 1
+fi
 
 if git -C "$WORK_DIR/vlc" grep -E \
     'ohosavcodec|OHOSAVCodec|AV_PIX_FMT_OHOSCODEC|ohos_picture_context' -- \

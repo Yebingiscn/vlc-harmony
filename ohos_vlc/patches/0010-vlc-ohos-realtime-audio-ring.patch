@@ -1,0 +1,531 @@
+diff --git a/modules/audio_output/audiounit_ohos.c b/modules/audio_output/audiounit_ohos.c
+index 6b1b2ea..dcb055d 100644
+--- a/modules/audio_output/audiounit_ohos.c
++++ b/modules/audio_output/audiounit_ohos.c
+@@ -41,8 +41,8 @@ static void Close(vlc_object_t *);
+ 
+ // Audio queue and timing constants
+ #define AUDIO_QUEUE_THRESHOLD_SIZE   16384    /* Queue size threshold in bytes */
++#define AUDIO_RING_CAPACITY          (16u * 1024u * 1024u)
+ #define RENDERER_STALL_TIMEOUT       2000000  /* Stall timeout in microseconds (2s) */
+-#define QUEUE_LOG_INTERVAL           100      /* Log interval for queued blocks */
+ 
+ vlc_module_begin()
+     set_shortname("OHOS:Audio")
+@@ -54,16 +54,11 @@ vlc_module_begin()
+ vlc_module_end()
+ 
+ // Audio data queue structure
+-typedef struct audio_buffer_t {
+-    uint8_t *data;
+-    size_t size;
+-    size_t pos;
+-    struct audio_buffer_t *next;
+-} audio_buffer_t;
+-
+ typedef struct {
+-    audio_buffer_t *head;
+-    audio_buffer_t *tail;
++    uint8_t *data;
++    size_t capacity;
++    size_t read_pos;
++    size_t write_pos;
+     vlc_mutex_t lock;
+     size_t total_size;
+ } audio_queue_t;
+@@ -90,10 +85,8 @@ typedef struct {
+ // OpenHarmony audio output module private data structure
+ struct aout_sys_t {
+     // OpenHarmony Audio Renderer handle
+-    struct OH_AudioRenderer *p_renderer;
+-    struct OH_AudioStreamBuilder* builder;
+-    OH_AudioRenderer_Callbacks callbacks;
+-
++    OH_AudioRenderer *p_renderer;
++    OH_AudioStreamBuilder *builder;
+     // audio data queue
+     audio_queue_t queue;
+ 
+@@ -114,8 +107,6 @@ struct aout_sys_t {
+     // estimated hardware latency
+     vlc_tick_t estimated_hardware_latency;
+     audio_delay_stats_t delay_stats;
+-    vlc_mutex_t lock;
+-
+     bool draining;                    // Is emptying
+     vlc_tick_t drain_start_time;      // Start time of emptying
+     size_t drain_initial_size;        // The queue size at the start of emptying
+@@ -124,58 +115,51 @@ struct aout_sys_t {
+ };
+ 
+ // Initiating the queue operation
+-static void audio_queue_init(audio_queue_t *queue)
++static int audio_queue_init(audio_queue_t *queue)
+ {
+-    queue->head = NULL;
+-    queue->tail = NULL;
++    queue->data = malloc(AUDIO_RING_CAPACITY);
++    if (!queue->data)
++        return VLC_ENOMEM;
++    queue->capacity = AUDIO_RING_CAPACITY;
++    queue->read_pos = 0;
++    queue->write_pos = 0;
+     queue->total_size = 0;
+     vlc_mutex_init(&queue->lock);
++    return VLC_SUCCESS;
+ }
+ 
+ static void audio_queue_clear(audio_queue_t *queue)
+ {
+     vlc_mutex_lock(&queue->lock);
+-    audio_buffer_t *current = queue->head;
+-    while (current != NULL) {
+-        audio_buffer_t *next = current->next;
+-        free(current->data);
+-        free(current);
+-        current = next;
+-    }
+-    queue->head = NULL;
+-    queue->tail = NULL;
++    queue->read_pos = 0;
++    queue->write_pos = 0;
+     queue->total_size = 0;
+     vlc_mutex_unlock(&queue->lock);
+ }
+ 
+-static void audio_queue_push(audio_queue_t *queue, const uint8_t *data, size_t size)
++static void audio_queue_destroy(audio_queue_t *queue)
+ {
+-    audio_buffer_t *buffer = malloc(sizeof(audio_buffer_t));
+-    if (!buffer) return;
+-
+-    buffer->data = malloc(size);
+-    if (!buffer->data) {
+-        free(buffer);
+-        return;
+-    }
+-
+-    memcpy(buffer->data, data, size);
+-    buffer->size = size;
+-    buffer->pos = 0;
+-    buffer->next = NULL;
++    free(queue->data);
++    queue->data = NULL;
++    queue->capacity = 0;
++    vlc_mutex_destroy(&queue->lock);
++}
+ 
++static bool audio_queue_push(audio_queue_t *queue, const uint8_t *data, size_t size)
++{
+     vlc_mutex_lock(&queue->lock);
+-
+-    if (queue->tail == NULL) {
+-        queue->head = buffer;
+-        queue->tail = buffer;
+-    } else {
+-        queue->tail->next = buffer;
+-        queue->tail = buffer;
++    if (size > queue->capacity - queue->total_size) {
++        vlc_mutex_unlock(&queue->lock);
++        return false;
+     }
+-    queue->total_size += size;
+ 
++    size_t first = __MIN(size, queue->capacity - queue->write_pos);
++    memcpy(queue->data + queue->write_pos, data, first);
++    memcpy(queue->data, data + first, size - first);
++    queue->write_pos = (queue->write_pos + size) % queue->capacity;
++    queue->total_size += size;
+     vlc_mutex_unlock(&queue->lock);
++    return true;
+ }
+ 
+ static size_t audio_queue_drain(audio_queue_t *queue, uint8_t *output, size_t requested_size, bool *has_more)
+@@ -184,41 +168,20 @@ static size_t audio_queue_drain(audio_queue_t *queue, uint8_t *output, size_t re
+ 
+     vlc_mutex_lock(&queue->lock);
+ 
+-    while (copied < requested_size && queue->head != NULL) {
+-        audio_buffer_t *current = queue->head;
+-        size_t available = current->size - current->pos;
+-        size_t needed = requested_size - copied;
+-        size_t to_copy = (available < needed) ? available : needed;
+-
+-        if (output) {
+-            memcpy(output + copied, current->data + current->pos, to_copy);
+-        }
+-
+-        copied += to_copy;
+-        current->pos += to_copy;
+-
+-        if (current->pos >= current->size) {
+-            // The current buffer is used up, remove it
+-            queue->head = current->next;
+-            if (queue->tail == current) {
+-                queue->tail = NULL;
+-            }
+-            free(current->data);
+-            free(current);
+-        }
++    copied = __MIN(requested_size, queue->total_size);
++    size_t first = __MIN(copied, queue->capacity - queue->read_pos);
++    if (output) {
++        memcpy(output, queue->data + queue->read_pos, first);
++        memcpy(output + first, queue->data, copied - first);
+     }
++    queue->read_pos = (queue->read_pos + copied) % queue->capacity;
++    queue->total_size -= copied;
+ 
+     // Set the flag of whether there is more data
+     if (has_more) {
+-        *has_more = (queue->head != NULL);
+-    }
+-
+-    if (queue->head == NULL) {
+-        queue->tail = NULL;
++        *has_more = queue->total_size != 0;
+     }
+ 
+-    queue->total_size -= copied;
+-
+     vlc_mutex_unlock(&queue->lock);
+ 
+     return copied;
+@@ -234,49 +197,24 @@ static size_t audio_queue_size(audio_queue_t *queue)
+ }
+ 
+ // OpenHarmony audio callback function
+-static int32_t OnWriteData(struct OH_AudioRenderer* renderer, void *userData,
++static int32_t OnWriteData(OH_AudioRenderer *renderer, void *userData,
+                           void *buffer, int32_t length)
+ {
+     audio_output_t *p_aout = (audio_output_t *)userData;
+     aout_sys_t *p_sys = p_aout->sys;
+ 
+-    if (!p_sys || !buffer || length <= 0) {
+-        if (buffer) {
+-            memset(buffer, 0, length);
+-        }
+-        return length;
+-    }
++    if (!p_sys || !buffer || length <= 0)
++        return 0;
+ 
+     p_sys->last_write_time = mdate();
+ 
+     bool has_more_data = false;
+     size_t copied = 0;
+ 
+-    if (audio_queue_size(&p_sys->queue) > 0) {
+-        copied = audio_queue_drain(&p_sys->queue, (uint8_t*)buffer, length, &has_more_data);
+-
+-        // Record data consumption (for debugging)
+-        static size_t total_copied = 0;
+-        total_copied += copied;
+-        static vlc_tick_t last_log = 0;
+-        vlc_tick_t now = mdate();
+-        if (now - last_log > VLC_TICK_FROM_MS(1000)) {
+-            msg_Dbg(p_aout, "Callback: copied %zu bytes (total: %zu), queue: %zu bytes", 
+-                   copied, total_copied, audio_queue_size(&p_sys->queue));
+-            last_log = now;
+-        }
+-    }
+-
+-    // If there is not enough data, fill the rest with silence
+-    if (copied < (size_t)length) {
+-        size_t silence_bytes = length - copied;
+-        memset((uint8_t*)buffer + copied, 0, silence_bytes);
++    copied = audio_queue_drain(&p_sys->queue, (uint8_t*)buffer, length,
++                               &has_more_data);
+ 
+-        // Recording is completed only when there is no more data
+-        if (!has_more_data && audio_queue_size(&p_sys->queue) == 0) {
+-            msg_Dbg(p_aout, "Audio queue completely drained in callback");
+-        }
+-    }
++    VLC_UNUSED(has_more_data);
+ 
+     return copied;
+ }
+@@ -306,31 +244,19 @@ static int VolumeSet(audio_output_t *p_aout, float f_volume)
+     }
+ }
+ 
+-static MuteSet( audio_output_t *p_aout, bool mute )
++static int MuteSet(audio_output_t *p_aout, bool mute)
+ {
+     aout_sys_t *p_sys = p_aout->sys;
+     p_sys->mute = mute;
+ 
+-    if(p_sys->p_renderer != NULL) {
+-        OH_AudioStream_Result result = OH_AudioRenderer_SetVolume(p_sys->p_renderer,
+-            mute ? 0.0f : p_sys->volume);
++    if (p_sys->p_renderer != NULL) {
++        OH_AudioStream_Result result = OH_AudioRenderer_SetVolume(
++            p_sys->p_renderer, mute ? 0.0f : p_sys->volume);
++        if (result != AUDIOSTREAM_SUCCESS)
++            return VLC_EGENERIC;
+     }
+     aout_MuteReport(p_aout, mute);
+-}
+-
+-// Audio stream event callback
+-static void OnStreamEvent(struct OH_AudioRenderer* renderer, void* userData, OH_AudioStream_Event event)
+-{
+-    audio_output_t *p_aout = (audio_output_t *)userData;
+-    msg_Info(p_aout, "OpenHarmony audio output OnStreamEvent");
+-}
+-
+-// Audio Interrupt event callback
+-static void OnInterruptEvent(struct OH_AudioRenderer* renderer, void* userData, 
+-                           OH_AudioInterrupt_ForceType /*event*/, OH_AudioInterrupt_Hint /*force*/)
+-{
+-    audio_output_t *p_aout = (audio_output_t *)userData;
+-    msg_Info(p_aout, "OpenHarmony audio output OnInterruptEvent");
++    return VLC_SUCCESS;
+ }
+ 
+ static int RestartRenderer(audio_output_t *p_aout)
+@@ -360,13 +286,11 @@ static int RestartRenderer(audio_output_t *p_aout)
+     OH_AudioStreamBuilder_SetSampleFormat(p_sys->builder, p_sys->sample_format);
+     OH_AudioStreamBuilder_SetRendererInfo(p_sys->builder, AUDIOSTREAM_USAGE_MOVIE);
+ 
+-    p_sys->callbacks.OH_AudioRenderer_OnWriteData = OnWriteData;
+-    p_sys->callbacks.OH_AudioRenderer_OnStreamEvent = OnStreamEvent;
+-    p_sys->callbacks.OH_AudioRenderer_OnInterruptEvent = OnInterruptEvent;
+-
+-    result = OH_AudioStreamBuilder_SetRendererCallback(p_sys->builder, p_sys->callbacks, p_aout);
++    result = OH_AudioStreamBuilder_SetRendererWriteDataCallbackAdvanced(
++        p_sys->builder, OnWriteData, p_aout);
+     if (result != AUDIOSTREAM_SUCCESS) {
+-        msg_Err(p_aout, "Restart: failed to set callback: %d", result);
++        msg_Err(p_aout, "Restart: failed to set advanced write callback: %d",
++                result);
+         OH_AudioStreamBuilder_Destroy(p_sys->builder);
+         p_sys->builder = NULL;
+         return VLC_EGENERIC;
+@@ -428,6 +352,13 @@ static int Start(audio_output_t *p_aout, audio_sample_format_t *p_fmt)
+     // Setting audio parameters
+     p_sys->sample_rate = p_fmt->i_rate;
+     p_sys->channels = aout_FormatNbChannels(p_fmt);
++    if (p_sys->sample_rate == 0 || p_sys->channels == 0) {
++        msg_Warn(p_aout, "Rejecting invalid audio format: %u channels, %u Hz",
++                 p_sys->channels, p_sys->sample_rate);
++        OH_AudioStreamBuilder_Destroy(p_sys->builder);
++        p_sys->builder = NULL;
++        return VLC_EGENERIC;
++    }
+ 
+     switch (p_fmt->i_format) {
+         case VLC_CODEC_S16N:
+@@ -451,14 +382,10 @@ static int Start(audio_output_t *p_aout, audio_sample_format_t *p_fmt)
+     OH_AudioStreamBuilder_SetSampleFormat(p_sys->builder, p_sys->sample_format);
+     OH_AudioStreamBuilder_SetRendererInfo(p_sys->builder, AUDIOSTREAM_USAGE_MOVIE);
+ 
+-    // Set Renderer Information
+-    p_sys->callbacks.OH_AudioRenderer_OnWriteData = OnWriteData;
+-    p_sys->callbacks.OH_AudioRenderer_OnStreamEvent = OnStreamEvent;
+-    p_sys->callbacks.OH_AudioRenderer_OnInterruptEvent = OnInterruptEvent;
+-
+-    result = OH_AudioStreamBuilder_SetRendererCallback(p_sys->builder, p_sys->callbacks, p_aout);
++    result = OH_AudioStreamBuilder_SetRendererWriteDataCallbackAdvanced(
++        p_sys->builder, OnWriteData, p_aout);
+     if (result != AUDIOSTREAM_SUCCESS) {
+-        msg_Err(p_aout, "Failed to set renderer callback: %d", result);
++        msg_Err(p_aout, "Failed to set advanced write callback: %d", result);
+         OH_AudioStreamBuilder_Destroy(p_sys->builder);
+         p_sys->builder = NULL;
+         return VLC_EGENERIC;
+@@ -536,7 +463,7 @@ static vlc_tick_t vlc_tick_from_samples(uint64_t samples, uint32_t sample_rate)
+ 
+ static void Stop(audio_output_t *p_aout)
+ {
+-    msg_Info(p_aout, "Stopping OpenHarmony audio output gracefully");
++    msg_Info(p_aout, "Stopping OpenHarmony audio output");
+     aout_sys_t *p_sys = p_aout->sys;
+ 
+     if (!p_sys) {
+@@ -544,63 +471,7 @@ static void Stop(audio_output_t *p_aout)
+     }
+ 
+     p_sys->is_playing = false;
+-
+-    // Record the queue status before stopping
+-    size_t initial_queue_size = audio_queue_size(&p_sys->queue);
+-    if (initial_queue_size > 0 && p_sys->p_renderer) {
+-        msg_Err(p_aout, "Allowing renderer to play remaining %zu bytes", initial_queue_size);
+-
+-        // Calculate the expected play time (based on sample rate and data volume)
+-        vlc_tick_t estimated_play_time = 0;
+-        if (p_sys->sample_rate > 0 && p_sys->channels > 0) {
+-            size_t bytes_per_sample = get_bytes_per_sample(p_aout, p_sys->sample_format);
+-            if (bytes_per_sample > 0) {
+-                size_t total_samples = initial_queue_size / bytes_per_sample;
+-                size_t samples_per_channel = total_samples / p_sys->channels;
+-                estimated_play_time = vlc_tick_from_samples(samples_per_channel, p_sys->sample_rate);
+-                msg_Err(p_aout, "Estimated play time for remaining data: %" PRId64 "ms", 
+-                        vlc_tick_to_ms(estimated_play_time));
+-            }
+-        }
+-
+-        // Waiting for data to be played, but using a more conservative strategy
+-        vlc_tick_t start_wait = mdate();
+-        vlc_tick_t max_wait_time = estimated_play_time * 2 + VLC_TICK_FROM_MS(500); // 2x of estimated time + 500ms buffer
+-
+-        while (audio_queue_size(&p_sys->queue) > 0) {
+-            vlc_tick_t current_time = mdate();
+-            vlc_tick_t elapsed = current_time - start_wait;
+-
+-            // Check whether timeout occurs
+-            if (elapsed > max_wait_time) {
+-                size_t remaining = audio_queue_size(&p_sys->queue);
+-                msg_Err(p_aout, "Timeout waiting for audio playback, %zu bytes remaining", remaining);
+-                break;
+-            }
+-
+-            usleep(20 * 1000); // 20ms
+-
+-            // The progress is output every 200ms
+-            static vlc_tick_t last_progress = 0;
+-            if (current_time - last_progress > VLC_TICK_FROM_MS(200)) {
+-                size_t current_size = audio_queue_size(&p_sys->queue);
+-                int progress = 100 - (int)((current_size * 100) / initial_queue_size);
+-                msg_Err(p_aout, "Playback progress: %d%%, %zu bytes remaining", 
+-                       progress, current_size);
+-                last_progress = current_time;
+-            }
+-        }
+-
+-        size_t final_queue_size = audio_queue_size(&p_sys->queue);
+-        if (final_queue_size == 0) {
+-            msg_Info(p_aout, "All audio data successfully played");
+-        } else {
+-            msg_Err(p_aout, "%zu bytes remaining in queue after wait period", final_queue_size);
+-        }
+-
+-        // Give the system a little extra time to make sure the final data is processed by the hardware
+-        usleep(50 * 1000); // 50ms
+-    }
++    audio_queue_clear(&p_sys->queue);
+ 
+     if (p_sys->p_renderer) {
+         OH_AudioRenderer_Stop(p_sys->p_renderer);
+@@ -642,12 +513,15 @@ static void Play(audio_output_t *p_aout, block_t *p_block)
+     }
+ 
+     if (p_block && p_block->i_buffer > 0) {
+-        audio_queue_push(&p_sys->queue, p_block->p_buffer, p_block->i_buffer);
+-
+-        static size_t block_count = 0;
+-        if (++block_count % QUEUE_LOG_INTERVAL == 0) {
+-            msg_Dbg(p_aout, "Queued block %zu: %zu bytes, total queue: %zu bytes",
+-                   block_count, p_block->i_buffer, audio_queue_size(&p_sys->queue));
++        if (!audio_queue_push(&p_sys->queue, p_block->p_buffer,
++                              p_block->i_buffer)) {
++            static vlc_tick_t last_overflow_log;
++            const vlc_tick_t now = mdate();
++            if (now - last_overflow_log > VLC_TICK_FROM_MS(1000)) {
++                msg_Warn(p_aout, "Audio ring buffer full, dropping %zu bytes",
++                         p_block->i_buffer);
++                last_overflow_log = now;
++            }
+         }
+     }
+ 
+@@ -677,8 +551,9 @@ static void Pause(audio_output_t *p_aout, bool b_paused, vlc_tick_t i_date)
+     }
+ }
+ 
+-static void Flush(audio_output_t *p_aout)
++static void Flush(audio_output_t *p_aout, bool wait)
+ {
++    VLC_UNUSED(wait);
+     aout_sys_t *p_sys = p_aout->sys;
+ 
+     msg_Dbg(p_aout, "Flushing audio queue");
+@@ -699,15 +574,7 @@ static vlc_tick_t calculate_detailed_queue_delay(audio_output_t *p_aout, aout_sy
+     // Gets the number of bytes per sample
+     size_t bytes_per_sample = get_bytes_per_sample(p_aout, p_sys->sample_format);
+ 
+-    // Calculate the number of valid audio data bytes (excluding partially played blocks)
+-    size_t effective_bytes = 0;
+-    audio_buffer_t *current = p_sys->queue.head;
+-    while (current != NULL) {
+-        if (current->size > current->pos) {
+-            effective_bytes += (current->size - current->pos);
+-        }
+-        current = current->next;
+-    }
++    size_t effective_bytes = audio_queue_size(&p_sys->queue);
+     // Calculate the number of samples
+     size_t total_samples = effective_bytes / bytes_per_sample;
+     size_t samples_per_channel = total_samples / p_sys->channels;
+@@ -759,7 +626,7 @@ static void log_delay_debug_info(audio_output_t *p_aout, vlc_tick_t queue_delay,
+                vlc_tick_to_ms(queue_delay),
+                vlc_tick_to_ms(hardware_delay),
+                vlc_tick_to_ms(total_delay),
+-               p_sys->queue.total_size);
++               audio_queue_size(&p_sys->queue));
+ 
+         // The detailed statistics are output every 30 seconds
+         static vlc_tick_t last_detailed_log = 0;
+@@ -801,7 +668,6 @@ static int TimeGet(audio_output_t *p_aout, vlc_tick_t *delay)
+         return VLC_SUCCESS;
+     }
+ 
+-    vlc_mutex_lock(&p_sys->lock);
+     // Calculate each delay component
+     vlc_tick_t queue_delay = calculate_detailed_queue_delay(p_aout, p_sys);
+     vlc_tick_t hardware_delay = p_sys->estimated_hardware_latency;
+@@ -817,8 +683,6 @@ static int TimeGet(audio_output_t *p_aout, vlc_tick_t *delay)
+ 
+     *delay = total_delay;
+ 
+-    vlc_mutex_unlock(&p_sys->lock);
+-
+     // Regularly output debugging information
+     log_delay_debug_info(p_aout, queue_delay, hardware_delay, total_delay);
+     return VLC_SUCCESS;
+@@ -858,7 +722,11 @@ static int Open(vlc_object_t *obj)
+     p_sys->delay_stats.stats_start_time = mdate();
+ 
+     // Initiating the audio queue
+-    audio_queue_init(&p_sys->queue);
++    if (audio_queue_init(&p_sys->queue) != VLC_SUCCESS) {
++        vlc_cond_destroy(&p_sys->drain_cond);
++        free(p_sys);
++        return VLC_ENOMEM;
++    }
+ 
+     p_aout->sys = p_sys;
+     p_aout->start = Start;
+@@ -895,8 +763,9 @@ static void Close(vlc_object_t *obj)
+     
+     Stop(p_aout);
+     
+-    audio_queue_clear(&p_sys->queue);
++    audio_queue_destroy(&p_sys->queue);
++    vlc_cond_destroy(&p_sys->drain_cond);
+ 
+     free(p_sys);
+     msg_Info(obj, "OpenHarmony audio output closed");
+-}
+\ No newline at end of file
++}
+diff --git a/modules/codec/avcodec/video.c b/modules/codec/avcodec/video.c
+index 4839988..e41c732 100644
+--- a/modules/codec/avcodec/video.c
++++ b/modules/codec/avcodec/video.c
+@@ -1584,12 +1584,6 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
+             continue;
+         }
+ 
+-        msg_Dbg(p_dec, "[OHOS-DBG] frame received: %dx%d, format=%d, linesize[0]=%d, data[3]=%p, buf[0]=%p, pts=%lld, keyframe=%d",
+-                frame->width, frame->height, frame->format, frame->linesize[0],
+-                frame->data[3], frame->buf[0],
+-                (long long)frame->pts,
+-                (frame->flags & AV_FRAME_FLAG_KEY) ? 1 : 0);
+-
+         /* Compute the PTS */
+ #if LIBAV_CODEC_VERSION_CHECK(57, 24, 0, 61, 100)
+ # if LIBAVCODEC_VERSION_MICRO >= 100

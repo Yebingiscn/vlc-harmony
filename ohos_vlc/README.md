@@ -18,6 +18,7 @@
 | `0007-vlc-ohos-surface-clocked-present.patch`                 | VLC Surface 帧按播放时钟上屏；预滚/损坏帧只解码不显示，消除 seek 旧帧闪回             |
 | `0008-vlc-ffmpeg8-ohcodec-device-context.patch`               | 使用 FFmpeg 8 的 `AVHWDeviceContext` 向 OHCodec 传递 NativeWindow          |
 | `0009-vlc-forward-playback-speed-to-ohcodec.patch`            | 将 VLC 实际倍速传给 OHCodec，由系统按能力选择智能流畅策略                         |
+| `0010-vlc-ohos-realtime-audio-ring.patch`                    | 音频输出改用预分配环形队列，移除实时回调中的逐块堆分配、链表遍历与高频日志，并拒绝 0 声道误启动 |
 | `vlc-hpkbuild-apply-local-patches.patch`                      | 修改 VLC HPKBUILD，按顺序应用兼容与本地功能补丁                                |
 | `vlc-hpkbuild-build-dvbpsi.patch`                             | 修改 HPKBUILD 构建 dvbpsi 依赖                                         |
 

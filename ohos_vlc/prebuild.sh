@@ -279,6 +279,7 @@ function install_vlc_patches()
 
     cp -f "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD" "$vlc_recipe_dir/HPKBUILD" || return 1
     cp -f "$ROOT_DIR/patches/0000-vlc-ffmpeg8-ohcodec-consolidated.patch" "$vlc_recipe_dir/" || return 1
+    cp -f "$ROOT_DIR/patches/0010-vlc-ohos-realtime-audio-ring.patch" "$vlc_recipe_dir/" || return 1
     return 0
 }
 
