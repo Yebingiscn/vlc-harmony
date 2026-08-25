@@ -286,11 +286,17 @@ function install_vlc_patches()
 function invalidate_restored_vlc_output()
 {
     local cached_vlc_dir=$LYCIUM_TOOLS_DIR/usr/vlc
+    local build_record=$LYCIUM_TOOLS_DIR/usr/hpk_build.csv
 
     # The dependency checkpoint is intentionally shared between native-build
     # runs, but older checkpoints also contain the final VLC installation.
-    # Lycium treats that directory as an already completed package and would
-    # otherwise skip rebuilding VLC after a local patch changes.
+    # Lycium uses hpk_build.csv, rather than the installation directory, as
+    # the authoritative completed-package list. Invalidate both so the current
+    # local VLC patch set is always compiled while preserving its dependencies.
+    if [ -f "$build_record" ]
+    then
+        sed -i '/^vlc,/d' "$build_record"
+    fi
     if [ -d "$cached_vlc_dir" ]
     then
         echo "Removing restored VLC output so the current patch set is rebuilt"
