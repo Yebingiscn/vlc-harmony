@@ -133,6 +133,24 @@ jobs:
           test -s entry/src/main/cpp/third_party/libvlc/arm64-v8a/libvlc.so
           file entry/libs/arm64-v8a/libvlc.so.5
 
+          video_decoder=entry/libs/arm64-v8a/vlc/plugins/codec/libavcodec_plugin.so
+          audio_output=entry/libs/arm64-v8a/vlc/plugins/audio_output/libohos_audiotrack_plugin.so
+          test -s "${video_decoder}"
+          test -s "${audio_output}"
+
+          if grep -aFq '[OHOS-DBG] frame received:' "${video_decoder}"; then
+            echo "Stale VLC decoder detected: per-frame OHOS debug logging is still present"
+            exit 1
+          fi
+          if ! grep -aFq 'Audio ring buffer full, dropping' "${audio_output}"; then
+            echo "Stale VLC audio output detected: realtime ring buffer marker is absent"
+            exit 1
+          fi
+          if grep -aFq 'Audio queue completely drained in callback' "${audio_output}"; then
+            echo "Stale VLC audio output detected: linked-list callback marker is still present"
+            exit 1
+          fi
+
       - name: Package native libraries
         shell: bash
         run: |

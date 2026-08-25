@@ -283,6 +283,21 @@ function install_vlc_patches()
     return 0
 }
 
+function invalidate_restored_vlc_output()
+{
+    local cached_vlc_dir=$LYCIUM_TOOLS_DIR/usr/vlc
+
+    # The dependency checkpoint is intentionally shared between native-build
+    # runs, but older checkpoints also contain the final VLC installation.
+    # Lycium treats that directory as an already completed package and would
+    # otherwise skip rebuilding VLC after a local patch changes.
+    if [ -d "$cached_vlc_dir" ]
+    then
+        echo "Removing restored VLC output so the current patch set is rebuilt"
+        rm -rf -- "$cached_vlc_dir"
+    fi
+}
+
 function install_ffmpeg_patches()
 {
     local ffmpeg_recipe_dir=$LYCIUM_COMMUNITY_DIR/FFmpeg-surface-dev
@@ -400,6 +415,8 @@ function prebuild()
         echo "ERROR: install vlc patches failed!!!"
         return 1
     fi
+
+    invalidate_restored_vlc_output
 
     start_build
     if [ $? -ne 0 ]
