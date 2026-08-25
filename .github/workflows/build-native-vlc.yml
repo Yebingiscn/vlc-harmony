@@ -81,12 +81,29 @@ jobs:
           rm -f "${OHOS_SDK_ARCHIVE}" "${OHOS_SDK_ARCHIVE}.sha256" \
             native-sdk.zip sdk-archive-entries.txt
 
+      - name: Preflight pinned native patch sets
+        working-directory: ohos_vlc
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ./validate_native_patchset.sh
+
       - name: Restore compiled native libraries
         id: native-cache
         uses: actions/cache@v5
         with:
           path: ohos_vlc/library/libs/arm64-v8a
           key: native-vlc-arm64-api26-ffmpeg8-v1-${{ hashFiles('ohos_vlc/prebuild.sh', 'ohos_vlc/recipes/**', 'ohos_vlc/patches/**', 'sync_native_libs.sh') }}
+
+      - name: Restore compiled dependency checkpoint
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        id: dependency-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ohos_vlc/tpc_c_cplusplus/lycium/usr
+          key: native-vlc-deps-arm64-api26-ffmpeg8-v1-${{ github.run_id }}
+          restore-keys: |
+            native-vlc-deps-arm64-api26-ffmpeg8-v1-
 
       - name: Build FFmpeg and VLC
         if: steps.native-cache.outputs.cache-hit != 'true'
@@ -114,6 +131,14 @@ jobs:
           test -s entry/libs/arm64-v8a/libavutil.so.60
           test -s entry/libs/arm64-v8a/libswresample.so.6
           test -s entry/libs/arm64-v8a/libswscale.so.9
+          test -s entry/libs/arm64-v8a/libopus.so.0
+          test -s entry/libs/arm64-v8a/libogg.so.0
+          test -s entry/libs/arm64-v8a/libvorbis.so.0
+          test -s entry/libs/arm64-v8a/libvorbisenc.so.2
+          test -s entry/libs/arm64-v8a/libxml2.so.2
+          test -s entry/libs/arm64-v8a/liblzma.so.5
+          test -s entry/libs/arm64-v8a/libssl.so.3
+          test -s entry/libs/arm64-v8a/libcrypto.so.3
           test -s entry/src/main/cpp/third_party/libvlc/arm64-v8a/libvlc.so
           file entry/libs/arm64-v8a/libvlc.so.5
 
@@ -147,3 +172,10 @@ jobs:
             ohos_vlc/tpc_c_cplusplus/**/config.log
           if-no-files-found: ignore
           retention-days: 7
+
+      - name: Save dependency checkpoint after a failed native build
+        if: failure() && steps.native-cache.outputs.cache-hit != 'true' && steps.dependency-cache.outcome == 'success'
+        uses: actions/cache/save@v5
+        with:
+          path: ohos_vlc/tpc_c_cplusplus/lycium/usr
+          key: native-vlc-deps-arm64-api26-ffmpeg8-v1-${{ github.run_id }}

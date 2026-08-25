@@ -1,0 +1,159 @@
+# Copyright (c) 2023 Huawei Device Co., Ltd.
+# Copyright (c) 2026 LiquidStudio
+# Licensed under the Apache License, Version 2.0.
+
+pkgname=vlc
+pkgver=ohos-3.0.21
+pkgrel=0
+pkgdesc="VLC 3.0.21 for OpenHarmony with FFmpeg 8 and OHCodec support"
+url="https://www.videolan.org/"
+archs=("arm64-v8a")
+license=("GNU General Public License v2.0")
+depends=("FFmpeg-surface-dev" "freetype2" "faad2" "libvorbis" "libdca" "flac" "speex" "libtheora" "aribb24" "speexdsp" "libkate" "libogg" "a52dec" "openssl_3.4.3" "live555")
+makedepends=("msgfmt")
+
+source="https://gitcode.com/OpenHarmony-ApplicationTPC/ohos_vlc.git"
+source_commit=14a0483eb294e62305e596dc0d158c74e6a04cc9
+autounpack=false
+downloadpackage=false
+buildtools="configure"
+
+builddir=$pkgname-${pkgver}
+packagename=
+cloneflag=true
+
+source envset.sh
+inited=true
+host=
+
+prepare() {
+    if [ $cloneflag == true ]; then
+        local attempt
+        for attempt in 1 2 3
+        do
+            rm -rf "$builddir"
+            git clone -b $pkgver --depth=1 $source $builddir > $publicbuildlog 2>&1 && break
+            echo "VLC clone attempt $attempt failed" >> $publicbuildlog
+            sleep $((attempt * 5))
+        done
+        if [ ! -d "$builddir/.git" ]; then
+            echo "$pkgname git clone $source error."
+            return -1
+        fi
+        cd $builddir
+        if [ "$(git rev-parse HEAD)" != "$source_commit" ]; then
+            echo "ERROR: VLC ohos-3.0.21 resolved to an unexpected commit" >> $publicbuildlog
+            cd $OLDPWD
+            return -1
+        fi
+        git apply --check ../0000-vlc-ffmpeg8-ohcodec-consolidated.patch >> $publicbuildlog 2>&1 || {
+            cd $OLDPWD
+            return -1
+        }
+        git apply ../0000-vlc-ffmpeg8-ohcodec-consolidated.patch >> $publicbuildlog 2>&1 || {
+            cd $OLDPWD
+            return -1
+        }
+        cd $OLDPWD
+        cloneflag=false
+    fi
+
+    mkdir -p $builddir/$ARCH-build
+    if [ $ARCH == "arm64-v8a" ]; then
+        setarm64ENV
+        CFLAGS="-Wl,-L$LYCIUM_ROOT/usr/libogg/$ARCH/lib/ -Wl,-logg -I$LYCIUM_ROOT/usr/libogg/$ARCH/include -Wl,-L$LYCIUM_ROOT/usr/a52dec/$ARCH/lib/ -Wl,-la52 -I$LYCIUM_ROOT/usr/a52dec/$ARCH/include -I$LYCIUM_ROOT/usr/FFmpeg/$ARCH/include -DHAVE_OHOS=1 $CFLAGS"
+        CXXFLAGS="-DHAVE_OHOS=1 $CXXFLAGS"
+        host=aarch64-linux
+    else
+        echo "${ARCH} not supported"
+        return -1
+    fi
+
+    if [ $inited == true ]; then
+        inited=false
+        cd $builddir
+        ./bootstrap >> $publicbuildlog 2>&1
+        local ret=$?
+        cd $OLDPWD
+        return $ret
+    fi
+    return 0
+}
+
+build() {
+    mkdir -p $builddir/$ARCH-contrib/include
+    mkdir -p $builddir/$ARCH-contrib/lib
+    cp -r $LYCIUM_ROOT/usr/openssl_3.4.3/$ARCH/include $builddir/$ARCH-contrib
+    cp -r $LYCIUM_ROOT/usr/openssl_3.4.3/$ARCH/lib $builddir/$ARCH-contrib
+    cp -r $LYCIUM_ROOT/usr/live555/$ARCH/include $builddir/$ARCH-contrib
+    cp -r $LYCIUM_ROOT/usr/live555/$ARCH/lib $builddir/$ARCH-contrib
+
+    # MPEG-TS demux is conditional on libdvbpsi. Build the dependency from
+    # VLC's pinned contrib source so clean builds always ship libts.
+    local contrib_tools="$PWD/$builddir/$ARCH-contrib-tools"
+    mkdir -p "$contrib_tools/bin" "$contrib_tools/share/automake-vlc"
+    cp "$builddir/autotools/config.sub" "$builddir/autotools/config.guess" \
+        "$contrib_tools/share/automake-vlc/"
+    (
+        export PATH="$contrib_tools/bin:$PATH"
+        mkdir -p "$builddir/$ARCH-contrib-build"
+        cd "$builddir/$ARCH-contrib-build"
+        ../contrib/bootstrap \
+            --build="$(../autotools/config.guess)" \
+            --host=$host \
+            --prefix="../$ARCH-contrib" \
+            --enable-dvbpsi || exit $?
+        $MAKE .dvbpsi
+    ) || return $?
+
+    local ffmpeg_prefix="$LYCIUM_ROOT/usr/FFmpeg/$ARCH"
+    export PKG_CONFIG_LIBDIR="${pkgconfigpath}:${ffmpeg_prefix}/lib/pkgconfig"
+    export CFLAGS="-I${ffmpeg_prefix}/include $CFLAGS"
+    export LDFLAGS="-L${ffmpeg_prefix}/lib $LDFLAGS"
+
+    cd $builddir/$ARCH-build
+    EGL_CFLAGS="-I${OHOS_SDK}/native/sysroot/usr/include" \
+    EGL_LIBS="-L${OHOS_SDK}/native/sysroot/usr/lib/ -lEGL" \
+    GLES2_CFLAGS="-I${OHOS_SDK}/native/sysroot/usr/include" \
+    GLES2_LIBS="-L${OHOS_SDK}/native/sysroot/usr/lib/ -lGLESv2" \
+    BUILDCC=gcc ../configure "$@" --host=$host --enable-live555 --enable-openssl \
+        --disable-lua --disable-a52 --disable-rpath --disable-xcb --disable-appdata \
+        --enable-gles2 --disable-alsa --disable-vlc --disable-v4l2 --enable-freetype \
+        ac_cv_func_open_memstream=no --disable-silent-rules \
+        --with-contrib="../$ARCH-contrib" > $buildlog 2>&1
+    local ret=$?
+    if [ $ret -ne 0 ]; then
+        cd $OLDPWD
+        return $ret
+    fi
+
+    sed -i 's/-lgroupsock -lBasicUsageEnvironment -lUsageEnvironment/-lgroupsock -lBasicUsageEnvironment -lUsageEnvironment -lssl -lcrypto/g' config.status
+    sed -i 's/-lgroupsock_pic -lBasicUsageEnvironment_pic -lUsageEnvironment_pic/-lgroupsock_pic -lBasicUsageEnvironment_pic -lUsageEnvironment_pic -lssl -lcrypto/g' config.status
+    sed -i "s|hardcode_libdir_flag_spec='\$wl-rpath \$wl\$libdir'|hardcode_libdir_flag_spec='\$wl'|" config.status
+    sed -i "s|hardcode_libdir_flag_spec_CXX='\$wl-rpath \$wl\$libdir'|hardcode_libdir_flag_spec_CXX='\$wl'|" config.status
+
+    $MAKE >> $buildlog 2>&1
+    ret=$?
+    cd $OLDPWD
+    return $ret
+}
+
+package() {
+    cd $builddir/$ARCH-build
+    $MAKE install >> $buildlog 2>&1
+    local ret=$?
+    cd $OLDPWD
+    return $ret
+}
+
+check() {
+    unset host
+    if [ $ARCH == "arm64-v8a" ]; then
+        unsetarm64ENV
+    fi
+    echo "The test must be on an OpenHarmony device!"
+}
+
+cleanbuild() {
+    rm -rf ${PWD}/$builddir
+}

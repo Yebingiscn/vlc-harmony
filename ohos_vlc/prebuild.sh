@@ -18,15 +18,48 @@ ROOT_DIR=$(pwd)
 API_VERSION=26 # 使用 HarmonyOS 7.0 Beta1 API 26 NDK，与 OHCodec 补丁声明保持一致
 SDK_DIR=$OHOS_SDK_HOME/$API_VERSION # SDK路径（流水线环境中SDK路径）
 LYCIUM_TOOLS_URL=https://gitcode.com/openharmony-sig/tpc_c_cplusplus.git
+LYCIUM_TOOLS_COMMIT=4de021fc105228135ba6f5ab74661fbbf857113f
 LYCIUM_ROOT_DIR=$ROOT_DIR/tpc_c_cplusplus
 LYCIUM_TOOLS_DIR=$LYCIUM_ROOT_DIR/lycium
 LYCIUM_THIRDPARTY_DIR=$LYCIUM_ROOT_DIR/thirdparty
 LYCIUM_COMMUNITY_DIR=$LYCIUM_ROOT_DIR/community
 FFMPEG_OHCODEC_PATCH_REPO=https://github.com/Yebingiscn/libmpv-ohos-ErBW_s-5en.git
 FFMPEG_OHCODEC_PATCH_COMMIT=54f298cddd162f459ed49e58974e3b8e763db177
-VLC_UPSTREAM_REPO=https://github.com/videolan/vlc.git
-VLC_UPSTREAM_BASE_TAG=3.0.21
-VLC_UPSTREAM_COMPAT_COMMIT=1089af38fc26293d0b93a9456adf7ae4a5b0b930
+
+function git_clone_with_retry()
+{
+    local destination=$1
+    shift
+    local attempt
+    for attempt in 1 2 3
+    do
+        rm -rf "$destination"
+        if git clone "$@" "$destination"
+        then
+            return 0
+        fi
+        echo "Clone attempt $attempt failed: $destination"
+        sleep $((attempt * 5))
+    done
+    return 1
+}
+
+function git_fetch_with_retry()
+{
+    local repository=$1
+    shift
+    local attempt
+    for attempt in 1 2 3
+    do
+        if git -C "$repository" fetch "$@"
+        then
+            return 0
+        fi
+        echo "Fetch attempt $attempt failed: $repository"
+        sleep $((attempt * 5))
+    done
+    return 1
+}
 
 function prepare_lycium_tools()
 {
@@ -52,15 +85,36 @@ function prepare_lycium_tools()
 
 function prepare_lycium()
 {
+    local restored_usr_dir=
+    if [ -d "$LYCIUM_TOOLS_DIR/usr" ]
+    then
+        restored_usr_dir=$(mktemp -d)/usr
+        mv "$LYCIUM_TOOLS_DIR/usr" "$restored_usr_dir"
+    fi
+
     if [ -d $LYCIUM_ROOT_DIR ]
     then
         rm -rf $LYCIUM_ROOT_DIR
     fi
 
-    git clone $LYCIUM_TOOLS_URL --depth=1
+    git_clone_with_retry $LYCIUM_ROOT_DIR --filter=blob:none --no-checkout $LYCIUM_TOOLS_URL
     if [ $? -ne 0 ]
     then
         return 1
+    fi
+    git_fetch_with_retry $LYCIUM_ROOT_DIR --depth=1 origin $LYCIUM_TOOLS_COMMIT || return 1
+    git -C $LYCIUM_ROOT_DIR checkout --detach $LYCIUM_TOOLS_COMMIT || return 1
+    if [ "$(git -C $LYCIUM_ROOT_DIR rev-parse HEAD)" != "$LYCIUM_TOOLS_COMMIT" ]
+    then
+        echo "ERROR: Lycium resolved to an unexpected commit"
+        return 1
+    fi
+
+    if [ -n "$restored_usr_dir" ]
+    then
+        rm -rf "$LYCIUM_TOOLS_DIR/usr"
+        mv "$restored_usr_dir" "$LYCIUM_TOOLS_DIR/usr"
+        rmdir "$(dirname "$restored_usr_dir")"
     fi
 
     cd $LYCIUM_TOOLS_DIR/Buildtools
@@ -86,7 +140,6 @@ function configure_lycium_build()
     local a52_recipe="$LYCIUM_COMMUNITY_DIR/a52dec/HPKBUILD"
     local fribidi_recipe="$LYCIUM_THIRDPARTY_DIR/fribidi/HPKBUILD"
     local openssl_recipe="$LYCIUM_COMMUNITY_DIR/openssl_3.4.3/HPKBUILD"
-    local vlc_recipe="$LYCIUM_THIRDPARTY_DIR/vlc/HPKBUILD"
     local zlib_recipe="$LYCIUM_THIRDPARTY_DIR/zlib/HPKBUILD"
     local zlib_checksum="$LYCIUM_THIRDPARTY_DIR/zlib/SHA512SUM"
     local recipe
@@ -115,16 +168,9 @@ function configure_lycium_build()
         return 1
     fi
 
-    # Use the maintained OpenSSL 3.4.3 recipe for both FFmpeg and VLC, and keep
-    # one zlib provider in the dependency graph.
+    # Keep one zlib provider in the dependency graph.
     sed -i 's/depends=(zlib_1_3_1)/depends=(zlib)/' "$openssl_recipe"
-    sed -i \
-        -e 's/"openssl-3.4.0"/"openssl_3.4.3"/' \
-        -e 's#usr/openssl-3.4.0/#usr/openssl_3.4.3/#g' \
-        "$vlc_recipe"
-    if ! grep -Fq '"openssl_3.4.3"' "$vlc_recipe" ||
-        grep -Fq 'openssl-3.4.0' "$vlc_recipe" ||
-        ! grep -Fq 'depends=(zlib)' "$openssl_recipe"
+    if ! grep -Fq 'depends=(zlib)' "$openssl_recipe"
     then
         echo "ERROR: upgrade OpenSSL dependency failed!!!"
         return 1
@@ -230,41 +276,10 @@ function start_build()
 function install_vlc_patches()
 {
     local vlc_recipe_dir=$LYCIUM_THIRDPARTY_DIR/vlc
-    local upstream_source_dir=$LYCIUM_ROOT_DIR/vlc-upstream-compat
 
-    git clone --filter=blob:none --depth=1 --no-checkout "$VLC_UPSTREAM_REPO" "$upstream_source_dir"
-    if [ $? -ne 0 ]; then
-        return 1
-    fi
-    git -C "$upstream_source_dir" fetch --depth=1 origin \
-        "refs/tags/$VLC_UPSTREAM_BASE_TAG:refs/tags/$VLC_UPSTREAM_BASE_TAG" || return 1
-    git -C "$upstream_source_dir" fetch --depth=1 origin \
-        "$VLC_UPSTREAM_COMPAT_COMMIT" || return 1
-    if [ "$(git -C "$upstream_source_dir" rev-parse FETCH_HEAD)" != "$VLC_UPSTREAM_COMPAT_COMMIT" ]; then
-        echo "ERROR: VLC compatibility source commit verification failed!!!"
-        return 1
-    fi
-    git -C "$upstream_source_dir" diff --binary \
-        --output="$vlc_recipe_dir/0000-vlc-upstream-ffmpeg8-compat.patch" \
-        "$VLC_UPSTREAM_BASE_TAG" "$VLC_UPSTREAM_COMPAT_COMMIT" -- \
-        modules/codec/avcodec modules/demux/avformat || return 1
-
-    cp -f "$ROOT_DIR/patches/0000-vlc-remove-legacy-ohos-chroma.patch" "$vlc_recipe_dir/"
-    cp -f "$ROOT_DIR/patches/0006-vlc-add-ffmpeg8-ohcodec-chroma.patch" "$vlc_recipe_dir/"
-    cp -f "$ROOT_DIR/patches/0001-avcodec-respect-disabled-hardware-decoding.patch" "$vlc_recipe_dir/"
-    cp -f "$ROOT_DIR/patches/0002-avcodec-fallback-to-software-on-hw-start-failure.patch" "$vlc_recipe_dir/"
-    cp -f "$ROOT_DIR/patches/0003-vcd-mode1-2048-iso.patch" "$vlc_recipe_dir/"
-    cp -f "$ROOT_DIR/patches/0004-bluray-seek-fix.patch" "$vlc_recipe_dir/"
-    cp -f "$ROOT_DIR/patches/0005-vcd-iso9660-no-cue.patch" "$vlc_recipe_dir/"
-    cp -f "$ROOT_DIR/patches/0007-vlc-ohos-surface-clocked-present.patch" "$vlc_recipe_dir/"
-    cp -f "$ROOT_DIR/patches/0008-vlc-ffmpeg8-ohcodec-device-context.patch" "$vlc_recipe_dir/"
-    cp -f "$ROOT_DIR/patches/0009-vlc-forward-playback-speed-to-ohcodec.patch" "$vlc_recipe_dir/"
-    patch -d "$vlc_recipe_dir" -p1 < "$ROOT_DIR/patches/vlc-hpkbuild-apply-local-patches.patch"
-    if [ $? -ne 0 ]; then
-        return 1
-    fi
-    patch -d "$vlc_recipe_dir" -p0 < "$ROOT_DIR/patches/vlc-hpkbuild-build-dvbpsi.patch"
-    return $?
+    cp -f "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD" "$vlc_recipe_dir/HPKBUILD" || return 1
+    cp -f "$ROOT_DIR/patches/0000-vlc-ffmpeg8-ohcodec-consolidated.patch" "$vlc_recipe_dir/" || return 1
+    return 0
 }
 
 function install_ffmpeg_patches()
@@ -274,11 +289,12 @@ function install_ffmpeg_patches()
 
     cp -f "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD" "$ffmpeg_recipe_dir/HPKBUILD"
     cp -f "$ROOT_DIR/recipes/brotli-v1.0.9.HPKBUILD" "$LYCIUM_COMMUNITY_DIR/brotli/HPKBUILD"
-    git clone --filter=blob:none --depth=1 --no-checkout "$FFMPEG_OHCODEC_PATCH_REPO" "$patch_source_dir"
+    git_clone_with_retry "$patch_source_dir" --filter=blob:none --depth=1 --no-checkout \
+        "$FFMPEG_OHCODEC_PATCH_REPO"
     if [ $? -ne 0 ]; then
         return 1
     fi
-    git -C "$patch_source_dir" fetch --depth=1 origin "$FFMPEG_OHCODEC_PATCH_COMMIT"
+    git_fetch_with_retry "$patch_source_dir" --depth=1 origin "$FFMPEG_OHCODEC_PATCH_COMMIT"
     git -C "$patch_source_dir" checkout --detach "$FFMPEG_OHCODEC_PATCH_COMMIT"
     if [ "$(git -C "$patch_source_dir" rev-parse HEAD)" != "$FFMPEG_OHCODEC_PATCH_COMMIT" ]; then
         echo "ERROR: OHCodec patch source commit verification failed!!!"
@@ -324,6 +340,14 @@ function install_depends()
     cp -f $LYCIUM_TOOLS_DIR/usr/dav1d/arm64-v8a/lib/libdav1d.so.7 "$install_dir"
     cp -f $LYCIUM_TOOLS_DIR/usr/lame/arm64-v8a/lib/libmp3lame.so.0 "$install_dir"
     cp -f $LYCIUM_TOOLS_DIR/usr/openh264/arm64-v8a/lib/libopenh264.so.8 "$install_dir"
+    cp -f $LYCIUM_TOOLS_DIR/usr/opus/arm64-v8a/lib/libopus.so.0 "$install_dir"
+    cp -f $LYCIUM_TOOLS_DIR/usr/libogg/arm64-v8a/lib/libogg.so.0 "$install_dir"
+    cp -f $LYCIUM_TOOLS_DIR/usr/libvorbis/arm64-v8a/lib/libvorbis.so.0 "$install_dir"
+    cp -f $LYCIUM_TOOLS_DIR/usr/libvorbis/arm64-v8a/lib/libvorbisenc.so.2 "$install_dir"
+    cp -f $LYCIUM_TOOLS_DIR/usr/libxml2/arm64-v8a/lib/libxml2.so.2 "$install_dir"
+    cp -f $LYCIUM_TOOLS_DIR/usr/xz/arm64-v8a/lib/liblzma.so.5 "$install_dir"
+    cp -f $LYCIUM_TOOLS_DIR/usr/openssl_3.4.3/arm64-v8a/lib/libssl.so.3 "$install_dir"
+    cp -f $LYCIUM_TOOLS_DIR/usr/openssl_3.4.3/arm64-v8a/lib/libcrypto.so.3 "$install_dir"
     cp -f $LYCIUM_TOOLS_DIR/usr/zlib/arm64-v8a/lib/libz.so.1 "$install_dir"
 
     mkdir -p $ROOT_DIR/library/src/main/cpp/thirdpart/include/
