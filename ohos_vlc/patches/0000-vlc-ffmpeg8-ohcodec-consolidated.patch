@@ -1554,21 +1554,6 @@ index 33c6cae09abce0d21de04621c980ccec2375fed5..d75c21ffa495ae88d3e0b1414e4574f0
      { VLC_CODEC_BD_TEXT, AV_CODEC_ID_HDMV_TEXT_SUBTITLE },
  #endif
      { VLC_CODEC_TELETEXT, AV_CODEC_ID_DVB_TELETEXT },
-diff --git a/modules/codec/avcodec/subtitle.c b/modules/codec/avcodec/subtitle.c
-index ecfe35a60012b6c49464a52c1c4ce834dd7dd46f..07f4b68790584ce1b9ebd0d595504844b1e42869 100644
---- a/modules/codec/avcodec/subtitle.c
-+++ b/modules/codec/avcodec/subtitle.c
-@@ -297,8 +297,8 @@ static subpicture_t *ConvertSubtitle(decoder_t *dec, AVSubtitle *ffsub, vlc_tick
- 
-     //msg_Err(dec, "%lld %d %d",
-     //        pts, ffsub->start_display_time, ffsub->end_display_time);
--    spu->i_start    = pts + ffsub->start_display_time * INT64_C(1000);
--    spu->i_stop     = pts + ffsub->end_display_time * INT64_C(1000);
-+    spu->i_start    = pts + VLC_TICK_FROM_MS(ffsub->start_display_time);
-+    spu->i_stop     = pts + VLC_TICK_FROM_MS(ffsub->end_display_time);
-     spu->b_absolute = true; /* We have offset and size for subtitle */
-     spu->b_ephemer  = dec->p_sys->b_need_ephemer;
-                     /* We only show subtitle for i_stop time only */
 diff --git a/modules/codec/avcodec/va.c b/modules/codec/avcodec/va.c
 index 0feb03b974fbd2124469b5f51d777b8a890b3937..06de54ddcf0de6f92c08f89740786f1e2e901260 100644
 --- a/modules/codec/avcodec/va.c
