@@ -283,6 +283,7 @@ function install_vlc_patches()
     cp -f "$ROOT_DIR/patches/0011-vlc-ohos-system-refresh-low-latency-audio.patch" "$vlc_recipe_dir/" || return 1
     cp -f "$ROOT_DIR/patches/0012-vlc-ohcodec-surface-backpressure.patch" "$vlc_recipe_dir/" || return 1
     cp -f "$ROOT_DIR/patches/0013-vlc-ohcodec-use-frame-pts.patch" "$vlc_recipe_dir/" || return 1
+    cp -f "$ROOT_DIR/patches/0014-vlc-ohcodec-vsync-present.patch" "$vlc_recipe_dir/" || return 1
     return 0
 }
 
@@ -347,6 +348,7 @@ function install_ffmpeg_patches()
     cp -f "$ROOT_DIR/patches/0011-ffmpeg-ohcodec-system-refresh.patch" "$ffmpeg_recipe_dir/" || return 1
     cp -f "$ROOT_DIR/patches/0012-ffmpeg-ohcodec-stall-diagnostics.patch" "$ffmpeg_recipe_dir/" || return 1
     cp -f "$ROOT_DIR/patches/0013-ffmpeg-ohcodec-propagate-frame-pts.patch" "$ffmpeg_recipe_dir/" || return 1
+    cp -f "$ROOT_DIR/patches/0014-ffmpeg-ohcodec-pts-fallback.patch" "$ffmpeg_recipe_dir/" || return 1
     return 0
 }
 

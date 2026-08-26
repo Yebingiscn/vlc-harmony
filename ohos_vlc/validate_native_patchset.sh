@@ -14,9 +14,11 @@ VLC_REALTIME_PATCH=$ROOT_DIR/patches/0010-vlc-ohos-realtime-audio-ring.patch
 VLC_SYSTEM_REFRESH_PATCH=$ROOT_DIR/patches/0011-vlc-ohos-system-refresh-low-latency-audio.patch
 VLC_SURFACE_BACKPRESSURE_PATCH=$ROOT_DIR/patches/0012-vlc-ohcodec-surface-backpressure.patch
 VLC_SURFACE_PTS_PATCH=$ROOT_DIR/patches/0013-vlc-ohcodec-use-frame-pts.patch
+VLC_VSYNC_PRESENT_PATCH=$ROOT_DIR/patches/0014-vlc-ohcodec-vsync-present.patch
 FFMPEG_SYSTEM_REFRESH_PATCH=$ROOT_DIR/patches/0011-ffmpeg-ohcodec-system-refresh.patch
 FFMPEG_STALL_DIAGNOSTICS_PATCH=$ROOT_DIR/patches/0012-ffmpeg-ohcodec-stall-diagnostics.patch
 FFMPEG_FRAME_PTS_PATCH=$ROOT_DIR/patches/0013-ffmpeg-ohcodec-propagate-frame-pts.patch
+FFMPEG_PTS_FALLBACK_PATCH=$ROOT_DIR/patches/0014-ffmpeg-ohcodec-pts-fallback.patch
 
 FFMPEG_REPO=https://github.com/FFmpeg/FFmpeg.git
 FFMPEG_TAG=n8.1.2
@@ -35,6 +37,8 @@ grep -q "sed -i '/\^vlc,/d'" "$ROOT_DIR/prebuild.sh"
 grep -q "sed -i '/\^FFmpeg,/d'" "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0013-vlc-ohcodec-use-frame-pts.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0013-ffmpeg-ohcodec-propagate-frame-pts.patch' "$ROOT_DIR/prebuild.sh"
+grep -q 'patches/0014-vlc-ohcodec-vsync-present.patch' "$ROOT_DIR/prebuild.sh"
+grep -q 'patches/0014-ffmpeg-ohcodec-pts-fallback.patch' "$ROOT_DIR/prebuild.sh"
 grep -q "source_commit=$VLC_COMMIT" "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 grep -q '"openssl_3.4.3"' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 if grep -q 'openssl-3.4.0' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
@@ -104,6 +108,8 @@ git -C "$WORK_DIR/vlc" apply --check "$VLC_SURFACE_BACKPRESSURE_PATCH"
 git -C "$WORK_DIR/vlc" apply "$VLC_SURFACE_BACKPRESSURE_PATCH"
 git -C "$WORK_DIR/vlc" apply --check "$VLC_SURFACE_PTS_PATCH"
 git -C "$WORK_DIR/vlc" apply "$VLC_SURFACE_PTS_PATCH"
+git -C "$WORK_DIR/vlc" apply --check "$VLC_VSYNC_PRESENT_PATCH"
+git -C "$WORK_DIR/vlc" apply "$VLC_VSYNC_PRESENT_PATCH"
 
 grep -q 'AUDIO_RING_CAPACITY' \
     "$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
@@ -115,16 +121,12 @@ grep -q 'OHCodec surface presentation uses system refresh' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
 grep -q 'OHCodec output stalled' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
-grep -q 'av_ohcodec_release_buffer(buffer, 1)' \
+grep -q 'av_ohcodec_release_buffer_at_time(buffer, target_ns)' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
 grep -q 'i_pts = frame->pts' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
-if grep -q 'av_ohcodec_release_buffer_at_time(surface_buffer' \
+grep -q 'p_context->pkt_timebase = AV_TIME_BASE_Q' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
-then
-    echo "ERROR: VLC still queues future-dated OHCodec Surface buffers"
-    exit 1
-fi
 if grep -qE '16666667|ohos_frame_period_ns' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
 then
@@ -180,6 +182,8 @@ git -C "$WORK_DIR/ffmpeg" apply --check "$FFMPEG_STALL_DIAGNOSTICS_PATCH"
 git -C "$WORK_DIR/ffmpeg" apply "$FFMPEG_STALL_DIAGNOSTICS_PATCH"
 git -C "$WORK_DIR/ffmpeg" apply --check "$FFMPEG_FRAME_PTS_PATCH"
 git -C "$WORK_DIR/ffmpeg" apply "$FFMPEG_FRAME_PTS_PATCH"
+git -C "$WORK_DIR/ffmpeg" apply --check "$FFMPEG_PTS_FALLBACK_PATCH"
+git -C "$WORK_DIR/ffmpeg" apply "$FFMPEG_PTS_FALLBACK_PATCH"
 
 grep -q 'ohcodec_buffer.h' "$WORK_DIR/ffmpeg/libavcodec/Makefile"
 grep -q 'av_ohcodec_release_buffer_at_time' "$WORK_DIR/ffmpeg/libavcodec/ohcodec_buffer.h"
@@ -188,6 +192,8 @@ grep -q 'direct_surface' "$WORK_DIR/ffmpeg/libavutil/hwcontext_oh.h"
 grep -q 'refresh-rate=system-managed' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
 grep -q '\[OHCodecStall\] callback=output' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
 grep -q 'best_effort_timestamp = frame->pts' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
+grep -q '\[OHCodecPTS\] output timestamp fallback' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
+grep -q '\[OHCodecStall\] consumer backlog' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
 if grep -qE 'OH_MD_KEY_FRAME_RATE|OUTPUT_ENABLE_VRR|source_frame_rate' \
     "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
 then

@@ -1,0 +1,91 @@
+diff --git a/modules/codec/avcodec/video.c b/modules/codec/avcodec/video.c
+--- a/modules/codec/avcodec/video.c
++++ b/modules/codec/avcodec/video.c
+@@ -36,6 +36,7 @@
+ #include <vlc_cpu.h>
+ #include <vlc_atomic.h>
+ #include <assert.h>
++#include <time.h>
+ 
+ #include <libavcodec/avcodec.h>
+ #include <libavutil/mem.h>
+@@ -140,9 +141,16 @@ static bool ohos_is_surface_frame(const AVFrame *frame)
+            frame->buf[0] != NULL;
+ }
+ 
+-/* Surface output is already clocked by VLC. Wait until a frame is due and
+- * then release it immediately, rather than giving the compositor several
+- * future-dated decoder buffers that can exhaust the Surface queue. */
++static int64_t ohos_monotonic_ns(void)
++{
++    struct timespec ts;
++    clock_gettime(CLOCK_MONOTONIC, &ts);
++    return (int64_t)ts.tv_sec * INT64_C(1000000000) + ts.tv_nsec;
++}
++
++/* Follow mpv's OHCodec path: hand a near-future monotonic timestamp to the
++ * compositor so it can align presentation with VSYNC. Keep only a short lead
++ * in the Surface queue; VLC's decoder clock remains the A/V sync authority. */
+ static int ohos_present_surface(decoder_t *p_dec, AVOHCodecBuffer *buffer,
+                                 vlc_tick_t i_pts)
+ {
+@@ -165,10 +173,10 @@ static int ohos_present_surface(decoder_t *p_dec, AVOHCodecBuffer *buffer,
+ 
+     if (i_pts > VLC_TICK_INVALID)
+     {
+-        const vlc_tick_t display_date = decoder_GetDisplayDate(p_dec, i_pts);
++        vlc_tick_t display_date = decoder_GetDisplayDate(p_dec, i_pts);
+         if (display_date > VLC_TICK_INVALID)
+         {
+-            const vlc_tick_t delay = display_date - now;
++            vlc_tick_t delay = display_date - now;
+             if (p_dec->b_frame_drop_allowed && delay < -80000)
+             {
+                 if (now - p_sys->i_ohos_last_stall_log >= CLOCK_FREQ)
+@@ -181,11 +189,21 @@ static int ohos_present_surface(decoder_t *p_dec, AVOHCodecBuffer *buffer,
+                 }
+                 return av_ohcodec_release_buffer(buffer, 0);
+             }
+-            /* A bounded wait keeps seek/flush responsive. Longer lead times
+-             * indicate a discontinuous clock and are handed to the system
+-             * immediately instead of retaining decoder buffers. */
+-            if (delay > 0 && delay <= 100000)
+-                mwait(display_date);
++            /* mpv submits at flip time. VLC decodes Surface frames directly,
++             * so wait until the frame is at most 50 ms ahead before handing
++             * it to the compositor. This bounds retained decoder buffers. */
++            if (delay > 50000 && delay <= 250000)
++            {
++                mwait(display_date - 50000);
++                now = mdate();
++                delay = display_date - now;
++            }
++            if (delay >= -80000 && delay <= 250000)
++            {
++                const int64_t target_ns = ohos_monotonic_ns() +
++                    (delay > 0 ? delay * 1000 : 0);
++                return av_ohcodec_release_buffer_at_time(buffer, target_ns);
++            }
+         }
+     }
+ 
+@@ -702,6 +720,19 @@ static int InitVideoDecCommon( decoder_t *p_dec )
+     p_context->get_buffer2 = lavc_GetFrame;
+     p_context->opaque = p_dec;
+ 
++    /* VLC block timestamps use AV_TIME_BASE units. OHCodec rescales packet
++     * PTS through pkt_timebase before submitting them to the platform codec. */
++#ifdef HAVE_OHOS
++    if (p_codec->wrapper_name && !strcmp(p_codec->wrapper_name, "ohcodec"))
++    {
++#if LIBAVFORMAT_VERSION_MAJOR >= 59
++        p_context->pkt_timebase = AV_TIME_BASE_Q;
++#elif LIBAVFORMAT_VERSION_MICRO >= 100
++        av_codec_set_pkt_timebase(p_context, AV_TIME_BASE_Q);
++#endif
++    }
++#endif
++
+     int i_thread_count = p_sys->b_hardware_only ? 1 : var_InheritInteger( p_dec, "avcodec-threads" );
+ #ifdef HAVE_OHOS
+     /* OHOS hardware decoders manage their own threading */

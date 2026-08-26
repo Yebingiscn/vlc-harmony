@@ -1,0 +1,138 @@
+diff --git a/libavcodec/ohdec.c b/libavcodec/ohdec.c
+--- a/libavcodec/ohdec.c
++++ b/libavcodec/ohdec.c
+@@ -56,6 +56,7 @@
+ 
+ #define OH_DOVI_QUEUE_SIZE 64
+ #define OH_DOVI_PROBE_PACKETS 16
++#define OH_PTS_QUEUE_SIZE 256
+ 
+ typedef struct OHCodecDecQueueItem {
+     uint32_t index;
+@@ -99,9 +100,16 @@ typedef struct OHCodecDecContext {
+     AVFifo *output_queue;
+     int64_t last_output_callback_us;
+     int64_t last_output_stall_log_us;
++    int64_t last_output_backlog_log_us;
+ 
+     AVPacket pkt;
+ 
++    /* Some vendor OHCodec decoders return zero for every output timestamp.
++     * Keep submitted packet PTS values so presentation timing remains usable. */
++    int64_t pending_pts[OH_PTS_QUEUE_SIZE];
++    unsigned nb_pending_pts;
++    int64_t last_pts_fallback_log_us;
++
+     DOVIContext dovi_ctx;
+     H2645Packet dovi_pkt;
+     OHDoviFrame dovi_frames[OH_DOVI_QUEUE_SIZE];
+@@ -673,8 +681,12 @@ static void oh_decode_on_output(OH_AVCodec *codec, uint32_t index,
+     const size_t queued = av_fifo_can_read(s->output_queue);
+     const bool report_stall = gap >= 250000 &&
+         now - s->last_output_stall_log_us >= 1000000;
++    const bool report_backlog = queued >= 8 &&
++        now - s->last_output_backlog_log_us >= 1000000;
+     if (report_stall)
+         s->last_output_stall_log_us = now;
++    if (report_backlog)
++        s->last_output_backlog_log_us = now;
+     int ret = av_fifo_write(s->output_queue, &item, 1);
+     if (ret >= 0)
+         ff_cond_signal(&s->output_cond);
+@@ -684,6 +696,9 @@ static void oh_decode_on_output(OH_AVCodec *codec, uint32_t index,
+         av_log(avctx, AV_LOG_WARNING,
+                "[OHCodecStall] callback=output gap=%lldms queued=%zu\n",
+                (long long)(gap / 1000), queued);
++    if (report_backlog)
++        av_log(avctx, AV_LOG_WARNING,
++               "[OHCodecStall] consumer backlog queued=%zu\n", queued);
+ 
+     if (ret < 0)
+         oh_decode_on_err(codec, AV_ERR_NO_MEMORY, userdata);
+@@ -954,6 +969,58 @@ static int oh_decode_free_output_buffer(AVCodecContext *avctx,
+     return ret;
+ }
+ 
++static void oh_decode_queue_pts(OHCodecDecContext *s, AVCodecContext *avctx,
++                                int64_t pts)
++{
++    if (pts == AV_NOPTS_VALUE)
++        return;
++
++    const int64_t pts_us = av_rescale_q(pts, avctx->pkt_timebase,
++                                        AV_TIME_BASE_Q);
++    if (s->nb_pending_pts == OH_PTS_QUEUE_SIZE) {
++        av_log(avctx, AV_LOG_WARNING,
++               "[OHCodecPTS] pending queue overflow; resetting timestamp map\n");
++        s->nb_pending_pts = 0;
++    }
++    s->pending_pts[s->nb_pending_pts++] = pts_us;
++}
++
++static int64_t oh_decode_resolve_output_pts(OHCodecDecContext *s,
++                                            AVCodecContext *avctx,
++                                            int64_t device_pts)
++{
++    if (!s->nb_pending_pts)
++        return device_pts;
++
++    unsigned selected = 0;
++    bool exact = false;
++    for (unsigned i = 0; i < s->nb_pending_pts; i++) {
++        if (s->pending_pts[i] == device_pts) {
++            selected = i;
++            exact = true;
++            break;
++        }
++        if (s->pending_pts[i] < s->pending_pts[selected])
++            selected = i;
++    }
++
++    const int64_t mapped_pts = s->pending_pts[selected];
++    s->pending_pts[selected] = s->pending_pts[--s->nb_pending_pts];
++
++    if (!exact) {
++        const int64_t now = av_gettime_relative();
++        if (now - s->last_pts_fallback_log_us >= 1000000) {
++            av_log(avctx, AV_LOG_WARNING,
++                   "[OHCodecPTS] output timestamp fallback device=%lld "
++                   "mapped=%lld pending=%u\n",
++                   (long long)device_pts, (long long)mapped_pts,
++                   s->nb_pending_pts);
++            s->last_pts_fallback_log_us = now;
++        }
++    }
++    return mapped_pts;
++}
++
+ static int oh_decode_output_frame(AVCodecContext *avctx, AVFrame *frame,
+                                   OHCodecDecQueueItem *output)
+ {
+@@ -974,6 +1041,8 @@ static int oh_decode_output_frame(AVCodecContext *avctx, AVFrame *frame,
+         goto fail;
+     }
+ 
++    attr.pts = oh_decode_resolve_output_pts(s, avctx, attr.pts);
++
+     if (attr.flags & AVCODEC_BUFFER_FLAGS_DISCARD) {
+         av_log(avctx, AV_LOG_DEBUG, "Discarding decoder output buffer\n");
+         ret = AVERROR(EAGAIN);
+@@ -1208,6 +1277,8 @@ static int oh_decode_receive_frame(AVCodecContext *avctx, AVFrame *frame)
+                 return ret;
+             if (ret >= 0 && (ret = oh_decode_parse_dovi(avctx, &s->pkt)) < 0)
+                 return ret;
++            if (ret >= 0)
++                oh_decode_queue_pts(s, avctx, s->pkt.pts);
+         }
+ 
+         // Wait input buffer
+@@ -1257,6 +1328,9 @@ static void oh_decode_flush(AVCodecContext *avctx)
+     s->last_input_stall_log_us = 0;
+     s->last_output_callback_us = 0;
+     s->last_output_stall_log_us = 0;
++    s->last_output_backlog_log_us = 0;
++    s->nb_pending_pts = 0;
++    s->last_pts_fallback_log_us = 0;
+     s->decode_status = 0;
+     s->eof_sent = false;
+     s->playback_policy_pending = true;
