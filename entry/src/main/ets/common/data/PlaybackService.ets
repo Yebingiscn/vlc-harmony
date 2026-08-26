@@ -1388,7 +1388,6 @@ export class PlaybackService {
     this.lastTimeEmit = now;
     this.position = ms;
     this.emitTime();
-    void MediaSessionManager.updatePlaybackState(this.state, ms, this.duration, this.speed);
   }
 
   private startSessionSync(): void {
@@ -1397,7 +1396,7 @@ export class PlaybackService {
     }
     this.sessionSyncTimer = setInterval(() => {
       void MediaSessionManager.updatePlaybackState(this.state, this.position, this.duration, this.speed);
-    }, 1000);
+    }, 10000);
   }
 
   private stopSessionSync(): void {
@@ -1680,6 +1679,13 @@ export class PlaybackService {
       this.state = PlayState.ERROR;
       this.emitState();
       return;
+    }
+
+    // file://docs 通过文档提供方的 fd 读取。4K REMUX 的瞬时读取抖动可能超过默认
+    // 1 秒缓存，仅对该路径扩大缓存，普通本地文件和网络串流保持原行为。
+    if (needsFdOpen(item.uri)) {
+      media.addOption(':file-caching=4000');
+      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] document fd file cache: 4000 ms');
     }
 
     // 硬件加速(对应 Android VLCOptions.setMediaOptions):-1 自动不干预(OHOS 默认优先硬解,

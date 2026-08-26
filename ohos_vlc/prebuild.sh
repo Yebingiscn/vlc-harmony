@@ -281,6 +281,7 @@ function install_vlc_patches()
     cp -f "$ROOT_DIR/patches/0000-vlc-ffmpeg8-ohcodec-consolidated.patch" "$vlc_recipe_dir/" || return 1
     cp -f "$ROOT_DIR/patches/0010-vlc-ohos-realtime-audio-ring.patch" "$vlc_recipe_dir/" || return 1
     cp -f "$ROOT_DIR/patches/0011-vlc-ohos-system-refresh-low-latency-audio.patch" "$vlc_recipe_dir/" || return 1
+    cp -f "$ROOT_DIR/patches/0012-vlc-ohcodec-surface-backpressure.patch" "$vlc_recipe_dir/" || return 1
     return 0
 }
 
@@ -343,6 +344,7 @@ function install_ffmpeg_patches()
         cp -f "$patch_source_dir/patches/ffmpeg/$patch_name" "$ffmpeg_recipe_dir/" || return 1
     done
     cp -f "$ROOT_DIR/patches/0011-ffmpeg-ohcodec-system-refresh.patch" "$ffmpeg_recipe_dir/" || return 1
+    cp -f "$ROOT_DIR/patches/0012-ffmpeg-ohcodec-stall-diagnostics.patch" "$ffmpeg_recipe_dir/" || return 1
     return 0
 }
 

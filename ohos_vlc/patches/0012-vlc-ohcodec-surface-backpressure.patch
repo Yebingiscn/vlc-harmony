@@ -1,0 +1,183 @@
+diff --git a/modules/codec/avcodec/video.c b/modules/codec/avcodec/video.c
+index 0b63f51..61ec5a2 100644
+--- a/modules/codec/avcodec/video.c
++++ b/modules/codec/avcodec/video.c
+@@ -36,7 +36,6 @@
+ #include <vlc_cpu.h>
+ #include <vlc_atomic.h>
+ #include <assert.h>
+-#include <time.h>
+ 
+ #include <libavcodec/avcodec.h>
+ #include <libavutil/mem.h>
+@@ -114,9 +113,12 @@ struct decoder_sys_t
+     vlc_sem_t sem_mt;
+ 
+ #ifdef HAVE_OHOS
+-    /* Fallback pacing follows media PTS deltas, never a fixed refresh rate. */
+-    int64_t i_ohos_next_present_ns;
+-    vlc_tick_t i_ohos_last_pts;
++    /* Direct Surface frames bypass VLC's vout queue. Pace them immediately
++     * before release so the compositor never retains a queue of future
++     * decoder buffers. */
++    vlc_tick_t i_ohos_last_output_time;
++    vlc_tick_t i_ohos_last_stall_log;
++    vlc_tick_t i_ohos_last_release_log;
+     int i_ohos_last_display_rate;
+ #endif
+ };
+@@ -132,61 +134,72 @@ static inline void post_mt(decoder_sys_t *sys)
+ }
+ 
+ #ifdef HAVE_OHOS
+-static int64_t ohos_monotonic_ns(void)
+-{
+-    struct timespec ts;
+-    clock_gettime(CLOCK_MONOTONIC, &ts);
+-    return (int64_t)ts.tv_sec * INT64_C(1000000000) + ts.tv_nsec;
+-}
+-
+ static bool ohos_is_surface_frame(const AVFrame *frame)
+ {
+     return frame->format == AV_PIX_FMT_OHCODEC && frame->data[3] != NULL &&
+            frame->buf[0] != NULL;
+ }
+ 
+-/* Convert VLC's input clock to CLOCK_MONOTONIC, the clock expected by
+- * OH_VideoDecoder_RenderOutputBufferAtTime. Valid media timestamps keep A/V
+- * sync, while missing or stale timestamps are handed to the compositor now.
+- * In particular, do not synthesize a 60 Hz cadence: the display service owns
+- * refresh-rate selection and frame pacing. */
+-static int64_t ohos_presentation_time_ns(decoder_t *p_dec, vlc_tick_t i_pts)
++/* Surface output is already clocked by VLC. Wait until a frame is due and
++ * then release it immediately, rather than giving the compositor several
++ * future-dated decoder buffers that can exhaust the Surface queue. */
++static int ohos_present_surface(decoder_t *p_dec, AVOHCodecBuffer *buffer,
++                                vlc_tick_t i_pts)
+ {
+     decoder_sys_t *p_sys = p_dec->p_sys;
+-    const int64_t now_ns = ohos_monotonic_ns();
+-    int64_t target_ns = now_ns;
+-    bool clocked = false;
++    vlc_tick_t now = mdate();
++
++    if (p_sys->i_ohos_last_output_time > 0)
++    {
++        const vlc_tick_t gap = now - p_sys->i_ohos_last_output_time;
++        if (gap >= 250000 &&
++            now - p_sys->i_ohos_last_stall_log >= CLOCK_FREQ)
++        {
++            msg_Warn(p_dec,
++                     "OHCodec output stalled: gap=%"PRId64" ms pts=%"PRId64,
++                     gap / 1000, i_pts);
++            p_sys->i_ohos_last_stall_log = now;
++        }
++    }
++    p_sys->i_ohos_last_output_time = now;
+ 
+     if (i_pts > VLC_TICK_INVALID)
+     {
+         const vlc_tick_t display_date = decoder_GetDisplayDate(p_dec, i_pts);
+         if (display_date > VLC_TICK_INVALID)
+         {
+-            const vlc_tick_t delta = display_date - mdate();
+-            if (delta >= -100000 && delta <= 100000)
++            const vlc_tick_t delay = display_date - now;
++            if (p_dec->b_frame_drop_allowed && delay < -80000)
+             {
+-                target_ns = now_ns + (delta > 0 ? delta * 1000 : 0);
+-                clocked = true;
++                if (now - p_sys->i_ohos_last_stall_log >= CLOCK_FREQ)
++                {
++                    msg_Warn(p_dec,
++                             "OHCodec dropped late Surface frame: late=%"PRId64
++                             " ms pts=%"PRId64,
++                             -delay / 1000, i_pts);
++                    p_sys->i_ohos_last_stall_log = now;
++                }
++                return av_ohcodec_release_buffer(buffer, 0);
+             }
++            /* A bounded wait keeps seek/flush responsive. Longer lead times
++             * indicate a discontinuous clock and are handed to the system
++             * immediately instead of retaining decoder buffers. */
++            if (delay > 0 && delay <= 100000)
++                mwait(display_date);
+         }
+     }
+ 
+-    if (!clocked && i_pts > VLC_TICK_INVALID &&
+-        p_sys->i_ohos_last_pts > VLC_TICK_INVALID)
++    const vlc_tick_t release_start = mdate();
++    const int ret = av_ohcodec_release_buffer(buffer, 1);
++    const vlc_tick_t release_time = mdate() - release_start;
++    if (release_time >= 50000 &&
++        release_start - p_sys->i_ohos_last_release_log >= CLOCK_FREQ)
+     {
+-        const vlc_tick_t pts_delta = i_pts - p_sys->i_ohos_last_pts;
+-        if (pts_delta >= 4000 && pts_delta <= 100000)
+-        {
+-            const int64_t candidate = p_sys->i_ohos_next_present_ns +
+-                                      pts_delta * 1000;
+-            if (candidate > now_ns && candidate <= now_ns + INT64_C(100000000))
+-                target_ns = candidate;
+-        }
++        msg_Warn(p_dec, "OHCodec Surface release blocked: duration=%"PRId64
++                 " ms", release_time / 1000);
++        p_sys->i_ohos_last_release_log = release_start;
+     }
+-
+-    p_sys->i_ohos_next_present_ns = target_ns;
+-    p_sys->i_ohos_last_pts = i_pts;
+-    return target_ns;
++    return ret;
+ }
+ 
+ static void ohos_update_playback_speed(decoder_t *p_dec)
+@@ -728,8 +744,9 @@ static int InitVideoDecCommon( decoder_t *p_dec )
+     p_sys->b_from_preroll = false;
+     p_sys->b_draining = false;
+ #ifdef HAVE_OHOS
+-    p_sys->i_ohos_next_present_ns = 0;
+-    p_sys->i_ohos_last_pts = VLC_TICK_INVALID;
++    p_sys->i_ohos_last_output_time = 0;
++    p_sys->i_ohos_last_stall_log = 0;
++    p_sys->i_ohos_last_release_log = 0;
+     p_sys->i_ohos_last_display_rate = -1;
+     if (p_sys->p_codec && p_sys->p_codec->wrapper_name &&
+         strcmp(p_sys->p_codec->wrapper_name, "ohcodec") == 0)
+@@ -1031,8 +1048,9 @@ static void Flush( decoder_t *p_dec )
+     p_sys->i_last_late_delay = INT64_MAX;
+     p_sys->b_draining = false;
+ #ifdef HAVE_OHOS
+-    p_sys->i_ohos_next_present_ns = 0;
+-    p_sys->i_ohos_last_pts = VLC_TICK_INVALID;
++    p_sys->i_ohos_last_output_time = 0;
++    p_sys->i_ohos_last_stall_log = 0;
++    p_sys->i_ohos_last_release_log = 0;
+ #endif
+     cc_Flush( &p_sys->cc );
+ 
+@@ -1087,8 +1105,9 @@ static bool check_block_validity( decoder_sys_t *p_sys, block_t *block )
+ 
+         p_sys->i_late_frames = 0;
+ #ifdef HAVE_OHOS
+-        p_sys->i_ohos_next_present_ns = 0;
+-        p_sys->i_ohos_last_pts = VLC_TICK_INVALID;
++        p_sys->i_ohos_last_output_time = 0;
++        p_sys->i_ohos_last_stall_log = 0;
++        p_sys->i_ohos_last_release_log = 0;
+ #endif
+         if( block->i_flags & BLOCK_FLAG_CORRUPTED )
+         {
+@@ -1618,10 +1637,7 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
+             {
+                 AVOHCodecBuffer *surface_buffer =
+                     (AVOHCodecBuffer *)frame->data[3];
+-                const int64_t present_ns =
+-                    ohos_presentation_time_ns(p_dec, i_pts);
+-                if (av_ohcodec_release_buffer_at_time(surface_buffer,
+-                                                      present_ns) < 0)
++                if (ohos_present_surface(p_dec, surface_buffer, i_pts) < 0)
+                     msg_Warn(p_dec, "failed to present OHCodec surface frame");
+             }
+             /* Freeing a rendered context only releases its AVBufferRef. For

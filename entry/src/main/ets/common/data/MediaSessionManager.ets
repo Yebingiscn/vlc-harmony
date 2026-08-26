@@ -18,6 +18,14 @@ export interface MediaSessionCallbacks {
   onSetSpeed: (speed: number) => void;
 }
 
+interface PlaybackStateUpdate {
+  state: PlayState;
+  position: number;
+  duration: number;
+  speed: number;
+  updateTime: number;
+}
+
 /**
  * MediaSessionManager —— AVSession(媒体会话)封装,对应 Android MediaSessionCallback。
  * 作用:1) 后台播放时系统通过会话识别"正在播放媒体",配合 backgroundModes 不被冻结;
@@ -28,6 +36,9 @@ export class MediaSessionManager {
   private static creatingPromise: Promise<avSession.AVSession | null> | null = null;
   private static callbacks: MediaSessionCallbacks | null = null;
   private static lastStateUpdate: number = 0;
+  private static lastPlaybackState: PlayState = PlayState.IDLE;
+  private static playbackUpdateInFlight: boolean = false;
+  private static pendingPlaybackUpdate: PlaybackStateUpdate | null = null;
   /** 最近一次上报的媒体信息,供时长就绪后补报 metadata.duration。 */
   private static lastTitle: string = '';
   private static lastArtist: string = '';
@@ -140,28 +151,52 @@ export class MediaSessionManager {
       MediaSessionManager.lastArtworkPath, MediaSessionManager.lastAlbum);
   }
 
-  /** 更新播放状态(播放中高频位置刷新节流到 1s 一次)。 */
+  /**
+   * 更新播放状态。播放中只需低频校准位置，AVSession 会根据 updateTime 和 speed
+   * 自行推算进度；同时将并发请求合并为最后一次，避免 IPC 超时反过来干扰解码线程。
+   */
   static async updatePlaybackState(state: PlayState, position: number, duration: number, speed: number): Promise<void> {
-    const s: avSession.AVSession | null = MediaSessionManager.session ?? await MediaSessionManager.ensure();
-    if (s === null) {
-      return;
-    }
     const now: number = Date.now();
-    if (state === PlayState.PLAYING && now - MediaSessionManager.lastStateUpdate < 500) {
+    const stateChanged: boolean = state !== MediaSessionManager.lastPlaybackState;
+    if (!stateChanged && state === PlayState.PLAYING && now - MediaSessionManager.lastStateUpdate < 5000) {
       return;
     }
-    MediaSessionManager.lastStateUpdate = now;
+    MediaSessionManager.pendingPlaybackUpdate = {
+      state: state,
+      position: position,
+      duration: duration,
+      speed: speed,
+      updateTime: now,
+    };
+    if (MediaSessionManager.playbackUpdateInFlight) {
+      return;
+    }
+    MediaSessionManager.playbackUpdateInFlight = true;
     try {
-      const ps: avSession.AVPlaybackState = {
-        state: MediaSessionManager.toAVState(state),
-        position: { elapsedTime: position, updateTime: now },
-        duration: duration,
-        speed: speed,
-      };
-      await s.setAVPlaybackState(ps);
-    } catch (e) {
-      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] AVSession setAVPlaybackState failed: %{public}s',
-        (e as Error).message ?? String(e));
+      while (MediaSessionManager.pendingPlaybackUpdate !== null) {
+        const update: PlaybackStateUpdate = MediaSessionManager.pendingPlaybackUpdate;
+        MediaSessionManager.pendingPlaybackUpdate = null;
+        const s: avSession.AVSession | null = MediaSessionManager.session ?? await MediaSessionManager.ensure();
+        if (s === null) {
+          continue;
+        }
+        const ps: avSession.AVPlaybackState = {
+          state: MediaSessionManager.toAVState(update.state),
+          position: { elapsedTime: update.position, updateTime: update.updateTime },
+          duration: update.duration,
+          speed: update.speed,
+        };
+        try {
+          await s.setAVPlaybackState(ps);
+          MediaSessionManager.lastStateUpdate = update.updateTime;
+          MediaSessionManager.lastPlaybackState = update.state;
+        } catch (e) {
+          hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] AVSession setAVPlaybackState failed: %{public}s',
+            (e as Error).message ?? String(e));
+        }
+      }
+    } finally {
+      MediaSessionManager.playbackUpdateInFlight = false;
     }
   }
 
@@ -171,6 +206,10 @@ export class MediaSessionManager {
     MediaSessionManager.session = null;
     MediaSessionManager.creatingPromise = null;
     MediaSessionManager.callbacks = null;
+    MediaSessionManager.pendingPlaybackUpdate = null;
+    MediaSessionManager.playbackUpdateInFlight = false;
+    MediaSessionManager.lastStateUpdate = 0;
+    MediaSessionManager.lastPlaybackState = PlayState.IDLE;
     MediaSessionManager.metadataVersion++;
     MediaSessionManager.releaseArtwork();
     if (s === null) {

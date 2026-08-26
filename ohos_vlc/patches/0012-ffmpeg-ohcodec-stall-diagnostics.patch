@@ -1,0 +1,92 @@
+diff --git a/libavcodec/ohdec.c b/libavcodec/ohdec.c
+index 7e33461..d34b268 100644
+--- a/libavcodec/ohdec.c
++++ b/libavcodec/ohdec.c
+@@ -41,6 +41,7 @@
+ #include "libavutil/opt.h"
+ #include "libavutil/refstruct.h"
+ #include "libavutil/thread.h"
++#include "libavutil/time.h"
+ 
+ #include "avcodec.h"
+ #include "codec_internal.h"
+@@ -90,10 +91,14 @@ typedef struct OHCodecDecContext {
+     AVMutex input_mutex;
+     AVCond input_cond;
+     AVFifo *input_queue;
++    int64_t last_input_callback_us;
++    int64_t last_input_stall_log_us;
+ 
+     AVMutex output_mutex;
+     AVCond output_cond;
+     AVFifo *output_queue;
++    int64_t last_output_callback_us;
++    int64_t last_output_stall_log_us;
+ 
+     AVPacket pkt;
+ 
+@@ -625,12 +630,26 @@ static void oh_decode_on_need_input(OH_AVCodec *codec, uint32_t index,
+         index, buffer, oh_decode_generation(s),
+     };
+ 
++    const int64_t now = av_gettime_relative();
+     ff_mutex_lock(&s->input_mutex);
++    const int64_t gap = s->last_input_callback_us > 0
++        ? now - s->last_input_callback_us : 0;
++    s->last_input_callback_us = now;
++    const size_t queued = av_fifo_can_read(s->input_queue);
++    const bool report_stall = gap >= 250000 &&
++        now - s->last_input_stall_log_us >= 1000000;
++    if (report_stall)
++        s->last_input_stall_log_us = now;
+     int ret = av_fifo_write(s->input_queue, &item, 1);
+     if (ret >= 0)
+         ff_cond_signal(&s->input_cond);
+     ff_mutex_unlock(&s->input_mutex);
+ 
++    if (report_stall)
++        av_log(avctx, AV_LOG_WARNING,
++               "[OHCodecStall] callback=input gap=%lldms queued=%zu\n",
++               (long long)(gap / 1000), queued);
++
+     if (ret < 0)
+         oh_decode_on_err(codec, AV_ERR_NO_MEMORY, userdata);
+ }
+@@ -646,12 +665,26 @@ static void oh_decode_on_output(OH_AVCodec *codec, uint32_t index,
+         index, buffer, oh_decode_generation(s),
+     };
+ 
++    const int64_t now = av_gettime_relative();
+     ff_mutex_lock(&s->output_mutex);
++    const int64_t gap = s->last_output_callback_us > 0
++        ? now - s->last_output_callback_us : 0;
++    s->last_output_callback_us = now;
++    const size_t queued = av_fifo_can_read(s->output_queue);
++    const bool report_stall = gap >= 250000 &&
++        now - s->last_output_stall_log_us >= 1000000;
++    if (report_stall)
++        s->last_output_stall_log_us = now;
+     int ret = av_fifo_write(s->output_queue, &item, 1);
+     if (ret >= 0)
+         ff_cond_signal(&s->output_cond);
+     ff_mutex_unlock(&s->output_mutex);
+ 
++    if (report_stall)
++        av_log(avctx, AV_LOG_WARNING,
++               "[OHCodecStall] callback=output gap=%lldms queued=%zu\n",
++               (long long)(gap / 1000), queued);
++
+     if (ret < 0)
+         oh_decode_on_err(codec, AV_ERR_NO_MEMORY, userdata);
+ }
+@@ -1217,6 +1250,10 @@ static void oh_decode_flush(AVCodecContext *avctx)
+     ff_mutex_lock(&s->output_mutex);
+     av_fifo_reset2(s->input_queue);
+     av_fifo_reset2(s->output_queue);
++    s->last_input_callback_us = 0;
++    s->last_input_stall_log_us = 0;
++    s->last_output_callback_us = 0;
++    s->last_output_stall_log_us = 0;
+     s->decode_status = 0;
+     s->eof_sent = false;
+     s->playback_policy_pending = true;
