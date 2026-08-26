@@ -42,7 +42,8 @@ prepare() {
             0009-avcodec-ohcodec-preserve-dovi-metadata.patch \
             0010-avcodec-ohcodec-gate-dovi-metadata-parsing.patch \
             0011-ffmpeg-ohcodec-system-refresh.patch \
-            0012-ffmpeg-ohcodec-stall-diagnostics.patch
+            0012-ffmpeg-ohcodec-stall-diagnostics.patch \
+            0013-ffmpeg-ohcodec-propagate-frame-pts.patch
         do
             git -C $builddir apply --check "../$patch_name" || return -1
             git -C $builddir apply "../$patch_name" || return -1

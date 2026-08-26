@@ -1,0 +1,28 @@
+diff --git a/modules/codec/avcodec/video.c b/modules/codec/avcodec/video.c
+--- a/modules/codec/avcodec/video.c
++++ b/modules/codec/avcodec/video.c
+@@ -1601,14 +1601,24 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
+         }
+ 
+         /* Compute the PTS */
++#ifdef HAVE_OHOS
++        /* OHCodec supplies the Surface presentation timestamp in frame->pts.
++         * Prefer it directly: older wrappers left best_effort_timestamp at
++         * zero, which made VLC burst frames and then stall while audio kept
++         * advancing. */
++#endif
+ #if LIBAV_CODEC_VERSION_CHECK(57, 24, 0, 61, 100)
+ # if LIBAVCODEC_VERSION_MICRO >= 100
+         vlc_tick_t i_pts = frame->best_effort_timestamp;
+ # else
+         vlc_tick_t i_pts = frame->pts;
+ # endif
+ #else
+         vlc_tick_t i_pts = frame->pkt_pts;
+ #endif
++#ifdef HAVE_OHOS
++        if (ohos_is_surface_frame(frame) && frame->pts != AV_NOPTS_VALUE)
++            i_pts = frame->pts;
++#endif
+         if (i_pts == AV_NOPTS_VALUE )
+             i_pts = frame->pkt_dts;

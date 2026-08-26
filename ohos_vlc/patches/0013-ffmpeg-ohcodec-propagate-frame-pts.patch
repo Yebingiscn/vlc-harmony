@@ -1,0 +1,19 @@
+diff --git a/libavcodec/ohdec.c b/libavcodec/ohdec.c
+--- a/libavcodec/ohdec.c
++++ b/libavcodec/ohdec.c
+@@ -895,6 +895,7 @@ static int oh_decode_wrap_hw_buffer(AVCodecContext *avctx, AVFrame *frame,
+     // Opaque AVOHCodecBuffer token, never an addressable image plane.
+     frame->data[3] = frame->buf[0]->data;
+     frame->pts = av_rescale_q(attr->pts, AV_TIME_BASE_Q, avctx->pkt_timebase);
++    frame->best_effort_timestamp = frame->pts;
+     frame->pkt_dts = AV_NOPTS_VALUE;
+ 
+     return oh_decode_attach_dovi(s, frame, attr->pts);
+@@ -914,6 +915,7 @@ static int oh_decode_wrap_sw_buffer(AVCodecContext *avctx, AVFrame *frame,
+         return ret;
+ 
+     frame->pts = av_rescale_q(attr->pts, AV_TIME_BASE_Q, avctx->pkt_timebase);
++    frame->best_effort_timestamp = frame->pts;
+     frame->pkt_dts = AV_NOPTS_VALUE;
+ 
+     uint8_t *p = OH_AVBuffer_GetAddr(output->buffer);

@@ -78,6 +78,14 @@ prepare() {
             cd $OLDPWD
             return -1
         }
+        git apply --check ../0013-vlc-ohcodec-use-frame-pts.patch >> $publicbuildlog 2>&1 || {
+            cd $OLDPWD
+            return -1
+        }
+        git apply ../0013-vlc-ohcodec-use-frame-pts.patch >> $publicbuildlog 2>&1 || {
+            cd $OLDPWD
+            return -1
+        }
         cd $OLDPWD
         cloneflag=false
     fi

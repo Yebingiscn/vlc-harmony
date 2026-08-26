@@ -13,8 +13,10 @@ VLC_PATCH=$ROOT_DIR/patches/0000-vlc-ffmpeg8-ohcodec-consolidated.patch
 VLC_REALTIME_PATCH=$ROOT_DIR/patches/0010-vlc-ohos-realtime-audio-ring.patch
 VLC_SYSTEM_REFRESH_PATCH=$ROOT_DIR/patches/0011-vlc-ohos-system-refresh-low-latency-audio.patch
 VLC_SURFACE_BACKPRESSURE_PATCH=$ROOT_DIR/patches/0012-vlc-ohcodec-surface-backpressure.patch
+VLC_SURFACE_PTS_PATCH=$ROOT_DIR/patches/0013-vlc-ohcodec-use-frame-pts.patch
 FFMPEG_SYSTEM_REFRESH_PATCH=$ROOT_DIR/patches/0011-ffmpeg-ohcodec-system-refresh.patch
 FFMPEG_STALL_DIAGNOSTICS_PATCH=$ROOT_DIR/patches/0012-ffmpeg-ohcodec-stall-diagnostics.patch
+FFMPEG_FRAME_PTS_PATCH=$ROOT_DIR/patches/0013-ffmpeg-ohcodec-propagate-frame-pts.patch
 
 FFMPEG_REPO=https://github.com/FFmpeg/FFmpeg.git
 FFMPEG_TAG=n8.1.2
@@ -98,6 +100,8 @@ git -C "$WORK_DIR/vlc" apply --check "$VLC_SYSTEM_REFRESH_PATCH"
 git -C "$WORK_DIR/vlc" apply "$VLC_SYSTEM_REFRESH_PATCH"
 git -C "$WORK_DIR/vlc" apply --check "$VLC_SURFACE_BACKPRESSURE_PATCH"
 git -C "$WORK_DIR/vlc" apply "$VLC_SURFACE_BACKPRESSURE_PATCH"
+git -C "$WORK_DIR/vlc" apply --check "$VLC_SURFACE_PTS_PATCH"
+git -C "$WORK_DIR/vlc" apply "$VLC_SURFACE_PTS_PATCH"
 
 grep -q 'AUDIO_RING_CAPACITY' \
     "$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
@@ -110,6 +114,8 @@ grep -q 'OHCodec surface presentation uses system refresh' \
 grep -q 'OHCodec output stalled' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
 grep -q 'av_ohcodec_release_buffer(buffer, 1)' \
+    "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
+grep -q 'i_pts = frame->pts' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
 if grep -q 'av_ohcodec_release_buffer_at_time(surface_buffer' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
@@ -170,6 +176,8 @@ git -C "$WORK_DIR/ffmpeg" apply --check "$FFMPEG_SYSTEM_REFRESH_PATCH"
 git -C "$WORK_DIR/ffmpeg" apply "$FFMPEG_SYSTEM_REFRESH_PATCH"
 git -C "$WORK_DIR/ffmpeg" apply --check "$FFMPEG_STALL_DIAGNOSTICS_PATCH"
 git -C "$WORK_DIR/ffmpeg" apply "$FFMPEG_STALL_DIAGNOSTICS_PATCH"
+git -C "$WORK_DIR/ffmpeg" apply --check "$FFMPEG_FRAME_PTS_PATCH"
+git -C "$WORK_DIR/ffmpeg" apply "$FFMPEG_FRAME_PTS_PATCH"
 
 grep -q 'ohcodec_buffer.h' "$WORK_DIR/ffmpeg/libavcodec/Makefile"
 grep -q 'av_ohcodec_release_buffer_at_time' "$WORK_DIR/ffmpeg/libavcodec/ohcodec_buffer.h"
@@ -177,6 +185,7 @@ grep -q 'avcodec_ohcodec_set_playback_speed' "$WORK_DIR/ffmpeg/libavcodec/avcode
 grep -q 'direct_surface' "$WORK_DIR/ffmpeg/libavutil/hwcontext_oh.h"
 grep -q 'refresh-rate=system-managed' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
 grep -q '\[OHCodecStall\] callback=output' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
+grep -q 'best_effort_timestamp = frame->pts' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
 if grep -qE 'OH_MD_KEY_FRAME_RATE|OUTPUT_ENABLE_VRR|source_frame_rate' \
     "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
 then
