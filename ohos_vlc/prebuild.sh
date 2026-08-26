@@ -280,27 +280,35 @@ function install_vlc_patches()
     cp -f "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD" "$vlc_recipe_dir/HPKBUILD" || return 1
     cp -f "$ROOT_DIR/patches/0000-vlc-ffmpeg8-ohcodec-consolidated.patch" "$vlc_recipe_dir/" || return 1
     cp -f "$ROOT_DIR/patches/0010-vlc-ohos-realtime-audio-ring.patch" "$vlc_recipe_dir/" || return 1
+    cp -f "$ROOT_DIR/patches/0011-vlc-ohos-system-refresh-low-latency-audio.patch" "$vlc_recipe_dir/" || return 1
     return 0
 }
 
-function invalidate_restored_vlc_output()
+function invalidate_restored_native_outputs()
 {
     local cached_vlc_dir=$LYCIUM_TOOLS_DIR/usr/vlc
+    local cached_ffmpeg_dir=$LYCIUM_TOOLS_DIR/usr/FFmpeg
     local build_record=$LYCIUM_TOOLS_DIR/usr/hpk_build.csv
 
     # The dependency checkpoint is intentionally shared between native-build
-    # runs, but older checkpoints also contain the final VLC installation.
+    # runs, but older checkpoints also contain the final FFmpeg/VLC installs.
     # Lycium uses hpk_build.csv, rather than the installation directory, as
-    # the authoritative completed-package list. Invalidate both so the current
-    # local VLC patch set is always compiled while preserving its dependencies.
+    # the authoritative completed-package list. Invalidate each patched leaf
+    # so the current local sources are compiled while preserving other deps.
     if [ -f "$build_record" ]
     then
         sed -i '/^vlc,/d' "$build_record"
+        sed -i '/^FFmpeg,/d' "$build_record"
     fi
     if [ -d "$cached_vlc_dir" ]
     then
         echo "Removing restored VLC output so the current patch set is rebuilt"
         rm -rf -- "$cached_vlc_dir"
+    fi
+    if [ -d "$cached_ffmpeg_dir" ]
+    then
+        echo "Removing restored FFmpeg output so the current patch set is rebuilt"
+        rm -rf -- "$cached_ffmpeg_dir"
     fi
 }
 
@@ -334,6 +342,7 @@ function install_ffmpeg_patches()
     do
         cp -f "$patch_source_dir/patches/ffmpeg/$patch_name" "$ffmpeg_recipe_dir/" || return 1
     done
+    cp -f "$ROOT_DIR/patches/0011-ffmpeg-ohcodec-system-refresh.patch" "$ffmpeg_recipe_dir/" || return 1
     return 0
 }
 
@@ -422,7 +431,7 @@ function prebuild()
         return 1
     fi
 
-    invalidate_restored_vlc_output
+    invalidate_restored_native_outputs
 
     start_build
     if [ $? -ne 0 ]

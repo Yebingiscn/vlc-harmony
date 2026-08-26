@@ -11,6 +11,8 @@ VLC_BRANCH=ohos-3.0.21
 VLC_COMMIT=14a0483eb294e62305e596dc0d158c74e6a04cc9
 VLC_PATCH=$ROOT_DIR/patches/0000-vlc-ffmpeg8-ohcodec-consolidated.patch
 VLC_REALTIME_PATCH=$ROOT_DIR/patches/0010-vlc-ohos-realtime-audio-ring.patch
+VLC_SYSTEM_REFRESH_PATCH=$ROOT_DIR/patches/0011-vlc-ohos-system-refresh-low-latency-audio.patch
+FFMPEG_SYSTEM_REFRESH_PATCH=$ROOT_DIR/patches/0011-ffmpeg-ohcodec-system-refresh.patch
 
 FFMPEG_REPO=https://github.com/FFmpeg/FFmpeg.git
 FFMPEG_TAG=n8.1.2
@@ -22,9 +24,11 @@ bash -n "$ROOT_DIR/prebuild.sh"
 bash -n "$ROOT_DIR/recipes/brotli-v1.0.9.HPKBUILD"
 bash -n "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
 bash -n "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
-grep -q 'invalidate_restored_vlc_output' "$ROOT_DIR/prebuild.sh"
+grep -q 'invalidate_restored_native_outputs' "$ROOT_DIR/prebuild.sh"
 grep -q 'rm -rf -- "$cached_vlc_dir"' "$ROOT_DIR/prebuild.sh"
+grep -q 'rm -rf -- "$cached_ffmpeg_dir"' "$ROOT_DIR/prebuild.sh"
 grep -q "sed -i '/\^vlc,/d'" "$ROOT_DIR/prebuild.sh"
+grep -q "sed -i '/\^FFmpeg,/d'" "$ROOT_DIR/prebuild.sh"
 grep -q "source_commit=$VLC_COMMIT" "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 grep -q '"openssl_3.4.3"' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 if grep -q 'openssl-3.4.0' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
@@ -88,11 +92,23 @@ git -C "$WORK_DIR/vlc" apply --check "$VLC_PATCH"
 git -C "$WORK_DIR/vlc" apply "$VLC_PATCH"
 git -C "$WORK_DIR/vlc" apply --check "$VLC_REALTIME_PATCH"
 git -C "$WORK_DIR/vlc" apply "$VLC_REALTIME_PATCH"
+git -C "$WORK_DIR/vlc" apply --check "$VLC_SYSTEM_REFRESH_PATCH"
+git -C "$WORK_DIR/vlc" apply "$VLC_SYSTEM_REFRESH_PATCH"
 
 grep -q 'AUDIO_RING_CAPACITY' \
     "$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
 grep -q 'SetRendererWriteDataCallbackAdvanced' \
     "$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
+grep -q 'Audio low-latency queue configured' \
+    "$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
+grep -q 'OHCodec surface presentation uses system refresh' \
+    "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
+if grep -qE '16666667|ohos_frame_period_ns' \
+    "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
+then
+    echo "ERROR: VLC OHCodec presentation still contains a fixed 60 Hz cadence"
+    exit 1
+fi
 if grep -q 'audio_buffer_t' \
     "$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
 then
@@ -136,9 +152,19 @@ do
     git -C "$WORK_DIR/ffmpeg" apply "$patch_file"
 done
 
+git -C "$WORK_DIR/ffmpeg" apply --check "$FFMPEG_SYSTEM_REFRESH_PATCH"
+git -C "$WORK_DIR/ffmpeg" apply "$FFMPEG_SYSTEM_REFRESH_PATCH"
+
 grep -q 'ohcodec_buffer.h' "$WORK_DIR/ffmpeg/libavcodec/Makefile"
 grep -q 'av_ohcodec_release_buffer_at_time' "$WORK_DIR/ffmpeg/libavcodec/ohcodec_buffer.h"
 grep -q 'avcodec_ohcodec_set_playback_speed' "$WORK_DIR/ffmpeg/libavcodec/avcodec.h"
 grep -q 'direct_surface' "$WORK_DIR/ffmpeg/libavutil/hwcontext_oh.h"
+grep -q 'refresh-rate=system-managed' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
+if grep -qE 'OH_MD_KEY_FRAME_RATE|OUTPUT_ENABLE_VRR|source_frame_rate' \
+    "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
+then
+    echo "ERROR: FFmpeg OHCodec still forces a decoder frame rate or VRR mode"
+    exit 1
+fi
 
 echo "Native VLC/FFmpeg patch preflight passed."

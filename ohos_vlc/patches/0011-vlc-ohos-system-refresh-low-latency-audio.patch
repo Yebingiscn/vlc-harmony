@@ -1,0 +1,231 @@
+warning: in the working copy of 'modules/audio_output/audiounit_ohos.c', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'modules/codec/avcodec/video.c', LF will be replaced by CRLF the next time Git touches it
+diff --git a/modules/audio_output/audiounit_ohos.c b/modules/audio_output/audiounit_ohos.c
+index dcb055d..a31977b 100644
+--- a/modules/audio_output/audiounit_ohos.c
++++ b/modules/audio_output/audiounit_ohos.c
+@@ -42,6 +42,8 @@ static void Close(vlc_object_t *);
+ // Audio queue and timing constants
+ #define AUDIO_QUEUE_THRESHOLD_SIZE   16384    /* Queue size threshold in bytes */
+ #define AUDIO_RING_CAPACITY          (16u * 1024u * 1024u)
++#define AUDIO_MAX_QUEUE_MS           250
++#define AUDIO_QUEUE_WAIT_MS          100
+ #define RENDERER_STALL_TIMEOUT       2000000  /* Stall timeout in microseconds (2s) */
+ 
+ vlc_module_begin()
+@@ -60,6 +62,7 @@ typedef struct {
+     size_t read_pos;
+     size_t write_pos;
+     vlc_mutex_t lock;
++    vlc_cond_t writable;
+     size_t total_size;
+ } audio_queue_t;
+ 
+@@ -112,6 +115,7 @@ struct aout_sys_t {
+     size_t drain_initial_size;        // The queue size at the start of emptying
+     vlc_cond_t drain_cond;           // emptying condition variables
+     vlc_tick_t last_write_time;
++    size_t max_queue_size;
+ };
+ 
+ // Initiating the queue operation
+@@ -125,6 +129,7 @@ static int audio_queue_init(audio_queue_t *queue)
+     queue->write_pos = 0;
+     queue->total_size = 0;
+     vlc_mutex_init(&queue->lock);
++    vlc_cond_init(&queue->writable);
+     return VLC_SUCCESS;
+ }
+ 
+@@ -134,6 +139,7 @@ static void audio_queue_clear(audio_queue_t *queue)
+     queue->read_pos = 0;
+     queue->write_pos = 0;
+     queue->total_size = 0;
++    vlc_cond_broadcast(&queue->writable);
+     vlc_mutex_unlock(&queue->lock);
+ }
+ 
+@@ -142,13 +148,24 @@ static void audio_queue_destroy(audio_queue_t *queue)
+     free(queue->data);
+     queue->data = NULL;
+     queue->capacity = 0;
++    vlc_cond_destroy(&queue->writable);
+     vlc_mutex_destroy(&queue->lock);
+ }
+ 
+-static bool audio_queue_push(audio_queue_t *queue, const uint8_t *data, size_t size)
++static bool audio_queue_push(audio_queue_t *queue, const uint8_t *data,
++                             size_t size, size_t max_queue_size)
+ {
+     vlc_mutex_lock(&queue->lock);
+-    if (size > queue->capacity - queue->total_size) {
++
++    const vlc_tick_t deadline = mdate() + VLC_TICK_FROM_MS(AUDIO_QUEUE_WAIT_MS);
++    while (size <= max_queue_size &&
++           queue->total_size > max_queue_size - size) {
++        if (vlc_cond_timedwait(&queue->writable, &queue->lock, deadline) != 0)
++            break;
++    }
++
++    if (size > max_queue_size ||
++        queue->total_size > max_queue_size - size) {
+         vlc_mutex_unlock(&queue->lock);
+         return false;
+     }
+@@ -176,6 +193,8 @@ static size_t audio_queue_drain(audio_queue_t *queue, uint8_t *output, size_t re
+     }
+     queue->read_pos = (queue->read_pos + copied) % queue->capacity;
+     queue->total_size -= copied;
++    if (copied > 0)
++        vlc_cond_signal(&queue->writable);
+ 
+     // Set the flag of whether there is more data
+     if (has_more) {
+@@ -244,6 +263,9 @@ static int VolumeSet(audio_output_t *p_aout, float f_volume)
+     }
+ }
+ 
++static size_t get_bytes_per_sample(audio_output_t *p_aout,
++                                   OH_AudioStream_SampleFormat format);
++
+ static int MuteSet(audio_output_t *p_aout, bool mute)
+ {
+     aout_sys_t *p_sys = p_aout->sys;
+@@ -414,6 +436,13 @@ static int Start(audio_output_t *p_aout, audio_sample_format_t *p_fmt)
+     p_sys->is_playing = true;
+     p_sys->is_initialized = true;
+     p_sys->last_write_time = 0;
++    const size_t bytes_per_sample = get_bytes_per_sample(p_aout,
++                                                          p_sys->sample_format);
++    const uint64_t queue_bytes = (uint64_t)p_sys->sample_rate *
++                                 p_sys->channels * bytes_per_sample *
++                                 AUDIO_MAX_QUEUE_MS / 1000;
++    p_sys->max_queue_size = __MIN((size_t)queue_bytes,
++                                  p_sys->queue.capacity);
+ 
+     p_aout->volume_set(p_aout, p_sys->volume);
+     if (p_sys->mute)
+@@ -421,6 +450,8 @@ static int Start(audio_output_t *p_aout, audio_sample_format_t *p_fmt)
+ 
+     msg_Info(p_aout, "OpenHarmony audio output started: %d channels, %d Hz", 
+              p_sys->channels, p_sys->sample_rate);
++    msg_Info(p_aout, "Audio low-latency queue configured: %zu bytes (%d ms)",
++             p_sys->max_queue_size, AUDIO_MAX_QUEUE_MS);
+ 
+     return VLC_SUCCESS;
+ }
+@@ -514,11 +545,12 @@ static void Play(audio_output_t *p_aout, block_t *p_block)
+ 
+     if (p_block && p_block->i_buffer > 0) {
+         if (!audio_queue_push(&p_sys->queue, p_block->p_buffer,
+-                              p_block->i_buffer)) {
++                              p_block->i_buffer, p_sys->max_queue_size)) {
+             static vlc_tick_t last_overflow_log;
+             const vlc_tick_t now = mdate();
+             if (now - last_overflow_log > VLC_TICK_FROM_MS(1000)) {
+-                msg_Warn(p_aout, "Audio ring buffer full, dropping %zu bytes",
++                msg_Warn(p_aout,
++                         "Audio low-latency queue timed out, dropping %zu bytes",
+                          p_block->i_buffer);
+                 last_overflow_log = now;
+             }
+diff --git a/modules/codec/avcodec/video.c b/modules/codec/avcodec/video.c
+index e41c732..0b63f51 100644
+--- a/modules/codec/avcodec/video.c
++++ b/modules/codec/avcodec/video.c
+@@ -114,7 +114,7 @@ struct decoder_sys_t
+     vlc_sem_t sem_mt;
+ 
+ #ifdef HAVE_OHOS
+-    /* Surface output bypasses VLC's picture queue, so it needs its own clock. */
++    /* Fallback pacing follows media PTS deltas, never a fixed refresh rate. */
+     int64_t i_ohos_next_present_ns;
+     vlc_tick_t i_ohos_last_pts;
+     int i_ohos_last_display_rate;
+@@ -139,19 +139,6 @@ static int64_t ohos_monotonic_ns(void)
+     return (int64_t)ts.tv_sec * INT64_C(1000000000) + ts.tv_nsec;
+ }
+ 
+-static int64_t ohos_frame_period_ns(const decoder_t *p_dec)
+-{
+-    const video_format_t *fmt = &p_dec->fmt_out.video;
+-    if (fmt->i_frame_rate > 0 && fmt->i_frame_rate_base > 0)
+-    {
+-        int64_t period = INT64_C(1000000000) * fmt->i_frame_rate_base /
+-                         fmt->i_frame_rate;
+-        if (period >= INT64_C(4000000) && period <= INT64_C(100000000))
+-            return period;
+-    }
+-    return INT64_C(16666667);
+-}
+-
+ static bool ohos_is_surface_frame(const AVFrame *frame)
+ {
+     return frame->format == AV_PIX_FMT_OHCODEC && frame->data[3] != NULL &&
+@@ -159,15 +146,16 @@ static bool ohos_is_surface_frame(const AVFrame *frame)
+ }
+ 
+ /* Convert VLC's input clock to CLOCK_MONOTONIC, the clock expected by
+- * OH_VideoDecoder_RenderOutputBufferAtTime. Keep timestamps close to now:
+- * buffers scheduled too far ahead are retained by the Surface and make seek
+- * cancellation sluggish. */
++ * OH_VideoDecoder_RenderOutputBufferAtTime. Valid media timestamps keep A/V
++ * sync, while missing or stale timestamps are handed to the compositor now.
++ * In particular, do not synthesize a 60 Hz cadence: the display service owns
++ * refresh-rate selection and frame pacing. */
+ static int64_t ohos_presentation_time_ns(decoder_t *p_dec, vlc_tick_t i_pts)
+ {
+     decoder_sys_t *p_sys = p_dec->p_sys;
+     const int64_t now_ns = ohos_monotonic_ns();
+-    const int64_t period_ns = ohos_frame_period_ns(p_dec);
+-    int64_t target_ns = 0;
++    int64_t target_ns = now_ns;
++    bool clocked = false;
+ 
+     if (i_pts > VLC_TICK_INVALID)
+     {
+@@ -175,19 +163,28 @@ static int64_t ohos_presentation_time_ns(decoder_t *p_dec, vlc_tick_t i_pts)
+         if (display_date > VLC_TICK_INVALID)
+         {
+             const vlc_tick_t delta = display_date - mdate();
+-            if (delta >= -2 * (period_ns / 1000) && delta <= 100000)
++            if (delta >= -100000 && delta <= 100000)
++            {
+                 target_ns = now_ns + (delta > 0 ? delta * 1000 : 0);
++                clocked = true;
++            }
+         }
+     }
+ 
+-    if (target_ns == 0)
++    if (!clocked && i_pts > VLC_TICK_INVALID &&
++        p_sys->i_ohos_last_pts > VLC_TICK_INVALID)
+     {
+-        target_ns = p_sys->i_ohos_next_present_ns;
+-        if (target_ns < now_ns || target_ns > now_ns + INT64_C(100000000))
+-            target_ns = now_ns;
++        const vlc_tick_t pts_delta = i_pts - p_sys->i_ohos_last_pts;
++        if (pts_delta >= 4000 && pts_delta <= 100000)
++        {
++            const int64_t candidate = p_sys->i_ohos_next_present_ns +
++                                      pts_delta * 1000;
++            if (candidate > now_ns && candidate <= now_ns + INT64_C(100000000))
++                target_ns = candidate;
++        }
+     }
+ 
+-    p_sys->i_ohos_next_present_ns = target_ns + period_ns;
++    p_sys->i_ohos_next_present_ns = target_ns;
+     p_sys->i_ohos_last_pts = i_pts;
+     return target_ns;
+ }
+@@ -734,6 +731,9 @@ static int InitVideoDecCommon( decoder_t *p_dec )
+     p_sys->i_ohos_next_present_ns = 0;
+     p_sys->i_ohos_last_pts = VLC_TICK_INVALID;
+     p_sys->i_ohos_last_display_rate = -1;
++    if (p_sys->p_codec && p_sys->p_codec->wrapper_name &&
++        strcmp(p_sys->p_codec->wrapper_name, "ohcodec") == 0)
++        msg_Info(p_dec, "OHCodec surface presentation uses system refresh");
+ #endif
+ 
+     /* Set output properties */

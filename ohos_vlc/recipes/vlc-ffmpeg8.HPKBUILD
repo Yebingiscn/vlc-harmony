@@ -62,6 +62,14 @@ prepare() {
             cd $OLDPWD
             return -1
         }
+        git apply --check ../0011-vlc-ohos-system-refresh-low-latency-audio.patch >> $publicbuildlog 2>&1 || {
+            cd $OLDPWD
+            return -1
+        }
+        git apply ../0011-vlc-ohos-system-refresh-low-latency-audio.patch >> $publicbuildlog 2>&1 || {
+            cd $OLDPWD
+            return -1
+        }
         cd $OLDPWD
         cloneflag=false
     fi

@@ -19,6 +19,8 @@
 | `0008-vlc-ffmpeg8-ohcodec-device-context.patch`               | 使用 FFmpeg 8 的 `AVHWDeviceContext` 向 OHCodec 传递 NativeWindow          |
 | `0009-vlc-forward-playback-speed-to-ohcodec.patch`            | 将 VLC 实际倍速传给 OHCodec，由系统按能力选择智能流畅策略                         |
 | `0010-vlc-ohos-realtime-audio-ring.patch`                    | 音频输出改用预分配环形队列，移除实时回调中的逐块堆分配、链表遍历与高频日志，并拒绝 0 声道误启动 |
+| `0011-vlc-ohos-system-refresh-low-latency-audio.patch`       | 移除 Surface 固定 60Hz 兜底，按媒体时钟提交并由系统控制刷新率；将音频软件排队限制为约 250ms |
+| `0011-ffmpeg-ohcodec-system-refresh.patch`                   | 不再向 OHCodec 写入帧率或强制 VRR 参数，由 HarmonyOS 显示服务选择刷新率 |
 | `vlc-hpkbuild-apply-local-patches.patch`                      | 修改 VLC HPKBUILD，按顺序应用兼容与本地功能补丁                                |
 | `vlc-hpkbuild-build-dvbpsi.patch`                             | 修改 HPKBUILD 构建 dvbpsi 依赖                                         |
 
@@ -39,8 +41,9 @@ recipe，并从固定提交取得 libmpvnative 已验证的 OHCodec 补丁子集
 - OHCodec 补丁来源：libmpvnative 提交 `54f298cddd162f459ed49e58974e3b8e763db177`
 - VLC FFmpeg 兼容基线：官方提交 `1089af38fc26293d0b93a9456adf7ae4a5b0b930`
 
-没有设置固定 60 帧。视频上屏周期依据媒体帧率，显示刷新策略由 HarmonyOS、
-Surface 与设备的可变刷新率能力共同决定。
+没有设置固定 60 帧，也不向 OHCodec 请求特定 VRR 模式。可靠的视频时间戳仍用于
+音画同步；时间戳缺失时立即交给 Surface，最终刷新率和上屏节奏由 HarmonyOS 显示
+服务与设备能力决定。音频软件队列上限约为 250ms，防止长时间排队引发连续重采样。
 
 ## GitHub Actions 构建
 

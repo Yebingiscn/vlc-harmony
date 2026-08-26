@@ -40,7 +40,8 @@ prepare() {
             0006-avcodec-ohcodec-auto-vrr-smart-fluency.patch \
             0007-avcodec-ohcodec-fix-buffer-ownership-and-input-splitting.patch \
             0009-avcodec-ohcodec-preserve-dovi-metadata.patch \
-            0010-avcodec-ohcodec-gate-dovi-metadata-parsing.patch
+            0010-avcodec-ohcodec-gate-dovi-metadata-parsing.patch \
+            0011-ffmpeg-ohcodec-system-refresh.patch
         do
             git -C $builddir apply --check "../$patch_name" || return -1
             git -C $builddir apply "../$patch_name" || return -1

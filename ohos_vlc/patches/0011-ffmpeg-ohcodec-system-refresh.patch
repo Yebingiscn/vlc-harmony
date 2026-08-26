@@ -1,0 +1,153 @@
+warning: in the working copy of 'libavcodec/ohdec.c', LF will be replaced by CRLF the next time Git touches it
+diff --git a/libavcodec/ohdec.c b/libavcodec/ohdec.c
+index 3fe934f..7e33461 100644
+--- a/libavcodec/ohdec.c
++++ b/libavcodec/ohdec.c
+@@ -74,8 +74,6 @@ typedef struct OHCodecDecRef {
+ } OHCodecDecRef;
+ 
+ typedef struct OHCodecRuntimeKeys {
+-    const char *frame_rate;
+-    const char *enable_vrr;
+     const char *retention_mode;
+     const char *decoder_speed;
+ } OHCodecRuntimeKeys;
+@@ -125,7 +123,6 @@ typedef struct OHCodecDecContext {
+     int allow_sw;
+     unsigned mutex_cond_cnt;
+     OHCodecRuntimeKeys keys;
+-    double source_frame_rate;
+     double requested_playback_speed;
+     bool playback_policy_pending;
+     bool smart_fluency_active;
+@@ -164,20 +161,11 @@ static const char *oh_decode_resolve_key(const char *symbol)
+ static void oh_decode_resolve_runtime_keys(OHCodecDecContext *s,
+                                            AVCodecContext *avctx)
+ {
+-    s->keys.frame_rate = oh_decode_resolve_key("OH_MD_KEY_FRAME_RATE");
+-    s->keys.enable_vrr = oh_decode_resolve_key(
+-        "OH_MD_KEY_VIDEO_DECODER_OUTPUT_ENABLE_VRR");
+     s->keys.retention_mode = oh_decode_resolve_key(
+         "OH_MD_KEY_VIDEO_DECODER_FRAME_RETENTION_MODE");
+     s->keys.decoder_speed = oh_decode_resolve_key(
+         "OH_MD_KEY_VIDEO_DECODER_SPEED");
+ 
+-    if (!s->keys.frame_rate)
+-        av_log(avctx, AV_LOG_WARNING,
+-               "[OHCodecPolicy] vrr=unavailable reason=frame-rate-key\n");
+-    else if (!s->keys.enable_vrr)
+-        av_log(avctx, AV_LOG_WARNING,
+-               "[OHCodecPolicy] vrr=unavailable reason=vrr-key\n");
+     if (!s->keys.retention_mode || !s->keys.decoder_speed)
+         av_log(avctx, AV_LOG_WARNING,
+                "[OHCodecPolicy] smart-fluency=unavailable "
+@@ -474,34 +462,9 @@ static int oh_decode_set_format(OHCodecDecContext *s, AVCodecContext *avctx)
+     else
+         OH_AVFormat_SetIntValue(format, OH_MD_KEY_PIXEL_FORMAT,
+                                 AV_PIXEL_FORMAT_SURFACE_FORMAT);
+-    bool frame_rate_set = false;
+-    bool vrr_requested = false;
+-    if (s->source_frame_rate > 0.0 && s->keys.frame_rate) {
+-        frame_rate_set = OH_AVFormat_SetDoubleValue(format,
+-                                                    s->keys.frame_rate,
+-                                                    s->source_frame_rate);
+-        if (!frame_rate_set)
+-            av_log(avctx, AV_LOG_WARNING,
+-                   "[OHCodecPolicy] vrr=request-failed mode=%s fps=%.3f "
+-                   "reason=frame-rate-format\n",
+-                   s->output_to_window ? "surface" : "buffer",
+-                   s->source_frame_rate);
+-    }
+-    if (frame_rate_set && s->keys.enable_vrr) {
+-        vrr_requested = OH_AVFormat_SetIntValue(format,
+-                                                s->keys.enable_vrr, 1);
+-        if (!vrr_requested)
+-            av_log(avctx, AV_LOG_WARNING,
+-                   "[OHCodecPolicy] vrr=request-failed mode=%s fps=%.3f "
+-                   "reason=vrr-format\n",
+-                   s->output_to_window ? "surface" : "buffer",
+-                   s->source_frame_rate);
+-    } else if (s->source_frame_rate <= 0.0) {
+-        av_log(avctx, AV_LOG_WARNING,
+-               "[OHCodecPolicy] vrr=unavailable mode=%s "
+-               "reason=source-frame-rate\n",
+-               s->output_to_window ? "surface" : "buffer");
+-    }
++    av_log(avctx, AV_LOG_INFO,
++           "[OHCodecPolicy] refresh-rate=system-managed mode=%s\n",
++           s->output_to_window ? "surface" : "buffer");
+     OH_AVErrCode err = OH_VideoDecoder_Configure(s->dec, format);
+     OH_AVFormat_Destroy(format);
+     if (err != AV_ERR_OK) {
+@@ -521,13 +484,6 @@ static int oh_decode_set_format(OHCodecDecContext *s, AVCodecContext *avctx)
+         }
+     }
+ 
+-    if (vrr_requested)
+-        av_log(avctx, AV_LOG_WARNING,
+-               "[OHCodecPolicy] vrr=requested mode=%s fps=%.3f "
+-               "configure=ok\n",
+-               s->output_to_window ? "surface" : "buffer",
+-               s->source_frame_rate);
+-
+     return 0;
+ }
+ 
+@@ -745,9 +701,6 @@ static av_cold int oh_decode_init(AVCodecContext *avctx)
+ 
+     atomic_init(&s->accepting_callbacks, false);
+     oh_decode_resolve_runtime_keys(s, avctx);
+-    s->source_frame_rate = av_q2d(avctx->framerate);
+-    if (!isfinite(s->source_frame_rate) || s->source_frame_rate <= 0.0)
+-        s->source_frame_rate = 0.0;
+     s->requested_playback_speed = 1.0;
+     s->playback_policy_pending = true;
+     s->dovi_probe_packets = OH_DOVI_PROBE_PACKETS;
+@@ -1114,8 +1067,6 @@ static void oh_decode_update_playback_policy(AVCodecContext *avctx)
+         return;
+     s->playback_policy_pending = false;
+ 
+-    const double effective_frame_rate = s->source_frame_rate *
+-                                        (speed > 1.0 ? speed : 1.0);
+     const bool enable_smart_fluency = speed > 1.0 + 1e-6;
+     const bool update_smart_fluency = !s->smart_fluency_failed &&
+         s->keys.retention_mode && s->keys.decoder_speed &&
+@@ -1129,23 +1080,6 @@ static void oh_decode_update_playback_policy(AVCodecContext *avctx)
+                "reason=codec codec=%s\n",
+                speed, avcodec_get_name(avctx->codec_id));
+ 
+-    if (!update_smart_fluency && effective_frame_rate > 0.0 &&
+-        s->keys.frame_rate) {
+-        OH_AVFormat *rate_format = OH_AVFormat_Create();
+-        if (rate_format) {
+-            if (OH_AVFormat_SetDoubleValue(rate_format, s->keys.frame_rate,
+-                                           effective_frame_rate)) {
+-                OH_AVErrCode err = OH_VideoDecoder_SetParameter(s->dec,
+-                                                                 rate_format);
+-                if (err != AV_ERR_OK)
+-                    av_log(avctx, AV_LOG_VERBOSE,
+-                           "Failed to update OHCodec effective frame rate "
+-                           "to %.3f: %d\n", effective_frame_rate, err);
+-            }
+-            OH_AVFormat_Destroy(rate_format);
+-        }
+-    }
+-
+     if (!update_smart_fluency)
+         return;
+ 
+@@ -1156,12 +1090,8 @@ static void oh_decode_update_playback_policy(AVCodecContext *avctx)
+     const OH_FrameRetentionMode retention_mode = enable_smart_fluency
+         ? OH_FRAME_RETENTION_MODE_ADAPTIVE
+         : OH_FRAME_RETENTION_MODE_FULL;
+-    bool valid = true;
+-    if (effective_frame_rate > 0.0 && s->keys.frame_rate)
+-        valid = OH_AVFormat_SetDoubleValue(format, s->keys.frame_rate,
+-                                           effective_frame_rate);
+-    valid = valid && OH_AVFormat_SetIntValue(format, s->keys.retention_mode,
+-                                             (int32_t)retention_mode);
++    bool valid = OH_AVFormat_SetIntValue(format, s->keys.retention_mode,
++                                         (int32_t)retention_mode);
+     if (enable_smart_fluency)
+         valid = valid && OH_AVFormat_SetDoubleValue(format,
+                                                     s->keys.decoder_speed,
