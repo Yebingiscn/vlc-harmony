@@ -16,6 +16,7 @@ VLC_SURFACE_BACKPRESSURE_PATCH=$ROOT_DIR/patches/0012-vlc-ohcodec-surface-backpr
 VLC_SURFACE_PTS_PATCH=$ROOT_DIR/patches/0013-vlc-ohcodec-use-frame-pts.patch
 VLC_VSYNC_PRESENT_PATCH=$ROOT_DIR/patches/0014-vlc-ohcodec-vsync-present.patch
 VLC_DEADLINE_PRESENT_PATCH=$ROOT_DIR/patches/0015-vlc-ohcodec-deadline-gated-present.patch
+VLC_BUFFER_OUTPUT_PATCH=$ROOT_DIR/patches/0016-vlc-ohcodec-respect-direct-rendering.patch
 FFMPEG_SYSTEM_REFRESH_PATCH=$ROOT_DIR/patches/0011-ffmpeg-ohcodec-system-refresh.patch
 FFMPEG_STALL_DIAGNOSTICS_PATCH=$ROOT_DIR/patches/0012-ffmpeg-ohcodec-stall-diagnostics.patch
 FFMPEG_FRAME_PTS_PATCH=$ROOT_DIR/patches/0013-ffmpeg-ohcodec-propagate-frame-pts.patch
@@ -41,10 +42,12 @@ grep -q 'patches/0013-vlc-ohcodec-use-frame-pts.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0013-ffmpeg-ohcodec-propagate-frame-pts.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0014-vlc-ohcodec-vsync-present.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0015-vlc-ohcodec-deadline-gated-present.patch' "$ROOT_DIR/prebuild.sh"
+grep -q 'patches/0016-vlc-ohcodec-respect-direct-rendering.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0014-ffmpeg-ohcodec-pts-fallback.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0015-ffmpeg-ohcodec-bounded-output-queue.patch' "$ROOT_DIR/prebuild.sh"
 grep -q '0014-vlc-ohcodec-vsync-present.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 grep -q '0015-vlc-ohcodec-deadline-gated-present.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
+grep -q '0016-vlc-ohcodec-respect-direct-rendering.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 grep -q '0014-ffmpeg-ohcodec-pts-fallback.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
 grep -q '0015-ffmpeg-ohcodec-bounded-output-queue.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
 grep -q "source_commit=$VLC_COMMIT" "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
@@ -120,6 +123,8 @@ git -C "$WORK_DIR/vlc" apply --check "$VLC_VSYNC_PRESENT_PATCH"
 git -C "$WORK_DIR/vlc" apply "$VLC_VSYNC_PRESENT_PATCH"
 git -C "$WORK_DIR/vlc" apply --check "$VLC_DEADLINE_PRESENT_PATCH"
 git -C "$WORK_DIR/vlc" apply "$VLC_DEADLINE_PRESENT_PATCH"
+git -C "$WORK_DIR/vlc" apply --check "$VLC_BUFFER_OUTPUT_PATCH"
+git -C "$WORK_DIR/vlc" apply "$VLC_BUFFER_OUTPUT_PATCH"
 
 grep -q 'AUDIO_RING_CAPACITY' \
     "$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
@@ -128,6 +133,10 @@ grep -q 'SetRendererWriteDataCallbackAdvanced' \
 grep -q 'Audio low-latency queue configured' \
     "$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
 grep -q 'OHCodec Surface uses deadline-gated immediate release' \
+    "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
+grep -q 'OHCodec Buffer output enabled for VLC subtitle composition' \
+    "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
+grep -q 'var_InheritBool(p_dec, "avcodec-dr")' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
 if grep -q 'VLC_TICK_FROM_MS' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"

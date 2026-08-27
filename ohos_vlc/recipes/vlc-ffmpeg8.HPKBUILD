@@ -102,6 +102,14 @@ prepare() {
             cd $OLDPWD
             return -1
         }
+        git apply --check ../0016-vlc-ohcodec-respect-direct-rendering.patch >> $publicbuildlog 2>&1 || {
+            cd $OLDPWD
+            return -1
+        }
+        git apply ../0016-vlc-ohcodec-respect-direct-rendering.patch >> $publicbuildlog 2>&1 || {
+            cd $OLDPWD
+            return -1
+        }
         cd $OLDPWD
         cloneflag=false
     fi

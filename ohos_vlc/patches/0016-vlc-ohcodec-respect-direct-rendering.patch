@@ -1,0 +1,27 @@
+diff --git a/modules/codec/avcodec/video.c b/modules/codec/avcodec/video.c
+--- a/modules/codec/avcodec/video.c
++++ b/modules/codec/avcodec/video.c
+@@ -858,8 +858,12 @@ static int InitVideoDecCommon( decoder_t *p_dec )
+ #ifdef HAVE_OHOS
+     if (p_codec->wrapper_name && !strcmp( p_codec->wrapper_name, "ohcodec"))
+     {
+-        void *native_window = var_InheritAddress(p_dec,
+-                                                  "drawable-ohos-nativewindow-ptr");
++        /* Buffer mode keeps OHCodec hardware decoding but lets VLC own the
++         * picture/vout path, which is required for subtitle composition. */
++        const bool direct_surface = var_InheritBool(p_dec, "avcodec-dr");
++        void *native_window = direct_surface
++            ? var_InheritAddress(p_dec, "drawable-ohos-nativewindow-ptr")
++            : NULL;
+         if (native_window)
+         {
+             AVBufferRef *device_ref =
+@@ -878,6 +882,8 @@ static int InitVideoDecCommon( decoder_t *p_dec )
+                     av_buffer_unref(&device_ref);
+             }
+         }
++        else
++            msg_Info(p_dec, "OHCodec Buffer output enabled for VLC subtitle composition");
+     }
+ #endif
+  	 
