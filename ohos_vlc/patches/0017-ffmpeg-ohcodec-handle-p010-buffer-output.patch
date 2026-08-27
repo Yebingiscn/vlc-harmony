@@ -1,0 +1,42 @@
+diff --git a/libavcodec/ohdec.c b/libavcodec/ohdec.c
+--- a/libavcodec/ohdec.c
++++ b/libavcodec/ohdec.c
+@@ -587,7 +587,10 @@ static void oh_decode_on_stream_changed(OH_AVCodec *codec, OH_AVFormat *format,
+                 goto out;
+             }
+         } else {
+-            avctx->pix_fmt = ff_oh_pix_to_ff_pix(s->pix_fmt);
++            /* Current OHCodec reports AV_PIXEL_FORMAT_NV12 for both 8-bit
++             * NV12 and 10-bit P010 buffer output. Use the independently
++             * reported bit depth to describe the actual memory layout. */
++            avctx->pix_fmt = s->bit_depth > 8 ? AV_PIX_FMT_P010 : ff_oh_pix_to_ff_pix(s->pix_fmt);
+         }
+         // Check whether this pixel format is supported
+         if (avctx->pix_fmt == AV_PIX_FMT_NONE) {
+@@ -1038,8 +1041,16 @@ static int oh_decode_wrap_sw_buffer(AVCodecContext *avctx, AVFrame *frame,
+     frame->best_effort_timestamp = frame->pts;
+     frame->pkt_dts = AV_NOPTS_VALUE;
+ 
++    int layout_width = s->stride;
++    if (frame->format == AV_PIX_FMT_P010) {
++        if (s->stride & 1)
++            return AVERROR_INVALIDDATA;
++        /* OH_MD_KEY_VIDEO_STRIDE is a byte stride, while libavutil's image
++         * helpers expect a pixel width and derive the byte stride. */
++        layout_width /= 2;
++    }
+     int capacity = OH_AVBuffer_GetCapacity(output->buffer);
+-    int required = av_image_get_buffer_size(frame->format, s->stride,
++    int required = av_image_get_buffer_size(frame->format, layout_width,
+                                             s->slice_height, 1);
+     if (attr->offset < 0 || capacity < 0 || required < 0 ||
+         attr->offset > capacity || required > capacity - attr->offset) {
+@@ -1061,7 +1071,7 @@ static int oh_decode_wrap_sw_buffer(AVCodecContext *avctx, AVFrame *frame,
+     uint8_t *src[4] = {0};
+     int src_linesizes[4] = {0};
+ 
+-    ret = av_image_fill_linesizes(src_linesizes, frame->format, s->stride);
++    ret = av_image_fill_linesizes(src_linesizes, frame->format, layout_width);
+     if (ret < 0)
+         return ret;
+     ret = av_image_fill_pointers(src, frame->format, s->slice_height, p,
