@@ -129,6 +129,12 @@ grep -q 'Audio low-latency queue configured' \
     "$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
 grep -q 'OHCodec Surface uses deadline-gated immediate release' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
+if grep -q 'VLC_TICK_FROM_MS' \
+    "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
+then
+    echo "VLC 3.0.21 compatibility error: VLC_TICK_FROM_MS is unavailable" >&2
+    exit 1
+fi
 grep -q 'OHCodec output stalled' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
 grep -q 'av_ohcodec_release_buffer(buffer, 0)' \

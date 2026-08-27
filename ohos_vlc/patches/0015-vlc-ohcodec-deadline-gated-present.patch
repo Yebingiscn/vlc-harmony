@@ -48,8 +48,8 @@ index 3a5e53b..ae30de1 100644
 +            p_sys->i_ohos_next_present > 0)
 +        {
 +            const vlc_tick_t pts_delta = i_pts - p_sys->i_ohos_last_pts;
-+            if (pts_delta >= VLC_TICK_FROM_MS(4) &&
-+                pts_delta <= VLC_TICK_FROM_MS(100))
++            if (pts_delta >= CLOCK_FREQ * 4 / 1000 &&
++                pts_delta <= CLOCK_FREQ * 100 / 1000)
 +                deadline = p_sys->i_ohos_next_present + pts_delta;
 +        }
 +        p_sys->i_ohos_last_pts = i_pts;
@@ -83,7 +83,7 @@ index 3a5e53b..ae30de1 100644
      p_sys->i_ohos_last_output_time = now;
  
 -    if (i_pts > VLC_TICK_INVALID)
-+    if (p_dec->b_frame_drop_allowed && delay < -VLC_TICK_FROM_MS(80))
++    if (p_dec->b_frame_drop_allowed && delay < -CLOCK_FREQ * 80 / 1000)
      {
 -        vlc_tick_t display_date = decoder_GetDisplayDate(p_dec, i_pts);
 -        if (display_date > VLC_TICK_INVALID)
@@ -117,7 +117,7 @@ index 3a5e53b..ae30de1 100644
 +        return ret;
 +    }
 +
-+    if (delay > VLC_TICK_FROM_MS(250) &&
++    if (delay > CLOCK_FREQ * 250 / 1000 &&
 +        now - p_sys->i_ohos_last_pacing_log >= CLOCK_FREQ)
 +    {
 +        msg_Dbg(p_dec, "OHCodec Surface pacing ahead=%"PRId64
@@ -125,11 +125,11 @@ index 3a5e53b..ae30de1 100644
 +        p_sys->i_ohos_last_pacing_log = now;
 +    }
 +
-+    while (delay > VLC_TICK_FROM_MS(2))
++    while (delay > CLOCK_FREQ * 2 / 1000)
 +    {
-+        vlc_tick_t wait = delay - VLC_TICK_FROM_MS(2);
-+        if (wait > VLC_TICK_FROM_MS(20))
-+            wait = VLC_TICK_FROM_MS(20);
++        vlc_tick_t wait = delay - CLOCK_FREQ * 2 / 1000;
++        if (wait > CLOCK_FREQ * 20 / 1000)
++            wait = CLOCK_FREQ * 20 / 1000;
 +        mwait(now + wait);
 +        now = mdate();
 +
@@ -159,7 +159,7 @@ index 3a5e53b..ae30de1 100644
 +    }
 +
 +    /* The master clock may jump while the bounded wait is in progress. */
-+    if (p_dec->b_frame_drop_allowed && delay < -VLC_TICK_FROM_MS(80))
++    if (p_dec->b_frame_drop_allowed && delay < -CLOCK_FREQ * 80 / 1000)
 +    {
 +        const int ret = av_ohcodec_release_buffer(buffer, 0);
 +        p_sys->i_ohos_last_output_time = mdate();
