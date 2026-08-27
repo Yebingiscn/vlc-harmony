@@ -1,0 +1,30 @@
+diff --git a/libavcodec/ohdec.c b/libavcodec/ohdec.c
+--- a/libavcodec/ohdec.c
++++ b/libavcodec/ohdec.c
+@@ -1038,12 +1038,26 @@ static int oh_decode_wrap_sw_buffer(AVCodecContext *avctx, AVFrame *frame,
+     frame->best_effort_timestamp = frame->pts;
+     frame->pkt_dts = AV_NOPTS_VALUE;
+ 
++    int capacity = OH_AVBuffer_GetCapacity(output->buffer);
++    int required = av_image_get_buffer_size(frame->format, s->stride,
++                                            s->slice_height, 1);
++    if (attr->offset < 0 || capacity < 0 || required < 0 ||
++        attr->offset > capacity || required > capacity - attr->offset) {
++        av_log(avctx, AV_LOG_ERROR,
++               "Invalid OHCodec output layout: offset=%d size=%d "
++               "capacity=%d required=%d stride=%d slice_height=%d format=%d\n",
++               attr->offset, attr->size, capacity, required, s->stride,
++               s->slice_height, frame->format);
++        return AVERROR_INVALIDDATA;
++    }
++
+     uint8_t *p = OH_AVBuffer_GetAddr(output->buffer);
+     if (!p) {
+         av_log(avctx, AV_LOG_ERROR, "Failed to get output buffer addr\n");
+         return AVERROR_EXTERNAL;
+     }
++    p += attr->offset;
+ 
+     uint8_t *src[4] = {0};
+     int src_linesizes[4] = {0};
+ 
