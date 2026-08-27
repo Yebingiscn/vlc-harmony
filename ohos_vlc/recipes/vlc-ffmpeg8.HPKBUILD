@@ -94,6 +94,14 @@ prepare() {
             cd $OLDPWD
             return -1
         }
+        git apply --check ../0015-vlc-ohcodec-deadline-gated-present.patch >> $publicbuildlog 2>&1 || {
+            cd $OLDPWD
+            return -1
+        }
+        git apply ../0015-vlc-ohcodec-deadline-gated-present.patch >> $publicbuildlog 2>&1 || {
+            cd $OLDPWD
+            return -1
+        }
         cd $OLDPWD
         cloneflag=false
     fi

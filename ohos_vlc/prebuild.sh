@@ -284,6 +284,7 @@ function install_vlc_patches()
     cp -f "$ROOT_DIR/patches/0012-vlc-ohcodec-surface-backpressure.patch" "$vlc_recipe_dir/" || return 1
     cp -f "$ROOT_DIR/patches/0013-vlc-ohcodec-use-frame-pts.patch" "$vlc_recipe_dir/" || return 1
     cp -f "$ROOT_DIR/patches/0014-vlc-ohcodec-vsync-present.patch" "$vlc_recipe_dir/" || return 1
+    cp -f "$ROOT_DIR/patches/0015-vlc-ohcodec-deadline-gated-present.patch" "$vlc_recipe_dir/" || return 1
     return 0
 }
 

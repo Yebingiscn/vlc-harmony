@@ -148,8 +148,8 @@ jobs:
             echo "Stale VLC audio output detected: low-latency queue marker is absent"
             exit 1
           fi
-          if ! grep -aFq 'OHCodec surface presentation uses system refresh' "${video_decoder}"; then
-            echo "Stale VLC decoder detected: system-refresh marker is absent"
+          if ! grep -aFq 'OHCodec Surface uses deadline-gated immediate release' "${video_decoder}"; then
+            echo "Stale VLC decoder detected: deadline-gated Surface marker is absent"
             exit 1
           fi
           if ! grep -aFq 'refresh-rate=system-managed' "${ffmpeg_decoder}"; then
