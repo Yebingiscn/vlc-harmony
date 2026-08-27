@@ -1,0 +1,296 @@
+diff --git a/libavcodec/ohdec.c b/libavcodec/ohdec.c
+index c67a561..b2a83b3 100644
+--- a/libavcodec/ohdec.c
++++ b/libavcodec/ohdec.c
+@@ -57,6 +57,10 @@
+ #define OH_DOVI_QUEUE_SIZE 64
+ #define OH_DOVI_PROBE_PACKETS 16
+ #define OH_PTS_QUEUE_SIZE 256
++#define OH_SURFACE_MAX_QUEUED_OUTPUTS 3
++#define OH_SURFACE_MAX_PENDING_INPUTS 6
++#define OH_WATCHDOG_INTERVAL_US 250000
++#define OH_WATCHDOG_STALL_US 250000
+ 
+ typedef struct OHCodecDecQueueItem {
+     uint32_t index;
+@@ -101,6 +105,13 @@ typedef struct OHCodecDecContext {
+     int64_t last_output_callback_us;
+     int64_t last_output_stall_log_us;
+     int64_t last_output_backlog_log_us;
++    int64_t last_output_consume_us;
++    unsigned pending_surface_inputs;
++    uint64_t dropped_surface_outputs;
++
++    pthread_t watchdog_thread;
++    atomic_bool watchdog_running;
++    bool watchdog_started;
+ 
+     AVPacket pkt;
+ 
+@@ -673,15 +684,32 @@ static void oh_decode_on_output(OH_AVCodec *codec, uint32_t index,
+         index, buffer, oh_decode_generation(s),
+     };
+ 
++    OHCodecDecQueueItem stale = {0};
+     const int64_t now = av_gettime_relative();
++    unsigned pending;
++    uint64_t dropped;
+     ff_mutex_lock(&s->output_mutex);
++    if (s->direct_surface_output && s->pending_surface_inputs > 0)
++        s->pending_surface_inputs--;
+     const int64_t gap = s->last_output_callback_us > 0
+         ? now - s->last_output_callback_us : 0;
+     s->last_output_callback_us = now;
+-    const size_t queued = av_fifo_can_read(s->output_queue);
++    size_t queued = av_fifo_can_read(s->output_queue);
++    if (s->direct_surface_output &&
++        queued >= OH_SURFACE_MAX_QUEUED_OUTPUTS) {
++        if (av_fifo_read(s->output_queue, &stale, 1) >= 0) {
++            s->dropped_surface_outputs++;
++            /* A dropped output bypasses the normal PTS resolver. Device
++             * timestamps are normally authoritative, so clear the optional
++             * fallback map instead of letting it drift. */
++            s->nb_pending_pts = 0;
++            queued--;
++        }
++    }
+     const bool report_stall = gap >= 250000 &&
+         now - s->last_output_stall_log_us >= 1000000;
+-    const bool report_backlog = queued >= 8 &&
++    const bool report_backlog = s->direct_surface_output &&
++        queued + 1 >= OH_SURFACE_MAX_QUEUED_OUTPUTS &&
+         now - s->last_output_backlog_log_us >= 1000000;
+     if (report_stall)
+         s->last_output_stall_log_us = now;
+@@ -690,20 +718,77 @@ static void oh_decode_on_output(OH_AVCodec *codec, uint32_t index,
+     int ret = av_fifo_write(s->output_queue, &item, 1);
+     if (ret >= 0)
+         ff_cond_signal(&s->output_cond);
++    pending = s->pending_surface_inputs;
++    dropped = s->dropped_surface_outputs;
+     ff_mutex_unlock(&s->output_mutex);
+ 
++    if (stale.buffer && stale.generation == oh_decode_generation(s)) {
++        OH_AVErrCode drop_err = OH_VideoDecoder_FreeOutputBuffer(codec,
++                                                                  stale.index);
++        if (drop_err != AV_ERR_OK)
++            av_log(avctx, AV_LOG_WARNING,
++                   "[OHCodecQueue] failed to release stale output index=%u "
++                   "error=%d\n", stale.index, drop_err);
++    }
++
+     if (report_stall)
+         av_log(avctx, AV_LOG_WARNING,
+                "[OHCodecStall] callback=output gap=%lldms queued=%zu\n",
+                (long long)(gap / 1000), queued);
+     if (report_backlog)
+         av_log(avctx, AV_LOG_WARNING,
+-               "[OHCodecStall] consumer backlog queued=%zu\n", queued);
++               "[OHCodecQueue] bounded backlog queued=%zu dropped=%llu "
++               "pending=%u\n", queued + 1,
++               (unsigned long long)dropped, pending);
+ 
+     if (ret < 0)
+         oh_decode_on_err(codec, AV_ERR_NO_MEMORY, userdata);
+ }
+ 
++static void *oh_decode_watchdog(void *opaque)
++{
++    AVCodecContext *avctx = opaque;
++    OHCodecDecContext *s = avctx->priv_data;
++    int64_t last_log_us = 0;
++
++    while (atomic_load_explicit(&s->watchdog_running,
++                                memory_order_acquire)) {
++        av_usleep(OH_WATCHDOG_INTERVAL_US);
++        if (!atomic_load_explicit(&s->watchdog_running,
++                                  memory_order_acquire))
++            break;
++
++        const int64_t now = av_gettime_relative();
++        size_t output_queued;
++        unsigned pending;
++        uint64_t dropped;
++        int64_t last_consume;
++
++        ff_mutex_lock(&s->output_mutex);
++        output_queued = av_fifo_can_read(s->output_queue);
++        pending = s->pending_surface_inputs;
++        dropped = s->dropped_surface_outputs;
++        last_consume = s->last_output_consume_us;
++        ff_mutex_unlock(&s->output_mutex);
++
++        if (s->direct_surface_output && output_queued > 0 &&
++            last_consume > 0 && now - last_consume >= OH_WATCHDOG_STALL_US &&
++            now - last_log_us >= 1000000) {
++            size_t input_queued;
++            ff_mutex_lock(&s->input_mutex);
++            input_queued = av_fifo_can_read(s->input_queue);
++            ff_mutex_unlock(&s->input_mutex);
++            av_log(avctx, AV_LOG_WARNING,
++                   "[OHCodecWatchdog] consumer idle=%lldms input=%zu "
++                   "output=%zu pending=%u dropped=%llu\n",
++                   (long long)((now - last_consume) / 1000), input_queued,
++                   output_queued, pending, (unsigned long long)dropped);
++            last_log_us = now;
++        }
++    }
++    return NULL;
++}
++
+ static int oh_decode_start(OHCodecDecContext *s, AVCodecContext *avctx)
+ {
+     int ret;
+@@ -748,6 +833,7 @@ static av_cold int oh_decode_init(AVCodecContext *avctx)
+     OHCodecDecContext *s = avctx->priv_data;
+ 
+     atomic_init(&s->accepting_callbacks, false);
++    atomic_init(&s->watchdog_running, false);
+     oh_decode_resolve_runtime_keys(s, avctx);
+     s->requested_playback_speed = 1.0;
+     s->playback_policy_pending = true;
+@@ -790,6 +876,18 @@ static av_cold int oh_decode_init(AVCodecContext *avctx)
+     if (ret < 0)
+         return ret;
+ 
++    s->last_output_consume_us = av_gettime_relative();
++    atomic_store_explicit(&s->watchdog_running, true, memory_order_release);
++    ret = pthread_create(&s->watchdog_thread, NULL, oh_decode_watchdog, avctx);
++    if (ret == 0)
++        s->watchdog_started = true;
++    else {
++        atomic_store_explicit(&s->watchdog_running, false,
++                              memory_order_release);
++        av_log(avctx, AV_LOG_WARNING,
++               "[OHCodecWatchdog] failed to start: %s\n", strerror(ret));
++    }
++
+     return 0;
+ }
+ 
+@@ -797,6 +895,13 @@ static av_cold int oh_decode_close(AVCodecContext *avctx)
+ {
+     OHCodecDecContext *s = avctx->priv_data;
+ 
++    if (s->watchdog_started) {
++        atomic_store_explicit(&s->watchdog_running, false,
++                              memory_order_release);
++        pthread_join(s->watchdog_thread, NULL);
++        s->watchdog_started = false;
++    }
++
+     if (s->dec) {
+         atomic_store_explicit(&s->accepting_callbacks, false,
+                               memory_order_release);
+@@ -977,20 +1082,25 @@ static void oh_decode_queue_pts(OHCodecDecContext *s, AVCodecContext *avctx,
+ 
+     const int64_t pts_us = av_rescale_q(pts, avctx->pkt_timebase,
+                                         AV_TIME_BASE_Q);
++    ff_mutex_lock(&s->output_mutex);
+     if (s->nb_pending_pts == OH_PTS_QUEUE_SIZE) {
+         av_log(avctx, AV_LOG_WARNING,
+                "[OHCodecPTS] pending queue overflow; resetting timestamp map\n");
+         s->nb_pending_pts = 0;
+     }
+     s->pending_pts[s->nb_pending_pts++] = pts_us;
++    ff_mutex_unlock(&s->output_mutex);
+ }
+ 
+ static int64_t oh_decode_resolve_output_pts(OHCodecDecContext *s,
+                                             AVCodecContext *avctx,
+                                             int64_t device_pts)
+ {
+-    if (!s->nb_pending_pts)
++    ff_mutex_lock(&s->output_mutex);
++    if (!s->nb_pending_pts) {
++        ff_mutex_unlock(&s->output_mutex);
+         return device_pts;
++    }
+ 
+     unsigned selected = 0;
+     bool exact = false;
+@@ -1006,6 +1116,8 @@ static int64_t oh_decode_resolve_output_pts(OHCodecDecContext *s,
+ 
+     const int64_t mapped_pts = s->pending_pts[selected];
+     s->pending_pts[selected] = s->pending_pts[--s->nb_pending_pts];
++    const unsigned pending = s->nb_pending_pts;
++    ff_mutex_unlock(&s->output_mutex);
+ 
+     if (!exact) {
+         const int64_t now = av_gettime_relative();
+@@ -1014,7 +1126,7 @@ static int64_t oh_decode_resolve_output_pts(OHCodecDecContext *s,
+                    "[OHCodecPTS] output timestamp fallback device=%lld "
+                    "mapped=%lld pending=%u\n",
+                    (long long)device_pts, (long long)mapped_pts,
+-                   s->nb_pending_pts);
++                   pending);
+             s->last_pts_fallback_log_us = now;
+         }
+     }
+@@ -1144,8 +1256,22 @@ static int oh_decode_send_pkt(AVCodecContext *avctx,
+         ret = ff_oh_err_to_ff_err(err);
+         return ret;
+     }
++    const bool complete_surface_input = s->direct_surface_output &&
++                                        n >= s->pkt.size;
++    if (complete_surface_input) {
++        ff_mutex_lock(&s->output_mutex);
++        s->pending_surface_inputs++;
++        ff_mutex_unlock(&s->output_mutex);
++    }
++
+     err = OH_VideoDecoder_PushInputBuffer(s->dec, input->index);
+     if (err != AV_ERR_OK) {
++        if (complete_surface_input) {
++            ff_mutex_lock(&s->output_mutex);
++            if (s->pending_surface_inputs > 0)
++                s->pending_surface_inputs--;
++            ff_mutex_unlock(&s->output_mutex);
++        }
+         ret = ff_oh_err_to_ff_err(err);
+         av_log(avctx, AV_LOG_ERROR, "Push input buffer failed, %d, %s\n",
+                err, av_err2str(ret));
+@@ -1248,6 +1374,13 @@ static int oh_decode_receive_frame(AVCodecContext *avctx, AVFrame *frame)
+         while (!s->decode_status) {
+             if (av_fifo_read(s->output_queue, &buffer, 1) >= 0)
+                 break;
++            if (s->direct_surface_output &&
++                s->pending_surface_inputs >= OH_SURFACE_MAX_PENDING_INPUTS) {
++                if (oh_decode_cond_wait(&s->output_cond,
++                                        &s->output_mutex) == ETIMEDOUT)
++                    break;
++                continue;
++            }
+             // Only wait after send EOF
+             if (s->eof_sent && !s->decode_status) {
+                 if (oh_decode_cond_wait(&s->output_cond, &s->output_mutex) ==
+@@ -1259,6 +1392,10 @@ static int oh_decode_receive_frame(AVCodecContext *avctx, AVFrame *frame)
+         }
+ 
+         ret = s->decode_status;
++        if (buffer.buffer)
++            s->last_output_consume_us = av_gettime_relative();
++        const bool surface_input_limit = s->direct_surface_output &&
++            s->pending_surface_inputs >= OH_SURFACE_MAX_PENDING_INPUTS;
+         ff_mutex_unlock(&s->output_mutex);
+ 
+         // Got a frame
+@@ -1269,6 +1406,8 @@ static int oh_decode_receive_frame(AVCodecContext *avctx, AVFrame *frame)
+         }
+         if (ret < 0)
+             return ret;
++        if (surface_input_limit)
++            return AVERROR(EAGAIN);
+ 
+         if (!s->pkt.size) {
+             /* fetch new packet or eof */
+@@ -1329,6 +1468,9 @@ static void oh_decode_flush(AVCodecContext *avctx)
+     s->last_output_callback_us = 0;
+     s->last_output_stall_log_us = 0;
+     s->last_output_backlog_log_us = 0;
++    s->last_output_consume_us = av_gettime_relative();
++    s->pending_surface_inputs = 0;
++    s->dropped_surface_outputs = 0;
+     s->nb_pending_pts = 0;
+     s->last_pts_fallback_log_us = 0;
+     s->decode_status = 0;

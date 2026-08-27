@@ -156,6 +156,14 @@ jobs:
             echo "Stale FFmpeg decoder detected: system-refresh marker is absent"
             exit 1
           fi
+          if ! grep -aFq '[OHCodecQueue] bounded backlog' "${ffmpeg_decoder}"; then
+            echo "Stale FFmpeg decoder detected: bounded output queue marker is absent"
+            exit 1
+          fi
+          if ! grep -aFq '[OHCodecWatchdog] consumer idle=' "${ffmpeg_decoder}"; then
+            echo "Stale FFmpeg decoder detected: watchdog marker is absent"
+            exit 1
+          fi
           if grep -aFq 'Audio queue completely drained in callback' "${audio_output}"; then
             echo "Stale VLC audio output detected: linked-list callback marker is still present"
             exit 1

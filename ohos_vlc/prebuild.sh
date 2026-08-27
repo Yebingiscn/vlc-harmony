@@ -349,6 +349,7 @@ function install_ffmpeg_patches()
     cp -f "$ROOT_DIR/patches/0012-ffmpeg-ohcodec-stall-diagnostics.patch" "$ffmpeg_recipe_dir/" || return 1
     cp -f "$ROOT_DIR/patches/0013-ffmpeg-ohcodec-propagate-frame-pts.patch" "$ffmpeg_recipe_dir/" || return 1
     cp -f "$ROOT_DIR/patches/0014-ffmpeg-ohcodec-pts-fallback.patch" "$ffmpeg_recipe_dir/" || return 1
+    cp -f "$ROOT_DIR/patches/0015-ffmpeg-ohcodec-bounded-output-queue.patch" "$ffmpeg_recipe_dir/" || return 1
     return 0
 }
 

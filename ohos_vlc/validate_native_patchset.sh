@@ -19,6 +19,7 @@ FFMPEG_SYSTEM_REFRESH_PATCH=$ROOT_DIR/patches/0011-ffmpeg-ohcodec-system-refresh
 FFMPEG_STALL_DIAGNOSTICS_PATCH=$ROOT_DIR/patches/0012-ffmpeg-ohcodec-stall-diagnostics.patch
 FFMPEG_FRAME_PTS_PATCH=$ROOT_DIR/patches/0013-ffmpeg-ohcodec-propagate-frame-pts.patch
 FFMPEG_PTS_FALLBACK_PATCH=$ROOT_DIR/patches/0014-ffmpeg-ohcodec-pts-fallback.patch
+FFMPEG_BOUNDED_OUTPUT_PATCH=$ROOT_DIR/patches/0015-ffmpeg-ohcodec-bounded-output-queue.patch
 
 FFMPEG_REPO=https://github.com/FFmpeg/FFmpeg.git
 FFMPEG_TAG=n8.1.2
@@ -39,8 +40,10 @@ grep -q 'patches/0013-vlc-ohcodec-use-frame-pts.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0013-ffmpeg-ohcodec-propagate-frame-pts.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0014-vlc-ohcodec-vsync-present.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0014-ffmpeg-ohcodec-pts-fallback.patch' "$ROOT_DIR/prebuild.sh"
+grep -q 'patches/0015-ffmpeg-ohcodec-bounded-output-queue.patch' "$ROOT_DIR/prebuild.sh"
 grep -q '0014-vlc-ohcodec-vsync-present.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 grep -q '0014-ffmpeg-ohcodec-pts-fallback.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
+grep -q '0015-ffmpeg-ohcodec-bounded-output-queue.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
 grep -q "source_commit=$VLC_COMMIT" "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 grep -q '"openssl_3.4.3"' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 if grep -q 'openssl-3.4.0' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
@@ -186,6 +189,8 @@ git -C "$WORK_DIR/ffmpeg" apply --check "$FFMPEG_FRAME_PTS_PATCH"
 git -C "$WORK_DIR/ffmpeg" apply "$FFMPEG_FRAME_PTS_PATCH"
 git -C "$WORK_DIR/ffmpeg" apply --check "$FFMPEG_PTS_FALLBACK_PATCH"
 git -C "$WORK_DIR/ffmpeg" apply "$FFMPEG_PTS_FALLBACK_PATCH"
+git -C "$WORK_DIR/ffmpeg" apply --check "$FFMPEG_BOUNDED_OUTPUT_PATCH"
+git -C "$WORK_DIR/ffmpeg" apply "$FFMPEG_BOUNDED_OUTPUT_PATCH"
 
 grep -q 'ohcodec_buffer.h' "$WORK_DIR/ffmpeg/libavcodec/Makefile"
 grep -q 'av_ohcodec_release_buffer_at_time' "$WORK_DIR/ffmpeg/libavcodec/ohcodec_buffer.h"
@@ -195,7 +200,10 @@ grep -q 'refresh-rate=system-managed' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
 grep -q '\[OHCodecStall\] callback=output' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
 grep -q 'best_effort_timestamp = frame->pts' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
 grep -q '\[OHCodecPTS\] output timestamp fallback' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
-grep -q '\[OHCodecStall\] consumer backlog' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
+grep -q '\[OHCodecQueue\] bounded backlog' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
+grep -q 'OH_SURFACE_MAX_QUEUED_OUTPUTS 3' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
+grep -q '\[OHCodecWatchdog\] consumer idle=' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
+grep -q 'OH_SURFACE_MAX_PENDING_INPUTS 6' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
 if grep -qE 'OH_MD_KEY_FRAME_RATE|OUTPUT_ENABLE_VRR|source_frame_rate' \
     "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
 then
