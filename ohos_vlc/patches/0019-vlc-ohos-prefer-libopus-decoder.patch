@@ -1,0 +1,23 @@
+diff --git a/modules/codec/avcodec/avcodec.c b/modules/codec/avcodec/avcodec.c
+index 0c162db..510264e 100644
+--- a/modules/codec/avcodec/avcodec.c
++++ b/modules/codec/avcodec/avcodec.c
+@@ -288,6 +288,18 @@ AVCodecContext *ffmpeg_AllocContext( decoder_t *p_dec,
+     }
+     if( !p_codec ) {
+ #ifdef HAVE_OHOS
++             /* FFmpeg's native Opus decoder rejects newer OpusHead versions
++              * and mapping families with AVERROR_PATCHWELCOME. The build
++              * already ships libopus, which accepts those WebM tracks, so
++              * prefer it while retaining the native decoder as fallback. */
++             if( i_codec_id == AV_CODEC_ID_OPUS )
++             {
++                 p_codec = avcodec_find_decoder_by_name( "libopus" );
++                 if( p_codec )
++                     msg_Dbg( p_dec, "using libopus decoder for WebM compatibility" );
++                 else
++                     msg_Warn( p_dec, "libopus decoder unavailable, falling back to native Opus" );
++             }
+              char *psz_hw = var_InheritString( p_dec, "avcodec-hw" );
+              const bool use_ohos_hw = psz_hw == NULL ||
+                                       (strcmp( psz_hw, "none" ) != 0 &&
