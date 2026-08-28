@@ -109,3 +109,13 @@ index 085067c..9ab2d70 100644
  {
      vout_window_t *window = vout->p->window;
  
+diff --git a/src/libvlccore.sym b/src/libvlccore.sym
+index b6d3f20..5715c81 100644
+--- a/src/libvlccore.sym
++++ b/src/libvlccore.sym
+@@ -652,4 +652,5 @@ vlm_MessageSimpleNew
+ vlm_New
+ vout_ChangeAspectRatio
++vout_SetDisplayWindowSize
+ vout_Close
+ vout_GetPicture
