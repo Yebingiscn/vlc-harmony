@@ -118,6 +118,14 @@ prepare() {
             cd $OLDPWD
             return -1
         }
+        git apply --check ../0018-vlc-ffmpeg8-opus-audio-init.patch >> $publicbuildlog 2>&1 || {
+            cd $OLDPWD
+            return -1
+        }
+        git apply ../0018-vlc-ffmpeg8-opus-audio-init.patch >> $publicbuildlog 2>&1 || {
+            cd $OLDPWD
+            return -1
+        }
         cd $OLDPWD
         cloneflag=false
     fi

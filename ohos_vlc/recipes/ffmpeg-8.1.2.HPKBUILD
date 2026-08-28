@@ -98,6 +98,16 @@ build() {
         cd $OLDPWD
         return $ret
     fi
+    # Fail immediately if a configure/dependency regression removes either
+    # Opus decoder. Discovering this after the two-hour native build produces
+    # a library that can demux Opus but cannot play it.
+    if ! grep -Eq '^#define CONFIG_OPUS_DECODER 1$' config_components.h ||
+       ! grep -Eq '^#define CONFIG_LIBOPUS_DECODER 1$' config_components.h
+    then
+        echo "ERROR: FFmpeg Opus decoders are not enabled" >> $buildlog
+        cd $OLDPWD
+        return 1
+    fi
     $MAKE V=1 >> $buildlog 2>&1
     ret=$?
     cd $OLDPWD

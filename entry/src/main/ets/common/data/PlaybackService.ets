@@ -1681,11 +1681,12 @@ export class PlaybackService {
       return;
     }
 
-    // file://docs 通过文档提供方的 fd 读取。4K REMUX 的瞬时读取抖动可能超过默认
-    // 1 秒缓存，仅对该路径扩大缓存，普通本地文件和网络串流保持原行为。
+    // file://docs 通过文档提供方的 fd 读取。OHCodec 输出队列现在会主动施加
+    // 背压，无需再用 4 秒缓存掩盖卡顿；保留 VLC 标准的一秒缓冲，让 4K 硬解
+    // 在时钟启动前完成预热。普通本地文件和网络串流不受影响。
     if (needsFdOpen(item.uri)) {
-      media.addOption(':file-caching=4000');
-      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] document fd file cache: 4000 ms');
+      media.addOption(':file-caching=1000');
+      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] document fd file cache: 1000 ms');
     }
 
     // 硬件加速(对应 Android VLCOptions.setMediaOptions):-1 自动不干预(OHOS 默认优先硬解,
@@ -1709,6 +1710,23 @@ export class PlaybackService {
       } else if (hwAccel === '2') {
         media.addOption(':avcodec-hw=any');
         hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] hardware acceleration: full (hw decode + direct render)');
+      } else {
+        // 自动模式下，普通视频保留 Buffer 输出供 VLC 合成内置/外挂字幕；4K 及
+        // 更高负载的视频改走 OHCodec Surface 直出。否则 P010 10-bit 内容会在
+        // CPU 上执行全分辨率 P010 -> I420 转换，4K120 时必然持续丢帧。
+        media.addOption(':avcodec-hw=any');
+        const useDirectRender: boolean = item.width >= 3840 && item.height >= 1600;
+        if (useDirectRender) {
+          media.addOption(':avcodec-dr');
+          hilog.info(LOG_DOMAIN, LOG_TAG,
+            '[VLC] hardware acceleration: auto high-load Surface direct render (%{public}dx%{public}d)',
+            item.width, item.height);
+        } else {
+          media.addOption(':no-avcodec-dr');
+          hilog.info(LOG_DOMAIN, LOG_TAG,
+            '[VLC] hardware acceleration: auto buffer decode + subtitle vout (%{public}dx%{public}d)',
+            item.width, item.height);
+        }
       }
     }
 

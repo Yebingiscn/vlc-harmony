@@ -18,6 +18,7 @@ VLC_VSYNC_PRESENT_PATCH=$ROOT_DIR/patches/0014-vlc-ohcodec-vsync-present.patch
 VLC_DEADLINE_PRESENT_PATCH=$ROOT_DIR/patches/0015-vlc-ohcodec-deadline-gated-present.patch
 VLC_BUFFER_OUTPUT_PATCH=$ROOT_DIR/patches/0016-vlc-ohcodec-respect-direct-rendering.patch
 VLC_LIVE_RESIZE_PATCH=$ROOT_DIR/patches/0017-vlc-ohos-live-window-resize.patch
+VLC_OPUS_AUDIO_PATCH=$ROOT_DIR/patches/0018-vlc-ffmpeg8-opus-audio-init.patch
 FFMPEG_SYSTEM_REFRESH_PATCH=$ROOT_DIR/patches/0011-ffmpeg-ohcodec-system-refresh.patch
 FFMPEG_STALL_DIAGNOSTICS_PATCH=$ROOT_DIR/patches/0012-ffmpeg-ohcodec-stall-diagnostics.patch
 FFMPEG_FRAME_PTS_PATCH=$ROOT_DIR/patches/0013-ffmpeg-ohcodec-propagate-frame-pts.patch
@@ -48,6 +49,7 @@ grep -q 'patches/0014-vlc-ohcodec-vsync-present.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0015-vlc-ohcodec-deadline-gated-present.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0016-vlc-ohcodec-respect-direct-rendering.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0017-vlc-ohos-live-window-resize.patch' "$ROOT_DIR/prebuild.sh"
+grep -q 'patches/0018-vlc-ffmpeg8-opus-audio-init.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0014-ffmpeg-ohcodec-pts-fallback.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0015-ffmpeg-ohcodec-bounded-output-queue.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0016-ffmpeg-ohcodec-respect-output-offset.patch' "$ROOT_DIR/prebuild.sh"
@@ -57,6 +59,7 @@ grep -q '0014-vlc-ohcodec-vsync-present.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HP
 grep -q '0015-vlc-ohcodec-deadline-gated-present.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 grep -q '0016-vlc-ohcodec-respect-direct-rendering.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 grep -q '0017-vlc-ohos-live-window-resize.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
+grep -q '0018-vlc-ffmpeg8-opus-audio-init.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 grep -q '0014-ffmpeg-ohcodec-pts-fallback.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
 grep -q '0015-ffmpeg-ohcodec-bounded-output-queue.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
 grep -q '0016-ffmpeg-ohcodec-respect-output-offset.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
@@ -139,6 +142,8 @@ git -C "$WORK_DIR/vlc" apply --check "$VLC_BUFFER_OUTPUT_PATCH"
 git -C "$WORK_DIR/vlc" apply "$VLC_BUFFER_OUTPUT_PATCH"
 git -C "$WORK_DIR/vlc" apply --check "$VLC_LIVE_RESIZE_PATCH"
 git -C "$WORK_DIR/vlc" apply "$VLC_LIVE_RESIZE_PATCH"
+git -C "$WORK_DIR/vlc" apply --check "$VLC_OPUS_AUDIO_PATCH"
+git -C "$WORK_DIR/vlc" apply "$VLC_OPUS_AUDIO_PATCH"
 
 grep -q 'AUDIO_RING_CAPACITY' \
     "$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
@@ -152,6 +157,12 @@ grep -q 'OHCodec Buffer output enabled for VLC subtitle composition' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
 grep -q 'var_InheritBool(p_dec, "avcodec-dr")' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
+grep -q 'codec->id == AV_CODEC_ID_OPUS && ctx->sample_rate <= 0' \
+    "$WORK_DIR/vlc/modules/codec/avcodec/audio.c"
+grep -q 'p_dec->fmt_in.audio.i_channels > 0' \
+    "$WORK_DIR/vlc/modules/codec/avcodec/audio.c"
+grep -q 'cannot start codec (%s): %s (%d)' \
+    "$WORK_DIR/vlc/modules/codec/avcodec/avcodec.c"
 if grep -q 'VLC_TICK_FROM_MS' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
 then
