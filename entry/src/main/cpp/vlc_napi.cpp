@@ -295,6 +295,32 @@ struct SurfaceBinding {
     bool reloadVideoOutput = false;
 };
 
+using SetOhosWindowSizeFn = void (*)(libvlc_media_player_t *, unsigned, unsigned);
+
+SetOhosWindowSizeFn ResolveSetOhosWindowSize()
+{
+    static SetOhosWindowSizeFn fn = []() -> SetOhosWindowSizeFn {
+        // HarmonyOS isolates native modules in linker namespaces. Symbols from
+        // a linked dependency are therefore not guaranteed to be visible via
+        // RTLD_DEFAULT, even when they are exported by libvlc.so.5.
+        void *handle = dlopen("libvlc.so.5", RTLD_NOW | RTLD_LOCAL);
+        if (handle == nullptr) {
+            OH_LOG_WARN(LOG_APP, "dlopen libvlc.so.5 for live resize failed: %{public}s", dlerror());
+            return nullptr;
+        }
+        dlerror();
+        void *symbol = dlsym(handle, "libvlc_video_set_ohos_window_size");
+        const char *error = dlerror();
+        if (error != nullptr || symbol == nullptr) {
+            OH_LOG_WARN(LOG_APP, "resolve live resize symbol failed: %{public}s",
+                        error != nullptr ? error : "symbol not found");
+            return nullptr;
+        }
+        return reinterpret_cast<SetOhosWindowSizeFn>(symbol);
+    }();
+    return fn;
+}
+
 void OnSurfaceReady(const std::string &id, OHNativeWindow *win, uint64_t generation,
                     uint64_t width, uint64_t height)
 {
@@ -319,9 +345,7 @@ void OnSurfaceReady(const std::string &id, OHNativeWindow *win, uint64_t generat
     for (const SurfaceBinding &binding : bindings) {
         SetOhosNativeWindow(binding.mp, win, id);
         if (binding.reloadVideoOutput && width > 0 && height > 0) {
-            using SetWindowSizeFn = void (*)(libvlc_media_player_t *, unsigned, unsigned);
-            auto setWindowSize = reinterpret_cast<SetWindowSizeFn>(
-                dlsym(RTLD_DEFAULT, "libvlc_video_set_ohos_window_size"));
+            SetOhosWindowSizeFn setWindowSize = ResolveSetOhosWindowSize();
             if (setWindowSize != nullptr) {
                 setWindowSize(binding.mp, static_cast<unsigned>(width), static_cast<unsigned>(height));
                 OH_LOG_INFO(LOG_APP,
