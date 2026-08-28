@@ -1,0 +1,111 @@
+diff --git a/include/vlc/libvlc_media_player.h b/include/vlc/libvlc_media_player.h
+index f640638..d598c44 100644
+--- a/include/vlc/libvlc_media_player.h
++++ b/include/vlc/libvlc_media_player.h
+@@ -598,7 +598,11 @@ LIBVLC_API void libvlc_media_player_set_android_context( libvlc_media_player_t *
+  *        org.videolan.libvlc.MediaPlayer class from the libvlc-ohos project.
+  */
+ LIBVLC_API void libvlc_media_player_set_ohos_nativewindow_ptr( libvlc_media_player_t *p_mi,
+-                                                             void *p_owindow_handler );
++                                                              void *p_owindow_handler );
++
++LIBVLC_API void libvlc_video_set_ohos_window_size( libvlc_media_player_t *p_mi,
++                                                   unsigned width,
++                                                   unsigned height );
+ /**
+  * Set the EFL Evas Object.
+  *
+diff --git a/include/vlc_vout.h b/include/vlc_vout.h
+index a73080b..792c542 100644
+--- a/include/vlc_vout.h
++++ b/include/vlc_vout.h
+@@ -148,6 +148,8 @@ VLC_API int vout_GetSnapshot( vout_thread_t *p_vout,
+ VLC_API void vout_ChangeAspectRatio( vout_thread_t *p_vout,
+                                      unsigned int i_num, unsigned int i_den );
+ 
++VLC_API void vout_SetDisplayWindowSize( vout_thread_t *, unsigned, unsigned );
++
+ /* */
+ VLC_API picture_t * vout_GetPicture( vout_thread_t * );
+ VLC_API void vout_PutPicture( vout_thread_t *, picture_t * );
+diff --git a/lib/video.c b/lib/video.c
+index acbba3a..8aecc16 100644
+--- a/lib/video.c
++++ b/lib/video.c
+@@ -89,6 +89,20 @@ err:
+     return p_vout;
+ }
+ 
++void libvlc_video_set_ohos_window_size( libvlc_media_player_t *p_mi,
++                                        unsigned width, unsigned height )
++{
++    if (width == 0 || height == 0)
++        return;
++
++    vout_thread_t *vout = GetVout(p_mi, 0);
++    if (vout == NULL)
++        return;
++
++    vout_SetDisplayWindowSize(vout, width, height);
++    vlc_object_release(vout);
++}
++
+ /**********************************************************************
+  * Exported functions
+  **********************************************************************/
+diff --git a/lib/libvlc.sym b/lib/libvlc.sym
+index c72d3e0..06453de 100644
+--- a/lib/libvlc.sym
++++ b/lib/libvlc.sym
+@@ -189,6 +189,7 @@ libvlc_media_player_retain
+ libvlc_media_player_set_agl
+ libvlc_media_player_set_android_context
+ libvlc_media_player_set_ohos_nativewindow_ptr
++libvlc_video_set_ohos_window_size
+ libvlc_media_player_set_chapter
+ libvlc_media_player_set_equalizer
+ libvlc_media_player_set_hwnd
+diff --git a/modules/video_output/ohos/window.c b/modules/video_output/ohos/window.c
+index 3098618..cca410a 100644
+--- a/modules/video_output/ohos/window.c
++++ b/modules/video_output/ohos/window.c
+@@ -90,14 +90,22 @@ static void Close(vout_window_t *wnd)
+ 
+ static int Control(vout_window_t *wnd, int cmd, va_list ap)
+ {
+-    (void) ap;
+     msg_Dbg(wnd, "[OHOS-DBG] Control: cmd=%d", cmd);
+     switch (cmd)
+     {
+         case VOUT_WINDOW_SET_STATE:
+-        case VOUT_WINDOW_SET_SIZE:
+         case VOUT_WINDOW_SET_FULLSCREEN:
+             return VLC_SUCCESS;
++        case VOUT_WINDOW_SET_SIZE:
++        {
++            unsigned width = va_arg(ap, unsigned);
++            unsigned height = va_arg(ap, unsigned);
++            if (width == 0 || height == 0)
++                return VLC_EGENERIC;
++            msg_Dbg(wnd, "[OHOS-DBG] reporting resized surface %ux%u", width, height);
++            vout_window_ReportSize(wnd, width, height);
++            return VLC_SUCCESS;
++        }
+         default:
+             msg_Dbg(wnd, "[OHOS-DBG] Control: unhandled cmd=%d", cmd);
+             return VLC_EGENERIC;
+diff --git a/src/video_output/video_output.c b/src/video_output/video_output.c
+index 085067c..9ab2d70 100644
+--- a/src/video_output/video_output.c
++++ b/src/video_output/video_output.c
+@@ -630,8 +630,8 @@ void vout_DeleteDisplayWindow(vout_thread_t *vout, vout_window_t *window)
+     assert(vout->p->window == window);
+ }
+ 
+-void vout_SetDisplayWindowSize(vout_thread_t *vout,
+-                               unsigned width, unsigned height)
++VLC_API void vout_SetDisplayWindowSize(vout_thread_t *vout,
++                                       unsigned width, unsigned height)
+ {
+     vout_window_t *window = vout->p->window;
+ 

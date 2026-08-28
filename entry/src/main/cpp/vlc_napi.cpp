@@ -295,13 +295,16 @@ struct SurfaceBinding {
     bool reloadVideoOutput = false;
 };
 
-void OnSurfaceReady(const std::string &id, OHNativeWindow *win, uint64_t generation)
+void OnSurfaceReady(const std::string &id, OHNativeWindow *win, uint64_t generation,
+                    uint64_t width, uint64_t height)
 {
     std::vector<SurfaceBinding> bindings;
     {
         std::lock_guard<std::mutex> lk(g_mtx);
-        OH_LOG_INFO(LOG_APP, "OnSurfaceReady id=%{public}s win=%{public}p generation=%{public}llu",
-                    id.c_str(), win, static_cast<unsigned long long>(generation));
+        OH_LOG_INFO(LOG_APP,
+                    "OnSurfaceReady id=%{public}s win=%{public}p generation=%{public}llu size=%{public}llux%{public}llu",
+                    id.c_str(), win, static_cast<unsigned long long>(generation),
+                    static_cast<unsigned long long>(width), static_cast<unsigned long long>(height));
         for (auto &kv : g_players) {
             PlayerEntry &pe = kv.second;
             if (!pe.videoOutId.empty() && pe.videoOutId == id && pe.mp != nullptr) {
@@ -315,14 +318,27 @@ void OnSurfaceReady(const std::string &id, OHNativeWindow *win, uint64_t generat
     }
     for (const SurfaceBinding &binding : bindings) {
         SetOhosNativeWindow(binding.mp, win, id);
-        if (binding.reloadVideoOutput) {
-            // NativeWindow 只在解码器创建时被继承；Surface 重建后强制重建视频输出链。
-            int track = libvlc_video_get_track(binding.mp);
-            if (track >= 0) {
-                libvlc_video_set_track(binding.mp, -1);
-                int rc = libvlc_video_set_track(binding.mp, track);
-                OH_LOG_INFO(LOG_APP, "reload video output id=%{public}s track=%{public}d rc=%{public}d",
-                            id.c_str(), track, rc);
+        if (binding.reloadVideoOutput && width > 0 && height > 0) {
+            using SetWindowSizeFn = void (*)(libvlc_media_player_t *, unsigned, unsigned);
+            auto setWindowSize = reinterpret_cast<SetWindowSizeFn>(
+                dlsym(RTLD_DEFAULT, "libvlc_video_set_ohos_window_size"));
+            if (setWindowSize != nullptr) {
+                setWindowSize(binding.mp, static_cast<unsigned>(width), static_cast<unsigned>(height));
+                OH_LOG_INFO(LOG_APP,
+                            "reported resized native window id=%{public}s size=%{public}llux%{public}llu",
+                            id.c_str(), static_cast<unsigned long long>(width),
+                            static_cast<unsigned long long>(height));
+            } else {
+                // Compatibility with older native bundles. It is slower, but keeps
+                // rotation correct until the live-resize-enabled libVLC is installed.
+                int track = libvlc_video_get_track(binding.mp);
+                if (track >= 0) {
+                    libvlc_video_set_track(binding.mp, -1);
+                    int rc = libvlc_video_set_track(binding.mp, track);
+                    OH_LOG_WARN(LOG_APP,
+                                "live resize unavailable; reloaded video output id=%{public}s track=%{public}d rc=%{public}d",
+                                id.c_str(), track, rc);
+                }
             }
         }
         libvlc_media_player_release(binding.mp);

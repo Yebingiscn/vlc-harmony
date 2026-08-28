@@ -73,11 +73,18 @@ void XcomponentManager::Callbacks::OnSurfaceChangedCB(OH_NativeXComponent *compo
     OH_LOG_INFO(LOG_APP, "OnSurfaceChanged id=%{public}s ret=%{public}d win=%{public}p",
                 ret == OH_NATIVEXCOMPONENT_RESULT_SUCCESS ? id : "?", ret, window);
     if (ret == OH_NATIVEXCOMPONENT_RESULT_SUCCESS && window != nullptr) {
-        // 尺寸变化时刷新 window 登记(缩放适配会改 XComponent 宽高)
-        uint64_t generation = xMgr.AddNativeWindow(id, reinterpret_cast<OHNativeWindow *>(window), false);
+        uint64_t width = 0;
+        uint64_t height = 0;
+        int32_t sizeRet = OH_NativeXComponent_GetXComponentSize(component, window, &width, &height);
+        // OHNativeWindow 指针在旋转/缩放后通常保持不变，但其 buffer geometry 已经变化。
+        // 将尺寸变化视为新一代 Surface，使 OnSurfaceReady 重建 VLC 视频输出链；
+        // 否则 vout 仍按旋转前的几何尺寸上屏，横屏时画面会缩在左下角。
+        uint64_t generation = xMgr.AddNativeWindow(id, reinterpret_cast<OHNativeWindow *>(window), true);
         XcomponentManager::SurfaceReadyFn cb = xMgr.GetSurfaceReadyCallback();
         if (cb != nullptr) {
-            cb(std::string(id), reinterpret_cast<OHNativeWindow *>(window), generation);
+            cb(std::string(id), reinterpret_cast<OHNativeWindow *>(window), generation,
+               sizeRet == OH_NATIVEXCOMPONENT_RESULT_SUCCESS ? width : 0,
+               sizeRet == OH_NATIVEXCOMPONENT_RESULT_SUCCESS ? height : 0);
         }
     }
 }
@@ -94,9 +101,15 @@ void XcomponentManager::Callbacks::OnSurfaceCreatedCB(OH_NativeXComponent *compo
     OH_LOG_INFO(LOG_APP, "OnSurfaceCreated id=%{public}s win=%{public}p", id, window);
     uint64_t generation = xMgr.AddNativeWindow(id, reinterpret_cast<OHNativeWindow *>(window), true);
 
+    uint64_t width = 0;
+    uint64_t height = 0;
+    int32_t sizeRet = OH_NativeXComponent_GetXComponentSize(component, window, &width, &height);
+
     XcomponentManager::SurfaceReadyFn cb = xMgr.GetSurfaceReadyCallback();
     if (cb != nullptr) {
-        cb(std::string(id), reinterpret_cast<OHNativeWindow *>(window), generation);
+        cb(std::string(id), reinterpret_cast<OHNativeWindow *>(window), generation,
+           sizeRet == OH_NATIVEXCOMPONENT_RESULT_SUCCESS ? width : 0,
+           sizeRet == OH_NATIVEXCOMPONENT_RESULT_SUCCESS ? height : 0);
     }
 }
 

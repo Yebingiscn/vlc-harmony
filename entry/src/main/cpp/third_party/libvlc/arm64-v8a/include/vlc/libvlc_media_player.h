@@ -598,7 +598,11 @@ LIBVLC_API void libvlc_media_player_set_android_context( libvlc_media_player_t *
  *        org.videolan.libvlc.MediaPlayer class from the libvlc-ohos project.
  */
 LIBVLC_API void libvlc_media_player_set_ohos_nativewindow_ptr( libvlc_media_player_t *p_mi,
-                                                             void *p_owindow_handler );
+                                                              void *p_owindow_handler );
+
+LIBVLC_API void libvlc_video_set_ohos_window_size( libvlc_media_player_t *p_mi,
+                                                   unsigned width,
+                                                   unsigned height );
 /**
  * Set the EFL Evas Object.
  *

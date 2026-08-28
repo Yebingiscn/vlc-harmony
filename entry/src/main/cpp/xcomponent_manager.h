@@ -21,7 +21,8 @@ public:
     void ReleaseWindow(const std::string &id);
 
     /** Surface 创建后回调(用于窗口就绪后自动绑到 libVLC)。 */
-    using SurfaceReadyFn = void (*)(const std::string &id, OHNativeWindow *win, uint64_t generation);
+    using SurfaceReadyFn = void (*)(const std::string &id, OHNativeWindow *win, uint64_t generation,
+                                    uint64_t width, uint64_t height);
     void SetSurfaceReadyCallback(SurfaceReadyFn cb);
     SurfaceReadyFn GetSurfaceReadyCallback();
 
