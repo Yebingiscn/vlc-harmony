@@ -24,6 +24,7 @@ FFMPEG_PTS_FALLBACK_PATCH=$ROOT_DIR/patches/0014-ffmpeg-ohcodec-pts-fallback.pat
 FFMPEG_BOUNDED_OUTPUT_PATCH=$ROOT_DIR/patches/0015-ffmpeg-ohcodec-bounded-output-queue.patch
 FFMPEG_OUTPUT_OFFSET_PATCH=$ROOT_DIR/patches/0016-ffmpeg-ohcodec-respect-output-offset.patch
 FFMPEG_P010_BUFFER_PATCH=$ROOT_DIR/patches/0017-ffmpeg-ohcodec-handle-p010-buffer-output.patch
+FFMPEG_SYNTHETIC_PTS_PATCH=$ROOT_DIR/patches/0018-ffmpeg-ohcodec-synthesize-missing-timestamps.patch
 
 FFMPEG_REPO=https://github.com/FFmpeg/FFmpeg.git
 FFMPEG_TAG=n8.1.2
@@ -49,6 +50,7 @@ grep -q 'patches/0014-ffmpeg-ohcodec-pts-fallback.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0015-ffmpeg-ohcodec-bounded-output-queue.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0016-ffmpeg-ohcodec-respect-output-offset.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0017-ffmpeg-ohcodec-handle-p010-buffer-output.patch' "$ROOT_DIR/prebuild.sh"
+grep -q 'patches/0018-ffmpeg-ohcodec-synthesize-missing-timestamps.patch' "$ROOT_DIR/prebuild.sh"
 grep -q '0014-vlc-ohcodec-vsync-present.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 grep -q '0015-vlc-ohcodec-deadline-gated-present.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 grep -q '0016-vlc-ohcodec-respect-direct-rendering.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
@@ -56,6 +58,7 @@ grep -q '0014-ffmpeg-ohcodec-pts-fallback.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2
 grep -q '0015-ffmpeg-ohcodec-bounded-output-queue.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
 grep -q '0016-ffmpeg-ohcodec-respect-output-offset.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
 grep -q '0017-ffmpeg-ohcodec-handle-p010-buffer-output.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
+grep -q '0018-ffmpeg-ohcodec-synthesize-missing-timestamps.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
 grep -q "source_commit=$VLC_COMMIT" "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 grep -q '"openssl_3.4.3"' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 if grep -q 'openssl-3.4.0' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
@@ -229,6 +232,8 @@ git -C "$WORK_DIR/ffmpeg" apply --check "$FFMPEG_OUTPUT_OFFSET_PATCH"
 git -C "$WORK_DIR/ffmpeg" apply "$FFMPEG_OUTPUT_OFFSET_PATCH"
 git -C "$WORK_DIR/ffmpeg" apply --check "$FFMPEG_P010_BUFFER_PATCH"
 git -C "$WORK_DIR/ffmpeg" apply "$FFMPEG_P010_BUFFER_PATCH"
+git -C "$WORK_DIR/ffmpeg" apply --check "$FFMPEG_SYNTHETIC_PTS_PATCH"
+git -C "$WORK_DIR/ffmpeg" apply "$FFMPEG_SYNTHETIC_PTS_PATCH"
 
 grep -q 'ohcodec_buffer.h' "$WORK_DIR/ffmpeg/libavcodec/Makefile"
 grep -q 'av_ohcodec_release_buffer_at_time' "$WORK_DIR/ffmpeg/libavcodec/ohcodec_buffer.h"
@@ -246,6 +251,8 @@ grep -q 'p += attr->offset' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
 grep -q 'Invalid OHCodec output layout' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
 grep -q 's->bit_depth > 8 ? AV_PIX_FMT_P010' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
 grep -q 'layout_width /= 2' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
+grep -q 'pkt->pts != AV_NOPTS_VALUE ? pkt->pts : pkt->dts' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
+grep -q '\[OHCodecPTS\] synthesized missing packet timestamp' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
 if grep -qE 'OH_MD_KEY_FRAME_RATE|OUTPUT_ENABLE_VRR|source_frame_rate' \
     "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
 then

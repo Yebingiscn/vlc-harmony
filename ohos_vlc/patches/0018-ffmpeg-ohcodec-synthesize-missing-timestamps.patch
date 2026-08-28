@@ -1,0 +1,111 @@
+diff --git a/libavcodec/ohdec.c b/libavcodec/ohdec.c
+--- a/libavcodec/ohdec.c
++++ b/libavcodec/ohdec.c
+@@ -113,6 +113,9 @@ typedef struct OHCodecDecContext {
+     int64_t pending_pts[OH_PTS_QUEUE_SIZE];
+     unsigned nb_pending_pts;
+     int64_t last_pts_fallback_log_us;
++    int64_t current_input_pts_us;
++    int64_t next_synthetic_pts_us;
++    int64_t last_synthetic_pts_log_us;
+ 
+     DOVIContext dovi_ctx;
+     H2645Packet dovi_pkt;
+@@ -840,6 +843,8 @@ static av_cold int oh_decode_init(AVCodecContext *avctx)
+     oh_decode_resolve_runtime_keys(s, avctx);
+     s->requested_playback_speed = 1.0;
+     s->playback_policy_pending = true;
++    s->current_input_pts_us = AV_NOPTS_VALUE;
++    s->next_synthetic_pts_us = AV_NOPTS_VALUE;
+     s->dovi_probe_packets = OH_DOVI_PROBE_PACKETS;
+     s->dovi_ctx.logctx = avctx;
+     if (avctx->codec_id == AV_CODEC_ID_HEVC) {
+@@ -1100,13 +1105,51 @@ static int oh_decode_free_output_buffer(AVCodecContext *avctx,
+ }
+ 
++static int64_t oh_decode_packet_duration_us(AVCodecContext *avctx,
++                                            const AVPacket *pkt)
++{
++    if (pkt->duration > 0)
++        return FFMAX(av_rescale_q(pkt->duration, avctx->pkt_timebase,
++                                  AV_TIME_BASE_Q), 1);
++    if (avctx->framerate.num > 0 && avctx->framerate.den > 0)
++        return FFMAX(av_rescale_q(1, av_inv_q(avctx->framerate),
++                                  AV_TIME_BASE_Q), 1);
++    return AV_TIME_BASE / 60;
++}
++
++static int64_t oh_decode_prepare_packet_pts(OHCodecDecContext *s,
++                                            AVCodecContext *avctx,
++                                            const AVPacket *pkt)
++{
++    int64_t timestamp = pkt->pts != AV_NOPTS_VALUE ? pkt->pts : pkt->dts;
++    int64_t pts_us;
++
++    if (timestamp != AV_NOPTS_VALUE)
++        pts_us = av_rescale_q(timestamp, avctx->pkt_timebase, AV_TIME_BASE_Q);
++    else
++        pts_us = s->next_synthetic_pts_us != AV_NOPTS_VALUE
++               ? s->next_synthetic_pts_us : 0;
++
++    s->next_synthetic_pts_us = pts_us + oh_decode_packet_duration_us(avctx, pkt);
++    if (timestamp == AV_NOPTS_VALUE) {
++        const int64_t now = av_gettime_relative();
++        if (now - s->last_synthetic_pts_log_us >= 1000000) {
++            av_log(avctx, AV_LOG_WARNING,
++                   "[OHCodecPTS] synthesized missing packet timestamp "
++                   "pts=%lld next=%lld\n",
++                   (long long)pts_us,
++                   (long long)s->next_synthetic_pts_us);
++            s->last_synthetic_pts_log_us = now;
++        }
++    }
++    return pts_us;
++}
++
+ static void oh_decode_queue_pts(OHCodecDecContext *s, AVCodecContext *avctx,
+-                                int64_t pts)
++                                int64_t pts_us)
+ {
+-    if (pts == AV_NOPTS_VALUE)
++    if (pts_us == AV_NOPTS_VALUE)
+         return;
+ 
+-    const int64_t pts_us = av_rescale_q(pts, avctx->pkt_timebase,
+-                                        AV_TIME_BASE_Q);
+     ff_mutex_lock(&s->output_mutex);
+     if (s->nb_pending_pts == OH_PTS_QUEUE_SIZE) {
+         av_log(avctx, AV_LOG_WARNING,
+@@ -1268,8 +1312,7 @@ static int oh_decode_send_pkt(AVCodecContext *avctx,
+     OH_AVCodecBufferAttr attr = {
+             .size = n,
+             .offset = 0,
+-            .pts = av_rescale_q(s->pkt.pts, avctx->pkt_timebase,
+-                                AV_TIME_BASE_Q),
++            .pts = s->current_input_pts_us,
+             .flags = (s->pkt.flags & AV_PKT_FLAG_KEY)
+                      ? AVCODEC_BUFFER_FLAGS_SYNC_FRAME : 0,
+     };
+@@ -1441,8 +1484,10 @@ static int oh_decode_receive_frame(AVCodecContext *avctx, AVFrame *frame)
+                 return ret;
+             if (ret >= 0 && (ret = oh_decode_parse_dovi(avctx, &s->pkt)) < 0)
+                 return ret;
+-            if (ret >= 0)
+-                oh_decode_queue_pts(s, avctx, s->pkt.pts);
++            if (ret >= 0) {
++                s->current_input_pts_us = oh_decode_prepare_packet_pts(s, avctx, &s->pkt);
++                oh_decode_queue_pts(s, avctx, s->current_input_pts_us);
++            }
+         }
+ 
+         // Wait input buffer
+@@ -1498,6 +1543,9 @@ static void oh_decode_flush(AVCodecContext *avctx)
+     s->dropped_surface_outputs = 0;
+     s->nb_pending_pts = 0;
+     s->last_pts_fallback_log_us = 0;
++    s->current_input_pts_us = AV_NOPTS_VALUE;
++    s->next_synthetic_pts_us = AV_NOPTS_VALUE;
++    s->last_synthetic_pts_log_us = 0;
+     s->decode_status = 0;
+     s->eof_sent = false;
+     s->playback_policy_pending = true;

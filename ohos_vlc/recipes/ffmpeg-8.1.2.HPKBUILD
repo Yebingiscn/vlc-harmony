@@ -47,7 +47,8 @@ prepare() {
             0014-ffmpeg-ohcodec-pts-fallback.patch \
             0015-ffmpeg-ohcodec-bounded-output-queue.patch \
             0016-ffmpeg-ohcodec-respect-output-offset.patch \
-            0017-ffmpeg-ohcodec-handle-p010-buffer-output.patch
+            0017-ffmpeg-ohcodec-handle-p010-buffer-output.patch \
+            0018-ffmpeg-ohcodec-synthesize-missing-timestamps.patch
         do
             git -C $builddir apply --check "../$patch_name" || return -1
             git -C $builddir apply "../$patch_name" || return -1
