@@ -1,0 +1,51 @@
+diff --git a/modules/codec/avcodec/audio.c b/modules/codec/avcodec/audio.c
+index 9be3c6f..32f5747 100644
+--- a/modules/codec/avcodec/audio.c
++++ b/modules/codec/avcodec/audio.c
+@@ -37,6 +37,7 @@
+ #include <vlc_avcodec.h>
+ 
+ #include "avcodec.h"
++#include "../../demux/xiph.h"
+ 
+ #include <libavcodec/avcodec.h>
+ #include <libavutil/error.h>
+@@ -85,11 +86,37 @@ static void InitDecoderConfig( decoder_t *p_dec, AVCodecContext *p_context )
+ {
+     if( p_dec->fmt_in.i_extra > 0 )
+     {
+-        const uint8_t * const p_src = p_dec->fmt_in.p_extra;
++        const uint8_t *p_src = p_dec->fmt_in.p_extra;
+ 
+         int i_offset = 0;
+         int i_size = p_dec->fmt_in.i_extra;
+ 
++        /* VLC's avformat demuxer stores OpusHead and a synthetic OpusTags
++         * packet in Xiph-laced extradata. FFmpeg and mpv expect only the raw
++         * OpusHead in AVCodecContext.extradata. Passing the lacing prefix as
++         * OpusHead makes the native decoder report PATCHWELCOME and libopus
++         * report EINVAL. Unwrap the first packet before opening either. */
++        if( p_dec->fmt_in.i_codec == VLC_CODEC_OPUS && i_size > 21 &&
++            !memcmp( p_src + 2, "OpusHead", 8 ) )
++        {
++            unsigned packet_size[XIPH_MAX_HEADER_COUNT];
++            const void *packet[XIPH_MAX_HEADER_COUNT];
++            unsigned packet_count = 0;
++
++            if( xiph_SplitHeaders( packet_size, packet, &packet_count,
++                                   i_size, p_src ) == VLC_SUCCESS &&
++                packet_count >= 1 && packet_size[0] >= 19 &&
++                !memcmp( packet[0], "OpusHead", 8 ) )
++            {
++                p_src = packet[0];
++                i_size = packet_size[0];
++                msg_Dbg( p_dec, "unwrapped Xiph-laced OpusHead (%d bytes)",
++                         i_size );
++            }
++            else
++                msg_Warn( p_dec, "invalid Xiph-laced Opus extradata" );
++        }
++
+         if( p_dec->fmt_in.i_codec == VLC_CODEC_ALAC )
+         {
+             static const uint8_t p_pattern[] = { 0, 0, 0, 36, 'a', 'l', 'a', 'c' };

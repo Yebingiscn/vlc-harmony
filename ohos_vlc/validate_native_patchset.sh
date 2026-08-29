@@ -20,6 +20,7 @@ VLC_BUFFER_OUTPUT_PATCH=$ROOT_DIR/patches/0016-vlc-ohcodec-respect-direct-render
 VLC_LIVE_RESIZE_PATCH=$ROOT_DIR/patches/0017-vlc-ohos-live-window-resize.patch
 VLC_OPUS_AUDIO_PATCH=$ROOT_DIR/patches/0018-vlc-ffmpeg8-opus-audio-init.patch
 VLC_LIBOPUS_PATCH=$ROOT_DIR/patches/0019-vlc-ohos-prefer-libopus-decoder.patch
+VLC_OPUS_XIPH_PATCH=$ROOT_DIR/patches/0020-vlc-avcodec-unwrap-opus-xiph-extradata.patch
 FFMPEG_SYSTEM_REFRESH_PATCH=$ROOT_DIR/patches/0011-ffmpeg-ohcodec-system-refresh.patch
 FFMPEG_STALL_DIAGNOSTICS_PATCH=$ROOT_DIR/patches/0012-ffmpeg-ohcodec-stall-diagnostics.patch
 FFMPEG_FRAME_PTS_PATCH=$ROOT_DIR/patches/0013-ffmpeg-ohcodec-propagate-frame-pts.patch
@@ -52,6 +53,7 @@ grep -q 'patches/0016-vlc-ohcodec-respect-direct-rendering.patch' "$ROOT_DIR/pre
 grep -q 'patches/0017-vlc-ohos-live-window-resize.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0018-vlc-ffmpeg8-opus-audio-init.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0019-vlc-ohos-prefer-libopus-decoder.patch' "$ROOT_DIR/prebuild.sh"
+grep -q 'patches/0020-vlc-avcodec-unwrap-opus-xiph-extradata.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0014-ffmpeg-ohcodec-pts-fallback.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0015-ffmpeg-ohcodec-bounded-output-queue.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0016-ffmpeg-ohcodec-respect-output-offset.patch' "$ROOT_DIR/prebuild.sh"
@@ -63,6 +65,7 @@ grep -q '0016-vlc-ohcodec-respect-direct-rendering.patch' "$ROOT_DIR/recipes/vlc
 grep -q '0017-vlc-ohos-live-window-resize.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 grep -q '0018-vlc-ffmpeg8-opus-audio-init.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 grep -q '0019-vlc-ohos-prefer-libopus-decoder.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
+grep -q '0020-vlc-avcodec-unwrap-opus-xiph-extradata.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 grep -q '0014-ffmpeg-ohcodec-pts-fallback.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
 grep -q '0015-ffmpeg-ohcodec-bounded-output-queue.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
 grep -q '0016-ffmpeg-ohcodec-respect-output-offset.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
@@ -149,6 +152,8 @@ git -C "$WORK_DIR/vlc" apply --check "$VLC_OPUS_AUDIO_PATCH"
 git -C "$WORK_DIR/vlc" apply "$VLC_OPUS_AUDIO_PATCH"
 git -C "$WORK_DIR/vlc" apply --check "$VLC_LIBOPUS_PATCH"
 git -C "$WORK_DIR/vlc" apply "$VLC_LIBOPUS_PATCH"
+git -C "$WORK_DIR/vlc" apply --check "$VLC_OPUS_XIPH_PATCH"
+git -C "$WORK_DIR/vlc" apply "$VLC_OPUS_XIPH_PATCH"
 
 grep -q 'AUDIO_RING_CAPACITY' \
     "$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
@@ -170,6 +175,8 @@ grep -q 'cannot start codec (%s): %s (%d)' \
     "$WORK_DIR/vlc/modules/codec/avcodec/avcodec.c"
 grep -q 'avcodec_find_decoder_by_name( "libopus" )' \
     "$WORK_DIR/vlc/modules/codec/avcodec/avcodec.c"
+grep -q 'unwrapped Xiph-laced OpusHead' \
+    "$WORK_DIR/vlc/modules/codec/avcodec/audio.c"
 if grep -q 'VLC_TICK_FROM_MS' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
 then
