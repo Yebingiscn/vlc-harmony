@@ -917,7 +917,9 @@ export class PlaybackService {
   }
 
   seek(ms: number): void {
-    this.position = ms;
+    // 不立即覆写 position：VLC setTime 异步生效，立即覆写会导致连续 seek 时
+    // getPosition() 返回目标位置而非实际位置，HUD 提示与实际跳转不一致。
+    // position 由 onTimeUpdate 回调更新为实际播放位置。
     this.player?.setTime(ms);
   }
 
@@ -1758,11 +1760,24 @@ export class PlaybackService {
       this.videoHeight = item.height;
       this.emitVideoSize();
     }
+    // 读取续播位置（匹配当前 URI 时恢复）
+    let resumeMs: number = 0;
+    const resumeUri: string = await Settings.getString(Settings.VIDEO_RESUME_URI, '');
+    if (resumeUri.length > 0 && resumeUri === item.uri) {
+      resumeMs = await Settings.getInt(Settings.VIDEO_RESUME_TIME, 0);
+      void Settings.put(Settings.VIDEO_RESUME_URI, '');
+      void Settings.put(Settings.VIDEO_RESUME_TIME, 0);
+    }
     // 按当前媒体的音视频语境应用速度:音频按 全局/单曲 优先级,视频沿用 this.speed(视频页自行管理)
     this.applyEffectiveSpeed();
     this.player.setScale(0);
     this.player.setVolume(this.volume);
     this.player.play();
+    if (resumeMs > 0) {
+      this.player.setTime(resumeMs);
+      this.position = resumeMs;
+      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] resumed at %{public}d ms for %{public}s', resumeMs, item.uri);
+    }
     this.state = PlayState.PREPARED;
     this.emitState();
     const artwork: string = item.artworkPath.length > 0 ? item.artworkPath : item.artworkUrl;

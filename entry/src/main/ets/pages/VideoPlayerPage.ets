@@ -966,11 +966,16 @@ export struct VideoPlayerPage {
 
   onControlsConfirm(s: ControlsState): void {
     // 持久化控制设置偏好
+    Settings.put(Settings.KEY_AUDIO_BOOST, s.audioBoost);
     Settings.put(Settings.ENABLE_VOLUME_GESTURE, s.volGesture);
     Settings.put(Settings.ENABLE_BRIGHTNESS_GESTURE, s.brightGesture);
     Settings.put(Settings.ENABLE_SEEK_BUTTONS, s.swipeSeek);
     Settings.put(Settings.ENABLE_SWIPE_SEEK, s.swipeSeek);
+    Settings.put(Settings.ENABLE_SCALE_GESTURE, s.pinchZoom);
     Settings.put(Settings.ENABLE_DOUBLE_TAP_SEEK, s.doubleTapSeek);
+    Settings.put(Settings.KEY_VIDEO_DOUBLE_TAP_JUMP_DELAY, s.doubleTapSeekDelay);
+    Settings.put(Settings.ENABLE_DOUBLE_TAP_PLAY, s.doubleTapPlayPause);
+    Settings.put(Settings.ENABLE_FASTPLAY, s.fastPlayback);
     void this.touch.refreshPrefs();
     UiFeedback.showToast({ message: '控制设置已保存' });
     this.closeSheet();
@@ -2197,7 +2202,15 @@ export struct VideoPlayerPage {
         await this.enterPopupPlayer();
       }
     } else {
-      PlaybackService.getInstance().stop();
+      // 停止播放前保存位置（续播）
+      const svc = PlaybackService.getInstance();
+      const pos: number = svc.getPosition();
+      const dur: number = svc.getDuration();
+      if (this.vm.uri.length > 0 && pos > 5000 && dur > 0 && pos < dur - 1000) {
+        Settings.put(Settings.VIDEO_RESUME_URI, this.vm.uri);
+        Settings.put(Settings.VIDEO_RESUME_TIME, Math.floor(pos));
+      }
+      svc.stop();
     }
   }
 

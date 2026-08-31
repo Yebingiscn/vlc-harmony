@@ -299,7 +299,8 @@ export class VideoTouchDelegate {
     }
     const absG: number = Math.abs(gestureCm);
     const ratio: number = absG / 8;
-    const jumpMag: number = 600000 * Math.pow(ratio, 4) + 3000;
+    // 2 次方曲线 + 30 分钟上限:小幅度滑动也有合理跳转,大幅度可达几十分钟(对齐原版 VLC)。
+    const jumpMag: number = 1800000 * Math.pow(ratio, 2) + 3000;
     let jump: number = (gestureCm >= 0 ? 1 : -1) * Math.round(jumpMag);
 
     const duration: number = this.host.getDuration();

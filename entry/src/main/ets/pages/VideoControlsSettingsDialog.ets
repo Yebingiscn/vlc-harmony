@@ -1,11 +1,11 @@
 import { AppColors } from '../common/constants/AppConstants';
+import { Settings } from '../common/data/Settings';
 
 /**
  * VideoControlsSettingsDialog —— 视频"控制设置"弹窗(BottomSheet)。
  * 对应 VLC Android 的 video_controls 页面;参照 photos/config.png。
  * 9 项 + 一段标题(手势) + 底部 [取消][保存] 双按钮。
- *
- * 本次需求:**暂不持久化** —— 状态 in-memory,关闭即丢;仅 UI 验证用。
+ * 打开时从 Settings 读取已保存值,保存时回写全部开关。
  */
 
 export interface ControlsState {
@@ -48,6 +48,18 @@ export struct VideoControlsSettingsDialog {
   /** 保存:回调传出当前全部开关状态。 */
   @Event onConfirm: (s: ControlsState) => void = () => {
   };
+
+  async aboutToAppear(): Promise<void> {
+    this.state.audioBoost = await Settings.getBoolean(Settings.KEY_AUDIO_BOOST, false);
+    this.state.volGesture = await Settings.getBoolean(Settings.ENABLE_VOLUME_GESTURE, true);
+    this.state.brightGesture = await Settings.getBoolean(Settings.ENABLE_BRIGHTNESS_GESTURE, true);
+    this.state.swipeSeek = await Settings.getBoolean(Settings.ENABLE_SWIPE_SEEK, true);
+    this.state.pinchZoom = await Settings.getBoolean(Settings.ENABLE_SCALE_GESTURE, true);
+    this.state.doubleTapSeek = await Settings.getBoolean(Settings.ENABLE_DOUBLE_TAP_SEEK, true);
+    this.state.doubleTapSeekDelay = await Settings.getInt(Settings.KEY_VIDEO_DOUBLE_TAP_JUMP_DELAY, 10);
+    this.state.doubleTapPlayPause = await Settings.getBoolean(Settings.ENABLE_DOUBLE_TAP_PLAY, true);
+    this.state.fastPlayback = await Settings.getBoolean(Settings.ENABLE_FASTPLAY, false);
+  }
 
   private isChecked(field: ToggleField): boolean {
     switch (field) {
