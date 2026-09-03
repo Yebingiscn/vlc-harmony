@@ -16,6 +16,8 @@ export struct AudioDisplaySettingsDialog {
 
   @Event onClose: () => void = () => {
   };
+  @Event onDisplayModeChange: () => void = () => {
+  };
 
   async aboutToAppear(): Promise<void> {
     this.displayAsList = await Settings.getBoolean(Settings.KEY_DISPLAY_AS_LIST, false);
@@ -25,9 +27,10 @@ export struct AudioDisplaySettingsDialog {
     this.sortDesc = await Settings.getBoolean(Settings.KEY_AUDIO_SORT_DESC, false);
   }
 
-  toggleDisplayMode(): void {
+  async toggleDisplayMode(): Promise<void> {
     this.displayAsList = !this.displayAsList;
-    Settings.put(Settings.KEY_DISPLAY_AS_LIST, this.displayAsList);
+    await Settings.put(Settings.KEY_DISPLAY_AS_LIST, this.displayAsList);
+    this.onDisplayModeChange();
   }
 
   setSortDesc(desc: boolean): void {
@@ -68,7 +71,7 @@ export struct AudioDisplaySettingsDialog {
         .constraintSize({ minHeight: 48 })
         .padding({ left: 16, right: 16 })
         .alignItems(VerticalAlign.Center)
-        .onClick(() => this.toggleDisplayMode())
+        .onClick(() => void this.toggleDisplayMode())
 
         // 显示所有艺术家
         Row() {

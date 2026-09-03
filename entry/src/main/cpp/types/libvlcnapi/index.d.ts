@@ -144,6 +144,8 @@ export const mediaPlayerSetMedia: (playerHandle: number, mediaHandle: number) =>
 
 export const mediaPlayerSetVideoOut: (playerHandle: number, xcomponentId: string) => boolean;
 
+export const mediaPlayerSetOsdVideoOut: (playerHandle: number, xcomponentId: string) => boolean;
+
 export const mediaPlayerDetachViews: (playerHandle: number) => void;
 
 export const hasNativeWindow: (xcomponentId: string) => boolean;

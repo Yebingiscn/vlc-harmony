@@ -139,6 +139,7 @@ export class PlaybackService {
   private inited: boolean = false;
   private initializing: boolean = false;
   private videoOutId: string = '';
+  private osdOutId: string = '';
   private videoWidth: number = 0;
   private videoHeight: number = 0;
   private volume: number = 100;
@@ -731,13 +732,15 @@ export class PlaybackService {
     return this.playList(items, 0, false);
   }
 
-  async bindAndPlay(xcomponentId: string, fallbackUri?: string, fallbackTitle?: string): Promise<boolean> {
+  async bindAndPlay(xcomponentId: string, fallbackUri?: string, fallbackTitle?: string,
+    osdXcomponentId: string = ''): Promise<boolean> {
     await this.ensureInit();
     if (!this.inited || !this.player) {
       hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] bindAndPlay aborted: not inited');
       return false;
     }
     this.videoOutId = xcomponentId;
+    this.osdOutId = osdXcomponentId;
 
     if ((!this.getCurrent() || (fallbackUri && this.getCurrent()?.uri !== fallbackUri)) && fallbackUri) {
       const mw = new MediaWrapper(Date.now(), fallbackTitle ?? fallbackUri, fallbackUri, 0);
@@ -764,6 +767,15 @@ export class PlaybackService {
         break;
       }
       await new Promise<void>((r: () => void) => setTimeout(r, 50));
+    }
+
+    // 独立透明 OSD Surface。即使此刻尚未创建，native 仍会记住 id，
+    // 并在对应 XComponent 的 OnSurfaceReady 到来时自动绑定。
+    if (osdXcomponentId.length > 0) {
+      const osdBound = this.player.attachOsdView(osdXcomponentId);
+      hilog.info(LOG_DOMAIN, LOG_TAG,
+        '[VLC] setOsdVideoOut hasWin=%{public}s bound=%{public}s id=%{public}s',
+        String(this.player.hasNativeWindow(osdXcomponentId)), String(osdBound), osdXcomponentId);
     }
 
     await this.loadCurrent();
@@ -850,6 +862,7 @@ export class PlaybackService {
       this.player.detachViews();
     }
     this.videoOutId = '';
+    this.osdOutId = '';
   }
 
   async next(auto: boolean = false): Promise<void> {
@@ -986,6 +999,7 @@ export class PlaybackService {
     }
     this.inited = false;
     this.videoOutId = '';
+    this.osdOutId = '';
     this.currentRendererHandle = -1;
     this.shuffleHistory = [];
     this.state = PlayState.IDLE;
@@ -1130,6 +1144,12 @@ export class PlaybackService {
       hilog.info(LOG_DOMAIN, LOG_TAG,
         '[VLC] ensureLivePlayer re-attach videoOut=%{public}s bound=%{public}s',
         this.videoOutId, String(bound));
+    }
+    if (this.osdOutId.length > 0) {
+      const osdBound = np.attachOsdView(this.osdOutId);
+      hilog.info(LOG_DOMAIN, LOG_TAG,
+        '[VLC] ensureLivePlayer re-attach osdOut=%{public}s bound=%{public}s',
+        this.osdOutId, String(osdBound));
     }
     this.player = np;
     return np;
@@ -1713,22 +1733,13 @@ export class PlaybackService {
         media.addOption(':avcodec-hw=any');
         hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] hardware acceleration: full (hw decode + direct render)');
       } else {
-        // 自动模式下，普通视频保留 Buffer 输出供 VLC 合成内置/外挂字幕；4K 及
-        // 更高负载的视频改走 OHCodec Surface 直出。否则 P010 10-bit 内容会在
-        // CPU 上执行全分辨率 P010 -> I420 转换，4K120 时必然持续丢帧。
+        // 默认采用 OHCodec Surface 直出；字幕和 OSD 由独立透明 Surface 合成，
+        // 因此无需再为了字幕把普通视频退回 CPU Buffer 路径。
         media.addOption(':avcodec-hw=any');
-        const useDirectRender: boolean = item.width >= 3840 && item.height >= 1600;
-        if (useDirectRender) {
-          media.addOption(':avcodec-dr');
-          hilog.info(LOG_DOMAIN, LOG_TAG,
-            '[VLC] hardware acceleration: auto high-load Surface direct render (%{public}dx%{public}d)',
-            item.width, item.height);
-        } else {
-          media.addOption(':no-avcodec-dr');
-          hilog.info(LOG_DOMAIN, LOG_TAG,
-            '[VLC] hardware acceleration: auto buffer decode + subtitle vout (%{public}dx%{public}d)',
-            item.width, item.height);
-        }
+        media.addOption(':avcodec-dr');
+        hilog.info(LOG_DOMAIN, LOG_TAG,
+          '[VLC] hardware acceleration: auto Surface direct render + transparent OSD (%{public}dx%{public}d)',
+          item.width, item.height);
       }
     }
 

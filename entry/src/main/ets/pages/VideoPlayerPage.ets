@@ -31,6 +31,7 @@ import { BookmarkDialog } from './BookmarkDialog';
 import { AddToPlaylistAction, AddToPlaylistDialog } from './AddToPlaylistDialog';
 import {
   SCREEN_ORIENTATION_DEFAULT,
+  SCREEN_ORIENTATION_FOLLOW_VIDEO,
   SCREEN_ORIENTATION_LABELS,
   SCREEN_ORIENTATION_VALUES,
   ScreenOrientationDialog,
@@ -60,6 +61,7 @@ import { VideoPanMode, VideoTouchDelegate } from './videoplayer/VideoTouchDelega
 import {
   fmtTime,
   VLC_NAPI_LIBRARY,
+  VLC_OSD_XCOMPONENT_ID,
   VLC_VIDEO_XCOMPONENT_ID,
   VideoParam,
   VideoPlayItem,
@@ -68,6 +70,7 @@ import {
 /** 与 Native / XComponent id 一致;libraryname 对齐 nm_modname=libvlcnapi。 */
 export {
   VLC_VIDEO_XCOMPONENT_ID,
+  VLC_OSD_XCOMPONENT_ID,
   VLC_NAPI_LIBRARY,
   VideoPlayItem,
   VideoParam,
@@ -211,6 +214,8 @@ class VideoPlayerViewModel implements PlaybackListener {
   leaving: boolean = false;
   /** 播放开始回调(供页面自动进入画中画;autoPipFired 保证每个媒体只触发一次)。 */
   onPlaybackStarted: (() => void) | null = null;
+  /** 视频尺寸变化回调（供页面实现“屏幕方向跟随视频”）。 */
+  onVideoSizeChanged: ((width: number, height: number) => void) | null = null;
   private list: VideoPlayItem[] = [];
   private listening: boolean = false;
   private xcomponentId: string = '';
@@ -278,7 +283,7 @@ class VideoPlayerViewModel implements PlaybackListener {
     });
     await svc.prepareList(mws, this.index, true, 'video');
     svc.setSpeed(this.speed);
-    const bound = await svc.bindAndPlay(xcomponentId, this.uri, this.title);
+    const bound = await svc.bindAndPlay(xcomponentId, this.uri, this.title, VLC_OSD_XCOMPONENT_ID);
     this.setVideoRatioMode(this.videoRatioMode);
     this.state = svc.getState();
     this.duration = svc.getDuration();
@@ -388,6 +393,9 @@ class VideoPlayerViewModel implements PlaybackListener {
     this.videoWidth = width;
     this.videoHeight = height;
     this.recomputeSurface();
+    if (this.onVideoSizeChanged !== null) {
+      this.onVideoSizeChanged(width, height);
+    }
   }
 
   onContainerSize(width: number, height: number): void {
@@ -449,7 +457,7 @@ class VideoPlayerViewModel implements PlaybackListener {
     });
     await svc.prepareList(mws, i, true, 'video');
     if (this.xcomponentId.length > 0) {
-      await svc.bindAndPlay(this.xcomponentId, this.uri, this.title);
+      await svc.bindAndPlay(this.xcomponentId, this.uri, this.title, VLC_OSD_XCOMPONENT_ID);
       this.setVideoRatioMode(this.videoRatioMode);
     }
     // ISO:延迟重新加载章节
@@ -678,9 +686,13 @@ export struct VideoPlayerPage {
   @Local audioSampleRate: string = '';
   @Local bitrate: string = '';
   private hudTimer: number = -1;
+  /** 避免同一视频尺寸事件重复请求窗口旋转。 */
+  private appliedFollowVideoOrientation: window.Orientation | null = null;
   private surfaceStarted: boolean = false;
   /** 画中画所需的 XComponent 控制器(创建 XComponent 时传入,与 native surface 共享同一实例)。 */
   private pipXc: XComponentController = new XComponentController();
+  /** 独立透明字幕/OSD Surface；默认叠在 OHCodec 视频 Surface 上。 */
+  private osdXc: XComponentController = new XComponentController();
   /** 画中画控制器(enterPopupPlayer 启动后持有,stopPiP 时清理)。 */
   private pipController: PiPWindow.PiPController | null = null;
   private touch: VideoTouchDelegate = new VideoTouchDelegate();
@@ -1064,6 +1076,11 @@ export struct VideoPlayerPage {
     this.vm.onPlaybackStarted = () => {
       void this.maybeAutoEnterPip();
     };
+    this.vm.onVideoSizeChanged = (_width: number, _height: number) => {
+      if (this.orientationValue === SCREEN_ORIENTATION_FOLLOW_VIDEO) {
+        void this.applyScreenOrientation();
+      }
+    };
   }
 
   aboutToDisappear(): void {
@@ -1090,6 +1107,7 @@ export struct VideoPlayerPage {
     void this.stopPopupPlayer();
     AppContext.offAppBackground(this.appBackgroundListener);
     this.vm.onPlaybackStarted = null;
+    this.vm.onVideoSizeChanged = null;
     this.vm.release();
   }
 
@@ -1338,6 +1356,17 @@ export struct VideoPlayerPage {
           .width(this.vm.surfaceWidth > 0 ? this.vm.surfaceWidth : '100%')
           .height(this.vm.surfaceHeight > 0 ? this.vm.surfaceHeight : '100%')
           .hitTestBehavior(HitTestMode.None)
+
+        XComponent({
+          id: VLC_OSD_XCOMPONENT_ID,
+          type: XComponentType.SURFACE,
+          libraryname: VLC_NAPI_LIBRARY,
+          controller: this.osdXc,
+        })
+          .width(this.vm.surfaceWidth > 0 ? this.vm.surfaceWidth : '100%')
+          .height(this.vm.surfaceHeight > 0 ? this.vm.surfaceHeight : '100%')
+          .backgroundColor(Color.Transparent)
+          .hitTestBehavior(HitTestMode.Transparent)
 
         AVVolumePanel({ volumeLevel: this.volumeLevel })
           .hitTestBehavior(HitTestMode.None)
@@ -1912,6 +1941,7 @@ export struct VideoPlayerPage {
         }).width('100%')
       } else if (this.sheetKind === 'equalizer') {
         EqualizerDialog({
+          reserveSystemCloseSpace: true,
           onClose: () => this.closeSheet(),
         }).width('100%')
       } else if (this.sheetKind === 'videoInfo') {
@@ -2405,7 +2435,25 @@ export struct VideoPlayerPage {
       if (this.mainWindow === null) {
         this.mainWindow = await window.getLastWindow(AppContext.get());
       }
-      await this.mainWindow.setPreferredOrientation(windowOrientationFor(value));
+      let orientation: window.Orientation;
+      if (value === SCREEN_ORIENTATION_FOLLOW_VIDEO) {
+        if (this.vm.videoWidth <= 0 || this.vm.videoHeight <= 0) {
+          // 视频尺寸尚未回报时先交给系统；onVideoSizeChanged 会在首帧信息到达后再次应用。
+          orientation = window.Orientation.UNSPECIFIED;
+        } else {
+          orientation = this.vm.videoWidth > this.vm.videoHeight
+            ? window.Orientation.LANDSCAPE
+            : window.Orientation.PORTRAIT;
+        }
+        if (orientation === this.appliedFollowVideoOrientation) {
+          return;
+        }
+        this.appliedFollowVideoOrientation = orientation;
+      } else {
+        this.appliedFollowVideoOrientation = null;
+        orientation = windowOrientationFor(value);
+      }
+      await this.mainWindow.setPreferredOrientation(orientation);
     } catch (e) {
       hilog.warn(0x0001, 'VLC', '[VLC] applyScreenOrientation failed %{public}s', JSON.stringify(e));
     }

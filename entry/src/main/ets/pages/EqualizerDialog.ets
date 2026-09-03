@@ -14,6 +14,8 @@ const FREQ_LABELS: string[] = ['60', '170', '310', '600', '1K', '3K', '6K', '12K
  */
 @ComponentV2
 export struct EqualizerDialog {
+  /** bindSheet 自带关闭按钮时，为右上角按钮预留空间。 */
+  @Param reserveSystemCloseSpace: boolean = false;
   @Local eqEnabled: boolean = false;
   @Local preamp: number = 0;
   @Local bands: number[] = [0, 0, 0, 0, 0, 0, 0, 0];
@@ -84,7 +86,14 @@ export struct EqualizerDialog {
             this.pushToPlayer();
           })
       }
-      .width('100%').padding(16).alignItems(VerticalAlign.Center)
+      .width('100%')
+      .padding({
+        left: 16,
+        right: this.reserveSystemCloseSpace ? 72 : 16,
+        top: 16,
+        bottom: 16,
+      })
+      .alignItems(VerticalAlign.Center)
 
       // 预设 Chip 横滑条
       Scroll() {

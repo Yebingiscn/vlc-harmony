@@ -42,6 +42,7 @@ import {
   mediaPlayerSetSpuTrack,
   mediaPlayerSetTime,
   mediaPlayerSetVideoOut,
+  mediaPlayerSetOsdVideoOut,
   mediaPlayerSetVideoTrack,
   mediaPlayerSetVolume,
   mediaPlayerStop,
@@ -119,6 +120,14 @@ export class MediaPlayer extends VLCObject {
       return false;
     }
     return mediaPlayerSetVideoOut(this.handle, xcomponentId);
+  }
+
+  /** 绑定透明 OSD XComponent；视频帧仍由主 Surface 零拷贝显示。 */
+  attachOsdView(xcomponentId: string): boolean {
+    if (this.isReleased()) {
+      return false;
+    }
+    return mediaPlayerSetOsdVideoOut(this.handle, xcomponentId);
   }
 
   /** 解绑出画(对标 Android MediaPlayer.detachViews / cleanUI)。 */

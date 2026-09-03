@@ -7,6 +7,7 @@ export {
 
 export {
   VLC_VIDEO_XCOMPONENT_ID,
+  VLC_OSD_XCOMPONENT_ID,
   VLC_NAPI_LIBRARY,
   VideoPlayItem,
   VideoParam,

@@ -21,6 +21,7 @@ VLC_LIVE_RESIZE_PATCH=$ROOT_DIR/patches/0017-vlc-ohos-live-window-resize.patch
 VLC_OPUS_AUDIO_PATCH=$ROOT_DIR/patches/0018-vlc-ffmpeg8-opus-audio-init.patch
 VLC_LIBOPUS_PATCH=$ROOT_DIR/patches/0019-vlc-ohos-prefer-libopus-decoder.patch
 VLC_OPUS_XIPH_PATCH=$ROOT_DIR/patches/0020-vlc-avcodec-unwrap-opus-xiph-extradata.patch
+VLC_SURFACE_OSD_PATCH=$ROOT_DIR/patches/0021-vlc-ohcodec-surface-osd.patch
 FFMPEG_SYSTEM_REFRESH_PATCH=$ROOT_DIR/patches/0011-ffmpeg-ohcodec-system-refresh.patch
 FFMPEG_STALL_DIAGNOSTICS_PATCH=$ROOT_DIR/patches/0012-ffmpeg-ohcodec-stall-diagnostics.patch
 FFMPEG_FRAME_PTS_PATCH=$ROOT_DIR/patches/0013-ffmpeg-ohcodec-propagate-frame-pts.patch
@@ -54,6 +55,7 @@ grep -q 'patches/0017-vlc-ohos-live-window-resize.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0018-vlc-ffmpeg8-opus-audio-init.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0019-vlc-ohos-prefer-libopus-decoder.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0020-vlc-avcodec-unwrap-opus-xiph-extradata.patch' "$ROOT_DIR/prebuild.sh"
+grep -q 'patches/0021-vlc-ohcodec-surface-osd.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0014-ffmpeg-ohcodec-pts-fallback.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0015-ffmpeg-ohcodec-bounded-output-queue.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0016-ffmpeg-ohcodec-respect-output-offset.patch' "$ROOT_DIR/prebuild.sh"
@@ -66,6 +68,7 @@ grep -q '0017-vlc-ohos-live-window-resize.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.
 grep -q '0018-vlc-ffmpeg8-opus-audio-init.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 grep -q '0019-vlc-ohos-prefer-libopus-decoder.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 grep -q '0020-vlc-avcodec-unwrap-opus-xiph-extradata.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
+grep -q '0021-vlc-ohcodec-surface-osd.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 grep -q '0014-ffmpeg-ohcodec-pts-fallback.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
 grep -q '0015-ffmpeg-ohcodec-bounded-output-queue.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
 grep -q '0016-ffmpeg-ohcodec-respect-output-offset.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
@@ -154,6 +157,8 @@ git -C "$WORK_DIR/vlc" apply --check "$VLC_LIBOPUS_PATCH"
 git -C "$WORK_DIR/vlc" apply "$VLC_LIBOPUS_PATCH"
 git -C "$WORK_DIR/vlc" apply --check "$VLC_OPUS_XIPH_PATCH"
 git -C "$WORK_DIR/vlc" apply "$VLC_OPUS_XIPH_PATCH"
+git -C "$WORK_DIR/vlc" apply --check "$VLC_SURFACE_OSD_PATCH"
+git -C "$WORK_DIR/vlc" apply "$VLC_SURFACE_OSD_PATCH"
 
 grep -q 'AUDIO_RING_CAPACITY' \
     "$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
@@ -161,7 +166,13 @@ grep -q 'SetRendererWriteDataCallbackAdvanced' \
     "$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
 grep -q 'Audio low-latency queue configured' \
     "$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
-grep -q 'OHCodec Surface uses deadline-gated immediate release' \
+grep -q 'OHCodec transparent OSD Surface attached' \
+    "$WORK_DIR/vlc/modules/video_output/ohos/display.c"
+grep -q 'libvlc_media_player_set_ohos_osd_nativewindow_ptr' \
+    "$WORK_DIR/vlc/lib/libvlc.sym"
+grep -q 'av_ohcodec_release_buffer_at_time' \
+    "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
+grep -q 'OHCodec Surface frames use VLC vout timing' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
 grep -q 'OHCodec Buffer output enabled for VLC subtitle composition' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
@@ -183,12 +194,14 @@ then
     echo "VLC 3.0.21 compatibility error: VLC_TICK_FROM_MS is unavailable" >&2
     exit 1
 fi
-grep -q 'OHCodec output stalled' \
+grep -q 'ohos_present_surface(void \*surface_ctx' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
-grep -q 'av_ohcodec_release_buffer(buffer, 0)' \
+grep -q 'av_ohcodec_release_buffer((AVOHCodecBuffer \*)surface_ctx, 0)' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
-grep -q 'const int ret = av_ohcodec_release_buffer(buffer, 1)' \
+grep -q 'picture_t \*surface_pic = decoder_NewPicture(p_dec)' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
+grep -q 'ctx->pf_render(ctx->surface_ctx, now_ns)' \
+    "$WORK_DIR/vlc/modules/video_output/ohos/display.c"
 grep -q 'i_pts = frame->pts' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
 grep -q 'p_context->pkt_timebase = AV_TIME_BASE_Q' \
@@ -199,10 +212,10 @@ then
     echo "ERROR: VLC OHCodec presentation still contains a fixed 60 Hz cadence"
     exit 1
 fi
-if grep -q 'av_ohcodec_release_buffer_at_time(buffer' \
+if grep -q 'ohos_surface_deadline' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
 then
-    echo "ERROR: VLC OHCodec still queues future-dated Surface buffers"
+    echo "ERROR: VLC OHCodec still uses the decoder-side presentation clock"
     exit 1
 fi
 if grep -q 'audio_buffer_t' \
@@ -219,7 +232,7 @@ then
 fi
 
 if git -C "$WORK_DIR/vlc" grep -E \
-    'ohosavcodec|OHOSAVCodec|AV_PIX_FMT_OHOSCODEC|ohos_picture_context' -- \
+    'ohosavcodec|OHOSAVCodec|AV_PIX_FMT_OHOSCODEC' -- \
     modules/codec/avcodec/avcodec.c modules/codec/avcodec/chroma.c \
     modules/codec/avcodec/video.c
 then

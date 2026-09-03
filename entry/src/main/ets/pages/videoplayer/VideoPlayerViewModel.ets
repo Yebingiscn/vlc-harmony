@@ -3,12 +3,13 @@ import { PlaybackListener, PlaybackService } from '../../common/data/PlaybackSer
 import { Settings } from '../../common/data/Settings';
 import { MediaWrapper, PlayState } from '../../common/models/MediaModels';
 import { VideoPlayerResizeDelegate } from './VideoPlayerResizeDelegate';
-import { VideoParam, VideoPlayItem } from './VideoPlayerModels';
+import { VLC_OSD_XCOMPONENT_ID, VideoParam, VideoPlayItem } from './VideoPlayerModels';
 
 /** 与 Native / XComponent id 一致;libraryname 对齐 nm_modname=libvlcnapi。 */
 export {
   fmtTime,
   VLC_NAPI_LIBRARY,
+  VLC_OSD_XCOMPONENT_ID,
   VLC_VIDEO_XCOMPONENT_ID,
   VideoParam,
   VideoPlayItem,
@@ -87,7 +88,7 @@ export class VideoPlayerViewModel implements PlaybackListener {
     new MediaWrapper(i + 1, it.title, it.uri, 0));
     await svc.prepareList(mws, this.index, true, 'video');
     svc.setSpeed(this.speed);
-    const bound = await svc.bindAndPlay(xcomponentId, this.uri, this.title);
+    const bound = await svc.bindAndPlay(xcomponentId, this.uri, this.title, VLC_OSD_XCOMPONENT_ID);
     this.state = svc.getState();
     this.duration = svc.getDuration();
     this.position = svc.getPosition();
@@ -165,7 +166,7 @@ export class VideoPlayerViewModel implements PlaybackListener {
     new MediaWrapper(idx + 1, it.title, it.uri, 0));
     await svc.prepareList(mws, i, true, 'video');
     if (this.xcomponentId.length > 0) {
-      await svc.bindAndPlay(this.xcomponentId, this.uri, this.title);
+      await svc.bindAndPlay(this.xcomponentId, this.uri, this.title, VLC_OSD_XCOMPONENT_ID);
     }
   }
 

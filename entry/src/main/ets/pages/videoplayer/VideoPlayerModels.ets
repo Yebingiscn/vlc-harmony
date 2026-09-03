@@ -1,5 +1,6 @@
 /** Native XComponent identifiers shared by the active and modular player code. */
 export const VLC_VIDEO_XCOMPONENT_ID: string = 'vlc_video_surface';
+export const VLC_OSD_XCOMPONENT_ID: string = 'vlc_osd_surface';
 export const VLC_NAPI_LIBRARY: string = 'libvlcnapi';
 
 /** Minimal queue item passed through navigation. */

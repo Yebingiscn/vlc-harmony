@@ -134,8 +134,9 @@ export struct PreferencesPage {
           title: 'Video screen orientation',
           type: 'list',
           defaultValue: '99',
-          optionValues: ['99', '102', '101', '103', '98'],
-          options: ['Automatic (sensor)', 'Portrait', 'Landscape', 'Landscape reverse', 'Last locked orientation'],
+          optionValues: ['99', '100', '102', '101', '103', '98'],
+          options: ['Automatic (sensor)', 'Follow video', 'Portrait', 'Landscape', 'Landscape reverse',
+            'Last locked orientation'],
         }),
       ]),
       // Network

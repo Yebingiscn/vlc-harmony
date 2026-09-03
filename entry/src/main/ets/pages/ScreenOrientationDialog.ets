@@ -2,14 +2,16 @@ import { AppColors } from '../common/constants/AppConstants';
 
 /**
  * 视频屏幕方向选项(对齐 VLC Android Constants.SCREEN_ORIENTATION_*)。
- * 值:99=自动(传感器感应) 102=纵向 101=横向 103=横向旋转180° 98=上次锁定的方向。
+ * 值:99=自动(传感器感应) 100=跟随视频 102=纵向 101=横向 103=横向旋转180° 98=上次锁定的方向。
  */
 export const SCREEN_ORIENTATION_DEFAULT: string = '99';
+export const SCREEN_ORIENTATION_FOLLOW_VIDEO: string = '100';
 
-export const SCREEN_ORIENTATION_VALUES: string[] = ['99', '102', '101', '103', '98'];
+export const SCREEN_ORIENTATION_VALUES: string[] = ['99', '100', '102', '101', '103', '98'];
 
 export const SCREEN_ORIENTATION_LABELS: string[] = [
   '自动（传感器感应）',
+  '屏幕方向跟随视频',
   '纵向',
   '横向',
   '横向旋转180°',

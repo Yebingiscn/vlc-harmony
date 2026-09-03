@@ -1,0 +1,705 @@
+diff --git a/include/vlc/libvlc_media_player.h b/include/vlc/libvlc_media_player.h
+index d598c445a38f07b3feb0dda7ddbea1c147f05e41..b997e79051d141398f5b0ae644fb7a75b4e5734b 100644
+--- a/include/vlc/libvlc_media_player.h
++++ b/include/vlc/libvlc_media_player.h
+@@ -600,6 +600,18 @@ LIBVLC_API void libvlc_media_player_set_android_context( libvlc_media_player_t *
+ LIBVLC_API void libvlc_media_player_set_ohos_nativewindow_ptr( libvlc_media_player_t *p_mi,
+                                                               void *p_owindow_handler );
+ 
++/**
++ * Set the transparent OHOS NativeWindow used for subtitles and OSD.
++ * The video decoder continues rendering directly to the primary Surface.
++ *
++ * \version LibVLC 3.0.21 and later.
++ *
++ * \param p_mi the media player
++ * \param p_osd_window an OHNativeWindow pointer, or NULL to detach it
++ */
++LIBVLC_API void libvlc_media_player_set_ohos_osd_nativewindow_ptr( libvlc_media_player_t *p_mi,
++                                                                  void *p_osd_window );
++
+ LIBVLC_API void libvlc_video_set_ohos_window_size( libvlc_media_player_t *p_mi,
+                                                    unsigned width,
+                                                    unsigned height );
+diff --git a/lib/libvlc.sym b/lib/libvlc.sym
+index 2d8056cdd1cdc61e6eee02d8e4d8232b22e47786..125970a0f4d7b7ffa89c6f7f2ed587a90ed79c85 100644
+--- a/lib/libvlc.sym
++++ b/lib/libvlc.sym
+@@ -189,6 +189,7 @@ libvlc_media_player_retain
+ libvlc_media_player_set_agl
+ libvlc_media_player_set_android_context
+ libvlc_media_player_set_ohos_nativewindow_ptr
++libvlc_media_player_set_ohos_osd_nativewindow_ptr
+ libvlc_video_set_ohos_window_size
+ libvlc_media_player_set_chapter
+ libvlc_media_player_set_equalizer
+diff --git a/lib/media_player.c b/lib/media_player.c
+index 88175210cbf54d0bb2eff1a8ab95e9bdc6f0e53f..0748a84598f7e354dde5e508773838a71866d33f 100644
+--- a/lib/media_player.c
++++ b/lib/media_player.c
+@@ -648,6 +648,7 @@ libvlc_media_player_new( libvlc_instance_t *instance )
+ #endif
+ #ifdef __OHOS__
+     var_Create (mp, "drawable-ohos-nativewindow-ptr", VLC_VAR_ADDRESS);
++    var_Create (mp, "drawable-ohos-osd-nativewindow-ptr", VLC_VAR_ADDRESS);
+ #endif
+ #ifdef HAVE_EVAS
+     var_Create (mp, "drawable-evasobject", VLC_VAR_ADDRESS);
+@@ -1285,6 +1286,19 @@ void libvlc_media_player_set_ohos_nativewindow_ptr( libvlc_media_player_t *p_mi,
+     var_SetString (p_mi, "window", "none");
+ #endif
+ }
++
++void libvlc_media_player_set_ohos_osd_nativewindow_ptr( libvlc_media_player_t *p_mi,
++                                                       void *p_osd_window )
++{
++    assert (p_mi != NULL);
++#ifdef __OHOS__
++    var_SetAddress (p_mi, "drawable-ohos-osd-nativewindow-ptr", p_osd_window);
++    var_TriggerCallback (p_mi, "drawable-ohos-osd-nativewindow-ptr");
++#else
++    (void) p_osd_window;
++    libvlc_printerr ("can't set ohos OSD window ptr: OHOS build required");
++#endif
++}
+ /**************************************************************************
+  * set_evas_object
+  **************************************************************************/
+diff --git a/modules/codec/avcodec/video.c b/modules/codec/avcodec/video.c
+index e0ba1da57383443130c91dfb007e89b6f1c5150d..9883d20095b1ea581722ee87ed9841ced7a2d265 100644
+--- a/modules/codec/avcodec/video.c
++++ b/modules/codec/avcodec/video.c
+@@ -52,6 +52,7 @@
+ # include <libavcodec/ohcodec_buffer.h>
+ # include <libavutil/hwcontext.h>
+ # include <libavutil/hwcontext_oh.h>
++# include "../../video_output/ohos/display.h"
+ #endif
+ 
+ #include "../../packetizer/av1_obu.h"
+@@ -113,15 +114,8 @@ struct decoder_sys_t
+     vlc_sem_t sem_mt;
+ 
+ #ifdef HAVE_OHOS
+-    /* Direct Surface frames bypass VLC's vout queue. Pace them immediately
+-     * before release so the compositor never retains a queue of future
+-     * decoder buffers. */
+-    vlc_tick_t i_ohos_last_output_time;
+-    vlc_tick_t i_ohos_last_stall_log;
+-    vlc_tick_t i_ohos_last_release_log;
+-    vlc_tick_t i_ohos_next_present;
+-    vlc_tick_t i_ohos_last_pts;
+-    vlc_tick_t i_ohos_last_pacing_log;
++    /* Passed to OHCodec so the platform can adapt its decode policy when the
++     * VLC playback rate changes. Presentation itself is owned by the vout. */
+     int i_ohos_last_display_rate;
+ #endif
+ };
+@@ -143,134 +137,43 @@ static bool ohos_is_surface_frame(const AVFrame *frame)
+            frame->buf[0] != NULL;
+ }
+ 
+-/* Keep decoded buffers out of the Surface until their presentation deadline.
+- * The platform codec exposes eight output buffers on current devices. Sending
+- * several future-dated buffers to the Surface can retain all eight and stop
+- * decoder callbacks until RenderService returns one. mpv avoids that state by
+- * presenting from its clocked VO path one frame at a time; do the equivalent
+- * here while retaining VLC's media clock as the A/V sync authority. */
+-static vlc_tick_t ohos_surface_deadline(decoder_t *p_dec, vlc_tick_t i_pts,
+-                                        vlc_tick_t now)
++static int ohos_present_surface(void *surface_ctx, int64_t timestamp_ns)
+ {
+-    decoder_sys_t *p_sys = p_dec->p_sys;
+-    vlc_tick_t deadline = VLC_TICK_INVALID;
+-
+-    if (i_pts > VLC_TICK_INVALID)
+-    {
+-        deadline = decoder_GetDisplayDate(p_dec, i_pts);
+-        if (deadline <= VLC_TICK_INVALID &&
+-            p_sys->i_ohos_last_pts > VLC_TICK_INVALID &&
+-            p_sys->i_ohos_next_present > 0)
+-        {
+-            const vlc_tick_t pts_delta = i_pts - p_sys->i_ohos_last_pts;
+-            if (pts_delta >= CLOCK_FREQ * 4 / 1000 &&
+-                pts_delta <= CLOCK_FREQ * 100 / 1000)
+-                deadline = p_sys->i_ohos_next_present + pts_delta;
+-        }
+-        p_sys->i_ohos_last_pts = i_pts;
+-    }
+-
+-    if (deadline <= VLC_TICK_INVALID)
+-        deadline = now;
+-    p_sys->i_ohos_next_present = deadline;
+-    return deadline;
++    return av_ohcodec_release_buffer_at_time((AVOHCodecBuffer *)surface_ctx,
++                                             timestamp_ns);
+ }
+ 
+-/* Pace before release and then submit immediately. This leaves refresh-rate
+- * selection and final VSYNC alignment to the system without accumulating a
+- * future-dated queue in the Surface. Long waits are split into short slices so
+- * clock/rate changes are observed and seek cancellation remains responsive. */
+-static int ohos_present_surface(decoder_t *p_dec, AVOHCodecBuffer *buffer,
+-                                vlc_tick_t i_pts)
++static int ohos_discard_surface(void *surface_ctx)
+ {
+-    decoder_sys_t *p_sys = p_dec->p_sys;
+-    vlc_tick_t now = mdate();
+-    vlc_tick_t deadline = ohos_surface_deadline(p_dec, i_pts, now);
+-    vlc_tick_t delay = deadline - now;
+-
+-    if (p_sys->i_ohos_last_output_time > 0)
+-    {
+-        const vlc_tick_t gap = now - p_sys->i_ohos_last_output_time;
+-        if (gap >= 250000 &&
+-            now - p_sys->i_ohos_last_stall_log >= CLOCK_FREQ)
+-        {
+-            msg_Warn(p_dec,
+-                     "OHCodec output stalled: gap=%"PRId64" ms pts=%"PRId64,
+-                     gap / 1000, i_pts);
+-            p_sys->i_ohos_last_stall_log = now;
+-        }
+-    }
+-    p_sys->i_ohos_last_output_time = now;
+-
+-    if (p_dec->b_frame_drop_allowed && delay < -CLOCK_FREQ * 80 / 1000)
+-    {
+-        if (now - p_sys->i_ohos_last_stall_log >= CLOCK_FREQ)
+-        {
+-            msg_Warn(p_dec,
+-                     "OHCodec dropped late Surface frame: late=%"PRId64
+-                     " ms pts=%"PRId64,
+-                     -delay / 1000, i_pts);
+-            p_sys->i_ohos_last_stall_log = now;
+-        }
+-        const int ret = av_ohcodec_release_buffer(buffer, 0);
+-        p_sys->i_ohos_last_output_time = mdate();
+-        return ret;
+-    }
+-
+-    if (delay > CLOCK_FREQ * 250 / 1000 &&
+-        now - p_sys->i_ohos_last_pacing_log >= CLOCK_FREQ)
+-    {
+-        msg_Dbg(p_dec, "OHCodec Surface pacing ahead=%"PRId64
+-                " ms pts=%"PRId64, delay / 1000, i_pts);
+-        p_sys->i_ohos_last_pacing_log = now;
+-    }
+-
+-    while (delay > CLOCK_FREQ * 2 / 1000)
+-    {
+-        vlc_tick_t wait = delay - CLOCK_FREQ * 2 / 1000;
+-        if (wait > CLOCK_FREQ * 20 / 1000)
+-            wait = CLOCK_FREQ * 20 / 1000;
+-        mwait(now + wait);
+-        now = mdate();
+-
+-        /* VLC's clock may move after rate changes, pause/resume or seek. */
+-        if (i_pts > VLC_TICK_INVALID)
+-        {
+-            const vlc_tick_t refreshed = decoder_GetDisplayDate(p_dec, i_pts);
+-            if (refreshed > VLC_TICK_INVALID)
+-            {
+-                deadline = refreshed;
+-                p_sys->i_ohos_next_present = refreshed;
+-            }
+-            else
+-            {
+-                deadline = now;
+-                p_sys->i_ohos_next_present = 0;
+-            }
+-        }
+-        delay = deadline - now;
+-    }
++    return av_ohcodec_release_buffer((AVOHCodecBuffer *)surface_ctx, 0);
++}
+ 
+-    /* The master clock may jump while the bounded wait is in progress. */
+-    if (p_dec->b_frame_drop_allowed && delay < -CLOCK_FREQ * 80 / 1000)
++static void ohos_pic_ctx_destroy(picture_context_t *ctx)
++{
++    ohos_picture_context_t *octx = (ohos_picture_context_t *)ctx;
++    if (octx->buf_ref)
+     {
+-        const int ret = av_ohcodec_release_buffer(buffer, 0);
+-        p_sys->i_ohos_last_output_time = mdate();
+-        return ret;
++        AVBufferRef *ref = (AVBufferRef *)octx->buf_ref;
++        av_buffer_unref(&ref);
+     }
++    free(octx);
++}
+ 
+-    const vlc_tick_t release_start = mdate();
+-    const int ret = av_ohcodec_release_buffer(buffer, 1);
+-    const vlc_tick_t release_time = mdate() - release_start;
+-    if (release_time >= 50000 &&
+-        release_start - p_sys->i_ohos_last_release_log >= CLOCK_FREQ)
++static picture_context_t *ohos_pic_ctx_copy(picture_context_t *ctx)
++{
++    ohos_picture_context_t *src = (ohos_picture_context_t *)ctx;
++    ohos_picture_context_t *dst = malloc(sizeof(*dst));
++    if (!dst)
++        return NULL;
++    *dst = *src;
++    dst->buf_ref = src->buf_ref
++        ? av_buffer_ref((AVBufferRef *)src->buf_ref) : NULL;
++    if (src->buf_ref && !dst->buf_ref)
+     {
+-        msg_Warn(p_dec, "OHCodec Surface release blocked: duration=%"PRId64
+-                 " ms", release_time / 1000);
+-        p_sys->i_ohos_last_release_log = release_start;
++        free(dst);
++        return NULL;
+     }
+-    p_sys->i_ohos_last_output_time = mdate();
+-    return ret;
++    return &dst->s;
+ }
+ 
+ static void ohos_update_playback_speed(decoder_t *p_dec)
+@@ -825,16 +728,10 @@ static int InitVideoDecCommon( decoder_t *p_dec )
+     p_sys->b_from_preroll = false;
+     p_sys->b_draining = false;
+ #ifdef HAVE_OHOS
+-    p_sys->i_ohos_last_output_time = 0;
+-    p_sys->i_ohos_last_stall_log = 0;
+-    p_sys->i_ohos_last_release_log = 0;
+-    p_sys->i_ohos_next_present = 0;
+-    p_sys->i_ohos_last_pts = VLC_TICK_INVALID;
+-    p_sys->i_ohos_last_pacing_log = 0;
+     p_sys->i_ohos_last_display_rate = -1;
+     if (p_sys->p_codec && p_sys->p_codec->wrapper_name &&
+         strcmp(p_sys->p_codec->wrapper_name, "ohcodec") == 0)
+-        msg_Info(p_dec, "OHCodec Surface uses deadline-gated immediate release; refresh-rate=system-managed");
++        msg_Info(p_dec, "OHCodec Surface frames use VLC vout timing; refresh-rate=system-managed");
+ #endif
+ 
+     /* Set output properties */
+@@ -1137,14 +1034,6 @@ static void Flush( decoder_t *p_dec )
+     p_sys->b_from_preroll = true;
+     p_sys->i_last_late_delay = INT64_MAX;
+     p_sys->b_draining = false;
+-#ifdef HAVE_OHOS
+-    p_sys->i_ohos_last_output_time = 0;
+-    p_sys->i_ohos_last_stall_log = 0;
+-    p_sys->i_ohos_last_release_log = 0;
+-    p_sys->i_ohos_next_present = 0;
+-    p_sys->i_ohos_last_pts = VLC_TICK_INVALID;
+-    p_sys->i_ohos_last_pacing_log = 0;
+-#endif
+     cc_Flush( &p_sys->cc );
+ 
+     /* Abort pictures in order to unblock all avcodec workers threads waiting
+@@ -1197,14 +1086,6 @@ static bool check_block_validity( decoder_sys_t *p_sys, block_t *block )
+         cc_Flush( &p_sys->cc );
+ 
+         p_sys->i_late_frames = 0;
+-#ifdef HAVE_OHOS
+-        p_sys->i_ohos_last_output_time = 0;
+-        p_sys->i_ohos_last_stall_log = 0;
+-        p_sys->i_ohos_last_release_log = 0;
+-        p_sys->i_ohos_next_present = 0;
+-        p_sys->i_ohos_last_pts = VLC_TICK_INVALID;
+-        p_sys->i_ohos_last_pacing_log = 0;
+-#endif
+         if( block->i_flags & BLOCK_FLAG_CORRUPTED )
+         {
+             block_Release( block );
+@@ -1739,17 +1620,66 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
+             const bool corrupted = p_dec->b_frame_drop_allowed &&
+                                    (frame->flags & AV_FRAME_FLAG_CORRUPT) &&
+                                    !p_sys->b_show_corrupted;
+-            if (b_need_output_picture && !corrupted)
++            if (!b_need_output_picture || corrupted)
+             {
+-                AVOHCodecBuffer *surface_buffer =
+-                    (AVOHCodecBuffer *)frame->data[3];
+-                if (ohos_present_surface(p_dec, surface_buffer, i_pts) < 0)
+-                    msg_Warn(p_dec, "failed to present OHCodec surface frame");
++                av_frame_free(&frame);
++                continue;
+             }
+-            /* Freeing a rendered context only releases its AVBufferRef. For
+-             * preroll/corrupt frames it returns the output buffer without
+-             * rendering, so pre-seek pictures can never flash on screen. */
++
++            picture_t *surface_pic = decoder_NewPicture(p_dec);
++            ohos_picture_context_t *octx = malloc(sizeof(*octx));
++            if (!surface_pic || !octx)
++            {
++                free(octx);
++                if (surface_pic)
++                    picture_Release(surface_pic);
++                av_frame_free(&frame);
++                *error = true;
++                break;
++            }
++
++            AVBufferRef *surface_ref = av_buffer_ref(frame->buf[0]);
++            if (!surface_ref)
++            {
++                free(octx);
++                picture_Release(surface_pic);
++                av_frame_free(&frame);
++                *error = true;
++                break;
++            }
++
++            *octx = (ohos_picture_context_t) {
++                .s = {
++                    .destroy = ohos_pic_ctx_destroy,
++                    .copy = ohos_pic_ctx_copy,
++                },
++                .surface_ctx = frame->data[3],
++                .buf_ref = surface_ref,
++                .pf_render = ohos_present_surface,
++                .pf_flush = ohos_discard_surface,
++                .released_ptr = NULL,
++            };
++            surface_pic->context = &octx->s;
++            surface_pic->date = i_pts;
++            surface_pic->b_force = p_sys->b_first_frame;
++            surface_pic->i_nb_fields = 2 + frame->repeat_pict;
++#if LIBAVUTIL_VERSION_CHECK( 58, 7, 100 )
++            surface_pic->b_progressive = !(frame->flags & AV_FRAME_FLAG_INTERLACED);
++            surface_pic->b_top_field_first = !!(frame->flags & AV_FRAME_FLAG_TOP_FIELD_FIRST);
++#else
++            surface_pic->b_progressive = !frame->interlaced_frame;
++            surface_pic->b_top_field_first = frame->top_field_first;
++#endif
++            if (DecodeSidedata(p_dec, frame, surface_pic))
++                i_pts = VLC_TICK_INVALID;
+             av_frame_free(&frame);
++
++            if (i_pts > VLC_TICK_INVALID)
++            {
++                p_sys->b_first_frame = false;
++                return surface_pic;
++            }
++            picture_Release(surface_pic);
+             continue;
+         }
+ #endif
+diff --git a/modules/video_output/Makefile.am b/modules/video_output/Makefile.am
+index 46ff86a7b463b5e8014650bf80d4a1c56ce61029..6ad5bc1c3efb5bbc2da5aabcf084e887f0352f52 100644
+--- a/modules/video_output/Makefile.am
++++ b/modules/video_output/Makefile.am
+@@ -497,7 +497,7 @@ libohos_window_plugin_la_LIBADD = $(LIBDL) -lEGL -lGLESv3 -lnative_window
+ 
+ libohos_surface_display_plugin_la_SOURCES = video_output/ohos/display.c
+ libohos_surface_display_plugin_la_CFLAGS = $(AM_CFLAGS)
+-libohos_surface_display_plugin_la_LIBADD =
++libohos_surface_display_plugin_la_LIBADD = -lnative_window
+ 
+ if HAVE_OHOS
+ vout_LTLIBRARIES += libohos_window_plugin.la libegl_ohos_plugin.la libohos_surface_display_plugin.la
+diff --git a/modules/video_output/ohos/display.c b/modules/video_output/ohos/display.c
+index 41b74829eaa728eec96300cf9a02886fe73cad00..1ee5008c95a28c19b5f24387a67fd36abe5fddd3 100644
+--- a/modules/video_output/ohos/display.c
++++ b/modules/video_output/ohos/display.c
+@@ -24,7 +24,16 @@
+ #include <vlc_plugin.h>
+ #include <vlc_vout_display.h>
+ #include <vlc_picture_pool.h>
++#include <vlc_filter.h>
++#include <vlc_subpicture.h>
++#include <native_buffer/native_buffer.h>
++#include <native_window/external_window.h>
++#include <errno.h>
++#include <poll.h>
++#include <stdint.h>
++#include <string.h>
+ #include <time.h>
++#include <unistd.h>
+ 
+ #include "display.h"
+ 
+@@ -37,8 +46,16 @@ struct vout_display_sys_t
+     unsigned frame_count;
+     picture_t *last_pic;
+     vlc_tick_t last_date;
++    OHNativeWindow *osd_window;
++    filter_t *osd_blend;
++    unsigned osd_width;
++    unsigned osd_height;
++    int64_t osd_order;
++    bool osd_visible;
+ };
+ 
++static const vlc_fourcc_t subpicture_chromas[] = { VLC_CODEC_BGRA, 0 };
++
+ static picture_pool_t *Pool(vout_display_t *vd, unsigned count)
+ {
+     vout_display_sys_t *sys = vd->sys;
+@@ -85,11 +102,233 @@ static picture_pool_t *Pool(vout_display_t *vd, unsigned count)
+     return sys->pool;
+ }
+ 
++static bool WaitAndCloseFence(vout_display_t *vd, int fence_fd)
++{
++    if (fence_fd < 0)
++        return true;
++
++    struct pollfd pfd = { .fd = fence_fd, .events = POLLIN };
++    int ret;
++    do
++        ret = poll(&pfd, 1, 3000);
++    while (ret < 0 && errno == EINTR);
++    close(fence_fd);
++    if (ret <= 0)
++    {
++        msg_Warn(vd, "OSD buffer fence wait failed: %s",
++                 ret == 0 ? "timeout" : vlc_strerror_c(errno));
++        return false;
++    }
++    return true;
++}
++
++static bool ConfigureOsdWindow(vout_display_t *vd, OHNativeWindow *window)
++{
++    video_format_t rotated;
++    video_format_ApplyRotation(&rotated, &vd->source);
++    const unsigned width = rotated.i_visible_width
++        ? rotated.i_visible_width : rotated.i_width;
++    const unsigned height = rotated.i_visible_height
++        ? rotated.i_visible_height : rotated.i_height;
++    int ret = OH_NativeWindow_NativeWindowHandleOpt(
++        window, SET_BUFFER_GEOMETRY, width, height);
++    if (ret != 0)
++    {
++        msg_Err(vd, "failed to set OSD Surface geometry: %d", ret);
++        return false;
++    }
++
++    ret = OH_NativeWindow_NativeWindowHandleOpt(
++        window, SET_FORMAT, NATIVEBUFFER_PIXEL_FMT_BGRA_8888);
++    if (ret != 0)
++    {
++        msg_Err(vd, "failed to set OSD Surface format: %d", ret);
++        return false;
++    }
++
++    uint64_t usage = NATIVEBUFFER_USAGE_CPU_WRITE | NATIVEBUFFER_USAGE_CPU_READ;
++    ret = OH_NativeWindow_NativeWindowHandleOpt(window, SET_USAGE, usage);
++    if (ret != 0)
++    {
++        msg_Err(vd, "failed to set OSD Surface CPU usage: %d", ret);
++        return false;
++    }
++    ret = OH_NativeWindow_NativeWindowHandleOpt(
++        window, SET_SOURCE_TYPE, OH_SURFACE_SOURCE_UI);
++    if (ret != 0)
++        msg_Dbg(vd, "failed to mark OSD Surface as UI source: %d", ret);
++    return true;
++}
++
++static bool SyncOsdWindow(vout_display_t *vd)
++{
++    vout_display_sys_t *sys = vd->sys;
++    OHNativeWindow *window = var_InheritAddress(
++        vd, "drawable-ohos-osd-nativewindow-ptr");
++    if (window == sys->osd_window)
++        return window != NULL;
++
++    sys->osd_window = window;
++    sys->osd_visible = false;
++    sys->osd_order = INT64_MIN;
++    sys->osd_width = 0;
++    sys->osd_height = 0;
++    if (sys->osd_blend)
++    {
++        filter_DeleteBlend(sys->osd_blend);
++        sys->osd_blend = NULL;
++    }
++    if (!window)
++        return false;
++    if (!ConfigureOsdWindow(vd, window))
++    {
++        sys->osd_window = NULL;
++        return false;
++    }
++    msg_Info(vd, "OHCodec transparent OSD Surface attached");
++    return true;
++}
++
++static bool UploadOsd(vout_display_t *vd, subpicture_t *subpic)
++{
++    vout_display_sys_t *sys = vd->sys;
++    if (!SyncOsdWindow(vd))
++        return false;
++    if (subpic && !subpic->b_fade && sys->osd_visible &&
++        subpic->i_order == sys->osd_order)
++        return true;
++    if (!subpic && !sys->osd_visible)
++        return true;
++
++    OHNativeWindowBuffer *window_buffer = NULL;
++    OH_NativeBuffer *native_buffer = NULL;
++    int fence_fd = -1;
++    void *mapped = NULL;
++    bool requested = false;
++    bool mapped_ok = false;
++    bool success = false;
++
++    int ret = OH_NativeWindow_NativeWindowRequestBuffer(
++        sys->osd_window, &window_buffer, &fence_fd);
++    if (ret != 0 || !window_buffer)
++    {
++        msg_Warn(vd, "failed to request OSD Surface buffer: %d", ret);
++        goto done;
++    }
++    requested = true;
++    if (!WaitAndCloseFence(vd, fence_fd))
++    {
++        fence_fd = -1;
++        goto done;
++    }
++    fence_fd = -1;
++
++    ret = OH_NativeBuffer_FromNativeWindowBuffer(window_buffer, &native_buffer);
++    if (ret != 0 || !native_buffer)
++    {
++        msg_Warn(vd, "failed to access OSD NativeBuffer: %d", ret);
++        goto done;
++    }
++    ret = OH_NativeBuffer_Map(native_buffer, &mapped);
++    if (ret != 0 || !mapped)
++    {
++        msg_Warn(vd, "failed to map OSD NativeBuffer: %d", ret);
++        goto done;
++    }
++    mapped_ok = true;
++
++    BufferHandle *handle =
++        OH_NativeWindow_GetBufferHandleFromNative(window_buffer);
++    if (!handle || handle->width <= 0 || handle->height <= 0 ||
++        handle->stride < handle->width * 4 ||
++        (handle->size > 0 &&
++         (int64_t)handle->stride * handle->height > handle->size))
++    {
++        msg_Warn(vd, "invalid OSD buffer layout");
++        goto done;
++    }
++
++    const unsigned width = handle->width;
++    const unsigned height = handle->height;
++    if (width != sys->osd_width || height != sys->osd_height)
++    {
++        if (sys->osd_blend)
++            filter_DeleteBlend(sys->osd_blend);
++        video_format_t blend_fmt;
++        video_format_Init(&blend_fmt, VLC_CODEC_BGRA);
++        video_format_Setup(&blend_fmt, VLC_CODEC_BGRA,
++                           width, height, width, height, 1, 1);
++        sys->osd_blend = filter_NewBlend(VLC_OBJECT(vd), &blend_fmt);
++        video_format_Clean(&blend_fmt);
++        sys->osd_width = width;
++        sys->osd_height = height;
++        sys->osd_visible = false;
++        sys->osd_order = INT64_MIN;
++    }
++
++    if (subpic && !sys->osd_blend)
++    {
++        msg_Warn(vd, "failed to create OSD blend filter");
++        goto done;
++    }
++
++    memset(mapped, 0, (size_t)handle->stride * height);
++    if (subpic && sys->osd_blend)
++    {
++        video_format_t fmt;
++        video_format_Init(&fmt, VLC_CODEC_BGRA);
++        video_format_Setup(&fmt, VLC_CODEC_BGRA,
++                           width, height, width, height, 1, 1);
++        picture_resource_t resource = { 0 };
++        resource.p[0].p_pixels = mapped;
++        resource.p[0].i_lines = height;
++        resource.p[0].i_pitch = handle->stride;
++        picture_t *canvas = picture_NewFromResource(&fmt, &resource);
++        video_format_Clean(&fmt);
++        if (!canvas)
++            goto done;
++        picture_BlendSubpicture(canvas, sys->osd_blend, subpic);
++        picture_Release(canvas);
++    }
++
++    ret = OH_NativeBuffer_Unmap(native_buffer);
++    mapped_ok = false;
++    if (ret != 0)
++    {
++        msg_Warn(vd, "failed to unmap OSD NativeBuffer: %d", ret);
++        goto done;
++    }
++
++    struct Rect rect = { .x = 0, .y = 0, .w = width, .h = height };
++    Region region = { .rects = &rect, .rectNumber = 1 };
++    ret = OH_NativeWindow_NativeWindowFlushBuffer(
++        sys->osd_window, window_buffer, -1, region);
++    if (ret != 0)
++    {
++        msg_Warn(vd, "failed to flush OSD Surface buffer: %d", ret);
++        goto done;
++    }
++    requested = false;
++    sys->osd_visible = subpic != NULL;
++    sys->osd_order = subpic ? subpic->i_order : INT64_MIN;
++    success = true;
++
++done:
++    if (mapped_ok)
++        OH_NativeBuffer_Unmap(native_buffer);
++    if (fence_fd >= 0)
++        close(fence_fd);
++    if (requested)
++        OH_NativeWindow_NativeWindowAbortBuffer(sys->osd_window, window_buffer);
++    return success;
++}
++
+ static void Prepare(vout_display_t *vd, picture_t *pic, subpicture_t *subpic)
+ {
+-    VLC_UNUSED(subpic);
+     vout_display_sys_t *sys = vd->sys;
+ 
++    UploadOsd(vd, subpic);
++
+     msg_Dbg(vd, "[OHOS-DBG] Prepare: pic=%p, context=%p, need_flush=%d, date=%lld",
+             pic, pic ? pic->context : NULL, sys->need_flush,
+             pic ? (long long)pic->date : 0);
+@@ -190,6 +429,7 @@ static int Control(vout_display_t *vd, int query, va_list args)
+         case VOUT_DISPLAY_CHANGE_SOURCE_ASPECT:
+         case VOUT_DISPLAY_CHANGE_SOURCE_CROP:
+             VLC_UNUSED(args);
++            vd->sys->osd_order = INT64_MIN;
+             return VLC_SUCCESS;
+ 
+         case VOUT_DISPLAY_RESET_PICTURES:
+@@ -223,6 +463,7 @@ static int Open(vlc_object_t *obj)
+     sys->frame_count = 0;
+     sys->last_pic = NULL;
+     sys->last_date = VLC_TICK_INVALID;
++    sys->osd_order = INT64_MIN;
+ 
+     vd->sys     = sys;
+     vd->fmt     = vd->source;
+@@ -235,7 +476,7 @@ static int Open(vlc_object_t *obj)
+     vd->info.has_double_click     = false;
+     vd->info.needs_hide_mouse     = false;
+     vd->info.has_pictures_invalid = false;
+-    vd->info.subpicture_chromas   = NULL;
++    vd->info.subpicture_chromas   = subpicture_chromas;
+     msg_Dbg(vd, "[OHOS-DBG] Open: OHOS surface display opened successfully");
+     return VLC_SUCCESS;
+ }
+@@ -247,6 +488,11 @@ static void Close(vlc_object_t *obj)
+ 
+     msg_Dbg(vd, "[OHOS-DBG] Close: total frames displayed=%u", sys->frame_count);
+ 
++    if (sys->osd_visible)
++        UploadOsd(vd, NULL);
++    if (sys->osd_blend)
++        filter_DeleteBlend(sys->osd_blend);
++
+     if (sys->pool)
+         picture_pool_Release(sys->pool);
+ 

@@ -210,8 +210,11 @@ struct PlayerEntry {
     uint32_t libHandle = 0;
     uint32_t mediaHandle = 0;
     std::string videoOutId;
+    std::string osdOutId;
     bool windowBound = false;
+    bool osdWindowBound = false;
     uint64_t boundSurfaceGeneration = 0;
+    uint64_t boundOsdSurfaceGeneration = 0;
     std::shared_ptr<SeekWorker> seekWorker;
     napi_threadsafe_function tsfn = nullptr;
     napi_ref jsCallbackRef = nullptr;
@@ -293,9 +296,11 @@ void SetOhosNativeWindow(libvlc_media_player_t *mp, OHNativeWindow *win, const s
 struct SurfaceBinding {
     libvlc_media_player_t *mp = nullptr;
     bool reloadVideoOutput = false;
+    bool osd = false;
 };
 
 using SetOhosWindowSizeFn = void (*)(libvlc_media_player_t *, unsigned, unsigned);
+using SetOhosOsdNativeWindowFn = void (*)(libvlc_media_player_t *, void *);
 
 SetOhosWindowSizeFn ResolveSetOhosWindowSize()
 {
@@ -321,6 +326,42 @@ SetOhosWindowSizeFn ResolveSetOhosWindowSize()
     return fn;
 }
 
+SetOhosOsdNativeWindowFn ResolveSetOhosOsdNativeWindow()
+{
+    static SetOhosOsdNativeWindowFn fn = []() -> SetOhosOsdNativeWindowFn {
+        void *handle = dlopen("libvlc.so.5", RTLD_NOW | RTLD_LOCAL);
+        if (handle == nullptr) {
+            OH_LOG_WARN(LOG_APP, "dlopen libvlc.so.5 for OSD surface failed: %{public}s", dlerror());
+            return nullptr;
+        }
+        dlerror();
+        void *symbol = dlsym(handle, "libvlc_media_player_set_ohos_osd_nativewindow_ptr");
+        const char *error = dlerror();
+        if (error != nullptr || symbol == nullptr) {
+            OH_LOG_WARN(LOG_APP, "resolve OSD surface symbol failed: %{public}s",
+                        error != nullptr ? error : "symbol not found");
+            return nullptr;
+        }
+        return reinterpret_cast<SetOhosOsdNativeWindowFn>(symbol);
+    }();
+    return fn;
+}
+
+bool SetOhosOsdNativeWindow(libvlc_media_player_t *mp, OHNativeWindow *win, const std::string &id)
+{
+    if (mp == nullptr) {
+        return false;
+    }
+    SetOhosOsdNativeWindowFn setter = ResolveSetOhosOsdNativeWindow();
+    if (setter == nullptr) {
+        return false;
+    }
+    OH_LOG_INFO(LOG_APP, "set_ohos_osd_nativewindow_ptr mp=%{public}p win=%{public}p id=%{public}s",
+                mp, win, id.c_str());
+    setter(mp, win);
+    return true;
+}
+
 void OnSurfaceReady(const std::string &id, OHNativeWindow *win, uint64_t generation,
                     uint64_t width, uint64_t height)
 {
@@ -336,13 +377,31 @@ void OnSurfaceReady(const std::string &id, OHNativeWindow *win, uint64_t generat
             if (!pe.videoOutId.empty() && pe.videoOutId == id && pe.mp != nullptr) {
                 libvlc_media_player_retain(pe.mp);
                 bool reload = pe.boundSurfaceGeneration != 0 && pe.boundSurfaceGeneration != generation;
-                bindings.push_back(SurfaceBinding{pe.mp, reload});
+                bindings.push_back(SurfaceBinding{pe.mp, reload, false});
                 pe.windowBound = true;
                 pe.boundSurfaceGeneration = generation;
+            }
+            if (!pe.osdOutId.empty() && pe.osdOutId == id && pe.mp != nullptr) {
+                libvlc_media_player_retain(pe.mp);
+                bindings.push_back(SurfaceBinding{pe.mp, false, true});
             }
         }
     }
     for (const SurfaceBinding &binding : bindings) {
+        if (binding.osd) {
+            if (SetOhosOsdNativeWindow(binding.mp, win, id)) {
+                std::lock_guard<std::mutex> lk(g_mtx);
+                for (auto &kv : g_players) {
+                    PlayerEntry &pe = kv.second;
+                    if (pe.mp == binding.mp && pe.osdOutId == id) {
+                        pe.osdWindowBound = true;
+                        pe.boundOsdSurfaceGeneration = generation;
+                    }
+                }
+            }
+            libvlc_media_player_release(binding.mp);
+            continue;
+        }
         SetOhosNativeWindow(binding.mp, win, id);
         if (binding.reloadVideoOutput && width > 0 && height > 0) {
             SetOhosWindowSizeFn setWindowSize = ResolveSetOhosWindowSize();
@@ -372,7 +431,7 @@ void OnSurfaceReady(const std::string &id, OHNativeWindow *win, uint64_t generat
 /** Detach OHOS native window from matching players (Android detachViews / cleanUI). */
 void DetachNativeWindowById(const std::string &id)
 {
-    std::vector<libvlc_media_player_t *> mps;
+    std::vector<SurfaceBinding> bindings;
     {
         std::lock_guard<std::mutex> lk(g_mtx);
         OH_LOG_INFO(LOG_APP, "DetachNativeWindowById id=%{public}s", id.c_str());
@@ -380,14 +439,23 @@ void DetachNativeWindowById(const std::string &id)
             PlayerEntry &pe = kv.second;
             if (pe.videoOutId == id && pe.mp != nullptr) {
                 libvlc_media_player_retain(pe.mp);
-                mps.push_back(pe.mp);
+                bindings.push_back(SurfaceBinding{pe.mp, false, false});
                 pe.windowBound = false;
+            }
+            if (pe.osdOutId == id && pe.mp != nullptr) {
+                libvlc_media_player_retain(pe.mp);
+                bindings.push_back(SurfaceBinding{pe.mp, false, true});
+                pe.osdWindowBound = false;
             }
         }
     }
-    for (libvlc_media_player_t *mp : mps) {
-        libvlc_media_player_set_ohos_nativewindow_ptr(mp, nullptr);
-        libvlc_media_player_release(mp);
+    for (const SurfaceBinding &binding : bindings) {
+        if (binding.osd) {
+            SetOhosOsdNativeWindow(binding.mp, nullptr, id);
+        } else {
+            libvlc_media_player_set_ohos_nativewindow_ptr(binding.mp, nullptr);
+        }
+        libvlc_media_player_release(binding.mp);
     }
 }
 
@@ -1351,6 +1419,52 @@ napi_value MediaPlayerSetVideoOut(napi_env env, napi_callback_info info)
     return Bool(env, true);
 }
 
+napi_value MediaPlayerSetOsdVideoOut(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value argv[2];
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    uint32_t ph = 0;
+    if (argc < 2 || !GetU32(env, argv[0], &ph)) {
+        return Bool(env, false);
+    }
+    std::string id = GetString(env, argv[1]);
+    libvlc_media_player_t *mp = nullptr;
+    OHNativeWindow *win = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(g_mtx);
+        PlayerEntry *pe = FindPlayerLocked(ph);
+        if (pe == nullptr) {
+            return Bool(env, false);
+        }
+        pe->osdOutId = id;
+        pe->osdWindowBound = false;
+        pe->boundOsdSurfaceGeneration = 0;
+        mp = pe->mp;
+        if (mp != nullptr) {
+            libvlc_media_player_retain(mp);
+        }
+        win = xMgr.GetNativeWindow(id);
+    }
+    if (win == nullptr || mp == nullptr) {
+        if (mp != nullptr) {
+            libvlc_media_player_release(mp);
+        }
+        return Bool(env, false);
+    }
+    const bool bound = SetOhosOsdNativeWindow(mp, win, id);
+    if (bound) {
+        std::lock_guard<std::mutex> lk(g_mtx);
+        PlayerEntry *pe = FindPlayerLocked(ph);
+        if (pe != nullptr && pe->osdOutId == id) {
+            pe->osdWindowBound = true;
+            pe->boundOsdSurfaceGeneration = xMgr.GetSurfaceGeneration(id);
+        }
+    }
+    libvlc_media_player_release(mp);
+    return Bool(env, bound);
+}
+
 /** Clear video out for a player handle (Android MediaPlayer.detachViews). */
 napi_value MediaPlayerDetachViews(napi_env env, napi_callback_info info)
 {
@@ -1371,10 +1485,14 @@ napi_value MediaPlayerDetachViews(napi_env env, napi_callback_info info)
         mp = pe->mp;
         libvlc_media_player_retain(mp);
         pe->windowBound = false;
+        pe->osdWindowBound = false;
         pe->videoOutId.clear();
+        pe->osdOutId.clear();
         pe->boundSurfaceGeneration = 0;
+        pe->boundOsdSurfaceGeneration = 0;
     }
     libvlc_media_player_set_ohos_nativewindow_ptr(mp, nullptr);
+    SetOhosOsdNativeWindow(mp, nullptr, "");
     libvlc_media_player_release(mp);
     return nullptr;
 }
@@ -1402,7 +1520,9 @@ napi_value MediaPlayerPlay(napi_env env, napi_callback_info info)
     }
     libvlc_media_player_t *mp = nullptr;
     OHNativeWindow *pendingWin = nullptr;
+    OHNativeWindow *pendingOsdWin = nullptr;
     std::string pendingId;
+    std::string pendingOsdId;
     {
         std::lock_guard<std::mutex> lk(g_mtx);
         PlayerEntry *pe = FindPlayerLocked(h);
@@ -1415,6 +1535,10 @@ napi_value MediaPlayerPlay(napi_env env, napi_callback_info info)
             pendingId = pe->videoOutId;
             pendingWin = xMgr.GetNativeWindow(pe->videoOutId);
         }
+        if (!pe->osdWindowBound && !pe->osdOutId.empty()) {
+            pendingOsdId = pe->osdOutId;
+            pendingOsdWin = xMgr.GetNativeWindow(pe->osdOutId);
+        }
     }
     if (pendingWin != nullptr) {
         SetOhosNativeWindow(mp, pendingWin, pendingId);
@@ -1423,6 +1547,14 @@ napi_value MediaPlayerPlay(napi_env env, napi_callback_info info)
         if (pe != nullptr && pe->videoOutId == pendingId) {
             pe->windowBound = true;
             pe->boundSurfaceGeneration = xMgr.GetSurfaceGeneration(pendingId);
+        }
+    }
+    if (pendingOsdWin != nullptr && SetOhosOsdNativeWindow(mp, pendingOsdWin, pendingOsdId)) {
+        std::lock_guard<std::mutex> lk(g_mtx);
+        PlayerEntry *pe = FindPlayerLocked(h);
+        if (pe != nullptr && pe->osdOutId == pendingOsdId) {
+            pe->osdWindowBound = true;
+            pe->boundOsdSurfaceGeneration = xMgr.GetSurfaceGeneration(pendingOsdId);
         }
     }
     // Call outside g_mtx: play may emit events that re-enter on_player_event → g_mtx.
@@ -3019,6 +3151,8 @@ napi_value VlcNapiInit(napi_env env, napi_value exports)
         {"mediaPlayerSetEventListener", nullptr, MediaPlayerSetEventListener, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerSetMedia", nullptr, MediaPlayerSetMedia, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerSetVideoOut", nullptr, MediaPlayerSetVideoOut, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"mediaPlayerSetOsdVideoOut", nullptr, MediaPlayerSetOsdVideoOut, nullptr, nullptr, nullptr, napi_default,
+         nullptr},
         {"mediaPlayerDetachViews", nullptr, MediaPlayerDetachViews, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"hasNativeWindow", nullptr, HasNativeWindow, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerPlay", nullptr, MediaPlayerPlay, nullptr, nullptr, nullptr, napi_default, nullptr},

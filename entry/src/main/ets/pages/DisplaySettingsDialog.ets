@@ -114,6 +114,8 @@ export struct DisplaySettingsDialog {
 
   @Event onClose: () => void = () => {
   };
+  @Event onDisplayModeChange: () => void = () => {
+  };
 
   async aboutToAppear(): Promise<void> {
     const cards = await Settings.getBoolean(Settings.KEY_VIDEOS_CARDS, true);
@@ -124,9 +126,10 @@ export struct DisplaySettingsDialog {
     this.videoGroupIndex = await Settings.getInt(Settings.KEY_GROUP_VIDEOS, 0);
   }
 
-  toggleDisplayMode(): void {
+  async toggleDisplayMode(): Promise<void> {
     this.displayInCards = !this.displayInCards;
-    Settings.put(Settings.KEY_VIDEOS_CARDS, !this.displayInCards);
+    await Settings.put(Settings.KEY_VIDEOS_CARDS, !this.displayInCards);
+    this.onDisplayModeChange();
   }
 
   setSort(key: number, desc: boolean): void {
@@ -178,7 +181,7 @@ export struct DisplaySettingsDialog {
         .padding({ left: 16, right: 16 })
         .alignItems(VerticalAlign.Center)
         .onClick(() => {
-          this.toggleDisplayMode();
+          void this.toggleDisplayMode();
         })
 
         // 只显示收藏

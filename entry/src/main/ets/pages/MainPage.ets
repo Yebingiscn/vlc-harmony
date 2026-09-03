@@ -301,14 +301,20 @@ export struct MainPage {
   /** 显示设置 BottomSheet(自定义组件 builder 必须 .width('100%'))。 */
   @Builder
   displaySettingsSheet() {
-    DisplaySettingsDialog({ onClose: () => this.showDisplaySettings = false })
+    DisplaySettingsDialog({
+      onClose: () => this.showDisplaySettings = false,
+      onDisplayModeChange: () => this.displaySettingsVersion++,
+    })
       .width('100%')
   }
 
   /** 音频显示设置 BottomSheet。 */
   @Builder
   audioDisplaySettingsSheet() {
-    AudioDisplaySettingsDialog({ onClose: () => this.showAudioDisplaySettings = false })
+    AudioDisplaySettingsDialog({
+      onClose: () => this.showAudioDisplaySettings = false,
+      onDisplayModeChange: () => this.audioSettingsVersion++,
+    })
       .width('100%')
   }
 
