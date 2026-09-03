@@ -423,7 +423,7 @@ index 41b74829eaa728eec96300cf9a02886fe73cad00..1ee5008c95a28c19b5f24387a67fd36a
  
  #include "display.h"
  
-@@ -37,8 +46,16 @@ struct vout_display_sys_t
+@@ -37,8 +46,23 @@ struct vout_display_sys_t
      unsigned frame_count;
      picture_t *last_pic;
      vlc_tick_t last_date;
@@ -433,6 +433,13 @@ index 41b74829eaa728eec96300cf9a02886fe73cad00..1ee5008c95a28c19b5f24387a67fd36a
 +    unsigned osd_height;
 +    int64_t osd_order;
 +    bool osd_visible;
++    vlc_thread_t osd_thread;
++    vlc_mutex_t osd_lock;
++    vlc_cond_t osd_cond;
++    subpicture_t *osd_pending_subpic;
++    bool osd_pending;
++    bool osd_stop;
++    bool osd_thread_started;
  };
  
 +static const vlc_fourcc_t subpicture_chromas[] = { VLC_CODEC_RGBA, 0 };
@@ -440,7 +447,7 @@ index 41b74829eaa728eec96300cf9a02886fe73cad00..1ee5008c95a28c19b5f24387a67fd36a
  static picture_pool_t *Pool(vout_display_t *vd, unsigned count)
  {
      vout_display_sys_t *sys = vd->sys;
-@@ -85,11 +102,233 @@ static picture_pool_t *Pool(vout_display_t *vd, unsigned count)
+@@ -85,11 +109,294 @@ static picture_pool_t *Pool(vout_display_t *vd, unsigned count)
      return sys->pool;
  }
  
@@ -527,7 +534,7 @@ index 41b74829eaa728eec96300cf9a02886fe73cad00..1ee5008c95a28c19b5f24387a67fd36a
 +        sys->osd_window = NULL;
 +        return false;
 +    }
-+    msg_Info(vd, "OHCodec transparent OSD Surface attached (RGBA subtitle blend)");
++    msg_Info(vd, "OHCodec transparent OSD Surface attached (async RGBA subtitle blend)");
 +    return true;
 +}
 +
@@ -665,17 +672,92 @@ index 41b74829eaa728eec96300cf9a02886fe73cad00..1ee5008c95a28c19b5f24387a67fd36a
 +    return success;
 +}
 +
++static void *OsdThread(void *opaque)
++{
++    vout_display_t *vd = opaque;
++    vout_display_sys_t *sys = vd->sys;
++
++    for (;;)
++    {
++        vlc_mutex_lock(&sys->osd_lock);
++        while (!sys->osd_pending && !sys->osd_stop)
++            vlc_cond_wait(&sys->osd_cond, &sys->osd_lock);
++
++        if (sys->osd_stop)
++        {
++            subpicture_t *pending = sys->osd_pending_subpic;
++            sys->osd_pending_subpic = NULL;
++            sys->osd_pending = false;
++            vlc_mutex_unlock(&sys->osd_lock);
++            if (pending)
++                subpicture_Delete(pending);
++            break;
++        }
++
++        subpicture_t *subpic = sys->osd_pending_subpic;
++        sys->osd_pending_subpic = NULL;
++        sys->osd_pending = false;
++        vlc_mutex_unlock(&sys->osd_lock);
++
++        const vlc_tick_t started = mdate();
++        UploadOsd(vd, subpic);
++        const vlc_tick_t elapsed = mdate() - started;
++        if (elapsed >= 50000)
++            msg_Warn(vd, "OSD upload slow: duration=%lld ms subtitle=%d",
++                     (long long)(elapsed / 1000), subpic != NULL);
++        if (subpic)
++            subpicture_Delete(subpic);
++    }
++    return NULL;
++}
++
++static void QueueOsd(vout_display_t *vd, subpicture_t *subpic)
++{
++    vout_display_sys_t *sys = vd->sys;
++    if (!sys->osd_thread_started)
++    {
++        if (subpic)
++            subpicture_Delete(subpic);
++        return;
++    }
++
++    vlc_mutex_lock(&sys->osd_lock);
++    subpicture_t *stale = sys->osd_pending_subpic;
++    sys->osd_pending_subpic = subpic;
++    sys->osd_pending = true;
++    vlc_cond_signal(&sys->osd_cond);
++    vlc_mutex_unlock(&sys->osd_lock);
++
++    /* If blending falls behind, only the newest subtitle state matters. */
++    if (stale)
++        subpicture_Delete(stale);
++}
++
  static void Prepare(vout_display_t *vd, picture_t *pic, subpicture_t *subpic)
  {
 -    VLC_UNUSED(subpic);
      vout_display_sys_t *sys = vd->sys;
  
-+    UploadOsd(vd, subpic);
++    VLC_UNUSED(subpic);
 +
      msg_Dbg(vd, "[OHOS-DBG] Prepare: pic=%p, context=%p, need_flush=%d, date=%lld",
              pic, pic ? pic->context : NULL, sys->need_flush,
              pic ? (long long)pic->date : 0);
-@@ -190,6 +429,7 @@ static int Control(vout_display_t *vd, int query, va_list args)
+@@ -108,7 +415,13 @@ static void Display(vout_display_t *vd, picture_t *pic, subpicture_t *subpic)
+     msg_Dbg(vd, "[OHOS-DBG] Display: frame#%u, pic=%p, context=%p, date=%lld, subpic=%p",
+             sys->frame_count, pic, pic ? pic->context : NULL,
+             (long long)pic->date, subpic);
+ 
++    /* Subtitle blending and OSD Surface fences must not hold an OHCodec
++     * video output buffer or block VLC's vout scheduler. The worker owns the
++     * subpicture after this call. */
++    QueueOsd(vd, subpic);
++    subpic = NULL;
++
+     if (pic->date == 0)
+     {
+         msg_Dbg(vd, "[OHOS-DBG] Display: date=0 frame, releasing pic=%p", pic);
+@@ -190,6 +503,7 @@ static int Control(vout_display_t *vd, int query, va_list args)
          case VOUT_DISPLAY_CHANGE_SOURCE_ASPECT:
          case VOUT_DISPLAY_CHANGE_SOURCE_CROP:
              VLC_UNUSED(args);
@@ -683,31 +765,48 @@ index 41b74829eaa728eec96300cf9a02886fe73cad00..1ee5008c95a28c19b5f24387a67fd36a
              return VLC_SUCCESS;
  
          case VOUT_DISPLAY_RESET_PICTURES:
-@@ -223,6 +463,7 @@ static int Open(vlc_object_t *obj)
+@@ -223,6 +537,9 @@ static int Open(vlc_object_t *obj)
      sys->frame_count = 0;
      sys->last_pic = NULL;
      sys->last_date = VLC_TICK_INVALID;
 +    sys->osd_order = INT64_MIN;
++    vlc_mutex_init(&sys->osd_lock);
++    vlc_cond_init(&sys->osd_cond);
  
      vd->sys     = sys;
      vd->fmt     = vd->source;
-@@ -235,7 +476,7 @@ static int Open(vlc_object_t *obj)
+@@ -235,7 +552,12 @@ static int Open(vlc_object_t *obj)
      vd->info.has_double_click     = false;
      vd->info.needs_hide_mouse     = false;
      vd->info.has_pictures_invalid = false;
 -    vd->info.subpicture_chromas   = NULL;
 +    vd->info.subpicture_chromas   = subpicture_chromas;
++    if (vlc_clone(&sys->osd_thread, OsdThread, vd,
++                  VLC_THREAD_PRIORITY_LOW) == 0)
++        sys->osd_thread_started = true;
++    else
++        msg_Warn(vd, "failed to start asynchronous OSD worker; subtitles disabled");
      msg_Dbg(vd, "[OHOS-DBG] Open: OHOS surface display opened successfully");
      return VLC_SUCCESS;
  }
-@@ -247,6 +488,11 @@ static void Close(vlc_object_t *obj)
+@@ -247,6 +569,21 @@ static void Close(vlc_object_t *obj)
  
      msg_Dbg(vd, "[OHOS-DBG] Close: total frames displayed=%u", sys->frame_count);
  
++    if (sys->osd_thread_started)
++    {
++        vlc_mutex_lock(&sys->osd_lock);
++        sys->osd_stop = true;
++        vlc_cond_signal(&sys->osd_cond);
++        vlc_mutex_unlock(&sys->osd_lock);
++        vlc_join(sys->osd_thread, NULL);
++    }
 +    if (sys->osd_visible)
 +        UploadOsd(vd, NULL);
 +    if (sys->osd_blend)
 +        filter_DeleteBlend(sys->osd_blend);
++    vlc_cond_destroy(&sys->osd_cond);
++    vlc_mutex_destroy(&sys->osd_lock);
 +
      if (sys->pool)
          picture_pool_Release(sys->pool);

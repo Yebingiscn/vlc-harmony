@@ -44,7 +44,7 @@ bash -n "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
 bash -n "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 grep -q 'OHCodec Surface frames use VLC vout timing' "$WORKFLOW_FILE"
 grep -q 'OHCodec Surface vout is not ready; dropping frame' "$WORKFLOW_FILE"
-grep -q 'OHCodec transparent OSD Surface attached (RGBA subtitle blend)' "$WORKFLOW_FILE"
+grep -q 'OHCodec transparent OSD Surface attached (async RGBA subtitle blend)' "$WORKFLOW_FILE"
 if grep -q 'OHCodec Surface uses deadline-gated immediate release' "$WORKFLOW_FILE"
 then
     echo "ERROR: native workflow still verifies the superseded decoder-side deadline marker"
@@ -175,7 +175,11 @@ grep -q 'SetRendererWriteDataCallbackAdvanced' \
     "$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
 grep -q 'Audio low-latency queue configured' \
     "$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
-grep -q 'OHCodec transparent OSD Surface attached (RGBA subtitle blend)' \
+grep -q 'OHCodec transparent OSD Surface attached (async RGBA subtitle blend)' \
+    "$WORK_DIR/vlc/modules/video_output/ohos/display.c"
+grep -q 'static void \*OsdThread' \
+    "$WORK_DIR/vlc/modules/video_output/ohos/display.c"
+grep -q 'QueueOsd(vd, subpic)' \
     "$WORK_DIR/vlc/modules/video_output/ohos/display.c"
 grep -Fq 'static const vlc_fourcc_t subpicture_chromas[] = { VLC_CODEC_RGBA, 0 };' \
     "$WORK_DIR/vlc/modules/video_output/ohos/display.c"
