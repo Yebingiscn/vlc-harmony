@@ -135,9 +135,11 @@ jobs:
 
           video_decoder=entry/libs/arm64-v8a/vlc/plugins/codec/libavcodec_plugin.so
           audio_output=entry/libs/arm64-v8a/vlc/plugins/audio_output/libohos_audiotrack_plugin.so
+          osd_output=entry/libs/arm64-v8a/vlc/plugins/video_output/libohos_surface_display_plugin.so
           ffmpeg_decoder=entry/libs/arm64-v8a/libavcodec.so.62
           test -s "${video_decoder}"
           test -s "${audio_output}"
+          test -s "${osd_output}"
           test -s "${ffmpeg_decoder}"
 
           if grep -aFq '[OHOS-DBG] frame received:' "${video_decoder}"; then
@@ -148,8 +150,12 @@ jobs:
             echo "Stale VLC audio output detected: low-latency queue marker is absent"
             exit 1
           fi
-          if ! grep -aFq 'OHCodec Surface uses deadline-gated immediate release' "${video_decoder}"; then
-            echo "Stale VLC decoder detected: deadline-gated Surface marker is absent"
+          if ! grep -aFq 'OHCodec Surface frames use VLC vout timing' "${video_decoder}"; then
+            echo "Stale VLC decoder detected: VLC-vout Surface timing marker is absent"
+            exit 1
+          fi
+          if ! grep -aFq 'OHCodec transparent OSD Surface attached' "${osd_output}"; then
+            echo "Stale VLC video output detected: transparent OSD marker is absent"
             exit 1
           fi
           if ! grep -aFq 'refresh-rate=system-managed' "${ffmpeg_decoder}"; then

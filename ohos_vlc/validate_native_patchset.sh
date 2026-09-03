@@ -3,6 +3,7 @@
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+WORKFLOW_FILE="$ROOT_DIR/../.github/workflows/build-native-vlc.yml"
 WORK_DIR=$(mktemp -d)
 trap 'rm -rf "$WORK_DIR"' EXIT
 
@@ -41,6 +42,13 @@ bash -n "$ROOT_DIR/prebuild.sh"
 bash -n "$ROOT_DIR/recipes/brotli-v1.0.9.HPKBUILD"
 bash -n "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
 bash -n "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
+grep -q 'OHCodec Surface frames use VLC vout timing' "$WORKFLOW_FILE"
+grep -q 'OHCodec transparent OSD Surface attached' "$WORKFLOW_FILE"
+if grep -q 'OHCodec Surface uses deadline-gated immediate release' "$WORKFLOW_FILE"
+then
+    echo "ERROR: native workflow still verifies the superseded decoder-side deadline marker"
+    exit 1
+fi
 grep -q 'invalidate_restored_native_outputs' "$ROOT_DIR/prebuild.sh"
 grep -q 'rm -rf -- "$cached_vlc_dir"' "$ROOT_DIR/prebuild.sh"
 grep -q 'rm -rf -- "$cached_ffmpeg_dir"' "$ROOT_DIR/prebuild.sh"
