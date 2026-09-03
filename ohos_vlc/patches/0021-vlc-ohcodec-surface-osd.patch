@@ -389,7 +389,7 @@ index 46ff86a7b463b5e8014650bf80d4a1c56ce61029..6ad5bc1c3efb5bbc2da5aabcf084e887
  libohos_surface_display_plugin_la_SOURCES = video_output/ohos/display.c
  libohos_surface_display_plugin_la_CFLAGS = $(AM_CFLAGS)
 -libohos_surface_display_plugin_la_LIBADD =
-+libohos_surface_display_plugin_la_LIBADD = -lnative_window
++libohos_surface_display_plugin_la_LIBADD = -lnative_window -lnative_buffer
  
  if HAVE_OHOS
  vout_LTLIBRARIES += libohos_window_plugin.la libegl_ohos_plugin.la libohos_surface_display_plugin.la

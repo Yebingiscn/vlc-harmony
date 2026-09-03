@@ -170,6 +170,8 @@ grep -q 'OHCodec transparent OSD Surface attached' \
     "$WORK_DIR/vlc/modules/video_output/ohos/display.c"
 grep -q 'libvlc_media_player_set_ohos_osd_nativewindow_ptr' \
     "$WORK_DIR/vlc/lib/libvlc.sym"
+grep -q 'libohos_surface_display_plugin_la_LIBADD = -lnative_window -lnative_buffer' \
+    "$WORK_DIR/vlc/modules/video_output/Makefile.am"
 grep -q 'av_ohcodec_release_buffer_at_time' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
 grep -q 'OHCodec Surface frames use VLC vout timing' \
