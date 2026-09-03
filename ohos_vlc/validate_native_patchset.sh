@@ -44,7 +44,7 @@ bash -n "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
 bash -n "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 grep -q 'OHCodec Surface frames use VLC vout timing' "$WORKFLOW_FILE"
 grep -q 'OHCodec Surface vout is not ready; dropping frame' "$WORKFLOW_FILE"
-grep -q 'OHCodec transparent OSD Surface attached' "$WORKFLOW_FILE"
+grep -q 'OHCodec transparent OSD Surface attached (RGBA subtitle blend)' "$WORKFLOW_FILE"
 if grep -q 'OHCodec Surface uses deadline-gated immediate release' "$WORKFLOW_FILE"
 then
     echo "ERROR: native workflow still verifies the superseded decoder-side deadline marker"
@@ -175,8 +175,16 @@ grep -q 'SetRendererWriteDataCallbackAdvanced' \
     "$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
 grep -q 'Audio low-latency queue configured' \
     "$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
-grep -q 'OHCodec transparent OSD Surface attached' \
+grep -q 'OHCodec transparent OSD Surface attached (RGBA subtitle blend)' \
     "$WORK_DIR/vlc/modules/video_output/ohos/display.c"
+grep -Fq 'static const vlc_fourcc_t subpicture_chromas[] = { VLC_CODEC_RGBA, 0 };' \
+    "$WORK_DIR/vlc/modules/video_output/ohos/display.c"
+if grep -Fq 'subpicture_chromas[] = { VLC_CODEC_BGRA' \
+    "$WORK_DIR/vlc/modules/video_output/ohos/display.c"
+then
+    echo "ERROR: OSD requests BGRA subtitle sources, which VLC 3 cannot blend onto BGRA"
+    exit 1
+fi
 grep -q 'libvlc_media_player_set_ohos_osd_nativewindow_ptr' \
     "$WORK_DIR/vlc/lib/libvlc.sym"
 grep -q 'libohos_surface_display_plugin_la_LIBADD = -lnative_window -lnative_buffer' \

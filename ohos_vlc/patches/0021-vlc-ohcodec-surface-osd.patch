@@ -435,7 +435,7 @@ index 41b74829eaa728eec96300cf9a02886fe73cad00..1ee5008c95a28c19b5f24387a67fd36a
 +    bool osd_visible;
  };
  
-+static const vlc_fourcc_t subpicture_chromas[] = { VLC_CODEC_BGRA, 0 };
++static const vlc_fourcc_t subpicture_chromas[] = { VLC_CODEC_RGBA, 0 };
 +
  static picture_pool_t *Pool(vout_display_t *vd, unsigned count)
  {
@@ -527,7 +527,7 @@ index 41b74829eaa728eec96300cf9a02886fe73cad00..1ee5008c95a28c19b5f24387a67fd36a
 +        sys->osd_window = NULL;
 +        return false;
 +    }
-+    msg_Info(vd, "OHCodec transparent OSD Surface attached");
++    msg_Info(vd, "OHCodec transparent OSD Surface attached (RGBA subtitle blend)");
 +    return true;
 +}
 +

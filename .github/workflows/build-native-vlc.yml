@@ -158,8 +158,8 @@ jobs:
             echo "Stale VLC decoder detected: Surface vout initialization guard is absent"
             exit 1
           fi
-          if ! grep -aFq 'OHCodec transparent OSD Surface attached' "${osd_output}"; then
-            echo "Stale VLC video output detected: transparent OSD marker is absent"
+          if ! grep -aFq 'OHCodec transparent OSD Surface attached (RGBA subtitle blend)' "${osd_output}"; then
+            echo "Stale VLC video output detected: RGBA subtitle blend marker is absent"
             exit 1
           fi
           if ! grep -aFq 'refresh-rate=system-managed' "${ffmpeg_decoder}"; then
