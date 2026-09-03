@@ -305,7 +305,7 @@ index e0ba1da57383443130c91dfb007e89b6f1c5150d..9883d20095b1ea581722ee87ed9841ce
          if( block->i_flags & BLOCK_FLAG_CORRUPTED )
          {
              block_Release( block );
-@@ -1739,17 +1620,66 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
+@@ -1739,17 +1620,75 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
              const bool corrupted = p_dec->b_frame_drop_allowed &&
                                     (frame->flags & AV_FRAME_FLAG_CORRUPT) &&
                                     !p_sys->b_show_corrupted;
@@ -322,6 +322,15 @@ index e0ba1da57383443130c91dfb007e89b6f1c5150d..9883d20095b1ea581722ee87ed9841ce
 -            /* Freeing a rendered context only releases its AVBufferRef. For
 -             * preroll/corrupt frames it returns the output buffer without
 -             * rendering, so pre-seek pictures can never flash on screen. */
++
++            if (p_sys->b_first_frame &&
++                lavc_UpdateVideoFormat(p_dec, p_context,
++                                       frame->format, frame->format))
++            {
++                msg_Warn(p_dec, "OHCodec Surface vout is not ready; dropping frame");
++                av_frame_free(&frame);
++                continue;
++            }
 +
 +            picture_t *surface_pic = decoder_NewPicture(p_dec);
 +            ohos_picture_context_t *octx = malloc(sizeof(*octx));

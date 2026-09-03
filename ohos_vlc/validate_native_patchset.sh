@@ -43,6 +43,7 @@ bash -n "$ROOT_DIR/recipes/brotli-v1.0.9.HPKBUILD"
 bash -n "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
 bash -n "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 grep -q 'OHCodec Surface frames use VLC vout timing' "$WORKFLOW_FILE"
+grep -q 'OHCodec Surface vout is not ready; dropping frame' "$WORKFLOW_FILE"
 grep -q 'OHCodec transparent OSD Surface attached' "$WORKFLOW_FILE"
 if grep -q 'OHCodec Surface uses deadline-gated immediate release' "$WORKFLOW_FILE"
 then
@@ -183,6 +184,8 @@ grep -q 'libohos_surface_display_plugin_la_LIBADD = -lnative_window -lnative_buf
 grep -q 'av_ohcodec_release_buffer_at_time' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
 grep -q 'OHCodec Surface frames use VLC vout timing' \
+    "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
+grep -q 'OHCodec Surface vout is not ready; dropping frame' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
 grep -q 'OHCodec Buffer output enabled for VLC subtitle composition' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"

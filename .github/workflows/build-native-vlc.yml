@@ -154,6 +154,10 @@ jobs:
             echo "Stale VLC decoder detected: VLC-vout Surface timing marker is absent"
             exit 1
           fi
+          if ! grep -aFq 'OHCodec Surface vout is not ready; dropping frame' "${video_decoder}"; then
+            echo "Stale VLC decoder detected: Surface vout initialization guard is absent"
+            exit 1
+          fi
           if ! grep -aFq 'OHCodec transparent OSD Surface attached' "${osd_output}"; then
             echo "Stale VLC video output detected: transparent OSD marker is absent"
             exit 1
