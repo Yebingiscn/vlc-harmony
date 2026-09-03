@@ -65,6 +65,44 @@ index 88175210cbf54d0bb2eff1a8ab95e9bdc6f0e53f..0748a84598f7e354dde5e508773838a7
  /**************************************************************************
   * set_evas_object
   **************************************************************************/
+diff --git a/include/vlc_vout_display.h b/include/vlc_vout_display.h
+index 80761c8..8e45e4a 100644
+--- a/include/vlc_vout_display.h
++++ b/include/vlc_vout_display.h
+@@ -133,6 +133,7 @@ typedef struct {
+                                              * or vout_display_SendEventMouseState() */
+     bool has_pictures_invalid;              /* Will VOUT_DISPLAY_EVENT_PICTURES_INVALID be used */
+     const vlc_fourcc_t *subpicture_chromas; /* List of supported chromas for subpicture rendering. */
++    bool scale_subpictures_to_display;      /* Render direct subpictures at the display size. */
+ } vout_display_info_t;
+ 
+ /**
+diff --git a/src/video_output/display.c b/src/video_output/display.c
+index 869c575..c0bebc1 100644
+--- a/src/video_output/display.c
++++ b/src/video_output/display.c
+@@ -94,6 +94,7 @@ static vout_display_t *vout_display_New(vlc_object_t *obj,
+     vd->info.needs_hide_mouse = false;
+     vd->info.has_pictures_invalid = false;
+     vd->info.subpicture_chromas = NULL;
++    vd->info.scale_subpictures_to_display = false;
+ 
+     vd->cfg = cfg;
+     vd->pool = NULL;
+diff --git a/src/video_output/video_output.c b/src/video_output/video_output.c
+index 3686419..5a60f12 100644
+--- a/src/video_output/video_output.c
++++ b/src/video_output/video_output.c
+@@ -1032,7 +1032,8 @@ static int ThreadDisplayRenderPicture(vout_thread_t *vout, bool is_forced)
+         vout_display_PlacePicture(&place, &vd->source, vd->cfg, false);
+ 
+         fmt_spu = vd->source;
+-        if (fmt_spu.i_width * fmt_spu.i_height < place.width * place.height) {
++        if (vd->info.scale_subpictures_to_display ||
++            fmt_spu.i_width * fmt_spu.i_height < place.width * place.height) {
+             fmt_spu.i_sar_num = vd->cfg->display.sar.num;
+             fmt_spu.i_sar_den = vd->cfg->display.sar.den;
+             fmt_spu.i_width          =
 diff --git a/modules/codec/avcodec/video.c b/modules/codec/avcodec/video.c
 index e0ba1da57383443130c91dfb007e89b6f1c5150d..9883d20095b1ea581722ee87ed9841ced7a2d265 100644
 --- a/modules/codec/avcodec/video.c
@@ -423,7 +461,7 @@ index 41b74829eaa728eec96300cf9a02886fe73cad00..1ee5008c95a28c19b5f24387a67fd36a
  
  #include "display.h"
  
-@@ -37,8 +46,23 @@ struct vout_display_sys_t
+@@ -37,8 +46,24 @@ struct vout_display_sys_t
      unsigned frame_count;
      picture_t *last_pic;
      vlc_tick_t last_date;
@@ -433,6 +471,7 @@ index 41b74829eaa728eec96300cf9a02886fe73cad00..1ee5008c95a28c19b5f24387a67fd36a
 +    unsigned osd_height;
 +    int64_t osd_order;
 +    bool osd_visible;
++    bool osd_force_upload;
 +    vlc_thread_t osd_thread;
 +    vlc_mutex_t osd_lock;
 +    vlc_cond_t osd_cond;
@@ -447,7 +486,7 @@ index 41b74829eaa728eec96300cf9a02886fe73cad00..1ee5008c95a28c19b5f24387a67fd36a
  static picture_pool_t *Pool(vout_display_t *vd, unsigned count)
  {
      vout_display_sys_t *sys = vd->sys;
-@@ -85,11 +109,294 @@ static picture_pool_t *Pool(vout_display_t *vd, unsigned count)
+@@ -85,11 +110,316 @@ static picture_pool_t *Pool(vout_display_t *vd, unsigned count)
      return sys->pool;
  }
  
@@ -473,12 +512,30 @@ index 41b74829eaa728eec96300cf9a02886fe73cad00..1ee5008c95a28c19b5f24387a67fd36a
 +
 +static bool ConfigureOsdWindow(vout_display_t *vd, OHNativeWindow *window)
 +{
-+    video_format_t rotated;
-+    video_format_ApplyRotation(&rotated, &vd->source);
-+    const unsigned width = rotated.i_visible_width
-+        ? rotated.i_visible_width : rotated.i_width;
-+    const unsigned height = rotated.i_visible_height
-+        ? rotated.i_visible_height : rotated.i_height;
++    unsigned width = vd->cfg->display.width;
++    unsigned height = vd->cfg->display.height;
++    if (width == 0 || height == 0)
++    {
++        int queried_width = 0;
++        int queried_height = 0;
++        if (OH_NativeWindow_NativeWindowHandleOpt(
++                window, GET_BUFFER_GEOMETRY,
++                &queried_height, &queried_width) == 0 &&
++            queried_width > 0 && queried_height > 0)
++        {
++            width = queried_width;
++            height = queried_height;
++        }
++    }
++    if (width == 0 || height == 0)
++    {
++        video_format_t rotated;
++        video_format_ApplyRotation(&rotated, &vd->source);
++        width = rotated.i_visible_width
++            ? rotated.i_visible_width : rotated.i_width;
++        height = rotated.i_visible_height
++            ? rotated.i_visible_height : rotated.i_height;
++    }
 +    int ret = OH_NativeWindow_NativeWindowHandleOpt(
 +        window, SET_BUFFER_GEOMETRY, width, height);
 +    if (ret != 0)
@@ -520,6 +577,7 @@ index 41b74829eaa728eec96300cf9a02886fe73cad00..1ee5008c95a28c19b5f24387a67fd36a
 +    sys->osd_window = window;
 +    sys->osd_visible = false;
 +    sys->osd_order = INT64_MIN;
++    sys->osd_force_upload = true;
 +    sys->osd_width = 0;
 +    sys->osd_height = 0;
 +    if (sys->osd_blend)
@@ -534,7 +592,8 @@ index 41b74829eaa728eec96300cf9a02886fe73cad00..1ee5008c95a28c19b5f24387a67fd36a
 +        sys->osd_window = NULL;
 +        return false;
 +    }
-+    msg_Info(vd, "OHCodec transparent OSD Surface attached (async RGBA subtitle blend)");
++    msg_Info(vd, "OHCodec transparent OSD Surface attached (async display-size RGBA blend %ux%u)",
++             vd->cfg->display.width, vd->cfg->display.height);
 +    return true;
 +}
 +
@@ -546,7 +605,7 @@ index 41b74829eaa728eec96300cf9a02886fe73cad00..1ee5008c95a28c19b5f24387a67fd36a
 +    if (subpic && !subpic->b_fade && sys->osd_visible &&
 +        subpic->i_order == sys->osd_order)
 +        return true;
-+    if (!subpic && !sys->osd_visible)
++    if (!subpic && !sys->osd_visible && !sys->osd_force_upload)
 +        return true;
 +
 +    OHNativeWindowBuffer *window_buffer = NULL;
@@ -613,6 +672,7 @@ index 41b74829eaa728eec96300cf9a02886fe73cad00..1ee5008c95a28c19b5f24387a67fd36a
 +        sys->osd_height = height;
 +        sys->osd_visible = false;
 +        sys->osd_order = INT64_MIN;
++        sys->osd_force_upload = true;
 +    }
 +
 +    if (subpic && !sys->osd_blend)
@@ -660,6 +720,7 @@ index 41b74829eaa728eec96300cf9a02886fe73cad00..1ee5008c95a28c19b5f24387a67fd36a
 +    requested = false;
 +    sys->osd_visible = subpic != NULL;
 +    sys->osd_order = subpic ? subpic->i_order : INT64_MIN;
++    sys->osd_force_upload = false;
 +    success = true;
 +
 +done:
@@ -743,7 +804,7 @@ index 41b74829eaa728eec96300cf9a02886fe73cad00..1ee5008c95a28c19b5f24387a67fd36a
      msg_Dbg(vd, "[OHOS-DBG] Prepare: pic=%p, context=%p, need_flush=%d, date=%lld",
              pic, pic ? pic->context : NULL, sys->need_flush,
              pic ? (long long)pic->date : 0);
-@@ -108,7 +415,13 @@ static void Display(vout_display_t *vd, picture_t *pic, subpicture_t *subpic)
+@@ -108,7 +443,13 @@ static void Display(vout_display_t *vd, picture_t *pic, subpicture_t *subpic)
      msg_Dbg(vd, "[OHOS-DBG] Display: frame#%u, pic=%p, context=%p, date=%lld, subpic=%p",
              sys->frame_count, pic, pic ? pic->context : NULL,
              (long long)pic->date, subpic);
@@ -757,7 +818,7 @@ index 41b74829eaa728eec96300cf9a02886fe73cad00..1ee5008c95a28c19b5f24387a67fd36a
      if (pic->date == 0)
      {
          msg_Dbg(vd, "[OHOS-DBG] Display: date=0 frame, releasing pic=%p", pic);
-@@ -190,6 +503,7 @@ static int Control(vout_display_t *vd, int query, va_list args)
+@@ -190,6 +526,7 @@ static int Control(vout_display_t *vd, int query, va_list args)
          case VOUT_DISPLAY_CHANGE_SOURCE_ASPECT:
          case VOUT_DISPLAY_CHANGE_SOURCE_CROP:
              VLC_UNUSED(args);
@@ -765,7 +826,7 @@ index 41b74829eaa728eec96300cf9a02886fe73cad00..1ee5008c95a28c19b5f24387a67fd36a
              return VLC_SUCCESS;
  
          case VOUT_DISPLAY_RESET_PICTURES:
-@@ -223,6 +537,9 @@ static int Open(vlc_object_t *obj)
+@@ -223,6 +560,9 @@ static int Open(vlc_object_t *obj)
      sys->frame_count = 0;
      sys->last_pic = NULL;
      sys->last_date = VLC_TICK_INVALID;
@@ -775,12 +836,13 @@ index 41b74829eaa728eec96300cf9a02886fe73cad00..1ee5008c95a28c19b5f24387a67fd36a
  
      vd->sys     = sys;
      vd->fmt     = vd->source;
-@@ -235,7 +552,12 @@ static int Open(vlc_object_t *obj)
+@@ -235,7 +575,13 @@ static int Open(vlc_object_t *obj)
      vd->info.has_double_click     = false;
      vd->info.needs_hide_mouse     = false;
      vd->info.has_pictures_invalid = false;
 -    vd->info.subpicture_chromas   = NULL;
 +    vd->info.subpicture_chromas   = subpicture_chromas;
++    vd->info.scale_subpictures_to_display = true;
 +    if (vlc_clone(&sys->osd_thread, OsdThread, vd,
 +                  VLC_THREAD_PRIORITY_LOW) == 0)
 +        sys->osd_thread_started = true;
@@ -789,7 +851,7 @@ index 41b74829eaa728eec96300cf9a02886fe73cad00..1ee5008c95a28c19b5f24387a67fd36a
      msg_Dbg(vd, "[OHOS-DBG] Open: OHOS surface display opened successfully");
      return VLC_SUCCESS;
  }
-@@ -247,6 +569,21 @@ static void Close(vlc_object_t *obj)
+@@ -247,6 +593,21 @@ static void Close(vlc_object_t *obj)
  
      msg_Dbg(vd, "[OHOS-DBG] Close: total frames displayed=%u", sys->frame_count);
  

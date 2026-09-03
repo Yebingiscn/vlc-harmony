@@ -21,7 +21,7 @@
 | `0010-vlc-ohos-realtime-audio-ring.patch`                    | 音频输出改用预分配环形队列，移除实时回调中的逐块堆分配、链表遍历与高频日志，并拒绝 0 声道误启动 |
 | `0011-vlc-ohos-system-refresh-low-latency-audio.patch`       | 移除 Surface 固定 60Hz 兜底，按媒体时钟提交并由系统控制刷新率；将音频软件排队限制为约 250ms |
 | `0011-ffmpeg-ohcodec-system-refresh.patch`                   | 不再向 OHCodec 写入帧率或强制 VRR 参数，由 HarmonyOS 显示服务选择刷新率 |
-| `0021-vlc-ohcodec-surface-osd.patch`                         | 默认将 OHCodec 视频帧交回 VLC 时钟队列，并用独立透明 Surface 合成字幕/OSD，保留视频零拷贝 |
+| `0021-vlc-ohcodec-surface-osd.patch`                         | 默认将 OHCodec 视频帧交回 VLC 时钟队列；字幕/OSD 在独立透明 Surface 上异步按显示尺寸合成并提前预热，保留视频零拷贝 |
 | `vlc-hpkbuild-apply-local-patches.patch`                      | 修改 VLC HPKBUILD，按顺序应用兼容与本地功能补丁                                |
 | `vlc-hpkbuild-build-dvbpsi.patch`                             | 修改 HPKBUILD 构建 dvbpsi 依赖                                         |
 
