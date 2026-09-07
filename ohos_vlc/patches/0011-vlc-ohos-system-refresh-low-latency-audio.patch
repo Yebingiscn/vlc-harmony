@@ -45,7 +45,7 @@ index dcb055d..a31977b 100644
      vlc_mutex_unlock(&queue->lock);
  }
  
-@@ -142,13 +148,24 @@ static void audio_queue_destroy(audio_queue_t *queue)
+@@ -142,13 +148,31 @@ static void audio_queue_destroy(audio_queue_t *queue)
      free(queue->data);
      queue->data = NULL;
      queue->capacity = 0;
@@ -57,6 +57,16 @@ index dcb055d..a31977b 100644
 +static bool audio_queue_push(audio_queue_t *queue, const uint8_t *data,
 +                             size_t size, size_t max_queue_size)
  {
++    /* The latency target is not a maximum block size. Rate transitions can
++     * insert a silence block longer than 250ms. Rejecting it makes VLC retry
++     * synchronization in a busy loop. Admit one such block within the fixed
++     * ring capacity; subsequent writes wait for it to drain normally. */
++    if (size > max_queue_size)
++        max_queue_size = queue->capacity;
++    else
++        max_queue_size = __MIN(queue->capacity, max_queue_size);
++    if (size > queue->capacity)
++        return false;
      vlc_mutex_lock(&queue->lock);
 -    if (size > queue->capacity - queue->total_size) {
 +
