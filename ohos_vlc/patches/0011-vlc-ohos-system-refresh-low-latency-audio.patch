@@ -45,7 +45,7 @@ index dcb055d..a31977b 100644
      vlc_mutex_unlock(&queue->lock);
  }
  
-@@ -142,13 +148,31 @@ static void audio_queue_destroy(audio_queue_t *queue)
+@@ -142,13 +148,34 @@ static void audio_queue_destroy(audio_queue_t *queue)
      free(queue->data);
      queue->data = NULL;
      queue->capacity = 0;
