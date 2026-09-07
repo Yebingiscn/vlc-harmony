@@ -23,6 +23,7 @@ VLC_OPUS_AUDIO_PATCH=$ROOT_DIR/patches/0018-vlc-ffmpeg8-opus-audio-init.patch
 VLC_LIBOPUS_PATCH=$ROOT_DIR/patches/0019-vlc-ohos-prefer-libopus-decoder.patch
 VLC_OPUS_XIPH_PATCH=$ROOT_DIR/patches/0020-vlc-avcodec-unwrap-opus-xiph-extradata.patch
 VLC_SURFACE_OSD_PATCH=$ROOT_DIR/patches/0021-vlc-ohcodec-surface-osd.patch
+VLC_RATE_TRANSITION_PATCH=$ROOT_DIR/patches/0022-vlc-rate-transition-backpressure.patch
 FFMPEG_SYSTEM_REFRESH_PATCH=$ROOT_DIR/patches/0011-ffmpeg-ohcodec-system-refresh.patch
 FFMPEG_STALL_DIAGNOSTICS_PATCH=$ROOT_DIR/patches/0012-ffmpeg-ohcodec-stall-diagnostics.patch
 FFMPEG_FRAME_PTS_PATCH=$ROOT_DIR/patches/0013-ffmpeg-ohcodec-propagate-frame-pts.patch
@@ -168,6 +169,17 @@ git -C "$WORK_DIR/vlc" apply --check "$VLC_OPUS_XIPH_PATCH"
 git -C "$WORK_DIR/vlc" apply "$VLC_OPUS_XIPH_PATCH"
 git -C "$WORK_DIR/vlc" apply --check "$VLC_SURFACE_OSD_PATCH"
 git -C "$WORK_DIR/vlc" apply "$VLC_SURFACE_OSD_PATCH"
+git -C "$WORK_DIR/vlc" apply --check "$VLC_RATE_TRANSITION_PATCH"
+git -C "$WORK_DIR/vlc" apply "$VLC_RATE_TRANSITION_PATCH"
+if grep -q 'send_packet EAGAIN x' "$WORK_DIR/vlc/modules/codec/avcodec/video.c"; then
+    echo "ERROR: EAGAIN must not trigger a decoder flush"
+    exit 1
+fi
+grep -q 'flushed_since_play' "$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
+if grep -qE 'post_flush_drop = [1-9]' "$WORK_DIR/vlc/modules/codec/avcodec/video.c"; then
+    echo "ERROR: valid Buffer frames must not be dropped by a fixed flush quota"
+    exit 1
+fi
 
 grep -q 'AUDIO_RING_CAPACITY' \
     "$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
@@ -320,7 +332,10 @@ grep -q '\[OHCodecPTS\] output timestamp fallback' "$WORK_DIR/ffmpeg/libavcodec/
 grep -q '\[OHCodecQueue\] bounded backlog' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
 grep -q 'OH_SURFACE_MAX_QUEUED_OUTPUTS 3' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
 grep -q '\[OHCodecWatchdog\] consumer idle=' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
-grep -q 'OH_SURFACE_MAX_PENDING_INPUTS 6' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
+if grep -qE 'OH_SURFACE_MAX_PENDING_INPUTS|surface_input_limit' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"; then
+    echo "ERROR: fixed input gate can starve OHCodec during decoder priming"
+    exit 1
+fi
 grep -q 'p += attr->offset' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
 grep -q 'Invalid OHCodec output layout' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
 grep -q 's->bit_depth > 8 ? AV_PIX_FMT_P010' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"

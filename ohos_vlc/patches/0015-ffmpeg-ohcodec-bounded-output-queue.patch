@@ -2,12 +2,11 @@ diff --git a/libavcodec/ohdec.c b/libavcodec/ohdec.c
 index c67a561..b2a83b3 100644
 --- a/libavcodec/ohdec.c
 +++ b/libavcodec/ohdec.c
-@@ -57,6 +57,10 @@
+@@ -57,6 +57,9 @@
  #define OH_DOVI_QUEUE_SIZE 64
  #define OH_DOVI_PROBE_PACKETS 16
  #define OH_PTS_QUEUE_SIZE 256
 +#define OH_SURFACE_MAX_QUEUED_OUTPUTS 3
-+#define OH_SURFACE_MAX_PENDING_INPUTS 6
 +#define OH_WATCHDOG_INTERVAL_US 250000
 +#define OH_WATCHDOG_STALL_US 250000
  
@@ -250,40 +249,15 @@ index c67a561..b2a83b3 100644
          ret = ff_oh_err_to_ff_err(err);
          av_log(avctx, AV_LOG_ERROR, "Push input buffer failed, %d, %s\n",
                 err, av_err2str(ret));
-@@ -1248,6 +1374,13 @@ static int oh_decode_receive_frame(AVCodecContext *avctx, AVFrame *frame)
-         while (!s->decode_status) {
-             if (av_fifo_read(s->output_queue, &buffer, 1) >= 0)
-                 break;
-+            if (s->direct_surface_output &&
-+                s->pending_surface_inputs >= OH_SURFACE_MAX_PENDING_INPUTS) {
-+                if (oh_decode_cond_wait(&s->output_cond,
-+                                        &s->output_mutex) == ETIMEDOUT)
-+                    break;
-+                continue;
-+            }
-             // Only wait after send EOF
-             if (s->eof_sent && !s->decode_status) {
-                 if (oh_decode_cond_wait(&s->output_cond, &s->output_mutex) ==
-@@ -1259,6 +1392,10 @@ static int oh_decode_receive_frame(AVCodecContext *avctx, AVFrame *frame)
+@@ -1259,6 +1392,8 @@ static int oh_decode_receive_frame(AVCodecContext *avctx, AVFrame *frame)
          }
  
          ret = s->decode_status;
 +        if (buffer.buffer)
 +            s->last_output_consume_us = av_gettime_relative();
-+        const bool surface_input_limit = s->direct_surface_output &&
-+            s->pending_surface_inputs >= OH_SURFACE_MAX_PENDING_INPUTS;
          ff_mutex_unlock(&s->output_mutex);
  
          // Got a frame
-@@ -1269,6 +1406,8 @@ static int oh_decode_receive_frame(AVCodecContext *avctx, AVFrame *frame)
-         }
-         if (ret < 0)
-             return ret;
-+        if (surface_input_limit)
-+            return AVERROR(EAGAIN);
- 
-         if (!s->pkt.size) {
-             /* fetch new packet or eof */
 @@ -1329,6 +1468,9 @@ static void oh_decode_flush(AVCodecContext *avctx)
      s->last_output_callback_us = 0;
      s->last_output_stall_log_us = 0;

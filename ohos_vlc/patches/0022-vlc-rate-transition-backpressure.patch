@@ -1,0 +1,96 @@
+diff --git a/modules/codec/avcodec/video.c b/modules/codec/avcodec/video.c
+index 8962ac3..a1fc060 100644
+--- a/modules/codec/avcodec/video.c
++++ b/modules/codec/avcodec/video.c
+@@ -1048,7 +1048,7 @@ static void Flush( decoder_t *p_dec )
+         avcodec_flush_buffers( p_context );
+ #ifdef HAVE_OHOS
+         p_sys->flush_count = 0;
+-        p_sys->post_flush_drop = 5;
++        p_sys->post_flush_drop = 0; /* Keep valid Buffer frames after a flush. */
+         p_sys->post_seek_output = true;
+         p_sys->keyframe_count = 0;
+         AVFrame *drain_frame = av_frame_alloc();
+@@ -1508,27 +1508,9 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
+                 av_packet_free( &pkt );
+                 break;
+             }
+-#ifdef HAVE_OHOS
+-            if (ret == AVERROR(EAGAIN)) {
+-                p_sys->flush_count++;
+-                if (p_sys->flush_count > 30) {
+-                    msg_Warn(p_dec, "[OHOS-DBG] send_packet EAGAIN x%d, flushing decoder to recover",
+-                             p_sys->flush_count);
+-                    avcodec_flush_buffers(p_context);
+-                    p_sys->flush_count = 0;
+-                    p_sys->post_flush_drop = 40;
+-                    AVFrame *drain = av_frame_alloc();
+-                    if (drain) {
+-                        while (avcodec_receive_frame(p_context, drain) == 0)
+-                            av_frame_unref(drain);
+-                        av_frame_free(&drain);
+-                    }
+-                }
+-            }
+-            else {
+-                p_sys->flush_count = 0;
+-            }
+-#endif
++            /* EAGAIN is backpressure, not a corrupt decoder. Receive output
++             * below before retrying the unconsumed packet. Flushing here
++             * discards reference frames and repeatedly restarts priming. */
+             i_used = ret != AVERROR(EAGAIN) ? pkt->size : 0;
+             av_packet_free( &pkt );
+         }
+diff --git a/modules/audio_output/audiounit_ohos.c b/modules/audio_output/audiounit_ohos.c
+index 6ad0aea..0ef9fce 100644
+--- a/modules/audio_output/audiounit_ohos.c
++++ b/modules/audio_output/audiounit_ohos.c
+@@ -115,7 +115,8 @@ struct aout_sys_t {
+     size_t drain_initial_size;        // The queue size at the start of emptying
+     vlc_cond_t drain_cond;           // emptying condition variables
+     vlc_tick_t last_write_time;
+-    size_t max_queue_size;
++    size_t max_queue_size;
++    bool flushed_since_play;
+ };
+ 
+ // Initiating the queue operation
+@@ -348,7 +349,8 @@ static int RestartRenderer(audio_output_t *p_aout)
+ 
+     p_sys->is_playing = true;
+     p_sys->is_initialized = true;
+-    p_sys->last_write_time = 0;
++    p_sys->last_write_time = 0;
++    p_sys->flushed_since_play = false;
+     p_aout->volume_set(p_aout, p_sys->volume);
+     if (p_sys->mute)
+         p_aout->mute_set(p_aout, true);
+@@ -469,3 +471,4 @@ static int Start(audio_output_t *p_aout, audio_sample_format_t *p_fmt)
+     p_sys->last_write_time = 0;
++    p_sys->flushed_since_play = false;
+     const size_t bytes_per_sample = get_bytes_per_sample(p_aout,
+                                                           p_sys->sample_format);
+@@ -553,7 +555,8 @@ static void Play(audio_output_t *p_aout, block_t *p_block)
+         }
+     }
+ 
+-    if (p_block && p_block->i_buffer > 0) {
++    if (p_block && p_block->i_buffer > 0) {
++        p_sys->flushed_since_play = false;
+         if (!audio_queue_push(&p_sys->queue, p_block->p_buffer,
+                               p_block->i_buffer, p_sys->max_queue_size)) {
+             static vlc_tick_t last_overflow_log;
+@@ -601,7 +604,10 @@ static void Flush(audio_output_t *p_aout, bool wait)
+     msg_Dbg(p_aout, "Flushing audio queue");
+     audio_queue_clear(&p_sys->queue);
+ 
+-    if (p_sys->p_renderer) {
+-        OH_AudioRenderer_Flush(p_sys->p_renderer);
++    /* VLC can request repeated flushes while discarding stale timestamps.
++     * With no intervening Play there is no new audio to flush. */
++    if (p_sys->p_renderer && !p_sys->flushed_since_play) {
++        if (OH_AudioRenderer_Flush(p_sys->p_renderer) == AUDIOSTREAM_SUCCESS)
++            p_sys->flushed_since_play = true;
+     }
+ }

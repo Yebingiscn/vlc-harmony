@@ -291,6 +291,7 @@ function install_vlc_patches()
     cp -f "$ROOT_DIR/patches/0019-vlc-ohos-prefer-libopus-decoder.patch" "$vlc_recipe_dir/" || return 1
     cp -f "$ROOT_DIR/patches/0020-vlc-avcodec-unwrap-opus-xiph-extradata.patch" "$vlc_recipe_dir/" || return 1
     cp -f "$ROOT_DIR/patches/0021-vlc-ohcodec-surface-osd.patch" "$vlc_recipe_dir/" || return 1
+    cp -f "$ROOT_DIR/patches/0022-vlc-rate-transition-backpressure.patch" "$vlc_recipe_dir/" || return 1
     return 0
 }
 
