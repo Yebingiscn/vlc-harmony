@@ -158,6 +158,14 @@ prepare() {
             cd $OLDPWD
             return -1
         }
+        git apply --check ../0023-vlc-continuous-rate-clock.patch >> $publicbuildlog 2>&1 || {
+            cd $OLDPWD
+            return -1
+        }
+        git apply ../0023-vlc-continuous-rate-clock.patch >> $publicbuildlog 2>&1 || {
+            cd $OLDPWD
+            return -1
+        }
         cd $OLDPWD
         cloneflag=false
     fi

@@ -171,6 +171,9 @@ git -C "$WORK_DIR/vlc" apply --check "$VLC_SURFACE_OSD_PATCH"
 git -C "$WORK_DIR/vlc" apply "$VLC_SURFACE_OSD_PATCH"
 git -C "$WORK_DIR/vlc" apply --check "$VLC_RATE_TRANSITION_PATCH"
 git -C "$WORK_DIR/vlc" apply "$VLC_RATE_TRANSITION_PATCH"
+git -C "$WORK_DIR/vlc" apply --check "$ROOT_DIR/patches/0023-vlc-continuous-rate-clock.patch"
+git -C "$WORK_DIR/vlc" apply "$ROOT_DIR/patches/0023-vlc-continuous-rate-clock.patch"
+grep -q 'cl->b_paused ? cl->i_pause_date : mdate()' "$WORK_DIR/vlc/src/input/clock.c"
 if grep -q 'send_packet EAGAIN x' "$WORK_DIR/vlc/modules/codec/avcodec/video.c"; then
     echo "ERROR: EAGAIN must not trigger a decoder flush"
     exit 1

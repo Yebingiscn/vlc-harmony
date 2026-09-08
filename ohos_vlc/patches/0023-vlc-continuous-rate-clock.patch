@@ -1,0 +1,19 @@
+diff --git a/src/input/clock.c b/src/input/clock.c
+--- a/src/input/clock.c
++++ b/src/input/clock.c
+@@ -350,8 +350,12 @@ void input_clock_ChangeRate( input_clock_t *cl, int i_rate )
+ 
+     if( cl->b_has_reference )
+     {
+-        /* Move the reference point (as if we were playing at the new rate
+-         * from the start */
+-        cl->ref.i_system = cl->last.i_system - (cl->last.i_system - cl->ref.i_system) * i_rate / cl->i_rate;
++        /* Keep the presentation timeline continuous at the rate change,
++         * not at the last PCR arrival (which can be seconds old). The
++         * timestamp delay scales with the rate as well. While paused use
++         * the pause instant; resume will shift the reference separately. */
++        const vlc_tick_t anchor = cl->b_paused ? cl->i_pause_date : mdate();
++        cl->ref.i_system = anchor -
++            (anchor - cl->ref.i_system) * i_rate / cl->i_rate;
+     }
+     cl->i_rate = i_rate;
