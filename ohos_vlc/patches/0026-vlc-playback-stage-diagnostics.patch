@@ -1,0 +1,84 @@
+diff --git a/modules/codec/avcodec/video.c b/modules/codec/avcodec/video.c
+index 07eb890..32a528a 100644
+--- a/modules/codec/avcodec/video.c
++++ b/modules/codec/avcodec/video.c
+@@ -1495,7 +1495,12 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
+                 }
+             }
+ 
+-            ret = avcodec_send_packet(p_context, pkt);
++            const vlc_tick_t trace_send_start = mdate();
++            ret = avcodec_send_packet(p_context, pkt);
++            if (mdate() - trace_send_start >= 5000 || ret == AVERROR(EAGAIN))
++                msg_Dbg(p_dec, "[PlaybackStage] send us=%lld ret=%d bytes=%d pts=%lld",
++                        (long long)(mdate() - trace_send_start), ret, pkt->size,
++                        (long long)pkt->pts);
+             if( ret != 0 && ret != AVERROR(EAGAIN) )
+             {
+                 if (ret == AVERROR(ENOMEM) || ret == AVERROR(EINVAL))
+@@ -1521,7 +1526,12 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
+             break;
+         }
+ 
+-        ret = avcodec_receive_frame(p_context, frame);
++        const vlc_tick_t trace_receive_start = mdate();
++        ret = avcodec_receive_frame(p_context, frame);
++        if (ret == 0 || mdate() - trace_receive_start >= 5000)
++            msg_Dbg(p_dec, "[PlaybackStage] receive us=%lld ret=%d pts=%lld",
++                    (long long)(mdate() - trace_receive_start), ret,
++                    (long long)(ret == 0 ? frame->pts : AV_NOPTS_VALUE));
+         if( ret != 0 && ret != AVERROR(EAGAIN) ) {
+             if (ret == AVERROR(ENOMEM) || ret == AVERROR(EINVAL)) {
+                 msg_Err(p_dec, "[OHOS-DBG] avcodec_receive_frame critical error, ret=%d", ret);
+@@ -1617,7 +1627,11 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
+                 continue;
+             }
+ 
+-            picture_t *surface_pic = decoder_NewPicture(p_dec);
++            const vlc_tick_t trace_pool_start = mdate();
++            picture_t *surface_pic = decoder_NewPicture(p_dec);
++            if (mdate() - trace_pool_start >= 5000)
++                msg_Dbg(p_dec, "[PlaybackStage] picture-pool us=%lld pts=%lld",
++                        (long long)(mdate() - trace_pool_start), (long long)i_pts);
+             ohos_picture_context_t *octx = malloc(sizeof(*octx));
+             if (!surface_pic || !octx)
+             {
+diff --git a/src/video_output/video_output.c b/src/video_output/video_output.c
+index 8394585..d35a97f 100644
+--- a/src/video_output/video_output.c
++++ b/src/video_output/video_output.c
+@@ -1068,11 +1068,15 @@ static int ThreadDisplayRenderPicture(vout_thread_t *vout, bool is_forced)
+ 
+     video_format_t fmt_spu_rot;
+     video_format_ApplyRotation(&fmt_spu_rot, &fmt_spu);
+-    subpicture_t *subpic = spu_Render(vout->p->spu,
++    const vlc_tick_t trace_spu_start = mdate();
++    subpicture_t *subpic = spu_Render(vout->p->spu,
+                                       subpicture_chromas, &fmt_spu_rot,
+                                       &vd->source,
+                                       render_subtitle_date, render_osd_date,
+-                                      do_snapshot);
++                                      do_snapshot);
++    if (mdate() - trace_spu_start >= 5000)
++        msg_Dbg(vout, "[PlaybackStage] subtitle-render us=%lld pts=%lld",
++                (long long)(mdate() - trace_spu_start), (long long)render_subtitle_date);
+     /*
+      * Perform rendering
+      *
+@@ -1188,8 +1192,14 @@ static int ThreadDisplayRenderPicture(vout_thread_t *vout, bool is_forced)
+         mwait(todisplay->date);
+ 
+     /* Display the direct buffer returned by vout_RenderPicture */
+-    vout->p->displayed.date = mdate();
+-    vout_display_Display(vd, todisplay, subpic);
++    vout->p->displayed.date = mdate();
++    const vlc_tick_t trace_display_start = mdate();
++    const vlc_tick_t trace_display_date = todisplay->date;
++    vout_display_Display(vd, todisplay, subpic);
++    msg_Dbg(vout, "[PlaybackStage] display us=%lld late-us=%lld deadline=%lld",
++            (long long)(mdate() - trace_display_start),
++            (long long)(trace_display_start - trace_display_date),
++            (long long)trace_display_date);
+ 
+     vout_statistic_AddDisplayed(&vout->p->statistic, 1);
+ 

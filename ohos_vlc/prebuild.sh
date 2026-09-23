@@ -294,6 +294,8 @@ function install_vlc_patches()
     cp -f "$ROOT_DIR/patches/0022-vlc-rate-transition-backpressure.patch" "$vlc_recipe_dir/" || return 1
     cp -f "$ROOT_DIR/patches/0023-vlc-continuous-rate-clock.patch" "$vlc_recipe_dir/" || return 1
     cp -f "$ROOT_DIR/patches/0024-vlc-audio-queue-subrip.patch" "$vlc_recipe_dir/" || return 1
+    cp -f "$ROOT_DIR/patches/0025-vlc-surface-present-timing.patch" "$vlc_recipe_dir/" || return 1
+    cp -f "$ROOT_DIR/patches/0026-vlc-playback-stage-diagnostics.patch" "$vlc_recipe_dir/" || return 1
     return 0
 }
 
@@ -363,6 +365,7 @@ function install_ffmpeg_patches()
     cp -f "$ROOT_DIR/patches/0016-ffmpeg-ohcodec-respect-output-offset.patch" "$ffmpeg_recipe_dir/" || return 1
     cp -f "$ROOT_DIR/patches/0017-ffmpeg-ohcodec-handle-p010-buffer-output.patch" "$ffmpeg_recipe_dir/" || return 1
     cp -f "$ROOT_DIR/patches/0018-ffmpeg-ohcodec-synthesize-missing-timestamps.patch" "$ffmpeg_recipe_dir/" || return 1
+    cp -f "$ROOT_DIR/patches/0019-ffmpeg-ohcodec-wake-for-output.patch" "$ffmpeg_recipe_dir/" || return 1
     return 0
 }
 

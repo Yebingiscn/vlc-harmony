@@ -1,6 +1,7 @@
 // vlc_napi.cpp 鈥斺€?libVLC C API 鈫?ArkTS NAPI(鍙ユ焺寮?瀵归綈 libvlcjni 瀵硅薄鐢熷懡鍛ㄦ湡)銆?
 #include "napi/native_api.h"
 #include "xcomponent_manager.h"
+#include "playback_diagnostics.h"
 
 #include <vlc/vlc.h>
 #include <vlc/deprecated.h>
@@ -28,12 +29,75 @@
 #define LOG_DOMAIN 0x6C63
 #define LOG_TAG "VlcNapi"
 
+static void DiagnosticSink(int level, const char *text)
+{
+    if (level >= LIBVLC_ERROR) OH_LOG_ERROR(LOG_APP, "[PlaybackTrace] %{public}s", text);
+    else if (level >= LIBVLC_WARNING) OH_LOG_WARN(LOG_APP, "[PlaybackTrace] %{public}s", text);
+    else OH_LOG_INFO(LOG_APP, "[PlaybackTrace] %{public}s", text);
+}
+
+static PlaybackDiagnostics &Diagnostics()
+{
+    static PlaybackDiagnostics diagnostics(DiagnosticSink);
+    return diagnostics;
+}
+
+static void OnFfmpegLog(void *, int level, const char *fmt, va_list args)
+{
+    if (!Diagnostics().Enabled() || level > 48) return;
+    char text[2048];
+    std::vsnprintf(text, sizeof(text), fmt, args);
+    Diagnostics().Submit(level <= 16 ? LIBVLC_ERROR : level <= 24 ? LIBVLC_WARNING : LIBVLC_DEBUG, text);
+}
+
+static void ConfigureFfmpegTrace(bool enabled)
+{
+    // Optional dynamic lookup: no additional link-time FFmpeg dependency.
+    static void *avutil = nullptr;
+    if (!avutil) avutil = dlopen("libavutil.so.60", RTLD_NOW | RTLD_LOCAL);
+    if (!avutil) return;
+    using Callback = void (*)(void *, int, const char *, va_list);
+    using SetCallback = void (*)(Callback);
+    using SetLevel = void (*)(int);
+    auto setCallback = reinterpret_cast<SetCallback>(dlsym(avutil, "av_log_set_callback"));
+    auto setLevel = reinterpret_cast<SetLevel>(dlsym(avutil, "av_log_set_level"));
+    auto defaultCallback = reinterpret_cast<Callback>(dlsym(avutil, "av_log_default_callback"));
+    if (setCallback && defaultCallback && setLevel) {
+        setCallback(enabled ? OnFfmpegLog : defaultCallback);
+        setLevel(enabled ? 48 : 24);
+    }
+}
+
+napi_value SetPlaybackDiagnostics(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value argv[1];
+    bool enabled = false;
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    if (argc != 1 || napi_get_value_bool(env, argv[0], &enabled) != napi_ok) {
+        napi_throw_type_error(env, nullptr, "Expected diagnostic switch boolean");
+        return nullptr;
+    }
+    Diagnostics().SetEnabled(enabled);
+    ConfigureFfmpegTrace(enabled);
+    OH_LOG_INFO(LOG_APP, "[PlaybackTrace] enabled=%{public}d max=400/s queue=256", enabled);
+    napi_value result;
+    napi_get_undefined(env, &result);
+    return result;
+}
+
 void OnLibvlcLog(void *data, int level, const libvlc_log_t *ctx, const char *fmt, va_list args)
 {
     (void)data;
     (void)ctx;
+    const bool trace = Diagnostics().Enabled();
+    if (!trace && level < LIBVLC_WARNING) return;
+    if (!trace && fmt && std::strstr(fmt, "[OHSurfaceTiming]")) return;
+    // Legacy pointer dumps overwhelm useful timing records even in trace mode.
+    if (level == LIBVLC_DEBUG && fmt && std::strncmp(fmt, "[OHOS-DBG]", 10) == 0) return;
     char msg[2048] = {0};
     vsnprintf(msg, sizeof(msg), fmt, args);
+    if (trace) { Diagnostics().Submit(level, msg); return; }
     if (level >= LIBVLC_ERROR) {
         OH_LOG_ERROR(LOG_APP, "libvlc: %{public}s", msg);
     } else if (level == LIBVLC_WARNING) {
@@ -715,7 +779,7 @@ napi_value LibvlcCreate(napi_env env, napi_callback_info info)
     std::vector<const char *> argvVlc;
     argvVlc.push_back(pp.c_str());
     // Debug 级 libVLC 日志会和 4K 解码线程争用 hilog；默认仅保留错误/警告。
-    argvVlc.push_back("--verbose=0");
+    argvVlc.push_back(Diagnostics().Enabled() ? "--verbose=2" : "--verbose=0");
     argvVlc.push_back("--no-media-library");
     argvVlc.push_back("--ignore-config");
     argvVlc.push_back("--stats");
@@ -743,6 +807,7 @@ napi_value LibvlcCreate(napi_env env, napi_callback_info info)
         return U32(env, 0);
     }
     libvlc_log_set(inst, OnLibvlcLog, nullptr);
+    ConfigureFfmpegTrace(Diagnostics().Enabled());
     std::lock_guard<std::mutex> lk(g_mtx);
     uint32_t h = AllocHandleLocked();
     g_libs[h] = LibEntry{inst};
@@ -3132,6 +3197,7 @@ napi_value VlcNapiInit(napi_env env, napi_value exports)
 {
     OH_LOG_INFO(LOG_APP, "VlcNapiInit enter (handle API)");
     napi_property_descriptor desc[] = {
+        {"setPlaybackDiagnostics", nullptr, SetPlaybackDiagnostics, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"libvlcCreate", nullptr, LibvlcCreate, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"libvlcRelease", nullptr, LibvlcRelease, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaCreateLocation", nullptr, MediaCreateLocation, nullptr, nullptr, nullptr, napi_default, nullptr},

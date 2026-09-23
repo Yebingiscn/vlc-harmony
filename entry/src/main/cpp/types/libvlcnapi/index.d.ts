@@ -105,6 +105,7 @@ export interface VlcMediaTrackInfo {
 
 // —— LibVLC ——
 export const libvlcCreate: (options?: string[]) => number;
+export const setPlaybackDiagnostics: (enabled: boolean) => void;
 
 export const libvlcRelease: (libHandle: number) => void;
 

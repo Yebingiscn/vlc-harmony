@@ -1,0 +1,65 @@
+diff --git a/libavcodec/ohdec.c b/libavcodec/ohdec.c
+index ab0da94..383f858 100644
+--- a/libavcodec/ohdec.c
++++ b/libavcodec/ohdec.c
+@@ -724,10 +724,16 @@ static void oh_decode_on_output(OH_AVCodec *codec, uint32_t index,
+     if (ret >= 0)
+         ff_cond_signal(&s->output_cond);
+     pending = s->pending_surface_inputs;
+-    dropped = s->dropped_surface_outputs;
+-    ff_mutex_unlock(&s->output_mutex);
+-
+-    if (stale.buffer && stale.generation == oh_decode_generation(s)) {
++    dropped = s->dropped_surface_outputs;
++    ff_mutex_unlock(&s->output_mutex);
++
++    /* receive_frame may be waiting for input while the codec is blocked on
++     * output ownership. Wake that waiter too, without reversing lock order. */
++    ff_mutex_lock(&s->input_mutex);
++    ff_cond_signal(&s->input_cond);
++    ff_mutex_unlock(&s->input_mutex);
++
++    if (stale.buffer && stale.generation == oh_decode_generation(s)) {
+         OH_AVErrCode drop_err = OH_VideoDecoder_FreeOutputBuffer(codec,
+                                                                   stale.index);
+         if (drop_err != AV_ERR_OK)
+@@ -1477,10 +1483,16 @@ static int oh_decode_receive_frame(AVCodecContext *avctx, AVFrame *frame)
+             }
+         }
+ 
+-        // Wait input buffer
+-        ff_mutex_lock(&s->input_mutex);
+-        while (!s->decode_status) {
+-            if (av_fifo_read(s->input_queue, &buffer, 1) >= 0)
++        // Output must preempt an input wait, including Buffer mode.
++        bool output_ready = false;
++        ff_mutex_lock(&s->input_mutex);
++        while (!s->decode_status) {
++            ff_mutex_lock(&s->output_mutex);
++            output_ready = av_fifo_can_read(s->output_queue) > 0;
++            ff_mutex_unlock(&s->output_mutex);
++            if (output_ready)
++                break;
++            if (av_fifo_read(s->input_queue, &buffer, 1) >= 0)
+                 break;
+             if (oh_decode_cond_wait(&s->input_cond, &s->input_mutex) ==
+                 ETIMEDOUT)
+@@ -1490,10 +1502,14 @@ static int oh_decode_receive_frame(AVCodecContext *avctx, AVFrame *frame)
+         ret = s->decode_status;
+         ff_mutex_unlock(&s->input_mutex);
+ 
+-        if (ret < 0)
+-            return ret;
+-
+-        if (!buffer.buffer)
++        if (ret < 0)
++            return ret;
++
++        /* Keep s->pkt intact: consume the ready frame before feeding more. */
++        if (output_ready)
++            continue;
++
++        if (!buffer.buffer)
+             return AVERROR(EAGAIN);
+ 
+         if (buffer.generation != oh_decode_generation(s))

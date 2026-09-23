@@ -1,0 +1,34 @@
+diff --git a/modules/video_output/ohos/display.c b/modules/video_output/ohos/display.c
+index 1aa53cf..acb8021 100644
+--- a/modules/video_output/ohos/display.c
++++ b/modules/video_output/ohos/display.c
+@@ -45,7 +45,8 @@ struct vout_display_sys_t
+     bool need_flush;
+     unsigned frame_count;
+     picture_t *last_pic;
+-    vlc_tick_t last_date;
++    vlc_tick_t last_date;
++    vlc_tick_t last_present_warning;
+     OHNativeWindow *osd_window;
+     filter_t *osd_blend;
+     unsigned osd_width;
+@@ -481,7 +482,18 @@ static void Display(vout_display_t *vd, picture_t *pic, subpicture_t *subpic)
+             int64_t now_ns = (int64_t)ts.tv_sec * 1000000000LL + ts.tv_nsec;
+             msg_Dbg(vd, "[OHOS-DBG] Display: calling pf_render(surface_ctx=%p, now_ns=%lld)",
+                     ctx->surface_ctx, (long long)now_ns);
+-            int ret = ctx->pf_render(ctx->surface_ctx, now_ns);
++            const vlc_tick_t present_start = mdate();
++            int ret = ctx->pf_render(ctx->surface_ctx, now_ns);
++            const vlc_tick_t present_end = mdate();
++            if ((present_end - present_start >= 20000 ||
++                 present_start - pic->date >= 80000) &&
++                present_end - sys->last_present_warning >= CLOCK_FREQ)
++            {
++                sys->last_present_warning = present_end;
++                msg_Warn(vd, "[OHSurfaceTiming] submit=%lld ms late=%lld ms",
++                         (long long)((present_end - present_start) / 1000),
++                         (long long)((present_start - pic->date) / 1000));
++            }
+             msg_Dbg(vd, "[OHOS-DBG] Display: pf_render returned %d", ret);
+             if (ret != 0)
+             {
