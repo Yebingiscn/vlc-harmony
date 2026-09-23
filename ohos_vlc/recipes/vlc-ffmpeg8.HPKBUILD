@@ -166,6 +166,14 @@ prepare() {
             cd $OLDPWD
             return -1
         }
+        git apply --check ../0024-vlc-audio-queue-subrip.patch >> $publicbuildlog 2>&1 || {
+            cd $OLDPWD
+            return -1
+        }
+        git apply ../0024-vlc-audio-queue-subrip.patch >> $publicbuildlog 2>&1 || {
+            cd $OLDPWD
+            return -1
+        }
         cd $OLDPWD
         cloneflag=false
     fi

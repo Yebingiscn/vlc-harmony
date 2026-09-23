@@ -14,7 +14,7 @@ const wasm = path.join(temporary, 'queue.wasm');
 // Generated harness: synchronization is simulated; the queue implementation is
 // extracted unchanged, including capacity checks, waiting and ring copies.
 fs.writeFileSync(c, `
-typedef unsigned long size_t;
+typedef __SIZE_TYPE__ size_t;
 typedef unsigned char uint8_t;
 typedef long long vlc_tick_t;
 typedef _Bool bool;
@@ -44,13 +44,28 @@ int run(int scenario) {
     for(int i=0;i<4096;i++) input[i]=(unsigned char)i;
     if(scenario==0) return audio_queue_push(&q,input,1300,250)&&q.total_size==1300;
     if(scenario==1) return !audio_queue_push(&q,input,4097,250)&&q.total_size==0;
-    if(scenario==2) {q.total_size=1300;return !audio_queue_push(&q,input,100,250)&&q.total_size==1300&&waits==1;}
+    if(scenario==2) {q.total_size=1300;return audio_queue_push(&q,input,100,250)&&q.total_size==1400&&waits==1;}
     if(scenario==3) {q.total_size=1300;drain_on_wait=1;return audio_queue_push(&q,input,100,250)&&q.total_size==100&&waits==1;}
     if(scenario==4) {q.write_pos=4000;if(!audio_queue_push(&q,input,1300,250))return 0;
         for(int i=0;i<1300;i++)if(storage[(4000+i)%4096]!=input[i])return 0;return 1;}
+    if(scenario==5) {q.total_size=4090;return !audio_queue_push(&q,input,100,250)&&q.total_size==4090;}
+    if(scenario==6) {q.total_size=240;return audio_queue_push(&q,input,100,250)&&q.total_size==340&&waits==0;}
     return 0;
 }
+void *memset(void *p,int v,unsigned long long n) {
+    for(unsigned long long i=0;i<n;i++) ((unsigned char*)p)[i]=(unsigned char)v;return p;
+}
+int main(void) {for(int i=0;i<7;i++)if(run(i)!=1)return i+1;return 0;}
 `);
+if (process.platform === 'win32') {
+  const obj = path.resolve(temporary, 'queue.obj');
+  const exe = path.resolve(temporary, 'queue.exe');
+  cp.execFileSync(clang, ['--target=x86_64-pc-windows-msvc','-O0','-fno-builtin','-fno-stack-protector','-c',c,'-o',obj], {stdio:'inherit'});
+  cp.execFileSync(path.join(path.dirname(clang),'lld-link.exe'), ['/entry:main','/subsystem:console','/nodefaultlib',obj,'/out:'+exe], {stdio:'inherit'});
+  cp.execFileSync(exe, [], {stdio:'inherit'});
+  console.log('PASS 7 real queue cases: soft target, silence recovery, capacity, draining and wraparound');
+  process.exit(0);
+}
 try {
   cp.execFileSync(clang, ['--target=wasm32', '-O0', '-nostdlib', '-fno-builtin',
     '-Wl,--no-entry', '-Wl,--export=run', c, '-o', wasm], { stdio: 'inherit' });
@@ -65,7 +80,8 @@ try {
 (async () => {
   const { instance } = await WebAssembly.instantiate(fs.readFileSync(wasm));
   for (const [i, name] of ['rate-change silence accepted', 'capacity enforced',
-    'normal backlog bounded', 'resume after drain', 'ring wrap preserves data'].entries()) {
+    'soft backlog preserved', 'resume after drain', 'ring wrap preserves data',
+    'full ring rejected', 'one block can cross target'].entries()) {
     if (instance.exports.run(i) !== 1) throw Error(name);
     console.log('PASS ' + name);
   }

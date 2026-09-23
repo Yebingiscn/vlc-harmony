@@ -1,0 +1,120 @@
+diff --git a/modules/audio_output/audiounit_ohos.c b/modules/audio_output/audiounit_ohos.c
+index e5e1f90..b5ac29e 100644
+--- a/modules/audio_output/audiounit_ohos.c
++++ b/modules/audio_output/audiounit_ohos.c
+@@ -63,7 +63,9 @@ typedef struct {
+     size_t write_pos;
+     vlc_mutex_t lock;
+     vlc_cond_t writable;
+-    size_t total_size;
++    size_t total_size;
++    size_t bytes_per_second;
++    vlc_tick_t submitted_until;
+ } audio_queue_t;
+ 
+ // delay statistics structure
+@@ -139,8 +141,9 @@ static void audio_queue_clear(audio_queue_t *queue)
+     vlc_mutex_lock(&queue->lock);
+     queue->read_pos = 0;
+     queue->write_pos = 0;
+-    queue->total_size = 0;
+-    vlc_cond_broadcast(&queue->writable);
++    queue->total_size = 0;
++    vlc_cond_broadcast(&queue->writable);
++    queue->submitted_until = 0;
+     vlc_mutex_unlock(&queue->lock);
+ }
+ 
+@@ -156,27 +159,20 @@ static void audio_queue_destroy(audio_queue_t *queue)
+ static bool audio_queue_push(audio_queue_t *queue, const uint8_t *data,
+                              size_t size, size_t max_queue_size)
+ {
+-    /* The latency target is not a maximum block size. Rate transitions can
+-     * insert a silence block longer than 250ms. Rejecting it makes VLC retry
+-     * synchronization in a busy loop. Admit one such block within the fixed
+-     * ring capacity; subsequent writes wait for it to drain normally. */
+-    if (size > max_queue_size)
+-        max_queue_size = queue->capacity;
+-    else
+-        max_queue_size = __MIN(queue->capacity, max_queue_size);
++    /* Pace against a soft target. Never discard valid PCM just because a
++     * callback-sized block or synchronization silence crosses that target. */
+     if (size > queue->capacity)
+         return false;
+     vlc_mutex_lock(&queue->lock);
+ 
+     const vlc_tick_t deadline = mdate() + VLC_TICK_FROM_MS(AUDIO_QUEUE_WAIT_MS);
+-    while (size <= max_queue_size &&
+-           queue->total_size > max_queue_size - size) {
++    while (queue->total_size >= max_queue_size ||
++           size > queue->capacity - queue->total_size) {
+         if (vlc_cond_timedwait(&queue->writable, &queue->lock, deadline) != 0)
+             break;
+     }
+ 
+-    if (size > max_queue_size ||
+-        queue->total_size > max_queue_size - size) {
++    if (size > queue->capacity - queue->total_size) {
+         vlc_mutex_unlock(&queue->lock);
+         return false;
+     }
+@@ -203,7 +199,10 @@ static size_t audio_queue_drain(audio_queue_t *queue, uint8_t *output, size_t re
+         memcpy(output + first, queue->data, copied - first);
+     }
+     queue->read_pos = (queue->read_pos + copied) % queue->capacity;
+-    queue->total_size -= copied;
++    queue->total_size -= copied;
++    if (copied > 0 && queue->bytes_per_second > 0)
++        queue->submitted_until = mdate() +
++            (vlc_tick_t)copied * CLOCK_FREQ / queue->bytes_per_second;
+     if (copied > 0)
+         vlc_cond_signal(&queue->writable);
+ 
+@@ -454,8 +453,13 @@ static int Start(audio_output_t *p_aout, audio_sample_format_t *p_fmt)
+     const uint64_t queue_bytes = (uint64_t)p_sys->sample_rate *
+                                  p_sys->channels * bytes_per_sample *
+                                  AUDIO_MAX_QUEUE_MS / 1000;
+-    p_sys->max_queue_size = __MIN((size_t)queue_bytes,
+-                                  p_sys->queue.capacity);
++    p_sys->max_queue_size = __MIN((size_t)queue_bytes,
++                                  p_sys->queue.capacity);
++    vlc_mutex_lock(&p_sys->queue.lock);
++    p_sys->queue.bytes_per_second = (size_t)p_sys->sample_rate *
++                                   p_sys->channels * bytes_per_sample;
++    p_sys->queue.submitted_until = 0;
++    vlc_mutex_unlock(&p_sys->queue.lock);
+ 
+     p_aout->volume_set(p_aout, p_sys->volume);
+     if (p_sys->mute)
+@@ -718,8 +722,15 @@ static int TimeGet(audio_output_t *p_aout, vlc_tick_t *delay)
+     }
+ 
+     // Calculate each delay component
+-    vlc_tick_t queue_delay = calculate_detailed_queue_delay(p_aout, p_sys);
+-    vlc_tick_t hardware_delay = p_sys->estimated_hardware_latency;
++    vlc_tick_t hardware_delay = p_sys->estimated_hardware_latency;
++    vlc_mutex_lock(&p_sys->queue.lock);
++    /* Sample queued and submitted bytes atomically: the callback transfers
++     * bytes between these two states under the same lock. */
++    vlc_tick_t queue_delay = p_sys->queue.bytes_per_second > 0
++        ? (vlc_tick_t)p_sys->queue.total_size * CLOCK_FREQ /
++          p_sys->queue.bytes_per_second : 0;
++    hardware_delay += __MAX(p_sys->queue.submitted_until - mdate(), 0);
++    vlc_mutex_unlock(&p_sys->queue.lock);
+ 
+     // total delay
+     vlc_tick_t total_delay = queue_delay + hardware_delay;
+diff --git a/modules/codec/avcodec/fourcc.c b/modules/codec/avcodec/fourcc.c
+index 4dc846c..96b594f 100644
+--- a/modules/codec/avcodec/fourcc.c
++++ b/modules/codec/avcodec/fourcc.c
+@@ -475,7 +475,8 @@ static const struct vlc_avcodec_fourcc spu_codecs[] =
+ {
+     { VLC_CODEC_SPU, AV_CODEC_ID_DVD_SUBTITLE },
+     { VLC_CODEC_DVBS, AV_CODEC_ID_DVB_SUBTITLE },
+-    { VLC_CODEC_SUBT, AV_CODEC_ID_TEXT },
++    { VLC_CODEC_SUBT, AV_CODEC_ID_TEXT },
++    { VLC_CODEC_SUBT, AV_CODEC_ID_SUBRIP },
+     { VLC_CODEC_XSUB, AV_CODEC_ID_XSUB },
+     { VLC_CODEC_SSA, AV_CODEC_ID_SSA },
+     /* AV_CODEC_ID_MOV_TEXT */
