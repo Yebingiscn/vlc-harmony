@@ -7,23 +7,10 @@ WORKFLOW_FILE="$ROOT_DIR/../.github/workflows/build-native-vlc.yml"
 WORK_DIR=$(mktemp -d)
 trap 'rm -rf "$WORK_DIR"' EXIT
 
-VLC_REPO=https://gitcode.com/OpenHarmony-ApplicationTPC/ohos_vlc.git
-VLC_BRANCH=ohos-3.0.21
-VLC_COMMIT=14a0483eb294e62305e596dc0d158c74e6a04cc9
-VLC_PATCH=$ROOT_DIR/patches/0000-vlc-ffmpeg8-ohcodec-consolidated.patch
-VLC_REALTIME_PATCH=$ROOT_DIR/patches/0010-vlc-ohos-realtime-audio-ring.patch
-VLC_SYSTEM_REFRESH_PATCH=$ROOT_DIR/patches/0011-vlc-ohos-system-refresh-low-latency-audio.patch
-VLC_SURFACE_BACKPRESSURE_PATCH=$ROOT_DIR/patches/0012-vlc-ohcodec-surface-backpressure.patch
-VLC_SURFACE_PTS_PATCH=$ROOT_DIR/patches/0013-vlc-ohcodec-use-frame-pts.patch
-VLC_VSYNC_PRESENT_PATCH=$ROOT_DIR/patches/0014-vlc-ohcodec-vsync-present.patch
-VLC_DEADLINE_PRESENT_PATCH=$ROOT_DIR/patches/0015-vlc-ohcodec-deadline-gated-present.patch
-VLC_BUFFER_OUTPUT_PATCH=$ROOT_DIR/patches/0016-vlc-ohcodec-respect-direct-rendering.patch
-VLC_LIVE_RESIZE_PATCH=$ROOT_DIR/patches/0017-vlc-ohos-live-window-resize.patch
-VLC_OPUS_AUDIO_PATCH=$ROOT_DIR/patches/0018-vlc-ffmpeg8-opus-audio-init.patch
-VLC_LIBOPUS_PATCH=$ROOT_DIR/patches/0019-vlc-ohos-prefer-libopus-decoder.patch
-VLC_OPUS_XIPH_PATCH=$ROOT_DIR/patches/0020-vlc-avcodec-unwrap-opus-xiph-extradata.patch
-VLC_SURFACE_OSD_PATCH=$ROOT_DIR/patches/0021-vlc-ohcodec-surface-osd.patch
-VLC_RATE_TRANSITION_PATCH=$ROOT_DIR/patches/0022-vlc-rate-transition-backpressure.patch
+VLC_REPO=https://github.com/videolan/vlc.git
+VLC_BRANCH=3.0.24
+VLC_COMMIT=6de05adcbaf2e8b85fe86aad4169393098628119
+VLC_PATCH=$ROOT_DIR/patches/0030-vlc-3.0.24-ohos.patch
 FFMPEG_SYSTEM_REFRESH_PATCH=$ROOT_DIR/patches/0011-ffmpeg-ohcodec-system-refresh.patch
 FFMPEG_STALL_DIAGNOSTICS_PATCH=$ROOT_DIR/patches/0012-ffmpeg-ohcodec-stall-diagnostics.patch
 FFMPEG_FRAME_PTS_PATCH=$ROOT_DIR/patches/0013-ffmpeg-ohcodec-propagate-frame-pts.patch
@@ -56,34 +43,19 @@ grep -q 'rm -rf -- "$cached_vlc_dir"' "$ROOT_DIR/prebuild.sh"
 grep -q 'rm -rf -- "$cached_ffmpeg_dir"' "$ROOT_DIR/prebuild.sh"
 grep -q "sed -i '/\^vlc,/d'" "$ROOT_DIR/prebuild.sh"
 grep -q "sed -i '/\^FFmpeg,/d'" "$ROOT_DIR/prebuild.sh"
-grep -q 'patches/0013-vlc-ohcodec-use-frame-pts.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0013-ffmpeg-ohcodec-propagate-frame-pts.patch' "$ROOT_DIR/prebuild.sh"
-grep -q 'patches/0014-vlc-ohcodec-vsync-present.patch' "$ROOT_DIR/prebuild.sh"
-grep -q 'patches/0015-vlc-ohcodec-deadline-gated-present.patch' "$ROOT_DIR/prebuild.sh"
-grep -q 'patches/0016-vlc-ohcodec-respect-direct-rendering.patch' "$ROOT_DIR/prebuild.sh"
-grep -q 'patches/0017-vlc-ohos-live-window-resize.patch' "$ROOT_DIR/prebuild.sh"
-grep -q 'patches/0018-vlc-ffmpeg8-opus-audio-init.patch' "$ROOT_DIR/prebuild.sh"
-grep -q 'patches/0019-vlc-ohos-prefer-libopus-decoder.patch' "$ROOT_DIR/prebuild.sh"
-grep -q 'patches/0020-vlc-avcodec-unwrap-opus-xiph-extradata.patch' "$ROOT_DIR/prebuild.sh"
-grep -q 'patches/0021-vlc-ohcodec-surface-osd.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0014-ffmpeg-ohcodec-pts-fallback.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0015-ffmpeg-ohcodec-bounded-output-queue.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0016-ffmpeg-ohcodec-respect-output-offset.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0017-ffmpeg-ohcodec-handle-p010-buffer-output.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0018-ffmpeg-ohcodec-synthesize-missing-timestamps.patch' "$ROOT_DIR/prebuild.sh"
-grep -q '0014-vlc-ohcodec-vsync-present.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
-grep -q '0015-vlc-ohcodec-deadline-gated-present.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
-grep -q '0016-vlc-ohcodec-respect-direct-rendering.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
-grep -q '0017-vlc-ohos-live-window-resize.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
-grep -q '0018-vlc-ffmpeg8-opus-audio-init.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
-grep -q '0019-vlc-ohos-prefer-libopus-decoder.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
-grep -q '0020-vlc-avcodec-unwrap-opus-xiph-extradata.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
-grep -q '0021-vlc-ohcodec-surface-osd.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 grep -q '0014-ffmpeg-ohcodec-pts-fallback.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
 grep -q '0015-ffmpeg-ohcodec-bounded-output-queue.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
 grep -q '0016-ffmpeg-ohcodec-respect-output-offset.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
 grep -q '0017-ffmpeg-ohcodec-handle-p010-buffer-output.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
 grep -q '0018-ffmpeg-ohcodec-synthesize-missing-timestamps.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
+grep -q '0030-vlc-3.0.24-ohos.patch' "$ROOT_DIR/prebuild.sh"
+grep -q '0030-vlc-3.0.24-ohos.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 grep -q "source_commit=$VLC_COMMIT" "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 grep -q '"openssl_3.4.3"' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
 if grep -q 'openssl-3.4.0' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
@@ -128,57 +100,12 @@ fetch_with_retry() {
 clone_with_retry "$WORK_DIR/vlc" --depth=1 --branch "$VLC_BRANCH" "$VLC_REPO"
 test "$(git -C "$WORK_DIR/vlc" rev-parse HEAD)" = "$VLC_COMMIT"
 
-# The FFmpeg compatibility patch may use VLC public identifiers, but it must
-# not assume APIs from a newer VLC branch. Catch that mismatch during the
-# inexpensive preflight instead of after the full native dependency build.
-grep '^+[^+]' "$VLC_PATCH" |
-    grep -oE 'VLC_[A-Z][A-Z0-9_]*|vlc_[A-Za-z][A-Za-z0-9_]*' |
-    sort -u > "$WORK_DIR/added-vlc-identifiers.txt" || true
-while IFS= read -r identifier
-do
-    if ! git -C "$WORK_DIR/vlc" grep -q -F "$identifier" HEAD
-    then
-        echo "ERROR: consolidated VLC patch references an identifier absent from VLC 3.0.21: $identifier"
-        exit 1
-    fi
-done < "$WORK_DIR/added-vlc-identifiers.txt"
-
+# Platform APIs are introduced by this patch; validate the final tree below.
 git -C "$WORK_DIR/vlc" apply --check "$VLC_PATCH"
 git -C "$WORK_DIR/vlc" apply "$VLC_PATCH"
-git -C "$WORK_DIR/vlc" apply --check "$VLC_REALTIME_PATCH"
-git -C "$WORK_DIR/vlc" apply "$VLC_REALTIME_PATCH"
-git -C "$WORK_DIR/vlc" apply --check "$VLC_SYSTEM_REFRESH_PATCH"
-git -C "$WORK_DIR/vlc" apply "$VLC_SYSTEM_REFRESH_PATCH"
-git -C "$WORK_DIR/vlc" apply --check "$VLC_SURFACE_BACKPRESSURE_PATCH"
-git -C "$WORK_DIR/vlc" apply "$VLC_SURFACE_BACKPRESSURE_PATCH"
-git -C "$WORK_DIR/vlc" apply --check "$VLC_SURFACE_PTS_PATCH"
-git -C "$WORK_DIR/vlc" apply "$VLC_SURFACE_PTS_PATCH"
-git -C "$WORK_DIR/vlc" apply --check "$VLC_VSYNC_PRESENT_PATCH"
-git -C "$WORK_DIR/vlc" apply "$VLC_VSYNC_PRESENT_PATCH"
-git -C "$WORK_DIR/vlc" apply --check "$VLC_DEADLINE_PRESENT_PATCH"
-git -C "$WORK_DIR/vlc" apply "$VLC_DEADLINE_PRESENT_PATCH"
-git -C "$WORK_DIR/vlc" apply --check "$VLC_BUFFER_OUTPUT_PATCH"
-git -C "$WORK_DIR/vlc" apply "$VLC_BUFFER_OUTPUT_PATCH"
-git -C "$WORK_DIR/vlc" apply --check "$VLC_LIVE_RESIZE_PATCH"
-git -C "$WORK_DIR/vlc" apply "$VLC_LIVE_RESIZE_PATCH"
-git -C "$WORK_DIR/vlc" apply --check "$VLC_OPUS_AUDIO_PATCH"
-git -C "$WORK_DIR/vlc" apply "$VLC_OPUS_AUDIO_PATCH"
-git -C "$WORK_DIR/vlc" apply --check "$VLC_LIBOPUS_PATCH"
-git -C "$WORK_DIR/vlc" apply "$VLC_LIBOPUS_PATCH"
-git -C "$WORK_DIR/vlc" apply --check "$VLC_OPUS_XIPH_PATCH"
-git -C "$WORK_DIR/vlc" apply "$VLC_OPUS_XIPH_PATCH"
-git -C "$WORK_DIR/vlc" apply --check "$VLC_SURFACE_OSD_PATCH"
-git -C "$WORK_DIR/vlc" apply "$VLC_SURFACE_OSD_PATCH"
-git -C "$WORK_DIR/vlc" apply --check "$VLC_RATE_TRANSITION_PATCH"
-git -C "$WORK_DIR/vlc" apply "$VLC_RATE_TRANSITION_PATCH"
-git -C "$WORK_DIR/vlc" apply --check "$ROOT_DIR/patches/0023-vlc-continuous-rate-clock.patch"
-git -C "$WORK_DIR/vlc" apply "$ROOT_DIR/patches/0023-vlc-continuous-rate-clock.patch"
-git -C "$WORK_DIR/vlc" apply --check "$ROOT_DIR/patches/0024-vlc-audio-queue-subrip.patch"
-git -C "$WORK_DIR/vlc" apply "$ROOT_DIR/patches/0024-vlc-audio-queue-subrip.patch"
-git -C "$WORK_DIR/vlc" apply --check "$ROOT_DIR/patches/0025-vlc-surface-present-timing.patch"
-git -C "$WORK_DIR/vlc" apply "$ROOT_DIR/patches/0025-vlc-surface-present-timing.patch"
-git -C "$WORK_DIR/vlc" apply --check "$ROOT_DIR/patches/0026-vlc-playback-stage-diagnostics.patch"
-git -C "$WORK_DIR/vlc" apply "$ROOT_DIR/patches/0026-vlc-playback-stage-diagnostics.patch"
+grep -q 'AC_INIT(vlc, 3.0.24)' "$WORK_DIR/vlc/configure.ac"
+grep -Fq '[PlaybackStage] receive' "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
+grep -Fq '[PlaybackStage] subtitle-render' "$WORK_DIR/vlc/src/video_output/video_output.c"
 grep -q 'VLC_CODEC_SUBT, AV_CODEC_ID_SUBRIP' "$WORK_DIR/vlc/modules/codec/avcodec/fourcc.c"
 grep -q 'cl->b_paused ? cl->i_pause_date : mdate()' "$WORK_DIR/vlc/src/input/clock.c"
 if grep -q 'send_packet EAGAIN x' "$WORK_DIR/vlc/modules/codec/avcodec/video.c"; then
@@ -244,7 +171,7 @@ grep -q 'unwrapped Xiph-laced OpusHead' \
 if grep -q 'VLC_TICK_FROM_MS' \
     "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
 then
-    echo "VLC 3.0.21 compatibility error: VLC_TICK_FROM_MS is unavailable" >&2
+    echo "VLC 3.0.24 compatibility error: VLC_TICK_FROM_MS is unavailable" >&2
     exit 1
 fi
 grep -q 'ohos_present_surface(void \*surface_ctx' \

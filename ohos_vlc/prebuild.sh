@@ -278,24 +278,7 @@ function install_vlc_patches()
     local vlc_recipe_dir=$LYCIUM_THIRDPARTY_DIR/vlc
 
     cp -f "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD" "$vlc_recipe_dir/HPKBUILD" || return 1
-    cp -f "$ROOT_DIR/patches/0000-vlc-ffmpeg8-ohcodec-consolidated.patch" "$vlc_recipe_dir/" || return 1
-    cp -f "$ROOT_DIR/patches/0010-vlc-ohos-realtime-audio-ring.patch" "$vlc_recipe_dir/" || return 1
-    cp -f "$ROOT_DIR/patches/0011-vlc-ohos-system-refresh-low-latency-audio.patch" "$vlc_recipe_dir/" || return 1
-    cp -f "$ROOT_DIR/patches/0012-vlc-ohcodec-surface-backpressure.patch" "$vlc_recipe_dir/" || return 1
-    cp -f "$ROOT_DIR/patches/0013-vlc-ohcodec-use-frame-pts.patch" "$vlc_recipe_dir/" || return 1
-    cp -f "$ROOT_DIR/patches/0014-vlc-ohcodec-vsync-present.patch" "$vlc_recipe_dir/" || return 1
-    cp -f "$ROOT_DIR/patches/0015-vlc-ohcodec-deadline-gated-present.patch" "$vlc_recipe_dir/" || return 1
-    cp -f "$ROOT_DIR/patches/0016-vlc-ohcodec-respect-direct-rendering.patch" "$vlc_recipe_dir/" || return 1
-    cp -f "$ROOT_DIR/patches/0017-vlc-ohos-live-window-resize.patch" "$vlc_recipe_dir/" || return 1
-    cp -f "$ROOT_DIR/patches/0018-vlc-ffmpeg8-opus-audio-init.patch" "$vlc_recipe_dir/" || return 1
-    cp -f "$ROOT_DIR/patches/0019-vlc-ohos-prefer-libopus-decoder.patch" "$vlc_recipe_dir/" || return 1
-    cp -f "$ROOT_DIR/patches/0020-vlc-avcodec-unwrap-opus-xiph-extradata.patch" "$vlc_recipe_dir/" || return 1
-    cp -f "$ROOT_DIR/patches/0021-vlc-ohcodec-surface-osd.patch" "$vlc_recipe_dir/" || return 1
-    cp -f "$ROOT_DIR/patches/0022-vlc-rate-transition-backpressure.patch" "$vlc_recipe_dir/" || return 1
-    cp -f "$ROOT_DIR/patches/0023-vlc-continuous-rate-clock.patch" "$vlc_recipe_dir/" || return 1
-    cp -f "$ROOT_DIR/patches/0024-vlc-audio-queue-subrip.patch" "$vlc_recipe_dir/" || return 1
-    cp -f "$ROOT_DIR/patches/0025-vlc-surface-present-timing.patch" "$vlc_recipe_dir/" || return 1
-    cp -f "$ROOT_DIR/patches/0026-vlc-playback-stage-diagnostics.patch" "$vlc_recipe_dir/" || return 1
+    cp -f "$ROOT_DIR/patches/0030-vlc-3.0.24-ohos.patch" "$vlc_recipe_dir/" || return 1
     return 0
 }
 

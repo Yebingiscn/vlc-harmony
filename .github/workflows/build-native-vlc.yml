@@ -142,6 +142,15 @@ jobs:
           test -s "${osd_output}"
           test -s "${ffmpeg_decoder}"
 
+          if ! grep -aFq '3.0.24' entry/libs/arm64-v8a/libvlc.so.5; then
+            echo "Stale VLC core detected: expected VLC 3.0.24"
+            exit 1
+          fi
+          if ! grep -aFq '[PlaybackStage] receive' "${video_decoder}"; then
+            echo "VLC playback diagnostics are missing"
+            exit 1
+          fi
+
           if grep -aFq '[OHOS-DBG] frame received:' "${video_decoder}"; then
             echo "Stale VLC decoder detected: per-frame OHOS debug logging is still present"
             exit 1

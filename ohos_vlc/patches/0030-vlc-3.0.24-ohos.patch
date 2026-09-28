@@ -1,0 +1,4581 @@
+diff --git a/configure.ac b/configure.ac
+index e0ccaca..d18bb2c 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -469,6 +469,23 @@ AS_IF([test "$SYS" = linux],[
+ ])
+ AM_CONDITIONAL(HAVE_ANDROID, test "${HAVE_ANDROID}" = "1")
+ 
++dnl HarmonyOS is linux, but a bit different.
++AS_IF([test "$SYS" = linux],[
++    AC_MSG_CHECKING([for an OpenHarmony system])
++    AC_PREPROC_IFELSE([AC_LANG_PROGRAM(
++        [[#ifndef __OHOS__
++         # error Not OpenHarmony
++         #endif
++        ]],[[;]])
++    ],[
++      HAVE_OHOS="1"
++      AC_MSG_RESULT([yes])
++    ],[
++      AC_MSG_RESULT([no])
++    ])
++])
++AM_CONDITIONAL(HAVE_OHOS, test "${HAVE_OHOS}" = "1")
++
+ dnl Tizen (minimum SDK version: 2.3)
+ AS_IF([test "$SYS" = linux],[
+     AC_MSG_CHECKING([for Tizen])
+@@ -3193,10 +3210,12 @@ PKG_CHECK_MODULES([GL], [gl], [
+ ], [
+   AC_MSG_CHECKING([for OpenGL])
+   AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
++#if !defined(__OHOS__)
+ #ifdef _WIN32
+ # include <GL/glew.h>
+ #endif
+ #include <GL/gl.h>
++#endif
+ ]], [
+     [int t0 = GL_TEXTURE0;]])
+   ], [
+diff --git a/include/vlc/libvlc_media_player.h b/include/vlc/libvlc_media_player.h
+index 00ac5d9..b997e79 100644
+--- a/include/vlc/libvlc_media_player.h
++++ b/include/vlc/libvlc_media_player.h
+@@ -588,6 +588,33 @@ LIBVLC_API void *libvlc_media_player_get_hwnd ( libvlc_media_player_t *p_mi );
+ LIBVLC_API void libvlc_media_player_set_android_context( libvlc_media_player_t *p_mi,
+                                                          void *p_awindow_handler );
+ 
++/**
++ * Set the ohos context.
++ *
++ * \version LibVLC 3.0.21 and later.
++ *
++ * \param p_mi the media player
++ * \param p_owindow_handler org.videolan.libvlc.OWindow jobject owned by the
++ *        org.videolan.libvlc.MediaPlayer class from the libvlc-ohos project.
++ */
++LIBVLC_API void libvlc_media_player_set_ohos_nativewindow_ptr( libvlc_media_player_t *p_mi,
++                                                              void *p_owindow_handler );
++
++/**
++ * Set the transparent OHOS NativeWindow used for subtitles and OSD.
++ * The video decoder continues rendering directly to the primary Surface.
++ *
++ * \version LibVLC 3.0.21 and later.
++ *
++ * \param p_mi the media player
++ * \param p_osd_window an OHNativeWindow pointer, or NULL to detach it
++ */
++LIBVLC_API void libvlc_media_player_set_ohos_osd_nativewindow_ptr( libvlc_media_player_t *p_mi,
++                                                                  void *p_osd_window );
++
++LIBVLC_API void libvlc_video_set_ohos_window_size( libvlc_media_player_t *p_mi,
++                                                   unsigned width,
++                                                   unsigned height );
+ /**
+  * Set the EFL Evas Object.
+  *
+diff --git a/include/vlc_fourcc.h b/include/vlc_fourcc.h
+index 070270e..e0c6d67 100644
+--- a/include/vlc_fourcc.h
++++ b/include/vlc_fourcc.h
+@@ -380,6 +380,9 @@
+ /* MediaCodec/IOMX opaque buffer type */
+ #define VLC_CODEC_ANDROID_OPAQUE  VLC_FOURCC('A','N','O','P')
+ 
++/* OHOS hardware decoder opaque buffer type */
++#define VLC_CODEC_OHOS_OPAQUE     VLC_FOURCC('O','H','C','D')
++
+ /* Broadcom MMAL opaque buffer type */
+ #define VLC_CODEC_MMAL_OPAQUE     VLC_FOURCC('M','M','A','L')
+ 
+diff --git a/include/vlc_threads.h b/include/vlc_threads.h
+index 0ad4629..0c3f316 100644
+--- a/include/vlc_threads.h
++++ b/include/vlc_threads.h
+@@ -236,6 +236,51 @@ typedef struct vlc_timer *vlc_timer_t;
+ # include <pthread.h>
+ # include <semaphore.h>
+ 
++#ifdef __OHOS__
++# include <poll.h>
++# define LIBVLC_USE_PTHREAD_CLEANUP   1
++# define LIBVLC_NEED_SLEEP
++# define LIBVLC_NEED_CONDVAR
++# define LIBVLC_NEED_SEMAPHORE
++# define LIBVLC_NEED_RWLOCK
++
++typedef struct vlc_thread *vlc_thread_t;
++#define VLC_THREAD_CANCELED NULL
++typedef pthread_mutex_t vlc_mutex_t;
++#define VLC_STATIC_MUTEX PTHREAD_MUTEX_INITIALIZER
++
++typedef pthread_key_t   vlc_threadvar_t;
++typedef struct vlc_timer *vlc_timer_t;
++
++# define VLC_THREAD_PRIORITY_LOW      0
++# define VLC_THREAD_PRIORITY_INPUT    0
++# define VLC_THREAD_PRIORITY_AUDIO    0
++# define VLC_THREAD_PRIORITY_VIDEO    0
++# define VLC_THREAD_PRIORITY_OUTPUT   0
++# define VLC_THREAD_PRIORITY_HIGHEST  0
++
++static inline int vlc_poll (struct pollfd *fds, unsigned nfds, int timeout)
++{
++    int val;
++
++    do
++    {
++        int ugly_timeout = ((unsigned)timeout >= 50) ? 50 : timeout;
++        if (timeout >= 0)
++            timeout -= ugly_timeout;
++
++        vlc_testcancel ();
++        val = poll (fds, nfds, ugly_timeout);
++    }
++    while (val == 0 && timeout != 0);
++
++    return val;
++}
++
++# define poll(u,n,t) vlc_poll(u, n, t)
++
++#else
++
+ /**
+  * Whether LibVLC threads are based on POSIX threads.
+  */
+@@ -325,6 +370,7 @@ typedef struct vlc_timer *vlc_timer_t;
+ # define VLC_THREAD_PRIORITY_OUTPUT  15
+ # define VLC_THREAD_PRIORITY_HIGHEST 20
+ 
++#endif
+ #endif
+ 
+ #ifdef LIBVLC_NEED_CONDVAR
+diff --git a/include/vlc_vout.h b/include/vlc_vout.h
+index a73080b..c280202 100644
+--- a/include/vlc_vout.h
++++ b/include/vlc_vout.h
+@@ -148,6 +148,8 @@ VLC_API int vout_GetSnapshot( vout_thread_t *p_vout,
+ VLC_API void vout_ChangeAspectRatio( vout_thread_t *p_vout,
+                                      unsigned int i_num, unsigned int i_den );
+ 
++VLC_API void vout_ReportDisplayWindowSize( vout_thread_t *, unsigned, unsigned );
++
+ /* */
+ VLC_API picture_t * vout_GetPicture( vout_thread_t * );
+ VLC_API void vout_PutPicture( vout_thread_t *, picture_t * );
+diff --git a/include/vlc_vout_display.h b/include/vlc_vout_display.h
+index 80761c8..8e45e4a 100644
+--- a/include/vlc_vout_display.h
++++ b/include/vlc_vout_display.h
+@@ -133,6 +133,7 @@ typedef struct {
+                                              * or vout_display_SendEventMouseState() */
+     bool has_pictures_invalid;              /* Will VOUT_DISPLAY_EVENT_PICTURES_INVALID be used */
+     const vlc_fourcc_t *subpicture_chromas; /* List of supported chromas for subpicture rendering. */
++    bool scale_subpictures_to_display;      /* Render direct subpictures at the display size. */
+ } vout_display_info_t;
+ 
+ /**
+diff --git a/include/vlc_vout_window.h b/include/vlc_vout_window.h
+index 3a613d4..2c14b4d 100644
+--- a/include/vlc_vout_window.h
++++ b/include/vlc_vout_window.h
+@@ -53,6 +53,7 @@ enum vout_window_type {
+     VOUT_WINDOW_TYPE_NSOBJECT /**< MacOS X view */,
+     VOUT_WINDOW_TYPE_ANDROID_NATIVE /**< Android native window */,
+     VOUT_WINDOW_TYPE_WAYLAND /**< Wayland surface */,
++    VOUT_WINDOW_TYPE_OHOS_NATIVE /**< OHOS native window */,
+ };
+ 
+ /**
+@@ -159,6 +160,7 @@ struct vout_window_t {
+         void     *nsobject;      /**< Mac OSX view object */
+         void     *anativewindow; /**< Android native window */
+         struct wl_surface *wl;   /**< Wayland surface (client pointer) */
++        void     *onativewindow; /**< OHOS native window */
+     } handle;
+ 
+     /** Display server (mandatory)
+diff --git a/lib/libvlc.sym b/lib/libvlc.sym
+index 482d95f..125970a 100644
+--- a/lib/libvlc.sym
++++ b/lib/libvlc.sym
+@@ -188,6 +188,9 @@ libvlc_media_player_release
+ libvlc_media_player_retain
+ libvlc_media_player_set_agl
+ libvlc_media_player_set_android_context
++libvlc_media_player_set_ohos_nativewindow_ptr
++libvlc_media_player_set_ohos_osd_nativewindow_ptr
++libvlc_video_set_ohos_window_size
+ libvlc_media_player_set_chapter
+ libvlc_media_player_set_equalizer
+ libvlc_media_player_set_hwnd
+diff --git a/lib/media_player.c b/lib/media_player.c
+index fda1091..0748a84 100644
+--- a/lib/media_player.c
++++ b/lib/media_player.c
+@@ -646,6 +646,10 @@ libvlc_media_player_new( libvlc_instance_t *instance )
+ #ifdef __ANDROID__
+     var_Create (mp, "drawable-androidwindow", VLC_VAR_ADDRESS);
+ #endif
++#ifdef __OHOS__
++    var_Create (mp, "drawable-ohos-nativewindow-ptr", VLC_VAR_ADDRESS);
++    var_Create (mp, "drawable-ohos-osd-nativewindow-ptr", VLC_VAR_ADDRESS);
++#endif
+ #ifdef HAVE_EVAS
+     var_Create (mp, "drawable-evasobject", VLC_VAR_ADDRESS);
+ #endif
+@@ -1265,6 +1269,36 @@ void libvlc_media_player_set_android_context( libvlc_media_player_t *p_mi,
+ #endif
+ }
+ 
++/**************************************************************************
++ * set_ohos_context
++ **************************************************************************/
++void libvlc_media_player_set_ohos_nativewindow_ptr( libvlc_media_player_t *p_mi,
++                                                  void *p_owindow_handler )
++{
++    assert (p_mi != NULL);
++#ifdef __OHOS__
++    var_SetAddress (p_mi, "drawable-ohos-nativewindow-ptr", p_owindow_handler);
++#else
++    (void) p_owindow_handler;
++    libvlc_printerr ("can't set ohos window_handler ptr: OHOS build required");
++    assert(false);
++    var_SetString (p_mi, "vout", "none");
++    var_SetString (p_mi, "window", "none");
++#endif
++}
++
++void libvlc_media_player_set_ohos_osd_nativewindow_ptr( libvlc_media_player_t *p_mi,
++                                                       void *p_osd_window )
++{
++    assert (p_mi != NULL);
++#ifdef __OHOS__
++    var_SetAddress (p_mi, "drawable-ohos-osd-nativewindow-ptr", p_osd_window);
++    var_TriggerCallback (p_mi, "drawable-ohos-osd-nativewindow-ptr");
++#else
++    (void) p_osd_window;
++    libvlc_printerr ("can't set ohos OSD window ptr: OHOS build required");
++#endif
++}
+ /**************************************************************************
+  * set_evas_object
+  **************************************************************************/
+diff --git a/lib/video.c b/lib/video.c
+index 46c67d8..f65b121 100644
+--- a/lib/video.c
++++ b/lib/video.c
+@@ -89,6 +89,20 @@ err:
+     return p_vout;
+ }
+ 
++void libvlc_video_set_ohos_window_size( libvlc_media_player_t *p_mi,
++                                        unsigned width, unsigned height )
++{
++    if (width == 0 || height == 0)
++        return;
++
++    vout_thread_t *vout = GetVout(p_mi, 0);
++    if (vout == NULL)
++        return;
++
++    vout_ReportDisplayWindowSize(vout, width, height);
++    vlc_object_release(vout);
++}
++
+ /**********************************************************************
+  * Exported functions
+  **********************************************************************/
+diff --git a/modules/access/bluray.c b/modules/access/bluray.c
+index 3dec0b0..d429a9d 100644
+--- a/modules/access/bluray.c
++++ b/modules/access/bluray.c
+@@ -2370,9 +2370,10 @@ static int blurayControl(demux_t *p_demux, int query, va_list args)
+     {
+         int64_t i_time = va_arg(args, int64_t);
+         bd_seek_time(p_sys->bluray, TO_SCALE_NZ(i_time));
+-        blurayRestartParser(p_demux, true, true);
++        blurayRestartParser(p_demux, true, false);
+         notifyDiscontinuityToParser(p_sys);
+         p_sys->b_draining = false;
++        es_out_Control(p_demux->out, ES_OUT_RESET_PCR);
+         es_out_Control(p_sys->p_out, BLURAY_ES_OUT_CONTROL_FLAG_DISCONTINUITY);
+         return VLC_SUCCESS;
+     }
+@@ -2400,9 +2401,10 @@ static int blurayControl(demux_t *p_demux, int query, va_list args)
+     {
+         double f_position = va_arg(args, double);
+         bd_seek_time(p_sys->bluray, TO_SCALE_NZ(f_position*CUR_LENGTH));
+-        blurayRestartParser(p_demux, true, true);
++        blurayRestartParser(p_demux, true, false);
+         notifyDiscontinuityToParser(p_sys);
+         p_sys->b_draining = false;
++        es_out_Control(p_demux->out, ES_OUT_RESET_PCR);
+         es_out_Control(p_sys->p_out, BLURAY_ES_OUT_CONTROL_FLAG_DISCONTINUITY);
+         return VLC_SUCCESS;
+     }
+diff --git a/modules/access/vcd/cdrom.c b/modules/access/vcd/cdrom.c
+index 496e7e0..a9e6722 100644
+--- a/modules/access/vcd/cdrom.c
++++ b/modules/access/vcd/cdrom.c
+@@ -166,6 +166,11 @@ vcddev_t *ioctl_Open( vlc_object_t *p_this, const char *psz_dev )
+     p_vcddev->i_vcdimage_handle = -1;
+     p_vcddev->psz_dev = NULL;
+     memset( &p_vcddev->toc, 0, sizeof(p_vcddev->toc) );
++    /* Default to standard VCD Mode2 sector geometry; OpenVCDImage may
++     * override these from the CUE file (MODE1/2048). */
++    p_vcddev->i_sector_size = VCD_SECTOR_SIZE;
++    p_vcddev->i_data_start = VCD_DATA_START;
++    p_vcddev->i_data_size = VCD_DATA_SIZE;
+     b_is_file = 1;
+ 
+     /*
+@@ -624,7 +629,7 @@ int ioctl_ReadSectors( vlc_object_t *p_this, const vcddev_t *p_vcddev,
+     uint8_t *p_block;
+ 
+     if( i_type == VCD_TYPE )
+-        p_block = vlc_alloc( i_nb, VCD_SECTOR_SIZE );
++        p_block = vlc_alloc( i_nb, p_vcddev->i_sector_size );
+     else
+         p_block = p_buffer;
+ 
+@@ -633,15 +638,16 @@ int ioctl_ReadSectors( vlc_object_t *p_this, const vcddev_t *p_vcddev,
+         /*
+          *  vcd image mode
+          */
+-        if( lseek( p_vcddev->i_vcdimage_handle, i_sector * VCD_SECTOR_SIZE,
++        if( lseek( p_vcddev->i_vcdimage_handle,
++                   (off_t)i_sector * p_vcddev->i_sector_size,
+                    SEEK_SET ) == -1 )
+         {
+             msg_Err( p_this, "Could not lseek to sector %d", i_sector );
+             goto error;
+         }
+ 
+-        if( read( p_vcddev->i_vcdimage_handle, p_block, VCD_SECTOR_SIZE * i_nb)
+-            == -1 )
++        if( read( p_vcddev->i_vcdimage_handle, p_block,
++                  p_vcddev->i_sector_size * i_nb ) == -1 )
+         {
+             msg_Err( p_this, "Could not read sector %d", i_sector );
+             goto error;
+@@ -816,9 +822,10 @@ int ioctl_ReadSectors( vlc_object_t *p_this, const vcddev_t *p_vcddev,
+     {
+         for( int i = 0; i < i_nb; i++ )
+         {
+-            memcpy( p_buffer + i * VCD_DATA_SIZE,
+-                    p_block + i * VCD_SECTOR_SIZE + VCD_DATA_START,
+-                    VCD_DATA_SIZE );
++            memcpy( p_buffer + i * p_vcddev->i_data_size,
++                    p_block + i * p_vcddev->i_sector_size
++                            + p_vcddev->i_data_start,
++                    p_vcddev->i_data_size );
+         }
+         free( p_block );
+     }
+@@ -838,6 +845,148 @@ error:
+ /****************************************************************************
+  * OpenVCDImage: try to open a vcd image from a .cue file
+  ****************************************************************************/
++static int ReadIsoSector( int i_fd, uint32_t i_lba, uint8_t *p_buf )
++{
++    if( lseek( i_fd, (off_t)i_lba * 2048, SEEK_SET ) < 0 )
++        return -1;
++    return read( i_fd, p_buf, 2048 ) == 2048 ? 0 : -1;
++}
++
++/* FindIsoDirEntry: 在 ISO9660 目录里查找条目。
++ * b_prefix 为 true 时 psz_name 作前缀匹配(如 "AVSEQ");
++ * b_directory 限定只匹配目录(MPEGAV)或只匹配文件(AVSEQ*.DAT);
++ * 找到后回填 extent/size(逻辑块号/字节数),返回 0;否则 -1。 */
++static int FindIsoDirEntry( int i_fd, uint32_t i_extent, uint32_t i_size,
++                            const char *psz_name, bool b_prefix,
++                            bool b_directory, uint32_t *pi_extent,
++                            uint32_t *pi_size )
++{
++    uint8_t p_sector[2048];
++    uint32_t i_off = 0;
++
++    while( i_off + 33 <= i_size )
++    {
++        uint32_t i_sec_off = i_off % 2048;
++        if( i_sec_off == 0 )
++        {
++            if( ReadIsoSector( i_fd, i_extent + i_off / 2048, p_sector ) )
++                return -1;
++        }
++
++        uint8_t i_rec_len = p_sector[i_sec_off];
++        if( i_rec_len == 0 )
++            break; /* 目录数据结束(剩余为零填充) */
++
++        /* ISO9660 目录记录不得跨 sector 边界;遇边界跳到下一 sector 起始 */
++        if( i_sec_off + i_rec_len > 2048 )
++        {
++            i_off = ( i_off / 2048 + 1 ) * 2048;
++            continue;
++        }
++        if( i_rec_len < 33 )
++        {
++            i_off += i_rec_len;
++            continue;
++        }
++
++        uint32_t i_entry_extent = GetDWLE( &p_sector[i_sec_off + 2] );
++        uint32_t i_entry_size   = GetDWLE( &p_sector[i_sec_off + 10] );
++        uint8_t  i_flags        = p_sector[i_sec_off + 25];
++        uint8_t  i_name_len     = p_sector[i_sec_off + 32];
++        bool     b_is_dir       = ( i_flags & 0x02 ) != 0;
++
++        if( b_is_dir == b_directory && i_name_len > 0 && i_name_len < 64 )
++        {
++            char psz_entry[64];
++            memcpy( psz_entry, &p_sector[i_sec_off + 33], i_name_len );
++            psz_entry[i_name_len] = '\0';
++            char *p_semi = strchr( psz_entry, ';' );
++            if( p_semi ) *p_semi = '\0';
++
++            bool b_match = b_prefix ? !strncasecmp( psz_entry, psz_name,
++                                                    strlen( psz_name ) )
++                                    : !strcasecmp( psz_entry, psz_name );
++            if( b_match )
++            {
++                *pi_extent = i_entry_extent;
++                *pi_size = i_entry_size;
++                return 0;
++            }
++        }
++        i_off += i_rec_len;
++    }
++    return -1;
++}
++
++/* OpenVCDImageIso9660: 无 .cue 时直接解析 ISO9660 映像,把 MPEGAV/AVSEQ*.DAT
++ * 文件的 extent 作为视频轨起点(2048 字节 Mode1 扇区,payload 占满整扇区)。
++ * 成功返回 0 并填充 p_vcddev(含打开的映像句柄与 TOC);失败返回 -1。 */
++static int OpenVCDImageIso9660( vlc_object_t *p_this, const char *psz_vcdfile,
++                                vcddev_t *p_vcddev )
++{
++    uint8_t p_pvd[2048];
++    uint32_t i_root_extent, i_root_size;
++    uint32_t i_mpegav_extent = 0, i_mpegav_size = 0;
++    uint32_t i_avseq_extent = 0, i_avseq_size = 0;
++    vcddev_toc_t *p_toc = &p_vcddev->toc;
++
++    p_vcddev->i_vcdimage_handle = vlc_open( psz_vcdfile,
++                                            O_RDONLY | O_NONBLOCK | O_BINARY );
++    if( p_vcddev->i_vcdimage_handle == -1 )
++        return -1;
++
++    /* PVD 位于逻辑块 16;校验 ISO9660 魔数 */
++    if( ReadIsoSector( p_vcddev->i_vcdimage_handle, 16, p_pvd )
++     || memcmp( p_pvd + 1, "CD001", 5 ) )
++        goto error;
++
++    i_root_extent = GetDWLE( &p_pvd[158] );
++    i_root_size   = GetDWLE( &p_pvd[166] );
++
++    if( FindIsoDirEntry( p_vcddev->i_vcdimage_handle, i_root_extent,
++                         i_root_size, "MPEGAV", false, true,
++                         &i_mpegav_extent, &i_mpegav_size )
++     || FindIsoDirEntry( p_vcddev->i_vcdimage_handle, i_mpegav_extent,
++                         i_mpegav_size, "AVSEQ", true, false,
++                         &i_avseq_extent, &i_avseq_size )
++     || i_avseq_extent == 0 )
++        goto error;
++
++    msg_Dbg( p_this, "no .cue file: ISO9660 MPEGAV dir at sector %u, "
++             "AVSEQ video file at sector %u size %u",
++             i_mpegav_extent, i_avseq_extent, i_avseq_size );
++
++    /* ISO9660(MODE1/2048):payload 占满整个 2048 字节扇区 */
++    p_vcddev->i_sector_size = 2048;
++    p_vcddev->i_data_start = 0;
++    p_vcddev->i_data_size = 2048;
++
++    /* 与 CUE 解析一致的 TOC 布局:[数据轨0, 视频轨起点, 文件末尾]。
++     * 多分配 1 条,与 ioctl_GetTOC 的 memcpy(i_tracks+1) 对齐。 */
++    p_toc->p_sectors = calloc( 4, sizeof( *p_toc->p_sectors ) );
++    if( p_toc->p_sectors == NULL )
++        goto error;
++    p_toc->p_sectors[0].i_lba = 0;
++    p_toc->p_sectors[0].i_control = 0x00;
++    p_toc->p_sectors[1].i_lba = i_avseq_extent;
++    p_toc->p_sectors[1].i_control = 0x00;
++    p_toc->p_sectors[2].i_lba = lseek( p_vcddev->i_vcdimage_handle, 0,
++                                        SEEK_END ) / 2048;
++    p_toc->p_sectors[2].i_control = 0x00;
++    p_toc->i_tracks = 3;
++    p_toc->i_first_track = 1;
++    p_toc->i_last_track = 3; /* 与 CUE 解析一致 */
++
++    msg_Dbg( p_this, "vcd iso9660 tracks: data=0 video=%u end=%u",
++             i_avseq_extent, p_toc->p_sectors[2].i_lba );
++    return 0;
++
++error:
++    vlc_close( p_vcddev->i_vcdimage_handle );
++    p_vcddev->i_vcdimage_handle = -1;
++    return -1;
++}
++
+ static int OpenVCDImage( vlc_object_t * p_this, const char *psz_dev,
+                          vcddev_t *p_vcddev )
+ {
+@@ -888,8 +1037,11 @@ static int OpenVCDImage( vlc_object_t * p_this, const char *psz_dev,
+     cuefile = vlc_fopen( psz_cuefile, "rt" );
+     if( cuefile == NULL )
+     {
+-        msg_Dbg( p_this, "could not find .cue file" );
+-        goto error;
++        /* 无 .cue:直接解析 ISO9660 映像,用 MPEGAV/AVSEQ*.DAT 的 extent
++         * 作为视频轨(免 CUE 单文件播放)。 */
++        msg_Dbg( p_this, "could not find .cue file, trying ISO9660 layout" );
++        i_ret = OpenVCDImageIso9660( p_this, psz_vcdfile, p_vcddev );
++        goto end;
+     }
+ 
+     msg_Dbg( p_this,"guessing vcd image file: %s", psz_vcdfile );
+@@ -978,6 +1130,27 @@ static int OpenVCDImage( vlc_object_t * p_this, const char *psz_dev,
+         else
+             track_subcodes = 0x00;
+ 
++        /* TRACK nn MODE1/2048 describes an ISO9660 image with 2048-byte
++         * Mode1 sectors: the payload starts at offset 0 of each sector and
++         * fills the whole sector (no Mode2 24-byte header, no EDC/ECC tail).
++         * Keep the default VCD Mode2 geometry (2352/24/2324) otherwise. */
++        if( strstr( psz_track_type, "MODE1/2048" ) )
++        {
++            p_vcddev->i_sector_size = 2048;
++            p_vcddev->i_data_start = 0;
++            p_vcddev->i_data_size = 2048;
++            msg_Dbg( p_this, "vcd track uses MODE1/2048 sectors "
++                     "(sector=%d data_start=%d data=%d)",
++                     p_vcddev->i_sector_size, p_vcddev->i_data_start,
++                     p_vcddev->i_data_size );
++        }
++        else if( strstr( psz_track_type, "MODE2/2352" ) )
++        {
++            p_vcddev->i_sector_size = VCD_SECTOR_SIZE;
++            p_vcddev->i_data_start = VCD_DATA_START;
++            p_vcddev->i_data_size = VCD_DATA_SIZE;
++        }
++
+         /* look for an INDEX line */
+         while( fgets( line, 1024, cuefile ) )
+         {
+@@ -1008,7 +1181,7 @@ static int OpenVCDImage( vlc_object_t * p_this, const char *psz_dev,
+         goto error;
+     p_toc->p_sectors = buf;
+     p_toc->p_sectors[p_toc->i_tracks].i_lba =
+-            lseek(p_vcddev->i_vcdimage_handle, 0, SEEK_END) / VCD_SECTOR_SIZE;
++            lseek(p_vcddev->i_vcdimage_handle, 0, SEEK_END) / p_vcddev->i_sector_size;
+     p_toc->p_sectors[p_toc->i_tracks].i_control = track_subcodes;
+     msg_Dbg( p_this, "vcd tracks end at sector:%i",
+              p_toc->p_sectors[p_toc->i_tracks].i_lba );
+diff --git a/modules/access/vcd/cdrom_internals.h b/modules/access/vcd/cdrom_internals.h
+index a10f55c..2ce7c4d 100644
+--- a/modules/access/vcd/cdrom_internals.h
++++ b/modules/access/vcd/cdrom_internals.h
+@@ -32,6 +32,12 @@ struct vcddev_s
+     /* Section used in vcd image mode */
+     int    i_vcdimage_handle;                   /* vcd image file descriptor */
+     vcddev_toc_t toc;                           /* tracks layout on the vcd */
++    /* Image file sector geometry. Default VCD (Mode2): 2352-byte sectors
++     * with 24-byte header and 2324 bytes of payload. ISO9660 images built
++     * with 2048-byte Mode1 sectors (CUE "MODE1/2048") use 2048/0/2048. */
++    int    i_sector_size;                       /* bytes per sector in image */
++    int    i_data_start;                        /* offset of payload in sector */
++    int    i_data_size;                         /* payload bytes per sector */
+ 
+     /* Section used in vcd device mode */
+ 
+diff --git a/modules/access/vcd/vcd.c b/modules/access/vcd/vcd.c
+index 817fc96..862212b 100644
+--- a/modules/access/vcd/vcd.c
++++ b/modules/access/vcd/vcd.c
+@@ -36,6 +36,7 @@
+ #include <vlc_charset.h>
+ 
+ #include "cdrom.h"
++#include "cdrom_internals.h"
+ 
+ /*****************************************************************************
+  * Module descriptor
+@@ -190,7 +191,7 @@ static int Open( vlc_object_t *p_this )
+     p_sys->i_sector = p_sys->p_toc->p_sectors[1+i_title].i_lba;
+     if( i_chapter > 0 )
+         p_sys->i_sector += p_sys->titles[i_title].seekpoints[i_chapter]
+-                           / VCD_DATA_SIZE;
++                           / p_sys->vcddev->i_data_size;
+ 
+     /* p_access */
+     p_access->pf_read    = NULL;
+@@ -201,7 +202,7 @@ static int Open( vlc_object_t *p_this )
+     p_sys->i_current_title = i_title;
+     p_sys->i_current_seekpoint = i_chapter;
+     p_sys->offset = (uint64_t)(p_sys->i_sector - p_sys->p_toc->p_sectors[1+i_title].i_lba) *
+-                               VCD_DATA_SIZE;
++                               p_sys->vcddev->i_data_size;
+ 
+     return VLC_SUCCESS;
+ 
+@@ -252,7 +253,7 @@ static int Control( stream_t *p_access, int i_query, va_list args )
+ 
+             *va_arg( args, uint64_t * ) =
+                 (p_sys->p_toc->p_sectors[i + 2].i_lba -
+-                 p_sys->p_toc->p_sectors[i + 1].i_lba) * (uint64_t)VCD_DATA_SIZE;
++                 p_sys->p_toc->p_sectors[i + 1].i_lba) * (uint64_t)p_sys->vcddev->i_data_size;
+             break;
+         }
+ 
+@@ -316,10 +317,10 @@ static int Control( stream_t *p_access, int i_query, va_list args )
+                 p_sys->i_current_seekpoint = i;
+ 
+                 p_sys->i_sector = p_sys->p_toc->p_sectors[1 + i_title].i_lba +
+-                    p_sys->titles[i_title].seekpoints[i] / VCD_DATA_SIZE;
++                    p_sys->titles[i_title].seekpoints[i] / p_sys->vcddev->i_data_size;
+ 
+                 p_sys->offset = (uint64_t)(p_sys->i_sector -
+-                    p_sys->p_toc->p_sectors[1 + i_title].i_lba) * VCD_DATA_SIZE;
++                    p_sys->p_toc->p_sectors[1 + i_title].i_lba) * p_sys->vcddev->i_data_size;
+             }
+             break;
+         }
+@@ -362,10 +363,10 @@ static block_t *Block( stream_t *p_access, bool *restrict eof )
+     }
+ 
+     /* Do the actual reading */
+-    if( i_blocks < 0 || !( p_block = block_Alloc( i_blocks * VCD_DATA_SIZE ) ) )
++    if( i_blocks < 0 || !( p_block = block_Alloc( i_blocks * p_sys->vcddev->i_data_size ) ) )
+     {
+         msg_Err( p_access, "cannot get a new block of size: %i",
+-                 i_blocks * VCD_DATA_SIZE );
++                 i_blocks * p_sys->vcddev->i_data_size );
+         return NULL;
+     }
+ 
+@@ -376,7 +377,7 @@ static block_t *Block( stream_t *p_access, bool *restrict eof )
+         block_Release( p_block );
+ 
+         /* Try to skip one sector (in case of bad sectors) */
+-        p_sys->offset += VCD_DATA_SIZE;
++        p_sys->offset += p_sys->vcddev->i_data_size;
+         p_sys->i_sector++;
+         return NULL;
+     }
+@@ -388,7 +389,7 @@ static block_t *Block( stream_t *p_access, bool *restrict eof )
+ 
+         if( p_sys->titles[i_title].count > 0 &&
+             p_sys->i_current_seekpoint + 1 < p_sys->titles[i_title].count &&
+-                (p_sys->offset + i_read * VCD_DATA_SIZE) >=
++                (p_sys->offset + i_read * p_sys->vcddev->i_data_size) >=
+             p_sys->titles[i_title].seekpoints[p_sys->i_current_seekpoint + 1] )
+         {
+             msg_Dbg( p_access, "seekpoint change" );
+@@ -415,7 +416,7 @@ static int Seek( stream_t *p_access, uint64_t i_pos )
+ 
+     /* Next sector to read */
+     p_sys->offset = i_pos;
+-    p_sys->i_sector = i_pos / VCD_DATA_SIZE + p_toc->p_sectors[i_title + 1].i_lba;
++    p_sys->i_sector = i_pos / p_sys->vcddev->i_data_size + p_toc->p_sectors[i_title + 1].i_lba;
+ 
+     /* Update current seekpoint */
+     for( i_seekpoint = 0; i_seekpoint < p_sys->titles[i_title].count; i_seekpoint++ )
+@@ -441,7 +442,7 @@ static int EntryPoints( stream_t *p_access )
+ {
+     access_sys_t *p_sys = p_access->p_sys;
+     const vcddev_toc_t *p_toc = p_sys->p_toc;
+-    uint8_t      sector[VCD_DATA_SIZE];
++    uint8_t      sector[VCD_SECTOR_SIZE];
+ 
+     entries_sect_t entries;
+     int i_nb;
+@@ -486,7 +487,7 @@ static int EntryPoints( stream_t *p_access )
+             p_sys->titles[i_title].seekpoints,
+             sizeof( uint64_t ) * (p_sys->titles[i_title].count + 1) );
+         p_sys->titles[i_title].seekpoints[p_sys->titles[i_title].count++] =
+-            (i_sector - p_toc->p_sectors[i_title+1].i_lba) * VCD_DATA_SIZE;
++            (i_sector - p_toc->p_sectors[i_title+1].i_lba) * p_sys->vcddev->i_data_size;
+     }
+ 
+     return VLC_SUCCESS;
+diff --git a/modules/audio_output/Makefile.am b/modules/audio_output/Makefile.am
+index bb2da0d..d4cc1b9 100644
+--- a/modules/audio_output/Makefile.am
++++ b/modules/audio_output/Makefile.am
+@@ -16,6 +16,15 @@ if HAVE_ANDROID
+ aout_LTLIBRARIES += libandroid_audiotrack_plugin.la libopensles_android_plugin.la
+ endif
+ 
++libohos_audiotrack_plugin_la_SOURCES = audio_output/audiounit_ohos.c
++libohos_audiotrack_plugin_la_CFLAGS = $(AM_CFLAGS)
++libohos_audiotrack_plugin_la_LIBADD = $(LIBCOM) -lohaudio
++
++if HAVE_OHOS
++$(info build audio_output openharmony)
++aout_LTLIBRARIES += libohos_audiotrack_plugin.la
++endif
++
+ libadummy_plugin_la_SOURCES = audio_output/adummy.c
+ 
+ libafile_plugin_la_SOURCES = audio_output/file.c
+diff --git a/modules/codec/avcodec/audio.c b/modules/codec/avcodec/audio.c
+index 63758aa..eba2730 100644
+--- a/modules/codec/avcodec/audio.c
++++ b/modules/codec/avcodec/audio.c
+@@ -37,8 +37,10 @@
+ #include <vlc_avcodec.h>
+ 
+ #include "avcodec.h"
++#include "../../demux/xiph.h"
+ 
+ #include <libavcodec/avcodec.h>
++#include <libavutil/error.h>
+ #include <libavutil/mem.h>
+ 
+ #define API_CHANNEL_LAYOUT_STRUCT (LIBAVCODEC_VERSION_CHECK(59, 24, 100)) // AVCodecContext.ch_layout
+@@ -84,11 +86,37 @@ static void InitDecoderConfig( decoder_t *p_dec, AVCodecContext *p_context )
+ {
+     if( p_dec->fmt_in.i_extra > 0 )
+     {
+-        const uint8_t * const p_src = p_dec->fmt_in.p_extra;
++        const uint8_t *p_src = p_dec->fmt_in.p_extra;
+ 
+         int i_offset = 0;
+         int i_size = p_dec->fmt_in.i_extra;
+ 
++        /* VLC's avformat demuxer stores OpusHead and a synthetic OpusTags
++         * packet in Xiph-laced extradata. FFmpeg and mpv expect only the raw
++         * OpusHead in AVCodecContext.extradata. Passing the lacing prefix as
++         * OpusHead makes the native decoder report PATCHWELCOME and libopus
++         * report EINVAL. Unwrap the first packet before opening either. */
++        if( p_dec->fmt_in.i_codec == VLC_CODEC_OPUS && i_size > 21 &&
++            !memcmp( p_src + 2, "OpusHead", 8 ) )
++        {
++            unsigned packet_size[XIPH_MAX_HEADER_COUNT];
++            const void *packet[XIPH_MAX_HEADER_COUNT];
++            unsigned packet_count = 0;
++
++            if( xiph_SplitHeaders( packet_size, packet, &packet_count,
++                                   i_size, p_src ) == VLC_SUCCESS &&
++                packet_count >= 1 && packet_size[0] >= 19 &&
++                !memcmp( packet[0], "OpusHead", 8 ) )
++            {
++                p_src = packet[0];
++                i_size = packet_size[0];
++                msg_Dbg( p_dec, "unwrapped Xiph-laced OpusHead (%d bytes)",
++                         i_size );
++            }
++            else
++                msg_Warn( p_dec, "invalid Xiph-laced Opus extradata" );
++        }
++
+         if( p_dec->fmt_in.i_codec == VLC_CODEC_ALAC )
+         {
+             static const uint8_t p_pattern[] = { 0, 0, 0, 36, 'a', 'l', 'a', 'c' };
+@@ -144,10 +172,19 @@ static int OpenAudioCodec( decoder_t *p_dec )
+     }
+ 
+     ctx->sample_rate = p_dec->fmt_in.audio.i_rate;
++    /* Opus always decodes at 48 kHz. Some MP4/WebM demux paths leave the
++     * input audio rate and channel count unset and expect libavcodec to read
++     * them from OpusHead. Do not replace that information with an invalid
++     * zero-channel layout before avcodec_open2(). */
++    if( codec->id == AV_CODEC_ID_OPUS && ctx->sample_rate <= 0 )
++        ctx->sample_rate = 48000;
+ #if API_CHANNEL_LAYOUT_STRUCT && LIBAVUTIL_VERSION_CHECK(57, 24, 100)
+-    av_channel_layout_default( &ctx->ch_layout, p_dec->fmt_in.audio.i_channels );
++    if( p_dec->fmt_in.audio.i_channels > 0 )
++        av_channel_layout_default( &ctx->ch_layout,
++                                   p_dec->fmt_in.audio.i_channels );
+ #else
+-    ctx->channels = p_dec->fmt_in.audio.i_channels;
++    if( p_dec->fmt_in.audio.i_channels > 0 )
++        ctx->channels = p_dec->fmt_in.audio.i_channels;
+ #endif
+     ctx->block_align = p_dec->fmt_in.audio.i_blockalign;
+     ctx->bit_rate = p_dec->fmt_in.i_bitrate;
+@@ -620,6 +657,7 @@ static void SetupOutputFormat( decoder_t *p_dec, bool b_trust )
+     }
+ #endif
+ 
++
+     int i_channels_src = 0, channel_count;
+     uint64_t channel_layout_mask;
+ #if API_CHANNEL_LAYOUT_STRUCT
+@@ -694,4 +732,3 @@ static void SetupOutputFormat( decoder_t *p_dec, bool b_trust )
+ 
+     aout_FormatPrepare( &p_dec->fmt_out.audio );
+ }
+-
+diff --git a/modules/codec/avcodec/avcodec.c b/modules/codec/avcodec/avcodec.c
+index d0780e9..737d3f2 100644
+--- a/modules/codec/avcodec/avcodec.c
++++ b/modules/codec/avcodec/avcodec.c
+@@ -37,6 +37,7 @@
+ 
+ #define HAVE_MMX 1
+ #include <libavcodec/avcodec.h>
++#include <libavutil/error.h>
+ 
+ #include "avcodec.h"
+ #include "chroma.h"
+@@ -284,8 +285,50 @@ AVCodecContext *ffmpeg_AllocContext( decoder_t *p_dec,
+         }
+         free( psz_decoder );
+     }
+-    if( !p_codec )
+-        p_codec = avcodec_find_decoder( i_codec_id );
++    if( !p_codec ) {
++#ifdef HAVE_OHOS
++             /* FFmpeg's native Opus decoder rejects newer OpusHead versions
++              * and mapping families with AVERROR_PATCHWELCOME. The build
++              * already ships libopus, which accepts those WebM tracks, so
++              * prefer it while retaining the native decoder as fallback. */
++             if( i_codec_id == AV_CODEC_ID_OPUS )
++             {
++                 p_codec = avcodec_find_decoder_by_name( "libopus" );
++                 if( p_codec )
++                     msg_Dbg( p_dec, "using libopus decoder for WebM compatibility" );
++                 else
++                     msg_Warn( p_dec, "libopus decoder unavailable, falling back to native Opus" );
++             }
++             char *psz_hw = var_InheritString( p_dec, "avcodec-hw" );
++             const bool use_ohos_hw = psz_hw == NULL ||
++                                      (strcmp( psz_hw, "none" ) != 0 &&
++                                       strcmp( psz_hw, "disabled" ) != 0);
++             const char *ohos_hw_name = NULL;
++             if( use_ohos_hw ) switch( i_codec_id )
++ 	         {
++ 	             case AV_CODEC_ID_H264:
++                     ohos_hw_name = "h264_ohcodec";
++ 	                 break;
++ 	             case AV_CODEC_ID_HEVC:
++                     ohos_hw_name = "hevc_ohcodec";
++ 	                 break;
++ 	             default:
++ 	                 break;
++ 	         }
++ 	         if( ohos_hw_name )
++ 	         {
++ 	             p_codec = avcodec_find_decoder_by_name( ohos_hw_name );
++ 	             if( p_codec )
++ 	                 msg_Dbg( p_dec, "using OHOS hardware decoder: %s", ohos_hw_name );
++ 	             else
++ 	                 msg_Dbg( p_dec, "OHOS hardware decoder %s not available, falling back", ohos_hw_name );
++ 	         }
++             free( psz_hw );
++#endif
++        if (!p_codec) {
++            p_codec = avcodec_find_decoder( i_codec_id );
++        }
++    }
+     if( !p_codec )
+     {
+         msg_Dbg( p_dec, "codec not found (%s)", psz_namecodec );
+@@ -331,7 +374,11 @@ int ffmpeg_OpenCodec( decoder_t *p_dec, AVCodecContext *ctx,
+ 
+     if( ret < 0 )
+     {
+-        msg_Err( p_dec, "cannot start codec (%s)", codec->name );
++        char error_string[AV_ERROR_MAX_STRING_SIZE];
++        if( av_strerror( ret, error_string, sizeof(error_string) ) < 0 )
++            snprintf( error_string, sizeof(error_string), "error %d", ret );
++        msg_Err( p_dec, "cannot start codec (%s): %s (%d)", codec->name,
++                 error_string, ret );
+         return VLC_EGENERIC;
+     }
+ 
+diff --git a/modules/codec/avcodec/chroma.c b/modules/codec/avcodec/chroma.c
+index ceb1373..6934a85 100644
+--- a/modules/codec/avcodec/chroma.c
++++ b/modules/codec/avcodec/chroma.c
+@@ -191,6 +191,11 @@ static const struct
+ #if LIBAV_UTIL_VERSION_CHECK(52, 10, 0, 25, 100)
+     {VLC_CODEC_XYZ12, AV_PIX_FMT_XYZ12, 0xfff0, 0xfff0, 0xfff0},
+ #endif
++
++#ifdef HAVE_OHOS
++    {VLC_CODEC_OHOS_OPAQUE, AV_PIX_FMT_OHCODEC, 0, 0, 0},
++#endif
++
+     { 0, 0, 0, 0, 0 }
+ };
+ 
+diff --git a/modules/codec/avcodec/fourcc.c b/modules/codec/avcodec/fourcc.c
+index 1e5ac23..d945d49 100644
+--- a/modules/codec/avcodec/fourcc.c
++++ b/modules/codec/avcodec/fourcc.c
+@@ -483,6 +483,7 @@ static const struct vlc_avcodec_fourcc spu_codecs[] =
+     { VLC_CODEC_SPU, AV_CODEC_ID_DVD_SUBTITLE },
+     { VLC_CODEC_DVBS, AV_CODEC_ID_DVB_SUBTITLE },
+     { VLC_CODEC_SUBT, AV_CODEC_ID_TEXT },
++    { VLC_CODEC_SUBT, AV_CODEC_ID_SUBRIP },
+     { VLC_CODEC_XSUB, AV_CODEC_ID_XSUB },
+     { VLC_CODEC_SSA, AV_CODEC_ID_SSA },
+     /* AV_CODEC_ID_MOV_TEXT */
+diff --git a/modules/codec/avcodec/video.c b/modules/codec/avcodec/video.c
+index 3b32987..2f3ca1a 100644
+--- a/modules/codec/avcodec/video.c
++++ b/modules/codec/avcodec/video.c
+@@ -32,6 +32,7 @@
+ #include <vlc_common.h>
+ #include <vlc_codec.h>
+ #include <vlc_avcodec.h>
++#include <vlc_input.h>
+ #include <vlc_cpu.h>
+ #include <vlc_atomic.h>
+ #include <assert.h>
+@@ -47,6 +48,13 @@
+ #include "avcodec.h"
+ #include "va.h"
+ 
++#ifdef HAVE_OHOS
++# include <libavcodec/ohcodec_buffer.h>
++# include <libavutil/hwcontext.h>
++# include <libavutil/hwcontext_oh.h>
++# include "../../video_output/ohos/display.h"
++#endif
++
+ #include "../../packetizer/av1_obu.h"
+ #include "../../packetizer/av1.h"
+ #include "../codec/cc.h"
+@@ -89,6 +97,14 @@ struct decoder_sys_t
+     /* */
+     bool palette_sent;
+ 
++#ifdef HAVE_OHOS
++    int flush_count;
++    int post_flush_drop;
++    bool post_seek_output;
++    int64_t keyframe_pts[8];
++    int keyframe_count;
++#endif
++
+     /* VA API */
+     vlc_va_t *p_va;
+     enum PixelFormat pix_fmt;
+@@ -96,6 +112,12 @@ struct decoder_sys_t
+     int level;
+ 
+     vlc_sem_t sem_mt;
++
++#ifdef HAVE_OHOS
++    /* Passed to OHCodec so the platform can adapt its decode policy when the
++     * VLC playback rate changes. Presentation itself is owned by the vout. */
++    int i_ohos_last_display_rate;
++#endif
+ };
+ 
+ static inline void wait_mt(decoder_sys_t *sys)
+@@ -108,6 +130,76 @@ static inline void post_mt(decoder_sys_t *sys)
+     vlc_sem_post(&sys->sem_mt);
+ }
+ 
++#ifdef HAVE_OHOS
++static bool ohos_is_surface_frame(const AVFrame *frame)
++{
++    return frame->format == AV_PIX_FMT_OHCODEC && frame->data[3] != NULL &&
++           frame->buf[0] != NULL;
++}
++
++static int ohos_present_surface(void *surface_ctx, int64_t timestamp_ns)
++{
++    return av_ohcodec_release_buffer_at_time((AVOHCodecBuffer *)surface_ctx,
++                                             timestamp_ns);
++}
++
++static int ohos_discard_surface(void *surface_ctx)
++{
++    return av_ohcodec_release_buffer((AVOHCodecBuffer *)surface_ctx, 0);
++}
++
++static void ohos_pic_ctx_destroy(picture_context_t *ctx)
++{
++    ohos_picture_context_t *octx = (ohos_picture_context_t *)ctx;
++    if (octx->buf_ref)
++    {
++        AVBufferRef *ref = (AVBufferRef *)octx->buf_ref;
++        av_buffer_unref(&ref);
++    }
++    free(octx);
++}
++
++static picture_context_t *ohos_pic_ctx_copy(picture_context_t *ctx)
++{
++    ohos_picture_context_t *src = (ohos_picture_context_t *)ctx;
++    ohos_picture_context_t *dst = malloc(sizeof(*dst));
++    if (!dst)
++        return NULL;
++    *dst = *src;
++    dst->buf_ref = src->buf_ref
++        ? av_buffer_ref((AVBufferRef *)src->buf_ref) : NULL;
++    if (src->buf_ref && !dst->buf_ref)
++    {
++        free(dst);
++        return NULL;
++    }
++    return &dst->s;
++}
++
++static void ohos_update_playback_speed(decoder_t *p_dec)
++{
++    decoder_sys_t *p_sys = p_dec->p_sys;
++    const AVCodec *codec = p_sys->p_codec;
++    if (!codec || !codec->wrapper_name ||
++        strcmp(codec->wrapper_name, "ohcodec") != 0)
++        return;
++
++    const int display_rate = decoder_GetDisplayRate(p_dec);
++    if (display_rate <= 0 || display_rate == p_sys->i_ohos_last_display_rate)
++        return;
++
++    p_sys->i_ohos_last_display_rate = display_rate;
++    const double speed = (double)INPUT_RATE_DEFAULT / display_rate;
++    const int ret = avcodec_ohcodec_set_playback_speed(p_sys->p_context,
++                                                       speed);
++    if (ret < 0)
++        msg_Dbg(p_dec, "OHCodec playback policy unavailable for speed %.3f",
++                speed);
++    else
++        msg_Dbg(p_dec, "OHCodec playback speed updated to %.3f", speed);
++}
++#endif
++
+ /*****************************************************************************
+  * Local prototypes
+  *****************************************************************************/
+@@ -435,6 +527,34 @@ static int OpenVideoCodec( decoder_t *p_dec )
+     post_mt( p_sys );
+     ret = ffmpeg_OpenCodec( p_dec, ctx, codec );
+     wait_mt( p_sys );
++#ifdef HAVE_OHOS
++    if( ret < 0 && codec->name != NULL &&
++        strstr( codec->name, "_ohcodec" ) != NULL )
++    {
++        const AVCodec *fallback = avcodec_find_decoder( codec->id );
++        if( fallback != NULL && fallback != codec )
++        {
++            msg_Warn( p_dec, "OHOS hardware decoder %s failed to start; "
++                      "falling back to software decoder %s",
++                      codec->name, fallback->name );
++
++            /* Drop the OHCodec device before retrying software decoding.
++             * The NativeWindow remains owned by VLC. */
++            av_buffer_unref( &ctx->hw_frames_ctx );
++            av_buffer_unref( &ctx->hw_device_ctx );
++            ctx->pix_fmt = AV_PIX_FMT_NONE;
++
++            post_mt( p_sys );
++            ret = ffmpeg_OpenCodec( p_dec, ctx, fallback );
++            wait_mt( p_sys );
++            if( ret >= 0 )
++            {
++                codec = fallback;
++                p_sys->p_codec = fallback;
++            }
++        }
++    }
++#endif
+     if( ret < 0 )
+         return ret;
+ 
+@@ -538,7 +658,25 @@ static int InitVideoDecCommon( decoder_t *p_dec )
+     p_context->get_buffer2 = lavc_GetFrame;
+     p_context->opaque = p_dec;
+ 
++    /* VLC block timestamps use AV_TIME_BASE units. OHCodec rescales packet
++     * PTS through pkt_timebase before submitting them to the platform codec. */
++#ifdef HAVE_OHOS
++    if (p_codec->wrapper_name && !strcmp(p_codec->wrapper_name, "ohcodec"))
++    {
++#if LIBAVFORMAT_VERSION_MAJOR >= 59
++        p_context->pkt_timebase = AV_TIME_BASE_Q;
++#elif LIBAVFORMAT_VERSION_MICRO >= 100
++        av_codec_set_pkt_timebase(p_context, AV_TIME_BASE_Q);
++#endif
++    }
++#endif
++
+     int i_thread_count = p_sys->b_hardware_only ? 1 : var_InheritInteger( p_dec, "avcodec-threads" );
++#ifdef HAVE_OHOS
++    /* OHOS hardware decoders manage their own threading */
++    if (p_codec->wrapper_name && !strcmp( p_codec->wrapper_name, "ohcodec"))
++        i_thread_count = 1;
++#endif
+     if( i_thread_count <= 0 )
+     {
+         i_thread_count = vlc_GetCPUCount();
+@@ -589,6 +727,12 @@ static int InitVideoDecCommon( decoder_t *p_dec )
+     p_sys->i_late_frames = 0;
+     p_sys->b_from_preroll = false;
+     p_sys->b_draining = false;
++#ifdef HAVE_OHOS
++    p_sys->i_ohos_last_display_rate = -1;
++    if (p_sys->p_codec && p_sys->p_codec->wrapper_name &&
++        strcmp(p_sys->p_codec->wrapper_name, "ohcodec") == 0)
++        msg_Info(p_dec, "OHCodec Surface frames use VLC vout timing; refresh-rate=system-managed");
++#endif
+ 
+     /* Set output properties */
+     if( GetVlcChroma( &p_dec->fmt_out.video, p_context->pix_fmt ) != VLC_SUCCESS )
+@@ -608,6 +752,38 @@ static int InitVideoDecCommon( decoder_t *p_dec )
+     } else
+         p_sys->palette_sent = true;
+ 
++#ifdef HAVE_OHOS
++    if (p_codec->wrapper_name && !strcmp( p_codec->wrapper_name, "ohcodec"))
++    {
++        /* Buffer mode keeps OHCodec hardware decoding but lets VLC own the
++         * picture/vout path, which is required for subtitle composition. */
++        const bool direct_surface = var_InheritBool(p_dec, "avcodec-dr");
++        void *native_window = direct_surface
++            ? var_InheritAddress(p_dec, "drawable-ohos-nativewindow-ptr")
++            : NULL;
++        if (native_window)
++        {
++            AVBufferRef *device_ref =
++                av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_OHCODEC);
++            if (device_ref)
++            {
++                AVHWDeviceContext *device_ctx =
++                    (AVHWDeviceContext *)device_ref->data;
++                AVOHCodecDeviceContext *ohos_ctx =
++                    (AVOHCodecDeviceContext *)device_ctx->hwctx;
++                ohos_ctx->native_window = native_window;
++                ohos_ctx->direct_surface = 1;
++                if (av_hwdevice_ctx_init(device_ref) == 0)
++                    p_context->hw_device_ctx = device_ref;
++                else
++                    av_buffer_unref(&device_ref);
++            }
++        }
++        else
++            msg_Info(p_dec, "OHCodec Buffer output enabled for VLC subtitle composition");
++    }
++#endif
++ 	 
+     /* ***** init this codec with special data ***** */
+     ffmpeg_InitCodec( p_dec );
+ 
+@@ -693,6 +869,9 @@ static const enum PixelFormat hwfmts[] =
+     AV_PIX_FMT_VAAPI,
+ #if (LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(52, 4, 0))
+     AV_PIX_FMT_VDPAU,
++#endif
++#ifdef HAVE_OHOS
++    AV_PIX_FMT_OHCODEC,
+ #endif
+     AV_PIX_FMT_NONE,
+ };
+@@ -847,8 +1026,13 @@ static void Flush( decoder_t *p_dec )
+     decoder_sys_t *p_sys = p_dec->p_sys;
+     AVCodecContext *p_context = p_sys->p_context;
+ 
++    msg_Dbg(p_dec, "[OHOS-DBG] Flush: called, pix_fmt=%d, late_frames=%d",
++            p_context->pix_fmt, p_sys->i_late_frames);
++
+     date_Set(&p_sys->pts, VLC_TICK_INVALID); /* To make sure we recover properly */
+     p_sys->i_late_frames = 0;
++    p_sys->b_from_preroll = true;
++    p_sys->i_last_late_delay = INT64_MAX;
+     p_sys->b_draining = false;
+     cc_Flush( &p_sys->cc );
+ 
+@@ -860,7 +1044,31 @@ static void Flush( decoder_t *p_dec )
+     post_mt( p_sys );
+     /* do not flush buffers if codec hasn't been opened (theora/vorbis/VC1) */
+     if( avcodec_is_open( p_context ) )
++    {
+         avcodec_flush_buffers( p_context );
++#ifdef HAVE_OHOS
++        p_sys->flush_count = 0;
++        p_sys->post_flush_drop = 0; /* Keep valid Buffer frames after a flush. */
++        p_sys->post_seek_output = true;
++        p_sys->keyframe_count = 0;
++        AVFrame *drain_frame = av_frame_alloc();
++        if (drain_frame)
++        {
++            int drain_ret;
++            int drain_count = 0;
++            do {
++                drain_ret = avcodec_receive_frame(p_context, drain_frame);
++                if (drain_ret == 0)
++                {
++                    av_frame_unref(drain_frame);
++                    drain_count++;
++                }
++            } while (drain_ret == 0 && drain_count < 64);
++            av_frame_free(&drain_frame);
++            msg_Dbg(p_dec, "[OHOS-DBG] Flush: drained %d frames", drain_count);
++        }
++#endif
++    }
+     wait_mt( p_sys );
+ 
+     /* Reset cancel state to false */
+@@ -967,6 +1175,12 @@ static void update_late_frame_count( decoder_t *p_dec, block_t *p_block,
+ 
+    vlc_tick_t i_threshold = i_next_pts != VLC_TICK_INVALID ? (i_next_pts - i_pts) / 2 : 20000;
+ 
++#ifdef HAVE_OHOS
++   /* ijkplayer-style: no late_frames accumulation during post_seek_output */
++   if( p_sys->post_seek_output )
++       return;
++#endif
++
+    if( i_display_date > VLC_TICK_INVALID && i_display_date + i_threshold <= current_time )
+    {
+        /* Out of preroll, consider only late frames on rising delay */
+@@ -978,6 +1192,12 @@ static void update_late_frame_count( decoder_t *p_dec, block_t *p_block,
+                return;
+            }
+            p_sys->b_from_preroll = false;
++#ifdef HAVE_OHOS
++
++               p_sys->post_seek_output = false;
++
++               msg_Dbg(p_dec, "[OHOS-DBG] post_seek_output: preroll ended, disabling force output");
++#endif
+        }
+ 
+        p_sys->i_late_frames++;
+@@ -1129,6 +1349,7 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
+         }
+     }
+ 
++
+     if( !avcodec_is_open( p_context ) )
+     {
+         if( p_block )
+@@ -1136,6 +1357,10 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
+         return NULL;
+     }
+ 
++#ifdef HAVE_OHOS
++    ohos_update_playback_speed(p_dec);
++#endif
++
+     if( !check_block_validity( p_sys, p_block ) )
+         return NULL;
+ 
+@@ -1155,7 +1380,17 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
+     if( !p_block || !(p_block->i_flags & BLOCK_FLAG_PREROLL) )
+         b_need_output_picture = true;
+     else
++    {
+         b_need_output_picture = false;
++#ifdef HAVE_OHOS
++        /* ijkplayer-style: after seek, force display all frames during preroll */
++        if (p_sys->post_seek_output) {
++            b_need_output_picture = true;
++            p_sys->i_late_frames = 0;
++            /* Disable after enough non-preroll frames displayed (handled in update_late_frame_count) */
++        }
++#endif
++    }
+ 
+     /* Change skip_frame config only if hurry_up is enabled */
+     if( p_sys->b_hurry_up )
+@@ -1221,6 +1456,21 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
+                 pkt->size = p_block->i_buffer;
+                 pkt->pts = p_block->i_pts > VLC_TICK_INVALID ? p_block->i_pts : AV_NOPTS_VALUE;
+                 pkt->dts = p_block->i_dts > VLC_TICK_INVALID ? p_block->i_dts : AV_NOPTS_VALUE;
++                pkt->flags = 0;
++                if (p_block->i_flags & BLOCK_FLAG_TYPE_I)
++                {
++                    pkt->flags |= AV_PKT_FLAG_KEY;
++                    p_sys->keyframe_pts[p_sys->keyframe_count % 8] = pkt->pts;
++                    p_sys->keyframe_count++;
++#ifdef HAVE_OHOS
++                    if (p_sys->post_seek_output) {
++                        msg_Dbg(p_dec, "[OHOS-DBG] INPUT keyframe received during post_seek_output, pts=%lld",
++                                (long long)pkt->pts);
++                    }
++#endif
++                    msg_Dbg(p_dec, "[OHOS-DBG] pkt->flags set AV_PKT_FLAG_KEY, block_flags=%d pts=%lld",
++                            p_block->i_flags, (long long)pkt->pts);
++                }
+ 
+                 /* Make sure we don't reuse the same timestamps twice */
+                 p_block->i_pts =
+@@ -1243,40 +1493,53 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
+                 }
+             }
+ 
++            const vlc_tick_t trace_send_start = mdate();
+             ret = avcodec_send_packet(p_context, pkt);
++            if (mdate() - trace_send_start >= 5000 || ret == AVERROR(EAGAIN))
++                msg_Dbg(p_dec, "[PlaybackStage] send us=%lld ret=%d bytes=%d pts=%lld",
++                        (long long)(mdate() - trace_send_start), ret, pkt->size,
++                        (long long)pkt->pts);
+             if( ret != 0 && ret != AVERROR(EAGAIN) )
+             {
+                 if (ret == AVERROR(ENOMEM) || ret == AVERROR(EINVAL))
+                 {
+-                    msg_Err(p_dec, "avcodec_send_packet critical error");
++                    msg_Err(p_dec, "[OHOS-DBG] avcodec_send_packet critical error, ret=%d", ret);
+                     *error = true;
+                 }
++                else
++                    msg_Warn(p_dec, "[OHOS-DBG] avcodec_send_packet returned %d", ret);
+                 av_packet_free( &pkt );
+                 break;
+             }
++            /* EAGAIN is backpressure, not a corrupt decoder. Receive output
++             * below before retrying the unconsumed packet. Flushing here
++             * discards reference frames and repeatedly restarts priming. */
+             i_used = ret != AVERROR(EAGAIN) ? pkt->size : 0;
+             av_packet_free( &pkt );
+         }
+ 
+         AVFrame *frame = av_frame_alloc();
+-        if (unlikely(frame == NULL))
+-        {
++        if (unlikely(frame == NULL)) {
+             *error = true;
+             break;
+         }
+ 
++        const vlc_tick_t trace_receive_start = mdate();
+         ret = avcodec_receive_frame(p_context, frame);
+-        if( ret != 0 && ret != AVERROR(EAGAIN) )
+-        {
+-            if (ret == AVERROR(ENOMEM) || ret == AVERROR(EINVAL))
+-            {
+-                msg_Err(p_dec, "avcodec_receive_frame critical error");
++        if (ret == 0 || mdate() - trace_receive_start >= 5000)
++            msg_Dbg(p_dec, "[PlaybackStage] receive us=%lld ret=%d pts=%lld",
++                    (long long)(mdate() - trace_receive_start), ret,
++                    (long long)(ret == 0 ? frame->pts : AV_NOPTS_VALUE));
++        if( ret != 0 && ret != AVERROR(EAGAIN) ) {
++            if (ret == AVERROR(ENOMEM) || ret == AVERROR(EINVAL)) {
++                msg_Err(p_dec, "[OHOS-DBG] avcodec_receive_frame critical error, ret=%d", ret);
+                 *error = true;
+             }
++            else
++                msg_Dbg(p_dec, "[OHOS-DBG] avcodec_receive_frame returned %d", ret);
+             av_frame_free(&frame);
+             /* After draining, we need to reset decoder with a flush */
+-            if( ret == AVERROR_EOF )
+-            {
++            if( ret == AVERROR_EOF ) {
+                 avcodec_flush_buffers( p_sys->p_context );
+                 p_sys->b_draining = false;
+             }
+@@ -1308,6 +1571,7 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
+         }
+ 
+         /* Compute the PTS */
++
+ #if LIBAV_CODEC_VERSION_CHECK(57, 24, 0, 61, 100)
+ # if LIBAVCODEC_VERSION_MICRO >= 100
+         vlc_tick_t i_pts = frame->best_effort_timestamp;
+@@ -1316,6 +1580,10 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
+ # endif
+ #else
+         vlc_tick_t i_pts = frame->pkt_pts;
++#endif
++#ifdef HAVE_OHOS
++        if (ohos_is_surface_frame(frame) && frame->pts != AV_NOPTS_VALUE)
++            i_pts = frame->pts;
+ #endif
+         if (i_pts == AV_NOPTS_VALUE )
+             i_pts = frame->pkt_dts;
+@@ -1331,15 +1599,113 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
+ 
+         update_late_frame_count( p_dec, p_block, current_time, i_pts, i_next_pts);
+ 
++#ifdef HAVE_OHOS
++        if (ohos_is_surface_frame(frame))
++        {
++            const bool corrupted = p_dec->b_frame_drop_allowed &&
++                                   (frame->flags & AV_FRAME_FLAG_CORRUPT) &&
++                                   !p_sys->b_show_corrupted;
++            if (!b_need_output_picture || corrupted)
++            {
++                av_frame_free(&frame);
++                continue;
++            }
++
++            if (p_sys->b_first_frame &&
++                lavc_UpdateVideoFormat(p_dec, p_context,
++                                       frame->format, frame->format))
++            {
++                msg_Warn(p_dec, "OHCodec Surface vout is not ready; dropping frame");
++                av_frame_free(&frame);
++                continue;
++            }
++
++            const vlc_tick_t trace_pool_start = mdate();
++            picture_t *surface_pic = decoder_NewPicture(p_dec);
++            if (mdate() - trace_pool_start >= 5000)
++                msg_Dbg(p_dec, "[PlaybackStage] picture-pool us=%lld pts=%lld",
++                        (long long)(mdate() - trace_pool_start), (long long)i_pts);
++            ohos_picture_context_t *octx = malloc(sizeof(*octx));
++            if (!surface_pic || !octx)
++            {
++                free(octx);
++                if (surface_pic)
++                    picture_Release(surface_pic);
++                av_frame_free(&frame);
++                *error = true;
++                break;
++            }
++
++            AVBufferRef *surface_ref = av_buffer_ref(frame->buf[0]);
++            if (!surface_ref)
++            {
++                free(octx);
++                picture_Release(surface_pic);
++                av_frame_free(&frame);
++                *error = true;
++                break;
++            }
++
++            *octx = (ohos_picture_context_t) {
++                .s = {
++                    .destroy = ohos_pic_ctx_destroy,
++                    .copy = ohos_pic_ctx_copy,
++                },
++                .surface_ctx = frame->data[3],
++                .buf_ref = surface_ref,
++                .pf_render = ohos_present_surface,
++                .pf_flush = ohos_discard_surface,
++                .released_ptr = NULL,
++            };
++            surface_pic->context = &octx->s;
++            surface_pic->date = i_pts;
++            surface_pic->b_force = p_sys->b_first_frame;
++            surface_pic->i_nb_fields = 2 + frame->repeat_pict;
++#if LIBAVUTIL_VERSION_CHECK( 58, 7, 100 )
++            surface_pic->b_progressive = !(frame->flags & AV_FRAME_FLAG_INTERLACED);
++            surface_pic->b_top_field_first = !!(frame->flags & AV_FRAME_FLAG_TOP_FIELD_FIRST);
++#else
++            surface_pic->b_progressive = !frame->interlaced_frame;
++            surface_pic->b_top_field_first = frame->top_field_first;
++#endif
++            if (DecodeSidedata(p_dec, frame, surface_pic))
++                i_pts = VLC_TICK_INVALID;
++            av_frame_free(&frame);
++
++            if (i_pts > VLC_TICK_INVALID)
++            {
++                p_sys->b_first_frame = false;
++                return surface_pic;
++            }
++            picture_Release(surface_pic);
++            continue;
++        }
++#endif
++
+         if( !b_need_output_picture ||
+-           ( !p_sys->p_va && !frame->linesize[0] ) ||
++            ( !p_sys->p_va && !frame->linesize[0] ) ||
+            ( p_dec->b_frame_drop_allowed && (frame->flags & AV_FRAME_FLAG_CORRUPT) &&
+              !p_sys->b_show_corrupted ) )
+         {
++            msg_Dbg(p_dec, "[OHOS-DBG] DROP frame: b_need_output_picture=%d, p_va=%p, linesize[0]=%d, pix_fmt=%d, corrupt=%d",
++                    b_need_output_picture, p_sys->p_va, frame->linesize[0], p_context->pix_fmt,
++                    (frame->flags & AV_FRAME_FLAG_CORRUPT) ? 1 : 0);
+             av_frame_free(&frame);
+             continue;
+         }
+ 
++
++
++#ifdef HAVE_OHOS
++        if (p_sys->post_flush_drop > 0) {
++            p_sys->post_flush_drop--;
++            msg_Dbg(p_dec, "[OHOS-DBG] post_flush_drop: dropping frame %d remaining, pts=%lld",
++                    p_sys->post_flush_drop, (long long)frame->pts);
++            av_frame_free(&frame);
++            continue;
++        }
++#endif
++
+         if( p_context->pix_fmt == AV_PIX_FMT_PAL8
+          && !p_dec->fmt_out.video.p_palette )
+         {
+@@ -1371,6 +1737,8 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
+         }
+ 
+         picture_t *p_pic = frame->opaque;
++        msg_Dbg(p_dec, "[OHOS-DBG] frame->opaque=%p (direct rendering=%s), pix_fmt=%d",
++                p_pic, p_pic ? "yes" : "no", p_context->pix_fmt);
+         if( p_pic == NULL )
+         {   /* When direct rendering is not used, get_format() and get_buffer()
+              * might not be called. The output video format must be set here
+@@ -1382,11 +1750,13 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
+ 
+             if( !p_pic )
+             {
++                msg_Err(p_dec, "[OHOS-DBG] decoder_NewPicture failed!");
+                 av_frame_free(&frame);
+                 break;
+             }
+ 
+-            /* Fill picture_t from AVFrame */
++            /* Surface frames are handled above. Copy software-decoded frames
++             * into VLC-owned pictures as usual. */
+             if( lavc_CopyPicture( p_dec, p_pic, frame ) != VLC_SUCCESS )
+             {
+                 av_frame_free(&frame);
+@@ -1397,10 +1767,10 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
+         else
+         {
+             /* Some codecs can return the same frame multiple times. By the
+-             * time that the same frame is returned a second time, it will be
+-             * too late to clone the underlying picture. So clone proactively.
+-             * A single picture CANNOT be queued multiple times.
+-             */
++                * time that the same frame is returned a second time, it will be
++                * too late to clone the underlying picture. So clone proactively.
++                * A single picture CANNOT be queued multiple times.
++                */
+             p_pic = picture_Clone( p_pic );
+             if( unlikely(p_pic == NULL) )
+             {
+@@ -1436,6 +1806,7 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
+         p_pic->b_top_field_first = frame->top_field_first;
+ #endif
+ 
++
+         if (DecodeSidedata(p_dec, frame, p_pic))
+             i_pts = VLC_TICK_INVALID;
+ 
+@@ -1445,10 +1816,14 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
+         if (i_pts > VLC_TICK_INVALID)
+         {
+             p_sys->b_first_frame = false;
++            msg_Dbg(p_dec, "[OHOS-DBG] queueing picture to vout");
+             return p_pic;
+         }
+         else
++        {
++            msg_Warn(p_dec, "[OHOS-DBG] discarding picture (invalid PTS)");
+             picture_Release( p_pic );
++        }
+     } while( true );
+ 
+     if( p_block )
+@@ -1466,8 +1841,15 @@ static int DecodeVideo( decoder_t *p_dec, block_t *p_block )
+     block_t **pp_block = p_block ? &p_block : NULL;
+     picture_t *p_pic;
+     bool error = false;
+-    while( ( p_pic = DecodeBlock( p_dec, pp_block, &error ) ) != NULL )
++    int pic_count = 0;
++    while( ( p_pic = DecodeBlock( p_dec, pp_block, &error ) ) != NULL ) {
++        pic_count++;
++        msg_Dbg(p_dec, "[OHOS-DBG] DecodeVideo: queueing picture #%d, p_pic=%p, date=%lld",
++                pic_count, p_pic, (long long)p_pic->date);
+         decoder_QueueVideo( p_dec, p_pic );
++    }
++    if (pic_count > 0)
++        msg_Dbg(p_dec, "[OHOS-DBG] DecodeVideo: queued %d pictures, error=%d", pic_count, error);
+     return error ? VLCDEC_ECRITICAL : VLCDEC_SUCCESS;
+ }
+ 
+@@ -1499,7 +1881,10 @@ void EndVideoDec( vlc_object_t *obj )
+ 
+     if( p_sys->p_va )
+         vlc_va_Delete( p_sys->p_va, &hwaccel_context );
+-
++#ifdef HAVE_OHOS
++    else if( hwaccel_context )
++        av_free( hwaccel_context );
++#endif
+     vlc_sem_destroy( &p_sys->sem_mt );
+     free( p_sys );
+ }
+@@ -1734,11 +2119,16 @@ static enum PixelFormat ffmpeg_GetFormat( AVCodecContext *p_context,
+     decoder_sys_t *p_sys = p_dec->p_sys;
+     video_format_t fmt;
+ 
++    msg_Dbg(p_dec, "[OHOS-DBG] GetFormat: called, pix_fmt=%d, sw_pix_fmt=%d, b_hardware_only=%d",
++            p_context->pix_fmt, p_context->sw_pix_fmt, p_sys->b_hardware_only);
++
+     /* Enumerate available formats */
+     enum PixelFormat defaultfmt = avcodec_default_get_format(p_context, pi_fmt);
+     enum PixelFormat swfmt = AV_PIX_FMT_NONE;
+     bool can_hwaccel = false;
+ 
++    msg_Dbg(p_dec, "[OHOS-DBG] GetFormat: defaultfmt=%d", defaultfmt);
++
+     for (size_t i = 0; pi_fmt[i] != AV_PIX_FMT_NONE; i++)
+     {
+         const AVPixFmtDescriptor *dsc = av_pix_fmt_desc_get(pi_fmt[i]);
+@@ -1746,7 +2136,7 @@ static enum PixelFormat ffmpeg_GetFormat( AVCodecContext *p_context,
+             continue;
+         bool hwaccel = (dsc->flags & AV_PIX_FMT_FLAG_HWACCEL) != 0;
+ 
+-        msg_Dbg( p_dec, "available %sware decoder output format %d (%s)",
++        msg_Dbg( p_dec, "[OHOS-DBG] GetFormat: available %sware decoder output format %d (%s)",
+                  hwaccel ? "hard" : "soft", pi_fmt[i], dsc->name );
+         if (hwaccel)
+         {
+@@ -1760,7 +2150,8 @@ static enum PixelFormat ffmpeg_GetFormat( AVCodecContext *p_context,
+         else if (swfmt == AV_PIX_FMT_NONE && !p_sys->b_hardware_only)
+             swfmt = pi_fmt[i];
+     }
+-
++    msg_Dbg(p_dec, "[OHOS-DBG] GetFormat: swfmt=%d, can_hwaccel=%d, defaultfmt=%d",
++        swfmt, can_hwaccel, defaultfmt);
+     /* Use the default fmt in priority of any sw fmt if the default fmt is a hw
+      * one */
+     if (defaultfmt != AV_PIX_FMT_NONE)
+diff --git a/modules/demux/avformat/demux.c b/modules/demux/avformat/demux.c
+index 8db8dd2..df0c7d0 100644
+--- a/modules/demux/avformat/demux.c
++++ b/modules/demux/avformat/demux.c
+@@ -62,6 +62,7 @@ struct avformat_track_s
+ {
+     es_out_id_t *p_es;
+     vlc_tick_t i_pcr;
++    bool b_discontinuity;
+ };
+ 
+ /*****************************************************************************
+@@ -946,7 +947,14 @@ static int Demux( demux_t *p_demux )
+     }
+ 
+     if( p_track->p_es != NULL )
++    {
++        if( p_track->b_discontinuity )
++        {
++            p_frame->i_flags |= BLOCK_FLAG_DISCONTINUITY;
++            p_track->b_discontinuity = false;
++        }
+         es_out_Send( p_demux->out, p_track->p_es, p_frame );
++    }
+     else
+         block_Release( p_frame );
+ 
+@@ -987,7 +995,10 @@ static void ResetTime( demux_t *p_demux, int64_t i_time )
+ 
+     p_sys->i_pcr = i_time;
+     for( unsigned i = 0; i < p_sys->i_tracks; i++ )
++    {
+         p_sys->tracks[i].i_pcr = VLC_TICK_INVALID;
++        p_sys->tracks[i].b_discontinuity = true;
++    }
+ 
+     if( i_time > VLC_TICK_INVALID )
+     {
+diff --git a/modules/logger/Makefile.am b/modules/logger/Makefile.am
+index 4addf6d..203a693 100644
+--- a/modules/logger/Makefile.am
++++ b/modules/logger/Makefile.am
+@@ -22,3 +22,11 @@ libandroid_logger_plugin_la_LIBADD = -llog
+ if HAVE_ANDROID
+ logger_LTLIBRARIES += libandroid_logger_plugin.la
+ endif
++
++libohos_logger_plugin_la_SOURCES = logger/ohos.c
++libohos_logger_plugin_la_LIBADD = -lhilog_ndk.z
++libohos_logger_plugin_la_CFLAGS = $(AM_CFLAGS)
++libohos_logger_plugin_la_LDFLAGS = $(AM_LDFLAGS)
++if HAVE_OHOS
++logger_LTLIBRARIES += libohos_logger_plugin.la
++endif
+diff --git a/modules/text_renderer/Makefile.am b/modules/text_renderer/Makefile.am
+index 56b0808..6ce8b87 100644
+--- a/modules/text_renderer/Makefile.am
++++ b/modules/text_renderer/Makefile.am
+@@ -32,6 +32,10 @@ endif
+ if HAVE_ANDROID
+ libfreetype_plugin_la_SOURCES += text_renderer/freetype/fonts/android.c
+ endif
++if HAVE_OHOS
++libfreetype_plugin_la_SOURCES += text_renderer/freetype/fonts/ohos.c \
++                                 misc/webservices/json.c
++endif
+ if HAVE_DARWIN
+ libfreetype_plugin_la_SOURCES += text_renderer/freetype/fonts/darwin.c
+ libfreetype_plugin_la_LDFLAGS += -Wl,-framework,CoreFoundation -Wl,-framework,CoreText
+diff --git a/modules/text_renderer/freetype/freetype.c b/modules/text_renderer/freetype/freetype.c
+index c30749c..b696109 100644
+--- a/modules/text_renderer/freetype/freetype.c
++++ b/modules/text_renderer/freetype/freetype.c
+@@ -65,6 +65,12 @@
+ # define HAVE_GET_FONT_BY_FAMILY_NAME
+ #endif
+ 
++/* OHOS */
++#ifdef __OHOS__
++# undef HAVE_FONTCONFIG
++# define HAVE_GET_FONT_BY_FAMILY_NAME
++#endif
++
+ #include <assert.h>
+ 
+ #include "platform_fonts.h"
+@@ -1473,6 +1479,13 @@ static int Create( vlc_object_t *p_this )
+ 
+     if( Android_Prepare( p_filter ) == VLC_ENOMEM )
+         goto error;
++#elif defined( __OHOS__ )
++    p_sys->pf_get_family = OHOS_GetFamily;
++    p_sys->pf_get_fallbacks = OHOS_GetFallbacks;
++    p_sys->pf_select = Generic_Select;
++
++    if( OHOS_Prepare( p_filter ) == VLC_ENOMEM )
++        goto error;
+ #else
+     p_sys->pf_select = Dummy_Select;
+ #endif
+diff --git a/modules/text_renderer/freetype/platform_fonts.h b/modules/text_renderer/freetype/platform_fonts.h
+index 848c31a..d4f7822 100644
+--- a/modules/text_renderer/freetype/platform_fonts.h
++++ b/modules/text_renderer/freetype/platform_fonts.h
+@@ -72,6 +72,11 @@ extern "C" {
+ # define SYSTEM_DEFAULT_FAMILY "sans-serif"
+ # define SYSTEM_DEFAULT_MONOSPACE_FONT_FILE "/system/fonts/DroidSansMono.ttf"
+ # define SYSTEM_DEFAULT_MONOSPACE_FAMILY "Monospace"
++#elif defined( __OHOS__ )
++# define SYSTEM_DEFAULT_FONT_FILE "/system/fonts/HarmonyOS_Sans.ttf"
++# define SYSTEM_DEFAULT_FAMILY "HarmonyOS Sans"
++# define SYSTEM_DEFAULT_MONOSPACE_FONT_FILE "/system/fonts/NotoSansMono[wdth,wght].ttf"
++# define SYSTEM_DEFAULT_MONOSPACE_FAMILY "Noto Sans Mono"
+ #else
+ # define SYSTEM_DEFAULT_FONT_FILE "/usr/share/fonts/truetype/freefont/FreeSerifBold.ttf"
+ # define SYSTEM_DEFAULT_FAMILY "Serif Bold"
+@@ -175,6 +180,13 @@ vlc_family_t *Android_GetFallbacks( filter_t *p_filter, const char *psz_family,
+ int Android_Prepare( filter_t *p_filter );
+ #endif /* __ANDROID__ */
+ 
++#ifdef __OHOS__
++int  OHOS_Prepare(filter_t *);
++const vlc_family_t *OHOS_GetFamily(filter_t *, const char *);
++vlc_family_t *OHOS_GetFallbacks(filter_t *, const char *, uni_char_t);
++#endif /* __OHOS__ */
++
++
+ char* Dummy_Select( filter_t *p_filter, const char* family,
+                     bool b_bold, bool b_italic,
+                     int *i_idx, uni_char_t codepoint );
+diff --git a/modules/text_renderer/freetype/text_layout.c b/modules/text_renderer/freetype/text_layout.c
+index a11d0be..495c862 100644
+--- a/modules/text_renderer/freetype/text_layout.c
++++ b/modules/text_renderer/freetype/text_layout.c
+@@ -84,6 +84,11 @@
+ # define HAVE_FONT_FALLBACK
+ #endif
+ 
++/* OHOS */
++#ifdef __OHOS__
++# define HAVE_FONT_FALLBACK
++#endif
++
+ /* Darwin */
+ #ifdef __APPLE__
+ # define HAVE_FONT_FALLBACK
+diff --git a/modules/video_output/Makefile.am b/modules/video_output/Makefile.am
+index 6d75a1d..a39a6ca 100644
+--- a/modules/video_output/Makefile.am
++++ b/modules/video_output/Makefile.am
+@@ -69,7 +69,11 @@ endif
+ ### OpenGL ###
+ libgles2_plugin_la_SOURCES = $(OPENGL_COMMONSOURCES) video_output/opengl/display.c
+ libgles2_plugin_la_CFLAGS = $(AM_CFLAGS) $(GLES2_CFLAGS) -DUSE_OPENGL_ES2 $(OPENGL_COMMONCLFAGS)
++if HAVE_OHOS
++libgles2_plugin_la_LIBADD = -lGLESv3 $(LIBM) $(OPENGL_COMMONLIBS)
++else
+ libgles2_plugin_la_LIBADD = $(GLES2_LIBS) $(LIBM) $(OPENGL_COMMONLIBS)
++endif
+ libgles2_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(voutdir)'
+ 
+ EXTRA_LTLIBRARIES += libgles2_plugin.la
+@@ -482,3 +486,23 @@ libevent_thread_la_SOURCES = \
+ 	video_output/event_thread.c video_output/event_thread.h
+ libevent_thread_la_LDFLAGS = -static
+ noinst_LTLIBRARIES += libevent_thread.la
++
++
++### OpenHarmony ###
++
++libegl_ohos_plugin_la_SOURCES = video_output/opengl/egl.c video_output/ohos/utils.c
++libegl_ohos_plugin_la_CFLAGS = $(AM_CFLAGS) $(EGL_CFLAGS) -DUSE_PLATFORM_OHOS=1
++libegl_ohos_plugin_la_LIBADD = $(EGL_LIBS) -lGLESv3 -lnative_window
++
++libohos_window_plugin_la_SOURCES = video_output/ohos/window.c \
++								   video_output/ohos/utils.c 
++libohos_window_plugin_la_CFLAGS = $(AM_CFLAGS)
++libohos_window_plugin_la_LIBADD = $(LIBDL) -lEGL -lGLESv3 -lnative_window
++
++libohos_surface_display_plugin_la_SOURCES = video_output/ohos/display.c
++libohos_surface_display_plugin_la_CFLAGS = $(AM_CFLAGS)
++libohos_surface_display_plugin_la_LIBADD = -lnative_window -lnative_buffer
++
++if HAVE_OHOS
++vout_LTLIBRARIES += libohos_window_plugin.la libegl_ohos_plugin.la libohos_surface_display_plugin.la
++endif
+diff --git a/modules/video_output/opengl/converter_sw.c b/modules/video_output/opengl/converter_sw.c
+index 9428a7a..5be97c5 100644
+--- a/modules/video_output/opengl/converter_sw.c
++++ b/modules/video_output/opengl/converter_sw.c
+@@ -350,8 +350,14 @@ opengl_tex_converter_generic_init(opengl_tex_converter_t *tc, bool allow_dr)
+         }
+         list++;
+     }
+-    if (fragment_shader == 0)
++    if (fragment_shader == 0) {
++        // Check OpenGL error
++        GLenum error = tc->vt->GetError();
++        if (error != GL_NO_ERROR) {
++            msg_Err(tc->gl, "OpenGL error: 0x%04X", error);
++        }
+         return VLC_EGENERIC;
++    }
+ 
+     struct priv *priv = tc->priv = calloc(1, sizeof(struct priv));
+     if (unlikely(priv == NULL))
+diff --git a/modules/video_output/opengl/egl.c b/modules/video_output/opengl/egl.c
+index ab20fb4..ff63745 100644
+--- a/modules/video_output/opengl/egl.c
++++ b/modules/video_output/opengl/egl.c
+@@ -42,7 +42,12 @@
+ #if defined (USE_PLATFORM_ANDROID)
+ # include "../android/utils.h"
+ #endif
+-
++#if defined (USE_PLATFORM_OHOS)
++#include <GLES3/gl3.h>
++#include <GLES3/gl32.h>
++#include <GLES2/gl2ext.h>
++#include "../ohos/utils.h"
++#endif
+ typedef struct vlc_gl_sys_t
+ {
+     EGLDisplay display;
+@@ -347,6 +352,16 @@ static int Open (vlc_object_t *obj, const struct gl_api *api)
+     sys->display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+ # endif
+ 
++#elif defined (USE_PLATFORM_OHOS)
++    if (wnd->type != VOUT_WINDOW_TYPE_OHOS_NATIVE)
++        goto error;
++    void* ohos_window = GetOHOSNativeWindow(wnd->handle.onativewindow);
++    msg_Dbg(obj, "ohos_window %p", ohos_window);
++    if (ohos_window == NULL)
++        goto error;
++    window = &ohos_window;
++    
++    sys->display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+ #endif
+ 
+     if (sys->display == EGL_NO_DISPLAY)
+@@ -370,7 +385,7 @@ static int Open (vlc_object_t *obj, const struct gl_api *api)
+         msg_Err(obj, "cannot select %s API", api->name);
+         goto error;
+     }
+-
++#if !defined (USE_PLATFORM_OHOS)
+     const EGLint conf_attr[] = {
+         EGL_RED_SIZE, 5,
+         EGL_GREEN_SIZE, 5,
+@@ -378,6 +393,12 @@ static int Open (vlc_object_t *obj, const struct gl_api *api)
+         EGL_RENDERABLE_TYPE, api->render_bit,
+         EGL_NONE
+     };
++#else
++    EGLint conf_attr[] = {
++        EGL_SURFACE_TYPE, EGL_WINDOW_BIT, EGL_RED_SIZE, 8,   EGL_GREEN_SIZE, 8,
++        EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8, EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
++        EGL_NONE};
++#endif
+     EGLConfig cfgv[1];
+     EGLint cfgc;
+ 
+diff --git a/src/Makefile.am b/src/Makefile.am
+index 869a5eb..058de54 100644
+--- a/src/Makefile.am
++++ b/src/Makefile.am
+@@ -420,12 +420,21 @@ libvlccore_la_SOURCES += \
+ 	darwin/thread.c
+ else
+ libvlccore_la_LIBADD += $(LIBEXECINFO)
++if HAVE_OHOS
++libvlccore_la_SOURCES += \
++	posix/dirs.c \
++	posix/error.c \
++	posix/netconf.c \
++	posix/specific.c \
++	ohos/thread.c
++else
+ libvlccore_la_SOURCES += \
+ 	posix/dirs.c \
+ 	posix/error.c \
+ 	posix/netconf.c \
+ 	posix/specific.c \
+ 	posix/thread.c
++endif
+ if HAVE_LINUX
+ libvlccore_la_SOURCES += \
+ 	linux/cpu.c \
+diff --git a/src/input/clock.c b/src/input/clock.c
+index 3099cfe..b32982e 100644
+--- a/src/input/clock.c
++++ b/src/input/clock.c
+@@ -350,9 +350,13 @@ void input_clock_ChangeRate( input_clock_t *cl, int i_rate )
+ 
+     if( cl->b_has_reference )
+     {
+-        /* Move the reference point (as if we were playing at the new rate
+-         * from the start */
+-        cl->ref.i_system = cl->last.i_system - (cl->last.i_system - cl->ref.i_system) * i_rate / cl->i_rate;
++        /* Keep the presentation timeline continuous at the rate change,
++         * not at the last PCR arrival (which can be seconds old). The
++         * timestamp delay scales with the rate as well. While paused use
++         * the pause instant; resume will shift the reference separately. */
++        const vlc_tick_t anchor = cl->b_paused ? cl->i_pause_date : mdate();
++        cl->ref.i_system = anchor -
++            (anchor - cl->ref.i_system) * i_rate / cl->i_rate;
+     }
+     cl->i_rate = i_rate;
+ 
+diff --git a/src/libvlccore.sym b/src/libvlccore.sym
+index a15ba0d..fdd566a 100644
+--- a/src/libvlccore.sym
++++ b/src/libvlccore.sym
+@@ -705,6 +705,7 @@ vlm_MessageNew
+ vlm_MessageSimpleNew
+ vlm_New
+ vout_ChangeAspectRatio
++vout_ReportDisplayWindowSize
+ vout_Close
+ vout_GetPicture
+ vout_PutPicture
+diff --git a/src/misc/fourcc.c b/src/misc/fourcc.c
+index ca6a43e..319898f 100644
+--- a/src/misc/fourcc.c
++++ b/src/misc/fourcc.c
+@@ -769,6 +769,7 @@ static const struct
+     { { VLC_CODEC_ANDROID_OPAQUE, VLC_CODEC_MMAL_OPAQUE,
+         VLC_CODEC_D3D9_OPAQUE,    VLC_CODEC_D3D11_OPAQUE },
+                                                FAKE_FMT() },
++    { { VLC_CODEC_OHOS_OPAQUE, 0 },           FAKE_FMT() },
+     { { VLC_CODEC_D3D11_OPAQUE_10B, VLC_CODEC_D3D9_OPAQUE_10B },
+                                                FAKE_FMT() },
+ 
+diff --git a/src/posix/filesystem.c b/src/posix/filesystem.c
+index 68b407b..95e5946 100644
+--- a/src/posix/filesystem.c
++++ b/src/posix/filesystem.c
+@@ -113,7 +113,11 @@ int vlc_memfd (void)
+ {
+     int fd;
+ #if O_TMPFILE
++    #ifdef __OHOS__
++    fd = vlc_open ("/data/storage/el2/base/temp", O_RDWR|O_TMPFILE, S_IRUSR|S_IWUSR);
++    #else
+     fd = vlc_open ("/tmp", O_RDWR|O_TMPFILE, S_IRUSR|S_IWUSR);
++    #endif
+     if (fd != -1)
+         return fd;
+     /* ENOENT means either /tmp is missing (!) or the kernel does not support
+@@ -123,8 +127,11 @@ int vlc_memfd (void)
+     if (errno != ENOENT && errno != EISDIR && errno != EOPNOTSUPP)
+         return -1;
+ #endif
+-
++    #ifdef __OHOS__
++    char bufpath[] = "/data/storage/el2/base/temp/"PACKAGE_NAME"XXXXXX";
++    #else
+     char bufpath[] = "/tmp/"PACKAGE_NAME"XXXXXX";
++    #endif
+ 
+     fd = vlc_mkstemp (bufpath);
+     if (fd != -1)
+@@ -135,7 +142,7 @@ int vlc_memfd (void)
+ int vlc_close (int fd)
+ {
+     int ret;
+-#ifdef POSIX_CLOSE_RESTART
++#if defined(POSIX_CLOSE_RESTART) && !defined(__OHOS__)
+     ret = posix_close(fd, 0);
+ #else
+     ret = close(fd);
+diff --git a/src/video_output/display.c b/src/video_output/display.c
+index 869c575..c0bebc1 100644
+--- a/src/video_output/display.c
++++ b/src/video_output/display.c
+@@ -94,6 +94,7 @@ static vout_display_t *vout_display_New(vlc_object_t *obj,
+     vd->info.needs_hide_mouse = false;
+     vd->info.has_pictures_invalid = false;
+     vd->info.subpicture_chromas = NULL;
++    vd->info.scale_subpictures_to_display = false;
+ 
+     vd->cfg = cfg;
+     vd->pool = NULL;
+diff --git a/src/video_output/video_output.c b/src/video_output/video_output.c
+index cd06e80..e312c12 100644
+--- a/src/video_output/video_output.c
++++ b/src/video_output/video_output.c
+@@ -647,6 +647,19 @@ void vout_SetDisplayWindowSize(vout_thread_t *vout,
+         vout_display_SendEventDisplaySize(vout->p->display.vd, width, height);
+ }
+ 
++VLC_API void vout_ReportDisplayWindowSize(vout_thread_t *vout,
++                                          unsigned width, unsigned height)
++{
++    if (width == 0 || height == 0)
++        return;
++
++    vout_window_t *window = vout->p->window;
++    if (window != NULL)
++        vout_window_ReportSize(window, width, height);
++    else if (vout->p->display.vd != NULL)
++        vout_display_SendEventDisplaySize(vout->p->display.vd, width, height);
++}
++
+ int vout_HideWindowMouse(vout_thread_t *vout, bool hide)
+ {
+     vout_window_t *window = vout->p->window;
+@@ -1019,7 +1032,8 @@ static int ThreadDisplayRenderPicture(vout_thread_t *vout, bool is_forced)
+         vout_display_PlacePicture(&place, &vd->source, vd->cfg, false);
+ 
+         fmt_spu = vd->source;
+-        if (fmt_spu.i_width * fmt_spu.i_height < place.width * place.height) {
++        if (vd->info.scale_subpictures_to_display ||
++            fmt_spu.i_width * fmt_spu.i_height < place.width * place.height) {
+             fmt_spu.i_sar_num = vd->cfg->display.sar.num;
+             fmt_spu.i_sar_den = vd->cfg->display.sar.den;
+             fmt_spu.i_width          =
+@@ -1054,11 +1068,15 @@ static int ThreadDisplayRenderPicture(vout_thread_t *vout, bool is_forced)
+ 
+     video_format_t fmt_spu_rot;
+     video_format_ApplyRotation(&fmt_spu_rot, &fmt_spu);
++    const vlc_tick_t trace_spu_start = mdate();
+     subpicture_t *subpic = spu_Render(vout->p->spu,
+                                       subpicture_chromas, &fmt_spu_rot,
+                                       &vd->source,
+                                       render_subtitle_date, render_osd_date,
+                                       do_snapshot);
++    if (mdate() - trace_spu_start >= 5000)
++        msg_Dbg(vout, "[PlaybackStage] subtitle-render us=%lld pts=%lld",
++                (long long)(mdate() - trace_spu_start), (long long)render_subtitle_date);
+     /*
+      * Perform rendering
+      *
+@@ -1175,7 +1193,13 @@ static int ThreadDisplayRenderPicture(vout_thread_t *vout, bool is_forced)
+ 
+     /* Display the direct buffer returned by vout_RenderPicture */
+     vout->p->displayed.date = mdate();
++    const vlc_tick_t trace_display_start = mdate();
++    const vlc_tick_t trace_display_date = todisplay->date;
+     vout_display_Display(vd, todisplay, subpic);
++    msg_Dbg(vout, "[PlaybackStage] display us=%lld late-us=%lld deadline=%lld",
++            (long long)(mdate() - trace_display_start),
++            (long long)(trace_display_start - trace_display_date),
++            (long long)trace_display_date);
+ 
+     vout_statistic_AddDisplayed(&vout->p->statistic, 1);
+ 
+diff --git a/modules/audio_output/audiounit_ohos.c b/modules/audio_output/audiounit_ohos.c
+new file mode 100644
+index 0000000..80067e0
+--- /dev/null
++++ b/modules/audio_output/audiounit_ohos.c
+@@ -0,0 +1,833 @@
++/*****************************************************************************
++* Copyright (c) 2025 Huawei Device Co., Ltd.
++* Licensed under the Apache License, Version 2.0 (the "License");
++* you may not use this file except in compliance with the License.
++* You may obtain a copy of the License at
++*
++*     http://www.apache.org/licenses/LICENSE-2.0
++*
++* Unless required by applicable law or agreed to in writing, software
++* distributed under the License is distributed on an "AS IS" BASIS,
++* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++* See the License for the specific language governing permissions and
++* limitations under the License.
++*****************************************************************************/
++
++#ifdef HAVE_CONFIG_H
++#include "config.h"
++#endif
++
++#include <vlc_common.h>
++#include <vlc_plugin.h>
++#include <vlc_aout.h>
++#include <vlc_threads.h>
++#include <vlc_atomic.h>
++#include <vlc_messages.h>
++#include <vlc_block.h>
++#include <stdint.h>
++#include <string.h>
++
++/* Header file of the OpenHarmony audio interface */
++#include <ohaudio/native_audiorenderer.h>
++#include <ohaudio/native_audiostream_base.h>
++#include <ohaudio/native_audiostreambuilder.h>
++#include <hilog/log.h>
++
++/* Description of the module */
++static int  Open(vlc_object_t *);
++static void Close(vlc_object_t *);
++
++#ifndef VLC_TICK_FROM_MS
++#define VLC_TICK_FROM_MS(a) (1000 * (a))
++#endif
++
++// Audio queue and timing constants
++#define AUDIO_QUEUE_THRESHOLD_SIZE   16384    /* Queue size threshold in bytes */
++#define AUDIO_RING_CAPACITY          (16u * 1024u * 1024u)
++#define AUDIO_MAX_QUEUE_MS           250
++#define AUDIO_QUEUE_WAIT_MS          100
++#define RENDERER_STALL_TIMEOUT       2000000  /* Stall timeout in microseconds (2s) */
++
++vlc_module_begin()
++    set_shortname("OHOS:Audio")
++    set_description("OpenHarmony Audio Renderer")
++    set_category(CAT_AUDIO)
++    set_subcategory(SUBCAT_AUDIO_AOUT)
++    set_capability("audio output", 101) //101 Setting the priority
++    set_callbacks(Open, Close)
++vlc_module_end()
++
++// Audio data queue structure
++typedef struct {
++    uint8_t *data;
++    size_t capacity;
++    size_t read_pos;
++    size_t write_pos;
++    vlc_mutex_t lock;
++    vlc_cond_t writable;
++    size_t total_size;
++    size_t bytes_per_second;
++    vlc_tick_t submitted_until;
++} audio_queue_t;
++
++// delay statistics structure
++typedef struct {
++    // basic statistics
++    vlc_tick_t min_delay;
++    vlc_tick_t max_delay;
++    vlc_tick_t avg_delay;
++    vlc_tick_t current_delay;
++
++    // Time trace
++    vlc_tick_t last_update;
++    vlc_tick_t stats_start_time;
++
++    // counter
++    uint64_t call_count;
++
++    // Performance indicators
++    vlc_tick_t total_delay_accumulated;
++} audio_delay_stats_t;
++
++// OpenHarmony audio output module private data structure
++struct aout_sys_t {
++    // OpenHarmony Audio Renderer handle
++    OH_AudioRenderer *p_renderer;
++    OH_AudioStreamBuilder *builder;
++    // audio data queue
++    audio_queue_t queue;
++
++    // Audio format information
++    uint32_t buffer_duration;
++
++    // Audio status control
++    bool is_playing;
++    bool is_initialized;
++    float volume;
++    bool mute;
++
++    // Audio format parameters
++    unsigned int sample_rate;
++    unsigned int channels;
++    OH_AudioStream_Result last_error;
++    OH_AudioStream_SampleFormat sample_format;
++    // estimated hardware latency
++    vlc_tick_t estimated_hardware_latency;
++    audio_delay_stats_t delay_stats;
++    bool draining;                    // Is emptying
++    vlc_tick_t drain_start_time;      // Start time of emptying
++    size_t drain_initial_size;        // The queue size at the start of emptying
++    vlc_cond_t drain_cond;           // emptying condition variables
++    vlc_tick_t last_write_time;
++    size_t max_queue_size;
++    bool flushed_since_play;
++};
++
++// Initiating the queue operation
++static int audio_queue_init(audio_queue_t *queue)
++{
++    queue->data = malloc(AUDIO_RING_CAPACITY);
++    if (!queue->data)
++        return VLC_ENOMEM;
++    queue->capacity = AUDIO_RING_CAPACITY;
++    queue->read_pos = 0;
++    queue->write_pos = 0;
++    queue->total_size = 0;
++    vlc_mutex_init(&queue->lock);
++    vlc_cond_init(&queue->writable);
++    return VLC_SUCCESS;
++}
++
++static void audio_queue_clear(audio_queue_t *queue)
++{
++    vlc_mutex_lock(&queue->lock);
++    queue->read_pos = 0;
++    queue->write_pos = 0;
++    queue->total_size = 0;
++    vlc_cond_broadcast(&queue->writable);
++    queue->submitted_until = 0;
++    vlc_mutex_unlock(&queue->lock);
++}
++
++static void audio_queue_destroy(audio_queue_t *queue)
++{
++    free(queue->data);
++    queue->data = NULL;
++    queue->capacity = 0;
++    vlc_cond_destroy(&queue->writable);
++    vlc_mutex_destroy(&queue->lock);
++}
++
++static bool audio_queue_push(audio_queue_t *queue, const uint8_t *data,
++                             size_t size, size_t max_queue_size)
++{
++    /* Pace against a soft target. Never discard valid PCM just because a
++     * callback-sized block or synchronization silence crosses that target. */
++    if (size > queue->capacity)
++        return false;
++    vlc_mutex_lock(&queue->lock);
++
++    const vlc_tick_t deadline = mdate() + VLC_TICK_FROM_MS(AUDIO_QUEUE_WAIT_MS);
++    while (queue->total_size >= max_queue_size ||
++           size > queue->capacity - queue->total_size) {
++        if (vlc_cond_timedwait(&queue->writable, &queue->lock, deadline) != 0)
++            break;
++    }
++
++    if (size > queue->capacity - queue->total_size) {
++        vlc_mutex_unlock(&queue->lock);
++        return false;
++    }
++
++    size_t first = __MIN(size, queue->capacity - queue->write_pos);
++    memcpy(queue->data + queue->write_pos, data, first);
++    memcpy(queue->data, data + first, size - first);
++    queue->write_pos = (queue->write_pos + size) % queue->capacity;
++    queue->total_size += size;
++    vlc_mutex_unlock(&queue->lock);
++    return true;
++}
++
++static size_t audio_queue_drain(audio_queue_t *queue, uint8_t *output, size_t requested_size, bool *has_more)
++{
++    size_t copied = 0;
++
++    vlc_mutex_lock(&queue->lock);
++
++    copied = __MIN(requested_size, queue->total_size);
++    size_t first = __MIN(copied, queue->capacity - queue->read_pos);
++    if (output) {
++        memcpy(output, queue->data + queue->read_pos, first);
++        memcpy(output + first, queue->data, copied - first);
++    }
++    queue->read_pos = (queue->read_pos + copied) % queue->capacity;
++    queue->total_size -= copied;
++    if (copied > 0 && queue->bytes_per_second > 0)
++        queue->submitted_until = mdate() +
++            (vlc_tick_t)copied * CLOCK_FREQ / queue->bytes_per_second;
++    if (copied > 0)
++        vlc_cond_signal(&queue->writable);
++
++    // Set the flag of whether there is more data
++    if (has_more) {
++        *has_more = queue->total_size != 0;
++    }
++
++    vlc_mutex_unlock(&queue->lock);
++
++    return copied;
++}
++
++static size_t audio_queue_size(audio_queue_t *queue)
++{
++    size_t size;
++    vlc_mutex_lock(&queue->lock);
++    size = queue->total_size;
++    vlc_mutex_unlock(&queue->lock);
++    return size;
++}
++
++// OpenHarmony audio callback function
++static int32_t OnWriteData(OH_AudioRenderer *renderer, void *userData,
++                          void *buffer, int32_t length)
++{
++    audio_output_t *p_aout = (audio_output_t *)userData;
++    aout_sys_t *p_sys = p_aout->sys;
++
++    if (!p_sys || !buffer || length <= 0)
++        return 0;
++
++    p_sys->last_write_time = mdate();
++
++    bool has_more_data = false;
++    size_t copied = 0;
++
++    copied = audio_queue_drain(&p_sys->queue, (uint8_t*)buffer, length,
++                               &has_more_data);
++
++    VLC_UNUSED(has_more_data);
++
++    return copied;
++}
++
++static int VolumeSet(audio_output_t *p_aout, float f_volume)
++{
++    aout_sys_t *p_sys = p_aout->sys;
++
++    if (!p_sys->p_renderer) {
++        return VLC_EGENERIC;
++    }
++
++    // Convert to 0-1.0 range (the range expected by OpenHarmony)
++    float volume = f_volume;
++    if (volume < 0.0f) volume = 0.0f;
++    if (volume > 1.0f) volume = 1.0f;
++
++    OH_AudioStream_Result result = OH_AudioRenderer_SetVolume(p_sys->p_renderer, volume);
++    if (result == AUDIOSTREAM_SUCCESS) {
++        p_sys->volume = volume;
++        msg_Dbg(p_aout, "Volume set to: %.2f", volume);
++        aout_VolumeReport(p_aout, p_sys->volume);
++        return VLC_SUCCESS;
++    } else {
++        msg_Err(p_aout, "Failed to set volume: %d", result);
++        return VLC_EGENERIC;
++    }
++}
++
++static size_t get_bytes_per_sample(audio_output_t *p_aout,
++                                   OH_AudioStream_SampleFormat format);
++
++static int MuteSet(audio_output_t *p_aout, bool mute)
++{
++    aout_sys_t *p_sys = p_aout->sys;
++    p_sys->mute = mute;
++
++    if (p_sys->p_renderer != NULL) {
++        OH_AudioStream_Result result = OH_AudioRenderer_SetVolume(
++            p_sys->p_renderer, mute ? 0.0f : p_sys->volume);
++        if (result != AUDIOSTREAM_SUCCESS)
++            return VLC_EGENERIC;
++    }
++    aout_MuteReport(p_aout, mute);
++    return VLC_SUCCESS;
++}
++
++static int RestartRenderer(audio_output_t *p_aout)
++{
++    aout_sys_t *p_sys = p_aout->sys;
++
++    msg_Info(p_aout, "Restarting audio renderer after background recovery");
++
++    if (p_sys->p_renderer) {
++        OH_AudioRenderer_Stop(p_sys->p_renderer);
++        OH_AudioRenderer_Release(p_sys->p_renderer);
++        p_sys->p_renderer = NULL;
++    }
++    if (p_sys->builder) {
++        OH_AudioStreamBuilder_Destroy(p_sys->builder);
++        p_sys->builder = NULL;
++    }
++
++    OH_AudioStream_Result result = OH_AudioStreamBuilder_Create(&p_sys->builder, AUDIOSTREAM_TYPE_RENDERER);
++    if (result != AUDIOSTREAM_SUCCESS) {
++        msg_Err(p_aout, "Restart: failed to create builder: %d", result);
++        return VLC_EGENERIC;
++    }
++
++    OH_AudioStreamBuilder_SetSamplingRate(p_sys->builder, p_sys->sample_rate);
++    OH_AudioStreamBuilder_SetChannelCount(p_sys->builder, p_sys->channels);
++    OH_AudioStreamBuilder_SetSampleFormat(p_sys->builder, p_sys->sample_format);
++    OH_AudioStreamBuilder_SetRendererInfo(p_sys->builder, AUDIOSTREAM_USAGE_MOVIE);
++
++    result = OH_AudioStreamBuilder_SetRendererWriteDataCallbackAdvanced(
++        p_sys->builder, OnWriteData, p_aout);
++    if (result != AUDIOSTREAM_SUCCESS) {
++        msg_Err(p_aout, "Restart: failed to set advanced write callback: %d",
++                result);
++        OH_AudioStreamBuilder_Destroy(p_sys->builder);
++        p_sys->builder = NULL;
++        return VLC_EGENERIC;
++    }
++
++    result = OH_AudioStreamBuilder_GenerateRenderer(p_sys->builder, &p_sys->p_renderer);
++    if (result != AUDIOSTREAM_SUCCESS) {
++        msg_Err(p_aout, "Restart: failed to generate renderer: %d", result);
++        OH_AudioStreamBuilder_Destroy(p_sys->builder);
++        p_sys->builder = NULL;
++        return VLC_EGENERIC;
++    }
++
++    result = OH_AudioRenderer_Start(p_sys->p_renderer);
++    if (result != AUDIOSTREAM_SUCCESS) {
++        msg_Err(p_aout, "Restart: failed to start renderer: %d", result);
++        OH_AudioRenderer_Release(p_sys->p_renderer);
++        OH_AudioStreamBuilder_Destroy(p_sys->builder);
++        p_sys->p_renderer = NULL;
++        p_sys->builder = NULL;
++        return VLC_EGENERIC;
++    }
++
++    p_sys->is_playing = true;
++    p_sys->is_initialized = true;
++    p_sys->last_write_time = 0;
++    p_sys->flushed_since_play = false;
++    p_aout->volume_set(p_aout, p_sys->volume);
++    if (p_sys->mute)
++        p_aout->mute_set(p_aout, true);
++
++    msg_Info(p_aout, "Audio renderer restarted: %d ch, %d Hz", p_sys->channels, p_sys->sample_rate);
++    return VLC_SUCCESS;
++}
++
++static int Start(audio_output_t *p_aout, audio_sample_format_t *p_fmt)
++{
++    msg_Info(p_aout, "Starting OpenHarmony audio output");
++    aout_sys_t *p_sys = p_aout->sys;
++
++    // Clearing the resources
++    if (p_sys->p_renderer) {
++        OH_AudioRenderer_Stop(p_sys->p_renderer);
++        OH_AudioRenderer_Release(p_sys->p_renderer);
++        p_sys->p_renderer = NULL;
++    }
++
++    if (p_sys->builder) {
++        OH_AudioStreamBuilder_Destroy(p_sys->builder);
++        p_sys->builder = NULL;
++    }
++
++    // To create an audio stream builder
++    OH_AudioStream_Result result = OH_AudioStreamBuilder_Create(&p_sys->builder, AUDIOSTREAM_TYPE_RENDERER);
++    if (result != AUDIOSTREAM_SUCCESS) {
++        msg_Err(p_aout, "Failed to create audio stream builder: %d", result);
++        return VLC_EGENERIC;
++    }
++
++    // Setting audio parameters
++    p_sys->sample_rate = p_fmt->i_rate;
++    p_sys->channels = aout_FormatNbChannels(p_fmt);
++    if (p_sys->sample_rate == 0 || p_sys->channels == 0) {
++        msg_Warn(p_aout, "Rejecting invalid audio format: %u channels, %u Hz",
++                 p_sys->channels, p_sys->sample_rate);
++        OH_AudioStreamBuilder_Destroy(p_sys->builder);
++        p_sys->builder = NULL;
++        return VLC_EGENERIC;
++    }
++
++    switch (p_fmt->i_format) {
++        case VLC_CODEC_S16N:
++            p_sys->sample_format = AUDIOSTREAM_SAMPLE_S16LE;
++            break;
++        case VLC_CODEC_S32N:
++            p_sys->sample_format = AUDIOSTREAM_SAMPLE_S32LE;
++            break;
++        case VLC_CODEC_FL32:
++            p_sys->sample_format = AUDIOSTREAM_SAMPLE_F32LE;
++            break;
++        default:
++            p_sys->sample_format = AUDIOSTREAM_SAMPLE_S16LE;
++            p_fmt->i_format = VLC_CODEC_S16N;
++            msg_Warn(p_aout, "Starting Unsupported format format %d", (int)p_sys->sample_format);
++            break;
++    }
++
++    OH_AudioStreamBuilder_SetSamplingRate(p_sys->builder, p_sys->sample_rate);
++    OH_AudioStreamBuilder_SetChannelCount(p_sys->builder, p_sys->channels);
++    OH_AudioStreamBuilder_SetSampleFormat(p_sys->builder, p_sys->sample_format);
++    OH_AudioStreamBuilder_SetRendererInfo(p_sys->builder, AUDIOSTREAM_USAGE_MOVIE);
++
++    result = OH_AudioStreamBuilder_SetRendererWriteDataCallbackAdvanced(
++        p_sys->builder, OnWriteData, p_aout);
++    if (result != AUDIOSTREAM_SUCCESS) {
++        msg_Err(p_aout, "Failed to set advanced write callback: %d", result);
++        OH_AudioStreamBuilder_Destroy(p_sys->builder);
++        p_sys->builder = NULL;
++        return VLC_EGENERIC;
++    }
++
++    // Generate Renderer
++    result = OH_AudioStreamBuilder_GenerateRenderer(p_sys->builder, &p_sys->p_renderer);
++    if (result != AUDIOSTREAM_SUCCESS) {
++        msg_Err(p_aout, "Failed to generate audio renderer: %d", result);
++        OH_AudioStreamBuilder_Destroy(p_sys->builder);
++        p_sys->builder = NULL;
++        return VLC_EGENERIC;
++    }
++
++    // Start the Renderer
++    result = OH_AudioRenderer_Start(p_sys->p_renderer);
++    if (result != AUDIOSTREAM_SUCCESS) {
++        msg_Err(p_aout, "Failed to start audio renderer: %d", result);
++        OH_AudioRenderer_Release(p_sys->p_renderer);
++        OH_AudioStreamBuilder_Destroy(p_sys->builder);
++        p_sys->p_renderer = NULL;
++        p_sys->builder = NULL;
++        return VLC_EGENERIC;
++    }
++
++    p_sys->is_playing = true;
++    p_sys->is_initialized = true;
++    p_sys->last_write_time = 0;
++    p_sys->flushed_since_play = false;
++    const size_t bytes_per_sample = get_bytes_per_sample(p_aout,
++                                                          p_sys->sample_format);
++    const uint64_t queue_bytes = (uint64_t)p_sys->sample_rate *
++                                 p_sys->channels * bytes_per_sample *
++                                 AUDIO_MAX_QUEUE_MS / 1000;
++    p_sys->max_queue_size = __MIN((size_t)queue_bytes,
++                                  p_sys->queue.capacity);
++    vlc_mutex_lock(&p_sys->queue.lock);
++    p_sys->queue.bytes_per_second = (size_t)p_sys->sample_rate *
++                                   p_sys->channels * bytes_per_sample;
++    p_sys->queue.submitted_until = 0;
++    vlc_mutex_unlock(&p_sys->queue.lock);
++
++    p_aout->volume_set(p_aout, p_sys->volume);
++    if (p_sys->mute)
++        p_aout->mute_set(p_aout, true);
++
++    msg_Info(p_aout, "OpenHarmony audio output started: %d channels, %d Hz", 
++             p_sys->channels, p_sys->sample_rate);
++    msg_Info(p_aout, "Audio low-latency queue configured: %zu bytes (%d ms)",
++             p_sys->max_queue_size, AUDIO_MAX_QUEUE_MS);
++
++    return VLC_SUCCESS;
++}
++
++// Gets the number of bytes per sample based on the sampling format
++static size_t get_bytes_per_sample(audio_output_t *p_aout, OH_AudioStream_SampleFormat format)
++{
++    switch (format) {
++        case AUDIOSTREAM_SAMPLE_U8:
++            return 1;
++        case AUDIOSTREAM_SAMPLE_S16LE:
++            return 2;
++        case AUDIOSTREAM_SAMPLE_S24LE:
++            return 3;
++        case AUDIOSTREAM_SAMPLE_S32LE:
++        case AUDIOSTREAM_SAMPLE_F32LE:
++            return 4;
++        default:
++            msg_Warn(p_aout, "get_bytes_per_sample default format %d", (int)AUDIOSTREAM_SAMPLE_S24LE);
++            return 2;
++    }
++}
++
++// Convert vlc_tick_t to milliseconds (for log output)
++inline int64_t vlc_tick_to_ms(vlc_tick_t ticks)
++{
++    return ticks / 1000;
++}
++
++static vlc_tick_t vlc_tick_from_samples(uint64_t samples, uint32_t sample_rate)
++{
++    if (sample_rate == 0) {
++        return 0;
++    }
++
++    // Calculation formula: Time = (Number of samples x Clock_FREQ) /Sampling rate
++    // Usually, the clock_FREQ is 1000000 (1MHz), which means there are 1 million ticks per second
++    return (vlc_tick_t)((samples * 1000000LL) / sample_rate);
++}
++
++static void Stop(audio_output_t *p_aout)
++{
++    msg_Info(p_aout, "Stopping OpenHarmony audio output");
++    aout_sys_t *p_sys = p_aout->sys;
++
++    if (!p_sys) {
++        return;
++    }
++
++    p_sys->is_playing = false;
++    audio_queue_clear(&p_sys->queue);
++
++    if (p_sys->p_renderer) {
++        OH_AudioRenderer_Stop(p_sys->p_renderer);
++        OH_AudioRenderer_Release(p_sys->p_renderer);
++        p_sys->p_renderer = NULL;
++    }
++
++    if (p_sys->builder) {
++        OH_AudioStreamBuilder_Destroy(p_sys->builder);
++        p_sys->builder = NULL;
++    }
++
++    p_sys->is_initialized = false;
++
++    msg_Info(p_aout, "Audio output stopped completely");
++}
++
++static void Play(audio_output_t *p_aout, block_t *p_block)
++{
++    aout_sys_t *p_sys = p_aout->sys;
++
++    if (!p_sys->is_initialized || !p_sys->p_renderer) {
++        if (RestartRenderer(p_aout) != VLC_SUCCESS) {
++            if (p_block) {
++                block_Release(p_block);
++            }
++            return;
++        }
++    } else if (p_sys->last_write_time > 0 && audio_queue_size(&p_sys->queue) > AUDIO_QUEUE_THRESHOLD_SIZE) {
++        vlc_tick_t elapsed = mdate() - p_sys->last_write_time;
++        if (elapsed > RENDERER_STALL_TIMEOUT) {
++            if (RestartRenderer(p_aout) != VLC_SUCCESS) {
++                if (p_block) {
++                    block_Release(p_block);
++                }
++                return;
++            }
++        }
++    }
++
++    if (p_block && p_block->i_buffer > 0) {
++        p_sys->flushed_since_play = false;
++        if (!audio_queue_push(&p_sys->queue, p_block->p_buffer,
++                              p_block->i_buffer, p_sys->max_queue_size)) {
++            static vlc_tick_t last_overflow_log;
++            const vlc_tick_t now = mdate();
++            if (now - last_overflow_log > VLC_TICK_FROM_MS(1000)) {
++                msg_Warn(p_aout,
++                         "Audio low-latency queue timed out, dropping %zu bytes",
++                         p_block->i_buffer);
++                last_overflow_log = now;
++            }
++        }
++    }
++
++    if (p_block) {
++        block_Release(p_block);
++    }
++}
++
++static void Pause(audio_output_t *p_aout, bool b_paused, vlc_tick_t i_date)
++{
++    VLC_UNUSED(i_date);
++    aout_sys_t *p_sys = p_aout->sys;
++
++    if (!p_sys->p_renderer) {
++        return;
++    }
++
++    if (b_paused && p_sys->is_playing) {
++        OH_AudioRenderer_Pause(p_sys->p_renderer);
++        p_sys->is_playing = false;
++        p_sys->last_write_time = 0;
++        msg_Dbg(p_aout, "Audio paused");
++    } else if (!b_paused && !p_sys->is_playing) {
++        OH_AudioRenderer_Start(p_sys->p_renderer);
++        p_sys->is_playing = true;
++        msg_Dbg(p_aout, "Audio resumed");
++    }
++}
++
++static void Flush(audio_output_t *p_aout, bool wait)
++{
++    VLC_UNUSED(wait);
++    aout_sys_t *p_sys = p_aout->sys;
++
++    msg_Dbg(p_aout, "Flushing audio queue");
++    audio_queue_clear(&p_sys->queue);
++
++    /* VLC can request repeated flushes while discarding stale timestamps.
++     * With no intervening Play there is no new audio to flush. */
++    if (p_sys->p_renderer && !p_sys->flushed_since_play) {
++        if (OH_AudioRenderer_Flush(p_sys->p_renderer) == AUDIOSTREAM_SUCCESS)
++            p_sys->flushed_since_play = true;
++    }
++}
++
++// Calculate detailed queue delay
++static vlc_tick_t calculate_detailed_queue_delay(audio_output_t *p_aout, aout_sys_t *p_sys)
++{
++    // Check basic parameters
++    if (p_sys->sample_rate == 0 || p_sys->channels == 0) {
++        return 0;
++    }
++    // Gets the number of bytes per sample
++    size_t bytes_per_sample = get_bytes_per_sample(p_aout, p_sys->sample_format);
++
++    size_t effective_bytes = audio_queue_size(&p_sys->queue);
++    // Calculate the number of samples
++    size_t total_samples = effective_bytes / bytes_per_sample;
++    size_t samples_per_channel = total_samples / p_sys->channels;
++    // Convert to time (using vlc_tick_from_samples)
++    return vlc_tick_from_samples(samples_per_channel, p_sys->sample_rate);
++}
++
++static void update_delay_statistics(aout_sys_t *p_sys, vlc_tick_t current_delay)
++{
++    if (p_sys->delay_stats.min_delay == 0 && p_sys->delay_stats.max_delay == 0) {
++        p_sys->delay_stats.min_delay = INT64_MAX;
++        p_sys->delay_stats.stats_start_time = mdate();
++    }
++
++    if (current_delay < p_sys->delay_stats.min_delay) {
++        p_sys->delay_stats.min_delay = current_delay;
++    }
++    if (current_delay > p_sys->delay_stats.max_delay) {
++        p_sys->delay_stats.max_delay = current_delay;
++    }
++
++    if (p_sys->delay_stats.avg_delay == 0) {
++        p_sys->delay_stats.avg_delay = current_delay;
++    } else {
++        p_sys->delay_stats.avg_delay =
++            (p_sys->delay_stats.avg_delay * 9 + current_delay) / 10;
++    }
++
++    p_sys->delay_stats.current_delay = current_delay;
++    p_sys->delay_stats.call_count++;
++    p_sys->delay_stats.last_update = mdate();
++
++    p_sys->delay_stats.total_delay_accumulated += current_delay;
++}
++
++static void log_delay_debug_info(audio_output_t *p_aout, vlc_tick_t queue_delay, 
++                                vlc_tick_t hardware_delay, vlc_tick_t total_delay)
++{
++    static vlc_tick_t last_log_time = 0;
++    vlc_tick_t now = mdate();
++
++    // The debugging information is output every 5 seconds to avoid excessive log files
++    if (now - last_log_time > VLC_TICK_FROM_MS(5000)) {
++        aout_sys_t *p_sys = p_aout->sys;
++
++        msg_Dbg(p_aout,
++               "Audio Delay - Queue: %" PRId64 "ms, Hardware: %" PRId64 "ms, Total: %" PRId64 "ms, "
++               "Queue Size: %zu bytes",
++               vlc_tick_to_ms(queue_delay),
++               vlc_tick_to_ms(hardware_delay),
++               vlc_tick_to_ms(total_delay),
++               audio_queue_size(&p_sys->queue));
++
++        // The detailed statistics are output every 30 seconds
++        static vlc_tick_t last_detailed_log = 0;
++        if (now - last_detailed_log > VLC_TICK_FROM_MS(30000)) {
++            if (p_sys->delay_stats.call_count > 0) {
++                vlc_tick_t global_avg = p_sys->delay_stats.total_delay_accumulated / 
++                                      p_sys->delay_stats.call_count;
++
++                msg_Dbg(p_aout,
++                       "Delay Stats - Min: %" PRId64 "ms, Max: %" PRId64 "ms, Avg: %" PRId64 "ms, "
++                       "Calls: %zu",
++                       vlc_tick_to_ms(p_sys->delay_stats.min_delay),
++                       vlc_tick_to_ms(p_sys->delay_stats.max_delay),
++                       vlc_tick_to_ms(global_avg),
++                       p_sys->delay_stats.call_count);
++
++                last_detailed_log = now;
++            }
++        }
++
++        last_log_time = now;
++    }
++}
++
++static int TimeGet(audio_output_t *p_aout, vlc_tick_t *delay)
++{
++    aout_sys_t *p_sys = p_aout->sys;
++
++    // parameter verification
++    if (unlikely(!p_sys || !delay)) {
++        if (delay) {
++            *delay = 0;
++        }
++        return VLC_EGENERIC;
++    }
++    // Check the audio output status
++    if (!p_sys->is_initialized || !p_sys->p_renderer || !p_sys->is_playing) {
++        *delay = 0;
++        return VLC_SUCCESS;
++    }
++
++    // Calculate each delay component
++    vlc_tick_t hardware_delay = p_sys->estimated_hardware_latency;
++    vlc_mutex_lock(&p_sys->queue.lock);
++    /* Sample queued and submitted bytes atomically: the callback transfers
++     * bytes between these two states under the same lock. */
++    vlc_tick_t queue_delay = p_sys->queue.bytes_per_second > 0
++        ? (vlc_tick_t)p_sys->queue.total_size * CLOCK_FREQ /
++          p_sys->queue.bytes_per_second : 0;
++    hardware_delay += __MAX(p_sys->queue.submitted_until - mdate(), 0);
++    vlc_mutex_unlock(&p_sys->queue.lock);
++
++    // total delay
++    vlc_tick_t total_delay = queue_delay + hardware_delay;
++
++    if (total_delay < 0) {
++        total_delay = 0;
++    }
++
++    update_delay_statistics(p_sys, total_delay);
++
++    *delay = total_delay;
++
++    // Regularly output debugging information
++    log_delay_debug_info(p_aout, queue_delay, hardware_delay, total_delay);
++    return VLC_SUCCESS;
++}
++
++static int Open(vlc_object_t *obj)
++{
++    msg_Info(obj, "Opening OpenHarmony audio output");
++    audio_output_t *p_aout = (audio_output_t *)obj;
++    aout_sys_t *p_sys;
++
++    p_sys = calloc(1, sizeof(aout_sys_t));
++    if (!p_sys) {
++        return VLC_ENOMEM;
++    }
++
++    // Initiating the system structure
++    p_sys->p_renderer = NULL;
++    p_sys->builder = NULL;
++    p_sys->is_playing = false;
++    p_sys->is_initialized = false;
++    p_sys->sample_rate = 44100;
++    p_sys->channels = 2;
++    p_sys->last_error = AUDIOSTREAM_SUCCESS;
++
++    p_sys->draining = false;
++    p_sys->drain_start_time = 0;
++    p_sys->drain_initial_size = 0;
++    vlc_cond_init(&p_sys->drain_cond);
++
++    // Initiating hardware delay estimate
++    p_sys->estimated_hardware_latency = VLC_TICK_FROM_MS(30); // 30ms initial estimate
++
++    // Initiating delay statistics
++    memset(&p_sys->delay_stats, 0, sizeof(p_sys->delay_stats));
++    p_sys->delay_stats.min_delay = INT64_MAX;
++    p_sys->delay_stats.stats_start_time = mdate();
++
++    // Initiating the audio queue
++    if (audio_queue_init(&p_sys->queue) != VLC_SUCCESS) {
++        vlc_cond_destroy(&p_sys->drain_cond);
++        free(p_sys);
++        return VLC_ENOMEM;
++    }
++
++    p_aout->sys = p_sys;
++    p_aout->start = Start;
++    p_aout->stop = Stop;
++    p_aout->time_get = TimeGet;
++    p_aout->play = Play;
++    p_aout->pause = Pause;
++    p_aout->flush = Flush;
++    p_aout->volume_set = VolumeSet;
++    p_aout->mute_set = MuteSet;
++    p_sys->volume = 1.0f;
++    p_sys->mute = false;
++
++    msg_Info(obj, "OpenHarmony audio output opened successfully");
++    return VLC_SUCCESS;
++}
++
++static void Close(vlc_object_t *obj)
++{
++    msg_Info(obj, "Closing OpenHarmony audio output - ensuring complete playback");
++    audio_output_t *p_aout = (audio_output_t *)obj;
++    aout_sys_t *p_sys = p_aout->sys;
++    
++    if (!p_sys) {
++        return;
++    }
++    
++    // Diagnostics: Checks the data remaining in the queue when it is closed
++    size_t initial_bytes_size = audio_queue_size(&p_sys->queue);
++    if (initial_bytes_size > 0) {
++        msg_Err(obj, "Closing with %zu bytes remaining in audio queue - ensuring complete playback", 
++                initial_bytes_size);
++    }
++    
++    Stop(p_aout);
++    
++    audio_queue_destroy(&p_sys->queue);
++    vlc_cond_destroy(&p_sys->drain_cond);
++
++    free(p_sys);
++    msg_Info(obj, "OpenHarmony audio output closed");
++}
+diff --git a/modules/logger/ohos.c b/modules/logger/ohos.c
+new file mode 100644
+index 0000000..aa913a0
+--- /dev/null
++++ b/modules/logger/ohos.c
+@@ -0,0 +1,78 @@
++/*
++ * Copyright (c) 2025 Huawei Device Co., Ltd.
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#ifdef HAVE_CONFIG_H
++# include "config.h"
++#endif
++
++#include <hilog/log.h>
++#include <stdarg.h>
++#include <stdio.h>
++
++#include <vlc_common.h>
++#include <vlc_plugin.h>
++
++#define LOG_DOMAIN 0x00
++#define LOG_TAG "VLC"
++static const int ptr_width = 2 * /* hex digits */ sizeof (uintptr_t);
++// The maximum log length is approximately 1.8 kilobytes.
++static void OhosPrintMsg(void *opaque, int type, const vlc_log_t *p_item,
++                            const char *format, va_list ap)
++{
++    int prio;
++    int verbose = (intptr_t)opaque;
++
++    if (verbose < type)
++        return;
++
++    char message[2048] = {0};
++
++    int prefix_len = snprintf(message, sizeof(message), "[%0*"PRIxPTR"/%lx] %s %s: ",
++                             ptr_width, p_item->i_object_id, p_item->tid,
++                             p_item->psz_module, p_item->psz_object_type);
++
++    if (prefix_len > 0 && prefix_len < (int)sizeof(message)) {
++        vsnprintf(message + prefix_len, sizeof(message) - prefix_len, format, ap);
++    }
++    switch (type) {
++        case VLC_MSG_INFO: prio = LOG_INFO;  break;
++        case VLC_MSG_ERR:  prio = LOG_ERROR; break;
++        case VLC_MSG_WARN: prio = LOG_WARN;  break;
++        default:           prio = LOG_DEBUG; break;
++    }
++    OH_LOG_PrintMsg(LOG_APP, prio, LOG_DOMAIN, LOG_TAG, message);
++}
++
++static vlc_log_cb Open(vlc_object_t *obj, void **sysp)
++{
++    int verbosity = var_InheritInteger(obj, "verbose");
++
++    if (verbosity < 0)
++        return NULL;
++
++    verbosity += VLC_MSG_ERR;
++    *sysp = (void *)(uintptr_t)verbosity;
++
++    return OhosPrintMsg;
++}
++
++vlc_module_begin()
++    set_shortname(N_("OpenHarmony log"))
++    set_description(N_("OpenHarmony log using hilog"))
++    set_category(CAT_ADVANCED)
++    set_subcategory(SUBCAT_ADVANCED_MISC)
++    set_capability("logger", 30)
++    set_callbacks(Open, NULL)
++vlc_module_end ()
+\ No newline at end of file
+diff --git a/modules/text_renderer/freetype/fonts/ohos.c b/modules/text_renderer/freetype/fonts/ohos.c
+new file mode 100644
+index 0000000..e4b1e01
+--- /dev/null
++++ b/modules/text_renderer/freetype/fonts/ohos.c
+@@ -0,0 +1,276 @@
++/*****************************************************************************
++* Copyright (c) 2025 Huawei Device Co., Ltd.
++* Licensed under the Apache License, Version 2.0 (the "License");
++* you may not use this file except in compliance with the License.
++* You may obtain a copy of the License at
++*
++*     http://www.apache.org/licenses/LICENSE-2.0
++*
++* Unless required by applicable law or agreed to in writing, software
++* distributed under the License is distributed on an "AS IS" BASIS,
++* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++* See the License for the specific language governing permissions and
++* limitations under the License.
++*****************************************************************************/
++
++#ifdef HAVE_CONFIG_H
++# include "config.h"
++#endif
++
++#include <vlc_common.h>
++#include <vlc_filter.h>
++#include <vlc_stream.h>
++#include <vlc_memstream.h>
++#include "../platform_fonts.h"
++
++#include "misc/webservices/json.h"
++
++#define OHOS_FONT_CONFIG_URL  "file:///system/etc/fontconfig_ohos.json"
++#define OHOS_FONT_DIR          "/system/fonts"
++
++static void OHOS_AddFamily(filter_t *p_filter, const char *family, const char *file, int weight, bool italic)
++{
++    filter_sys_t *p_sys = p_filter->p_sys;
++    vlc_dictionary_t *p_dict = &p_sys->family_map;
++
++    char *lc = ToLower(family);
++    if (!lc) {
++        return;
++    }
++
++    vlc_family_t *fam = vlc_dictionary_value_for_key(p_dict, lc);
++    if (fam == kVLCDictionaryNotFound) {
++        fam = NewFamily(p_filter, lc, &p_sys->p_families, p_dict, NULL);
++        if (!fam) {
++            goto out;
++        }
++    }
++
++    char *path;
++    if (asprintf(&path, "%s/%s", OHOS_FONT_DIR, file) < 0) {
++        goto out;
++    }
++
++    NewFont(path, 0, weight >= 700, italic, fam);
++out:
++    free(lc);
++}
++
++static void OHOS_AddFallback(filter_t *p_filter, const char *family, const char *file)
++{
++    filter_sys_t *p_sys = p_filter->p_sys;
++    vlc_dictionary_t *p_dict = &p_sys->fallback_map;
++
++    char *lc = ToLower(family);
++    if (!lc) {
++        return;
++    }
++
++    vlc_family_t *fam = vlc_dictionary_value_for_key(p_dict, lc);
++    if (fam == kVLCDictionaryNotFound) {
++        fam = NewFamily(p_filter, lc, NULL, p_dict, FB_LIST_DEFAULT);
++        if (!fam) {
++            goto out;
++        }
++    }
++
++    char *path;
++    if (asprintf(&path, "%s/%s", OHOS_FONT_DIR, file) < 0) {
++        goto out;
++    }
++
++    NewFont(path, 0, false, false, fam);
++out:
++    free(lc);
++}
++
++static int OHOS_ReadFontConfig(filter_t *p_filter, char** mem_font_config, size_t* mem_font_config_size)
++{
++    char* data = NULL;
++    size_t data_size = 0;
++
++    stream_t *font_config_stream = vlc_stream_NewURL(p_filter, OHOS_FONT_CONFIG_URL);
++    if (font_config_stream == NULL) {
++        msg_Err(p_filter, "OHOS: cannot open %s", OHOS_FONT_CONFIG_URL);
++        return VLC_EGENERIC;
++    }
++    if (vlc_stream_GetSize(font_config_stream, &data_size) != VLC_SUCCESS || data_size == 0) {
++        vlc_stream_Delete(font_config_stream);
++        msg_Err(p_filter, "OHOS: get file size error %s", OHOS_FONT_CONFIG_URL);
++        return VLC_EGENERIC;
++    }
++
++    data = malloc(data_size);
++    if (data == NULL) {
++        vlc_stream_Delete(font_config_stream);
++        msg_Err(p_filter, "OHOS: mem_font_config malloc(%d) fail", data);
++        return VLC_ENOMEM;
++    }
++
++    ssize_t curr_read_byte = 0;
++    do {
++        ssize_t read_step = vlc_stream_Read(font_config_stream,
++            data + curr_read_byte, data_size - curr_read_byte);
++
++        if (read_step < 0) {
++            vlc_stream_Delete(font_config_stream);
++            free(data);
++            return VLC_EGENERIC;
++        }
++        curr_read_byte += read_step;
++    } while (curr_read_byte < data_size);
++
++    vlc_stream_Delete(font_config_stream);
++    if (data != NULL) {
++        *mem_font_config = data;
++        *mem_font_config_size = data_size;
++    }
++    return VLC_SUCCESS;
++}
++
++static char* OHOS_SkipJsonComments(filter_t *p_filter, char* mem_font_config, size_t mem_font_config_size)
++{
++    char* mem_font_config_json = NULL;
++    bool is_note = false;
++    for(size_t i = 0; i < mem_font_config_size; i++) {
++        if (!is_note &&
++            i + 1 < mem_font_config_size &&
++            mem_font_config[i] == '/' &&
++            mem_font_config[i+1] == '*') {
++            is_note = true;
++        }
++
++        if (is_note &&
++            i + 1 < mem_font_config_size &&
++            mem_font_config[i] == '*' &&
++            mem_font_config[i+1] == '/') {
++            is_note = false;
++        }
++
++        if (!is_note && mem_font_config[i] == '{') {
++            mem_font_config_json = &mem_font_config[i];
++            break;
++        }
++    }
++    return mem_font_config_json;
++}
++
++static void OHOS_ParseFontItem(filter_t *p_filter, json_value *fonts)
++{
++     for (unsigned int i = 0; i < fonts->u.array.length; ++i) {
++        json_value *item = fonts->u.array.values[i];
++        if (item->type != json_object) {
++            continue;
++        }
++
++        int type = 0;
++        const char *alias = NULL;
++        const char *file = NULL;
++        const char *family = NULL;
++        int weight = 400;
++
++        for (unsigned int j = 0; j < item->u.object.length; ++j) {
++            const char *key = item->u.object.values[j].name;
++            json_value *value = item->u.object.values[j].value;
++
++            if (strcmp(key, "type") == 0 && value->type == json_integer) {
++                type = (int)value->u.integer;
++            } else if (strcmp(key, "alias") == 0 && value->type == json_string) {
++                alias = value->u.string.ptr;
++            } else if (strcmp(key, "file") == 0 && value->type == json_string) {
++                file = value->u.string.ptr;
++            } else if (strcmp(key, "weight") == 0 && value->type == json_integer) {
++                weight = (int)value->u.integer;
++            } else if (strcmp(key, "family") == 0 && value->type == json_string) {
++                family = value->u.string.ptr;
++            }
++        }
++
++        switch (type) {
++            case 0:
++                if (alias != NULL && file != NULL) {
++                    OHOS_AddFamily(p_filter, alias, file, weight, false);
++                }
++                break;
++            case 1:
++                if (family != NULL && file != NULL) {
++                    OHOS_AddFallback(p_filter, family, file);
++                }
++                break;
++            default: break;
++        }
++    }
++}
++
++int OHOS_Prepare(filter_t *p_filter)
++{
++    char* mem_font_config = NULL;
++    char* mem_font_config_json = NULL;
++    size_t mem_font_config_size = 0;
++
++    int ret = OHOS_ReadFontConfig(p_filter, &mem_font_config, &mem_font_config_size);
++    if (ret != NULL || mem_font_config == NULL || mem_font_config_size == NULL) {
++        return VLC_EGENERIC;
++    }
++
++    mem_font_config_json = OHOS_SkipJsonComments(p_filter, mem_font_config, mem_font_config_size);
++    if (mem_font_config_json == NULL) {
++        free(mem_font_config);
++        return VLC_EGENERIC;
++    }
++
++    json_value *root = json_parse(mem_font_config_json);
++    free(mem_font_config);
++
++    if (!root || root->type != json_object) {
++        json_value_free(root);
++        msg_Err(p_filter, "OHOS: invalid JSON");
++        return VLC_EGENERIC;
++    }
++
++    json_value *fonts = NULL;
++    for (unsigned int i = 0; i < root->u.object.length; ++i) {
++        if (strcmp(root->u.object.values[i].name, "fonts") == 0) {
++            fonts = root->u.object.values[i].value;
++            break;
++        }
++    }
++
++    if (!fonts || fonts->type != json_array) {
++        json_value_free(root);
++        msg_Err(p_filter, "OHOS: fonts array not found or invalid");
++        return VLC_EGENERIC;
++    }
++
++    OHOS_ParseFontItem(p_filter, fonts);
++
++    json_value_free(root);
++    return VLC_SUCCESS;
++}
++
++const vlc_family_t *OHOS_GetFamily(filter_t *p_filter, const char *psz_family)
++{
++    filter_sys_t *p_sys = p_filter->p_sys;
++    char *lc = ToLower(psz_family);
++    if (!lc) {
++        return NULL;
++    }
++    vlc_family_t *fam = vlc_dictionary_value_for_key(&p_sys->family_map, lc);
++    free(lc);
++    return (fam == kVLCDictionaryNotFound) ? NULL : fam;
++}
++
++vlc_family_t *OHOS_GetFallbacks(filter_t *p_filter,
++                                const char *psz_family,
++                                uni_char_t codepoint)
++{
++    VLC_UNUSED(codepoint);
++    filter_sys_t *p_sys = p_filter->p_sys;
++    char *lc = ToLower(psz_family);
++    if (!lc) {
++        return NULL;
++    }
++    vlc_family_t *fb = vlc_dictionary_value_for_key(&p_sys->fallback_map, lc);
++    free(lc);
++    return (fb == kVLCDictionaryNotFound) ? NULL : fb;
++}
+\ No newline at end of file
+diff --git a/modules/video_output/ohos/display.c b/modules/video_output/ohos/display.c
+new file mode 100644
+index 0000000..35673e6
+--- /dev/null
++++ b/modules/video_output/ohos/display.c
+@@ -0,0 +1,637 @@
++/*****************************************************************************
++ * display.c: OHOS hardware decoder surface display module
++ *****************************************************************************
++ * Copyright (C) 2025 Huawei Device Co., Ltd.
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ *****************************************************************************/
++
++#ifdef HAVE_CONFIG_H
++# include "config.h"
++#endif
++
++#include <vlc_common.h>
++#include <vlc_plugin.h>
++#include <vlc_vout_display.h>
++#include <vlc_picture_pool.h>
++#include <vlc_filter.h>
++#include <vlc_subpicture.h>
++#include <native_buffer/native_buffer.h>
++#include <native_window/external_window.h>
++#include <errno.h>
++#include <poll.h>
++#include <stdint.h>
++#include <string.h>
++#include <time.h>
++#include <unistd.h>
++
++#include "display.h"
++
++#define POOL_SIZE 30
++
++struct vout_display_sys_t
++{
++    picture_pool_t *pool;
++    bool need_flush;
++    unsigned frame_count;
++    picture_t *last_pic;
++    vlc_tick_t last_date;
++    vlc_tick_t last_present_warning;
++    OHNativeWindow *osd_window;
++    filter_t *osd_blend;
++    unsigned osd_width;
++    unsigned osd_height;
++    int64_t osd_order;
++    bool osd_visible;
++    bool osd_force_upload;
++    vlc_thread_t osd_thread;
++    vlc_mutex_t osd_lock;
++    vlc_cond_t osd_cond;
++    subpicture_t *osd_pending_subpic;
++    bool osd_pending;
++    bool osd_stop;
++    bool osd_thread_started;
++};
++
++static const vlc_fourcc_t subpicture_chromas[] = { VLC_CODEC_RGBA, 0 };
++
++static picture_pool_t *Pool(vout_display_t *vd, unsigned count)
++{
++    vout_display_sys_t *sys = vd->sys;
++
++    if (sys->pool) {
++        msg_Dbg(vd, "[OHOS-DBG] Pool: reusing existing pool, count=%u", count);
++        return sys->pool;
++    }
++
++    if (count > POOL_SIZE)
++        count = POOL_SIZE;
++
++    msg_Dbg(vd, "[OHOS-DBG] Pool: creating pool, requested=%u, capped=%u, fmt=%4.4s %ux%u",
++            count, POOL_SIZE, (char *)&vd->fmt.i_chroma,
++            vd->fmt.i_width, vd->fmt.i_height);
++
++    picture_t *pics[POOL_SIZE];
++    unsigned i;
++    for (i = 0; i < count; i++)
++    {
++        picture_resource_t rsc = { .p_sys = NULL };
++        pics[i] = picture_NewFromResource(&vd->fmt, &rsc);
++        if (!pics[i]) {
++            msg_Err(vd, "[OHOS-DBG] Pool: picture_NewFromResource failed at i=%u", i);
++            break;
++        }
++    }
++
++    if (i == 0) {
++        msg_Err(vd, "[OHOS-DBG] Pool: no pictures allocated");
++        return NULL;
++    }
++
++    sys->pool = picture_pool_New(i, pics);
++    if (!sys->pool)
++    {
++        msg_Err(vd, "[OHOS-DBG] Pool: picture_pool_New failed");
++        while (i > 0)
++            picture_Release(pics[--i]);
++        return NULL;
++    }
++
++    msg_Dbg(vd, "[OHOS-DBG] Pool: created pool with %u pictures", i);
++    return sys->pool;
++}
++
++static bool WaitAndCloseFence(vout_display_t *vd, int fence_fd)
++{
++    if (fence_fd < 0)
++        return true;
++
++    struct pollfd pfd = { .fd = fence_fd, .events = POLLIN };
++    int ret;
++    do
++        ret = poll(&pfd, 1, 3000);
++    while (ret < 0 && errno == EINTR);
++    close(fence_fd);
++    if (ret <= 0)
++    {
++        msg_Warn(vd, "OSD buffer fence wait failed: %s",
++                 ret == 0 ? "timeout" : vlc_strerror_c(errno));
++        return false;
++    }
++    return true;
++}
++
++static bool ConfigureOsdWindow(vout_display_t *vd, OHNativeWindow *window)
++{
++    unsigned width = vd->cfg->display.width;
++    unsigned height = vd->cfg->display.height;
++    if (width == 0 || height == 0)
++    {
++        int queried_width = 0;
++        int queried_height = 0;
++        if (OH_NativeWindow_NativeWindowHandleOpt(
++                window, GET_BUFFER_GEOMETRY,
++                &queried_height, &queried_width) == 0 &&
++            queried_width > 0 && queried_height > 0)
++        {
++            width = queried_width;
++            height = queried_height;
++        }
++    }
++    if (width == 0 || height == 0)
++    {
++        video_format_t rotated;
++        video_format_ApplyRotation(&rotated, &vd->source);
++        width = rotated.i_visible_width
++            ? rotated.i_visible_width : rotated.i_width;
++        height = rotated.i_visible_height
++            ? rotated.i_visible_height : rotated.i_height;
++    }
++    int ret = OH_NativeWindow_NativeWindowHandleOpt(
++        window, SET_BUFFER_GEOMETRY, width, height);
++    if (ret != 0)
++    {
++        msg_Err(vd, "failed to set OSD Surface geometry: %d", ret);
++        return false;
++    }
++
++    ret = OH_NativeWindow_NativeWindowHandleOpt(
++        window, SET_FORMAT, NATIVEBUFFER_PIXEL_FMT_BGRA_8888);
++    if (ret != 0)
++    {
++        msg_Err(vd, "failed to set OSD Surface format: %d", ret);
++        return false;
++    }
++
++    uint64_t usage = NATIVEBUFFER_USAGE_CPU_WRITE | NATIVEBUFFER_USAGE_CPU_READ;
++    ret = OH_NativeWindow_NativeWindowHandleOpt(window, SET_USAGE, usage);
++    if (ret != 0)
++    {
++        msg_Err(vd, "failed to set OSD Surface CPU usage: %d", ret);
++        return false;
++    }
++    ret = OH_NativeWindow_NativeWindowHandleOpt(
++        window, SET_SOURCE_TYPE, OH_SURFACE_SOURCE_UI);
++    if (ret != 0)
++        msg_Dbg(vd, "failed to mark OSD Surface as UI source: %d", ret);
++    return true;
++}
++
++static bool SyncOsdWindow(vout_display_t *vd)
++{
++    vout_display_sys_t *sys = vd->sys;
++    OHNativeWindow *window = var_InheritAddress(
++        vd, "drawable-ohos-osd-nativewindow-ptr");
++    if (window == sys->osd_window)
++        return window != NULL;
++
++    sys->osd_window = window;
++    sys->osd_visible = false;
++    sys->osd_order = INT64_MIN;
++    sys->osd_force_upload = true;
++    sys->osd_width = 0;
++    sys->osd_height = 0;
++    if (sys->osd_blend)
++    {
++        filter_DeleteBlend(sys->osd_blend);
++        sys->osd_blend = NULL;
++    }
++    if (!window)
++        return false;
++    if (!ConfigureOsdWindow(vd, window))
++    {
++        sys->osd_window = NULL;
++        return false;
++    }
++    msg_Info(vd, "OHCodec transparent OSD Surface attached (async display-size RGBA blend %ux%u)",
++             vd->cfg->display.width, vd->cfg->display.height);
++    return true;
++}
++
++static bool UploadOsd(vout_display_t *vd, subpicture_t *subpic)
++{
++    vout_display_sys_t *sys = vd->sys;
++    if (!SyncOsdWindow(vd))
++        return false;
++    if (subpic && !subpic->b_fade && sys->osd_visible &&
++        subpic->i_order == sys->osd_order)
++        return true;
++    if (!subpic && !sys->osd_visible && !sys->osd_force_upload)
++        return true;
++
++    OHNativeWindowBuffer *window_buffer = NULL;
++    OH_NativeBuffer *native_buffer = NULL;
++    int fence_fd = -1;
++    void *mapped = NULL;
++    bool requested = false;
++    bool mapped_ok = false;
++    bool success = false;
++
++    int ret = OH_NativeWindow_NativeWindowRequestBuffer(
++        sys->osd_window, &window_buffer, &fence_fd);
++    if (ret != 0 || !window_buffer)
++    {
++        msg_Warn(vd, "failed to request OSD Surface buffer: %d", ret);
++        goto done;
++    }
++    requested = true;
++    if (!WaitAndCloseFence(vd, fence_fd))
++    {
++        fence_fd = -1;
++        goto done;
++    }
++    fence_fd = -1;
++
++    ret = OH_NativeBuffer_FromNativeWindowBuffer(window_buffer, &native_buffer);
++    if (ret != 0 || !native_buffer)
++    {
++        msg_Warn(vd, "failed to access OSD NativeBuffer: %d", ret);
++        goto done;
++    }
++    ret = OH_NativeBuffer_Map(native_buffer, &mapped);
++    if (ret != 0 || !mapped)
++    {
++        msg_Warn(vd, "failed to map OSD NativeBuffer: %d", ret);
++        goto done;
++    }
++    mapped_ok = true;
++
++    BufferHandle *handle =
++        OH_NativeWindow_GetBufferHandleFromNative(window_buffer);
++    if (!handle || handle->width <= 0 || handle->height <= 0 ||
++        handle->stride < handle->width * 4 ||
++        (handle->size > 0 &&
++         (int64_t)handle->stride * handle->height > handle->size))
++    {
++        msg_Warn(vd, "invalid OSD buffer layout");
++        goto done;
++    }
++
++    const unsigned width = handle->width;
++    const unsigned height = handle->height;
++    if (width != sys->osd_width || height != sys->osd_height)
++    {
++        if (sys->osd_blend)
++            filter_DeleteBlend(sys->osd_blend);
++        video_format_t blend_fmt;
++        video_format_Init(&blend_fmt, VLC_CODEC_BGRA);
++        video_format_Setup(&blend_fmt, VLC_CODEC_BGRA,
++                           width, height, width, height, 1, 1);
++        sys->osd_blend = filter_NewBlend(VLC_OBJECT(vd), &blend_fmt);
++        video_format_Clean(&blend_fmt);
++        sys->osd_width = width;
++        sys->osd_height = height;
++        sys->osd_visible = false;
++        sys->osd_order = INT64_MIN;
++        sys->osd_force_upload = true;
++    }
++
++    if (subpic && !sys->osd_blend)
++    {
++        msg_Warn(vd, "failed to create OSD blend filter");
++        goto done;
++    }
++
++    memset(mapped, 0, (size_t)handle->stride * height);
++    if (subpic && sys->osd_blend)
++    {
++        video_format_t fmt;
++        video_format_Init(&fmt, VLC_CODEC_BGRA);
++        video_format_Setup(&fmt, VLC_CODEC_BGRA,
++                           width, height, width, height, 1, 1);
++        picture_resource_t resource = { 0 };
++        resource.p[0].p_pixels = mapped;
++        resource.p[0].i_lines = height;
++        resource.p[0].i_pitch = handle->stride;
++        picture_t *canvas = picture_NewFromResource(&fmt, &resource);
++        video_format_Clean(&fmt);
++        if (!canvas)
++            goto done;
++        picture_BlendSubpicture(canvas, sys->osd_blend, subpic);
++        picture_Release(canvas);
++    }
++
++    ret = OH_NativeBuffer_Unmap(native_buffer);
++    mapped_ok = false;
++    if (ret != 0)
++    {
++        msg_Warn(vd, "failed to unmap OSD NativeBuffer: %d", ret);
++        goto done;
++    }
++
++    struct Rect rect = { .x = 0, .y = 0, .w = width, .h = height };
++    Region region = { .rects = &rect, .rectNumber = 1 };
++    ret = OH_NativeWindow_NativeWindowFlushBuffer(
++        sys->osd_window, window_buffer, -1, region);
++    if (ret != 0)
++    {
++        msg_Warn(vd, "failed to flush OSD Surface buffer: %d", ret);
++        goto done;
++    }
++    requested = false;
++    sys->osd_visible = subpic != NULL;
++    sys->osd_order = subpic ? subpic->i_order : INT64_MIN;
++    sys->osd_force_upload = false;
++    success = true;
++
++done:
++    if (mapped_ok)
++        OH_NativeBuffer_Unmap(native_buffer);
++    if (fence_fd >= 0)
++        close(fence_fd);
++    if (requested)
++        OH_NativeWindow_NativeWindowAbortBuffer(sys->osd_window, window_buffer);
++    return success;
++}
++
++static void *OsdThread(void *opaque)
++{
++    vout_display_t *vd = opaque;
++    vout_display_sys_t *sys = vd->sys;
++
++    for (;;)
++    {
++        vlc_mutex_lock(&sys->osd_lock);
++        while (!sys->osd_pending && !sys->osd_stop)
++            vlc_cond_wait(&sys->osd_cond, &sys->osd_lock);
++
++        if (sys->osd_stop)
++        {
++            subpicture_t *pending = sys->osd_pending_subpic;
++            sys->osd_pending_subpic = NULL;
++            sys->osd_pending = false;
++            vlc_mutex_unlock(&sys->osd_lock);
++            if (pending)
++                subpicture_Delete(pending);
++            break;
++        }
++
++        subpicture_t *subpic = sys->osd_pending_subpic;
++        sys->osd_pending_subpic = NULL;
++        sys->osd_pending = false;
++        vlc_mutex_unlock(&sys->osd_lock);
++
++        const vlc_tick_t started = mdate();
++        UploadOsd(vd, subpic);
++        const vlc_tick_t elapsed = mdate() - started;
++        if (elapsed >= 50000)
++            msg_Warn(vd, "OSD upload slow: duration=%lld ms subtitle=%d",
++                     (long long)(elapsed / 1000), subpic != NULL);
++        if (subpic)
++            subpicture_Delete(subpic);
++    }
++    return NULL;
++}
++
++static void QueueOsd(vout_display_t *vd, subpicture_t *subpic)
++{
++    vout_display_sys_t *sys = vd->sys;
++    if (!sys->osd_thread_started)
++    {
++        if (subpic)
++            subpicture_Delete(subpic);
++        return;
++    }
++
++    vlc_mutex_lock(&sys->osd_lock);
++    subpicture_t *stale = sys->osd_pending_subpic;
++    sys->osd_pending_subpic = subpic;
++    sys->osd_pending = true;
++    vlc_cond_signal(&sys->osd_cond);
++    vlc_mutex_unlock(&sys->osd_lock);
++
++    /* If blending falls behind, only the newest subtitle state matters. */
++    if (stale)
++        subpicture_Delete(stale);
++}
++
++static void Prepare(vout_display_t *vd, picture_t *pic, subpicture_t *subpic)
++{
++    vout_display_sys_t *sys = vd->sys;
++
++    VLC_UNUSED(subpic);
++
++    msg_Dbg(vd, "[OHOS-DBG] Prepare: pic=%p, context=%p, need_flush=%d, date=%lld",
++            pic, pic ? pic->context : NULL, sys->need_flush,
++            pic ? (long long)pic->date : 0);
++
++    if (sys->need_flush && pic && pic->context)
++    {
++        ohos_picture_context_t *ctx = (ohos_picture_context_t *)pic->context;
++        msg_Dbg(vd, "[OHOS-DBG] Prepare: flushing surface_ctx=%p, pf_flush=%p",
++                ctx->surface_ctx, ctx->pf_flush);
++        if (ctx->pf_flush && ctx->surface_ctx)
++            ctx->pf_flush(ctx->surface_ctx);
++        sys->need_flush = false;
++    }
++}
++
++static void Display(vout_display_t *vd, picture_t *pic, subpicture_t *subpic)
++{
++    vout_display_sys_t *sys = vd->sys;
++    sys->frame_count++;
++
++    msg_Dbg(vd, "[OHOS-DBG] Display: frame#%u, pic=%p, context=%p, date=%lld, subpic=%p",
++            sys->frame_count, pic, pic ? pic->context : NULL,
++            (long long)pic->date, subpic);
++
++    /* Subtitle blending and OSD Surface fences must not hold an OHCodec
++     * video output buffer or block VLC's vout scheduler. The worker owns the
++     * subpicture after this call. */
++    QueueOsd(vd, subpic);
++    subpic = NULL;
++
++    if (pic->date == 0)
++    {
++        msg_Dbg(vd, "[OHOS-DBG] Display: date=0 frame, releasing pic=%p", pic);
++        picture_Release(pic);
++        if (subpic)
++            subpicture_Delete(subpic);
++        return;
++    }
++
++    // Prevent re-rendering the same frame (like ijkplayer behavior)
++    if (pic == sys->last_pic && pic->date == sys->last_date)
++    {
++        msg_Dbg(vd, "[OHOS-DBG] Display: skip re-render same frame pic=%p date=%lld", pic, (long long)pic->date);
++        picture_Release(pic);
++        if (subpic)
++            subpicture_Delete(subpic);
++        return;
++    }
++
++    if (pic->context)
++    {
++        ohos_picture_context_t *ctx = (ohos_picture_context_t *)pic->context;
++        msg_Dbg(vd, "[OHOS-DBG] Display: surface_ctx=%p, pf_render=%p, buf_ref=%p",
++                ctx->surface_ctx, ctx->pf_render, ctx->buf_ref);
++        if (ctx->pf_render && ctx->surface_ctx)
++        {
++            struct timespec ts;
++            clock_gettime(CLOCK_MONOTONIC, &ts);
++            int64_t now_ns = (int64_t)ts.tv_sec * 1000000000LL + ts.tv_nsec;
++            msg_Dbg(vd, "[OHOS-DBG] Display: calling pf_render(surface_ctx=%p, now_ns=%lld)",
++                    ctx->surface_ctx, (long long)now_ns);
++            const vlc_tick_t present_start = mdate();
++            int ret = ctx->pf_render(ctx->surface_ctx, now_ns);
++            const vlc_tick_t present_end = mdate();
++            if ((present_end - present_start >= 20000 ||
++                 present_start - pic->date >= 80000) &&
++                present_end - sys->last_present_warning >= CLOCK_FREQ)
++            {
++                sys->last_present_warning = present_end;
++                msg_Warn(vd, "[OHSurfaceTiming] submit=%lld ms late=%lld ms",
++                         (long long)((present_end - present_start) / 1000),
++                         (long long)((present_start - pic->date) / 1000));
++            }
++            msg_Dbg(vd, "[OHOS-DBG] Display: pf_render returned %d", ret);
++            if (ret != 0)
++            {
++                msg_Warn(vd, "[OHOS-DBG] Display: pf_render failed, skipping frame");
++                picture_Release(pic);
++                if (subpic)
++                    subpicture_Delete(subpic);
++                return;
++            }
++            if (ctx->released_ptr) {
++                __atomic_exchange_n(ctx->released_ptr, 1, __ATOMIC_SEQ_CST);
++            }
++            sys->last_pic = pic;
++            sys->last_date = pic->date;
++        }
++        else
++        {
++            msg_Warn(vd, "[OHOS-DBG] Display: cannot render! pf_render=%p, surface_ctx=%p",
++                     ctx->pf_render, ctx->surface_ctx);
++        }
++    }
++    else
++    {
++        msg_Warn(vd, "[OHOS-DBG] Display: pic->context is NULL, cannot render!");
++    }
++
++    picture_Release(pic);
++
++    if (subpic)
++        subpicture_Delete(subpic);
++}
++
++static int Control(vout_display_t *vd, int query, va_list args)
++{
++    VLC_UNUSED(vd);
++
++    switch (query)
++    {
++        case VOUT_DISPLAY_CHANGE_DISPLAY_SIZE:
++        case VOUT_DISPLAY_CHANGE_DISPLAY_FILLED:
++        case VOUT_DISPLAY_CHANGE_ZOOM:
++        case VOUT_DISPLAY_CHANGE_SOURCE_ASPECT:
++        case VOUT_DISPLAY_CHANGE_SOURCE_CROP:
++            VLC_UNUSED(args);
++            vd->sys->osd_order = INT64_MIN;
++            return VLC_SUCCESS;
++
++        case VOUT_DISPLAY_RESET_PICTURES:
++            VLC_UNUSED(args);
++            vd->sys->need_flush = true;
++            return VLC_SUCCESS;
++
++        default:
++            return VLC_EGENERIC;
++    }
++}
++
++static int Open(vlc_object_t *obj)
++{
++    vout_display_t *vd = (vout_display_t *)obj;
++    msg_Dbg(vd, "[OHOS-DBG] Open: source chroma=%4.4s, %ux%u, visible=%ux%u",
++            (char *)&vd->source.i_chroma,
++            vd->source.i_width, vd->source.i_height,
++            vd->source.i_visible_width, vd->source.i_visible_height);
++
++    if (vd->source.i_chroma != VLC_CODEC_OHOS_OPAQUE
++     && vd->source.i_chroma != VLC_CODEC_NV21) {
++        msg_Dbg(vd, "[OHOS-DBG] Open: rejected, chroma mismatch (expected OHOS_OPAQUE or NV21)");
++        return VLC_EGENERIC;
++    }
++
++    vout_display_sys_t *sys = calloc(1, sizeof(*sys));
++    if (!sys)
++        return VLC_ENOMEM;
++
++    sys->frame_count = 0;
++    sys->last_pic = NULL;
++    sys->last_date = VLC_TICK_INVALID;
++    sys->osd_order = INT64_MIN;
++    vlc_mutex_init(&sys->osd_lock);
++    vlc_cond_init(&sys->osd_cond);
++
++    vd->sys     = sys;
++    vd->fmt     = vd->source;
++    vd->pool    = Pool;
++    vd->prepare = Prepare;
++    vd->display = Display;
++    vd->control = Control;
++
++    vd->info.is_slow              = false;
++    vd->info.has_double_click     = false;
++    vd->info.needs_hide_mouse     = false;
++    vd->info.has_pictures_invalid = false;
++    vd->info.subpicture_chromas   = subpicture_chromas;
++    vd->info.scale_subpictures_to_display = true;
++    if (vlc_clone(&sys->osd_thread, OsdThread, vd,
++                  VLC_THREAD_PRIORITY_LOW) == 0)
++        sys->osd_thread_started = true;
++    else
++        msg_Warn(vd, "failed to start asynchronous OSD worker; subtitles disabled");
++    msg_Dbg(vd, "[OHOS-DBG] Open: OHOS surface display opened successfully");
++    return VLC_SUCCESS;
++}
++
++static void Close(vlc_object_t *obj)
++{
++    vout_display_t *vd = (vout_display_t *)obj;
++    vout_display_sys_t *sys = vd->sys;
++
++    msg_Dbg(vd, "[OHOS-DBG] Close: total frames displayed=%u", sys->frame_count);
++
++    if (sys->osd_thread_started)
++    {
++        vlc_mutex_lock(&sys->osd_lock);
++        sys->osd_stop = true;
++        vlc_cond_signal(&sys->osd_cond);
++        vlc_mutex_unlock(&sys->osd_lock);
++        vlc_join(sys->osd_thread, NULL);
++    }
++    if (sys->osd_visible)
++        UploadOsd(vd, NULL);
++    if (sys->osd_blend)
++        filter_DeleteBlend(sys->osd_blend);
++    vlc_cond_destroy(&sys->osd_cond);
++    vlc_mutex_destroy(&sys->osd_lock);
++
++    if (sys->pool)
++        picture_pool_Release(sys->pool);
++
++    free(sys);
++    msg_Dbg(vd, "[OHOS-DBG] Close: OHOS surface display closed");
++}
++
++vlc_module_begin()
++    set_shortname(N_("OHOS Surface"))
++    set_description(N_("OHOS hardware decoder surface output"))
++    set_category(CAT_VIDEO)
++    set_subcategory(SUBCAT_VIDEO_VOUT)
++    set_capability("vout display", 300)
++    set_callbacks(Open, Close)
++vlc_module_end()
+diff --git a/modules/video_output/ohos/display.h b/modules/video_output/ohos/display.h
+new file mode 100644
+index 0000000..ab34da4
+--- /dev/null
++++ b/modules/video_output/ohos/display.h
+@@ -0,0 +1,32 @@
++/*****************************************************************************
++ * display.h: OHOS hardware decoder surface display - shared types
++ *****************************************************************************
++ * Copyright (C) 2025 Huawei Device Co., Ltd.
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ *****************************************************************************/
++#ifndef VLC_OHOS_DISPLAY_H
++#define VLC_OHOS_DISPLAY_H
++
++#include <vlc_picture.h>
++
++typedef struct {
++    picture_context_t s;
++    void *surface_ctx;
++    void *buf_ref;
++    int (*pf_render)(void *surface_ctx, int64_t timestamp_ns);
++    int (*pf_flush)(void *surface_ctx);
++    volatile int32_t *released_ptr;
++} ohos_picture_context_t;
++
++#endif /* VLC_OHOS_DISPLAY_H */
+diff --git a/modules/video_output/ohos/utils.c b/modules/video_output/ohos/utils.c
+new file mode 100644
+index 0000000..2408b6c
+--- /dev/null
++++ b/modules/video_output/ohos/utils.c
+@@ -0,0 +1,51 @@
++/*****************************************************************************
++* Copyright (c) 2025 Huawei Device Co., Ltd.
++* Licensed under the Apache License, Version 2.0 (the "License");
++* you may not use this file except in compliance with the License.
++* You may obtain a copy of the License at
++*
++*     http://www.apache.org/licenses/LICENSE-2.0
++*
++* Unless required by applicable law or agreed to in writing, software
++* distributed under the License is distributed on an "AS IS" BASIS,
++* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++* See the License for the specific language governing permissions and
++* limitations under the License.
++*****************************************************************************/
++#include <EGL/egl.h>
++#include <EGL/eglext.h>
++#include <GLES3/gl3.h>
++#include <GLES3/gl32.h>
++#include <GLES2/gl2ext.h>
++#include <native_window/external_window.h>
++
++#include "utils.h"
++
++void* GetOHOSNativeWindow(void* ohos_window)
++{
++    if (ohos_window != NULL) {
++        OHNativeWindow* handle = (OHNativeWindow*)ohos_window;
++        return handle;
++    }
++    return NULL;
++}
++
++OHNativeWindow* NewOHOSWindowHandle(vout_window_t* wnd, uint64_t* width, uint64_t* height)
++{
++    OHNativeWindow* win = var_InheritAddress(wnd, "drawable-ohos-nativewindow-ptr");
++    msg_Dbg(wnd, "[OHOS-DBG] NewOHOSWindowHandle: nativewindow=%p", win);
++    if (win == NULL) {
++        msg_Err(wnd, "[OHOS-DBG] NewOHOSWindowHandle: window ptr is nullptr");
++        return NULL;
++    }
++    int32_t ret = OH_NativeWindow_NativeWindowHandleOpt(win, GET_BUFFER_GEOMETRY, height, width);
++    msg_Dbg(wnd, "[OHOS-DBG] NewOHOSWindowHandle: GET_BUFFER_GEOMETRY ret=%d, width=%llu, height=%llu",
++            ret, (unsigned long long)*width, (unsigned long long)*height);
++    if (ret != 0)
++    {
++        msg_Err(wnd, "[OHOS-DBG] NewOHOSWindowHandle: OH_NativeWindow_NativeWindowHandleOpt failed : ret = %d", ret);
++        return NULL;
++    }
++    return win;
++}
++
+diff --git a/modules/video_output/ohos/utils.h b/modules/video_output/ohos/utils.h
+new file mode 100644
+index 0000000..daa7e0b
+--- /dev/null
++++ b/modules/video_output/ohos/utils.h
+@@ -0,0 +1,23 @@
++/*****************************************************************************
++* Copyright (c) 2025 Huawei Device Co., Ltd.
++* Licensed under the Apache License, Version 2.0 (the "License");
++* you may not use this file except in compliance with the License.
++* You may obtain a copy of the License at
++*
++*     http://www.apache.org/licenses/LICENSE-2.0
++*
++* Unless required by applicable law or agreed to in writing, software
++* distributed under the License is distributed on an "AS IS" BASIS,
++* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++* See the License for the specific language governing permissions and
++* limitations under the License.
++*****************************************************************************/
++#ifndef VLC_OHOS_UTILS_H
++#define VLC_OHOS_UTILS_H
++
++#include <vlc_vout_window.h>
++#include <native_window/external_window.h>
++
++OHNativeWindow* NewOHOSWindowHandle(vout_window_t* wnd, uint64_t* width, uint64_t* height);
++void* GetOHOSNativeWindow(void* ohos_window);
++#endif
+\ No newline at end of file
+diff --git a/modules/video_output/ohos/window.c b/modules/video_output/ohos/window.c
+new file mode 100644
+index 0000000..3098618
+--- /dev/null
++++ b/modules/video_output/ohos/window.c
+@@ -0,0 +1,105 @@
++/*****************************************************************************
++* Copyright (c) 2025 Huawei Device Co., Ltd.
++* Licensed under the Apache License, Version 2.0 (the "License");
++* you may not use this file except in compliance with the License.
++* You may obtain a copy of the License at
++*
++*     http://www.apache.org/licenses/LICENSE-2.0
++*
++* Unless required by applicable law or agreed to in writing, software
++* distributed under the License is distributed on an "AS IS" BASIS,
++* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++* See the License for the specific language governing permissions and
++* limitations under the License.
++
++*****************************************************************************/
++#ifdef HAVE_CONFIG_H
++# include <config.h>
++#endif
++#include <stdarg.h>
++#include <vlc_common.h>
++#include <vlc_plugin.h>
++#include <vlc_vout_window.h>
++#include <dlfcn.h>
++
++#include "utils.h"
++
++static int Open(vout_window_t *, const vout_window_cfg_t *);
++static void Close(vout_window_t *);
++static int Control(vout_window_t *, int, va_list ap);
++
++vlc_module_begin()
++    set_shortname(N_("OHOS Window"))
++    set_description(N_("OHOS native window"))
++    set_category(CAT_VIDEO)
++    set_subcategory(SUBCAT_VIDEO_VOUT)
++    set_capability("vout window", 10)
++    set_callbacks(Open, Close)
++vlc_module_end()
++
++
++struct vout_window_sys_t
++{
++    OHNativeWindow*     native_window;
++};
++
++static int Open(vout_window_t *wnd, const vout_window_cfg_t *cfg)
++{
++    msg_Dbg (wnd, "Opening OpenHarmony video output");
++    if (cfg->type != VOUT_WINDOW_TYPE_INVALID
++     && cfg->type != VOUT_WINDOW_TYPE_OHOS_NATIVE)
++        return VLC_EGENERIC;
++
++    vout_window_sys_t *p_sys = malloc(sizeof (*p_sys));
++    if (p_sys == NULL)
++        return VLC_ENOMEM;
++    wnd->sys = p_sys;
++    
++    uint64_t windowwidth = 0;
++    uint64_t windowheight = 0;
++    p_sys->native_window = NewOHOSWindowHandle(wnd, &windowwidth, &windowheight);    
++    if (!p_sys->native_window || windowwidth == 0 || windowheight == 0)
++        goto error;
++    
++    msg_Dbg(wnd, "vout_window_cfg_t windowwidth %d, windowheight %d: ", windowwidth, windowheight);
++    
++    wnd->type = VOUT_WINDOW_TYPE_OHOS_NATIVE;
++    wnd->handle.onativewindow = p_sys->native_window;
++    wnd->control = Control;
++    
++    vout_window_ReportSize(wnd, windowwidth, windowheight);
++    return VLC_SUCCESS;
++
++error:
++    msg_Err (wnd, "Opening OpenHarmony video output error");
++    Close(wnd);
++    return VLC_EGENERIC;
++}
++
++static void Close(vout_window_t *wnd)
++{
++    msg_Dbg(wnd, "Close enter Module Close");
++    vout_window_sys_t *p_sys = wnd->sys;
++    if (p_sys)
++    {
++        p_sys->native_window = NULL;
++        free(p_sys);
++    }
++    wnd->sys = NULL;
++}
++
++static int Control(vout_window_t *wnd, int cmd, va_list ap)
++{
++    (void) ap;
++    msg_Dbg(wnd, "[OHOS-DBG] Control: cmd=%d", cmd);
++    switch (cmd)
++    {
++        case VOUT_WINDOW_SET_STATE:
++        case VOUT_WINDOW_SET_SIZE:
++        case VOUT_WINDOW_SET_FULLSCREEN:
++            return VLC_SUCCESS;
++        default:
++            msg_Dbg(wnd, "[OHOS-DBG] Control: unhandled cmd=%d", cmd);
++            return VLC_EGENERIC;
++    }
++}
+diff --git a/src/ohos/thread.c b/src/ohos/thread.c
+new file mode 100644
+index 0000000..fbed8b3
+--- /dev/null
++++ b/src/ohos/thread.c
+@@ -0,0 +1,409 @@
++/*
++ * Copyright (c) 2025 Huawei Device Co., Ltd.
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++#ifdef HAVE_CONFIG_H
++# include "config.h"
++#endif
++
++#include <vlc_common.h>
++#include <vlc_atomic.h>
++
++#include "libvlc.h"
++#include <signal.h>
++#include <errno.h>
++#include <time.h>
++#include <assert.h>
++
++#include <sys/types.h>
++#include <unistd.h> /* fsync() */
++#include <pthread.h>
++#include <sched.h>
++
++/* debug */
++
++#ifndef NDEBUG
++static void
++vlc_thread_fatal_print (const char *action, int error,
++                        const char *function, const char *file, unsigned line)
++{
++    char buf[1000];
++    const char *msg;
++
++    switch (strerror_r (error, buf, sizeof (buf)))
++    {
++        case 0:
++            msg = buf;
++            break;
++        case ERANGE: /* should never happen */
++            msg = "unknown (too big to display)";
++            break;
++        default:
++            msg = "unknown (invalid error number)";
++            break;
++    }
++
++    fprintf(stderr, "LibVLC fatal error %s (%d) in thread %lu "
++            "at %s:%u in %s\n Error message: %s\n",
++            action, error, vlc_thread_id (), file, line, function, msg);
++    fflush (stderr);
++}
++
++# define VLC_THREAD_ASSERT( action ) do { \
++    if (unlikely(val)) { \
++        vlc_thread_fatal_print (action, val, __func__, __FILE__, __LINE__); \
++        assert (!action); \
++    } \
++} while(0)
++#else
++# define VLC_THREAD_ASSERT( action ) ((void)val)
++#endif
++
++/* mutexes */
++void vlc_mutex_init( vlc_mutex_t *p_mutex )
++{
++    pthread_mutexattr_t attr;
++
++    pthread_mutexattr_init (&attr);
++#ifdef NDEBUG
++    pthread_mutexattr_settype (&attr, PTHREAD_MUTEX_DEFAULT);
++#else
++    pthread_mutexattr_settype (&attr, PTHREAD_MUTEX_ERRORCHECK);
++#endif
++    pthread_mutex_init (p_mutex, &attr);
++    pthread_mutexattr_destroy( &attr );
++}
++
++void vlc_mutex_init_recursive( vlc_mutex_t *p_mutex )
++{
++    pthread_mutexattr_t attr;
++
++    pthread_mutexattr_init (&attr);
++    pthread_mutexattr_settype (&attr, PTHREAD_MUTEX_RECURSIVE);
++    pthread_mutex_init (p_mutex, &attr);
++    pthread_mutexattr_destroy( &attr );
++}
++
++
++void vlc_mutex_destroy (vlc_mutex_t *p_mutex)
++{
++    int val = pthread_mutex_destroy( p_mutex );
++    VLC_THREAD_ASSERT ("destroying mutex");
++}
++
++#ifndef NDEBUG
++void vlc_assert_locked (vlc_mutex_t *p_mutex)
++{
++    assert (pthread_mutex_lock (p_mutex) == EDEADLK);
++}
++#endif
++
++void vlc_mutex_lock (vlc_mutex_t *p_mutex)
++{
++    int val = pthread_mutex_lock( p_mutex );
++    VLC_THREAD_ASSERT ("locking mutex");
++}
++
++int vlc_mutex_trylock (vlc_mutex_t *p_mutex)
++{
++    int val = pthread_mutex_trylock( p_mutex );
++
++    if (val != EBUSY)
++        VLC_THREAD_ASSERT ("locking mutex");
++    return val;
++}
++
++void vlc_mutex_unlock (vlc_mutex_t *p_mutex)
++{
++    int val = pthread_mutex_unlock( p_mutex );
++    VLC_THREAD_ASSERT ("unlocking mutex");
++}
++
++struct vlc_thread
++{
++    pthread_t      thread;
++    vlc_sem_t      finished;
++
++    void *(*entry)(void*);
++    void *data;
++
++    struct
++    {
++        void *addr; /// Non-null if waiting on futex
++        vlc_mutex_t lock ; /// Protects futex address
++    } wait;
++
++    atomic_bool killed;
++    bool killable;
++};
++
++static thread_local struct vlc_thread *thread = NULL;
++
++vlc_thread_t vlc_thread_self (void)
++{
++    return thread;
++}
++
++void vlc_threads_setup (libvlc_int_t *p_libvlc)
++{
++    (void)p_libvlc;
++}
++
++/* pthread */
++static void clean_detached_thread(void *data)
++{
++    struct vlc_thread *th = data;
++
++    /* release thread handle */
++    vlc_mutex_destroy(&th->wait.lock);
++    free(th);
++}
++
++static void *detached_thread(void *data)
++{
++    vlc_thread_t th = data;
++
++    thread = th;
++
++    vlc_cleanup_push(clean_detached_thread, th);
++    th->entry(th->data);
++    vlc_cleanup_pop();
++    clean_detached_thread(th);
++    return NULL;
++}
++
++static void finish_joinable_thread(void *data)
++{
++    vlc_thread_t th = data;
++
++    vlc_sem_post(&th->finished);
++}
++
++static void *joinable_thread(void *data)
++{
++    vlc_thread_t th = data;
++    void *ret;
++
++    vlc_cleanup_push(finish_joinable_thread, th);
++    thread = th;
++    ret = th->entry(th->data);
++    vlc_cleanup_pop();
++    vlc_sem_post(&th->finished);
++
++    return ret;
++}
++
++static int vlc_clone_attr (vlc_thread_t *th, void *(*entry) (void *),
++                           void *data, bool detach)
++{
++    vlc_thread_t thread = malloc (sizeof (*thread));
++    if (unlikely(thread == NULL))
++        return ENOMEM;
++
++    int ret;
++
++    sigset_t oldset;
++    {
++        sigset_t set;
++        sigemptyset (&set);
++        sigdelset (&set, SIGHUP);
++        sigaddset (&set, SIGINT);
++        sigaddset (&set, SIGQUIT);
++        sigaddset (&set, SIGTERM);
++
++        sigaddset (&set, SIGPIPE); /* We don't want this one, really! */
++        pthread_sigmask (SIG_BLOCK, &set, &oldset);
++    }
++
++    if (!detach)
++        vlc_sem_init(&thread->finished, 0);
++    atomic_store(&thread->killed, false);
++    thread->killable = true;
++    thread->entry = entry;
++    thread->data = data;
++    thread->wait.addr = NULL;
++    vlc_mutex_init(&thread->wait.lock);
++
++    pthread_attr_t attr;
++    pthread_attr_init (&attr);
++    pthread_attr_setdetachstate (&attr, detach ? PTHREAD_CREATE_DETACHED
++                                               : PTHREAD_CREATE_JOINABLE);
++
++    ret = pthread_create (&thread->thread, &attr,
++                          detach ? detached_thread : joinable_thread, thread);
++    pthread_attr_destroy (&attr);
++
++    pthread_sigmask (SIG_SETMASK, &oldset, NULL);
++    *th = thread;
++    return ret;
++}
++
++int vlc_clone (vlc_thread_t *th, void *(*entry) (void *), void *data,
++               int priority)
++{
++    (void) priority;
++    return vlc_clone_attr (th, entry, data, false);
++}
++
++void vlc_join (vlc_thread_t handle, void **result)
++{
++    vlc_sem_wait (&handle->finished);
++    vlc_sem_destroy (&handle->finished);
++
++    int val = pthread_join (handle->thread, result);
++    VLC_THREAD_ASSERT ("joining thread");
++    clean_detached_thread(handle);
++}
++
++int vlc_clone_detach (vlc_thread_t *th, void *(*entry) (void *), void *data,
++                      int priority)
++{
++    vlc_thread_t dummy;
++    if (th == NULL)
++        th = &dummy;
++
++    (void) priority;
++    return vlc_clone_attr (th, entry, data, true);
++}
++
++int vlc_set_priority (vlc_thread_t th, int priority)
++{
++    (void) th; (void) priority;
++    return VLC_SUCCESS;
++}
++
++void vlc_cancel (vlc_thread_t thread_id)
++{
++    atomic_int *addr;
++
++    atomic_store(&thread_id->killed, true);
++
++    vlc_mutex_lock(&thread_id->wait.lock);
++    addr = thread_id->wait.addr;
++    if (addr != NULL)
++    {
++        atomic_fetch_or_explicit(addr, 1, memory_order_relaxed);
++        vlc_addr_broadcast(addr);
++    }
++    vlc_mutex_unlock(&thread_id->wait.lock);
++}
++
++int vlc_savecancel (void)
++{
++    if (!thread) /* not created by VLC, can't be cancelled */
++        return true;
++
++    int oldstate = thread->killable;
++    thread->killable = false;
++    return oldstate;
++}
++
++void vlc_restorecancel (int state)
++{
++    if (!thread) /* not created by VLC, can't be cancelled */
++        return;
++
++    thread->killable = state;
++}
++
++void vlc_testcancel (void)
++{
++    if (!thread) /* not created by VLC, can't be cancelled */
++        return;
++    if (!thread->killable)
++        return;
++    if (!atomic_load(&thread->killed))
++        return;
++
++    pthread_exit(NULL);
++}
++
++void vlc_control_cancel(int cmd, ...)
++{
++    vlc_thread_t th = vlc_thread_self();
++    va_list ap;
++
++    if (th == NULL)
++        return;
++
++    va_start(ap, cmd);
++    switch (cmd)
++    {
++        case VLC_CANCEL_ADDR_SET:
++        {
++            void *addr = va_arg(ap, void *);
++
++            vlc_mutex_lock(&th->wait.lock);
++            assert(th->wait.addr == NULL);
++            th->wait.addr = addr;
++            vlc_mutex_unlock(&th->wait.lock);
++            break;
++        }
++
++        case VLC_CANCEL_ADDR_CLEAR:
++        {
++            void *addr = va_arg(ap, void *);
++
++            vlc_mutex_lock(&th->wait.lock);
++            assert(th->wait.addr == addr);
++            th->wait.addr = NULL;
++            (void) addr;
++            vlc_mutex_unlock(&th->wait.lock);
++            break;
++        }
++
++        default:
++            vlc_assert_unreachable ();
++    }
++    va_end(ap);
++}
++
++/* threadvar */
++
++int vlc_threadvar_create (vlc_threadvar_t *key, void (*destr) (void *))
++{
++    return pthread_key_create (key, destr);
++}
++
++void vlc_threadvar_delete (vlc_threadvar_t *p_tls)
++{
++    pthread_key_delete (*p_tls);
++}
++
++int vlc_threadvar_set (vlc_threadvar_t key, void *value)
++{
++    return pthread_setspecific (key, value);
++}
++
++void *vlc_threadvar_get (vlc_threadvar_t key)
++{
++    return pthread_getspecific (key);
++}
++
++/* time */
++vlc_tick_t mdate (void)
++{
++    struct timespec ts;
++
++    if (unlikely(clock_gettime (CLOCK_MONOTONIC, &ts) != 0))
++        abort ();
++
++    return (INT64_C(1000000) * ts.tv_sec) + (ts.tv_nsec / 1000);
++}
++
++/* cpu */
++
++unsigned vlc_GetCPUCount(void)
++{
++    return sysconf(_SC_NPROCESSORS_ONLN);
++}

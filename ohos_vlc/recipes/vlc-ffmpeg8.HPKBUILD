@@ -3,17 +3,17 @@
 # Licensed under the Apache License, Version 2.0.
 
 pkgname=vlc
-pkgver=ohos-3.0.21
+pkgver=3.0.24
 pkgrel=0
-pkgdesc="VLC 3.0.21 for OpenHarmony with FFmpeg 8 and OHCodec support"
+pkgdesc="VLC 3.0.24 for OpenHarmony with FFmpeg 8 and OHCodec support"
 url="https://www.videolan.org/"
 archs=("arm64-v8a")
 license=("GNU General Public License v2.0")
 depends=("FFmpeg-surface-dev" "freetype2" "faad2" "libvorbis" "libdca" "flac" "speex" "libtheora" "aribb24" "speexdsp" "libkate" "libogg" "a52dec" "openssl_3.4.3" "live555")
 makedepends=("msgfmt")
 
-source="https://gitcode.com/OpenHarmony-ApplicationTPC/ohos_vlc.git"
-source_commit=14a0483eb294e62305e596dc0d158c74e6a04cc9
+source="https://github.com/videolan/vlc.git"
+source_commit=6de05adcbaf2e8b85fe86aad4169393098628119
 autounpack=false
 downloadpackage=false
 buildtools="configure"
@@ -42,151 +42,15 @@ prepare() {
         fi
         cd $builddir
         if [ "$(git rev-parse HEAD)" != "$source_commit" ]; then
-            echo "ERROR: VLC ohos-3.0.21 resolved to an unexpected commit" >> $publicbuildlog
+            echo "ERROR: VLC 3.0.24 resolved to an unexpected commit" >> $publicbuildlog
             cd $OLDPWD
             return -1
         fi
-        git apply --check ../0000-vlc-ffmpeg8-ohcodec-consolidated.patch >> $publicbuildlog 2>&1 || {
+        git apply --check ../0030-vlc-3.0.24-ohos.patch >> $publicbuildlog 2>&1 || {
             cd $OLDPWD
             return -1
         }
-        git apply ../0000-vlc-ffmpeg8-ohcodec-consolidated.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply --check ../0010-vlc-ohos-realtime-audio-ring.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply ../0010-vlc-ohos-realtime-audio-ring.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply --check ../0011-vlc-ohos-system-refresh-low-latency-audio.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply ../0011-vlc-ohos-system-refresh-low-latency-audio.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply --check ../0012-vlc-ohcodec-surface-backpressure.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply ../0012-vlc-ohcodec-surface-backpressure.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply --check ../0013-vlc-ohcodec-use-frame-pts.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply ../0013-vlc-ohcodec-use-frame-pts.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply --check ../0014-vlc-ohcodec-vsync-present.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply ../0014-vlc-ohcodec-vsync-present.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply --check ../0015-vlc-ohcodec-deadline-gated-present.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply ../0015-vlc-ohcodec-deadline-gated-present.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply --check ../0016-vlc-ohcodec-respect-direct-rendering.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply ../0016-vlc-ohcodec-respect-direct-rendering.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply --check ../0017-vlc-ohos-live-window-resize.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply ../0017-vlc-ohos-live-window-resize.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply --check ../0018-vlc-ffmpeg8-opus-audio-init.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply ../0018-vlc-ffmpeg8-opus-audio-init.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply --check ../0019-vlc-ohos-prefer-libopus-decoder.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply ../0019-vlc-ohos-prefer-libopus-decoder.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply --check ../0020-vlc-avcodec-unwrap-opus-xiph-extradata.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply ../0020-vlc-avcodec-unwrap-opus-xiph-extradata.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply --check ../0021-vlc-ohcodec-surface-osd.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply ../0021-vlc-ohcodec-surface-osd.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply --check ../0022-vlc-rate-transition-backpressure.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply ../0022-vlc-rate-transition-backpressure.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply --check ../0023-vlc-continuous-rate-clock.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply ../0023-vlc-continuous-rate-clock.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply --check ../0024-vlc-audio-queue-subrip.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply ../0024-vlc-audio-queue-subrip.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply --check ../0025-vlc-surface-present-timing.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply ../0025-vlc-surface-present-timing.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply --check ../0026-vlc-playback-stage-diagnostics.patch >> $publicbuildlog 2>&1 || {
-            cd $OLDPWD
-            return -1
-        }
-        git apply ../0026-vlc-playback-stage-diagnostics.patch >> $publicbuildlog 2>&1 || {
+        git apply ../0030-vlc-3.0.24-ohos.patch >> $publicbuildlog 2>&1 || {
             cd $OLDPWD
             return -1
         }
