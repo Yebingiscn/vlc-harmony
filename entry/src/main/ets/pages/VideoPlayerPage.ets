@@ -60,11 +60,11 @@ import {
 import { VideoPanMode, VideoTouchDelegate } from './videoplayer/VideoTouchDelegate';
 import {
   fmtTime,
+  VideoParam,
+  VideoPlayItem,
   VLC_NAPI_LIBRARY,
   VLC_OSD_XCOMPONENT_ID,
   VLC_VIDEO_XCOMPONENT_ID,
-  VideoParam,
-  VideoPlayItem,
 } from './videoplayer/VideoPlayerModels';
 
 /** 与 Native / XComponent id 一致;libraryname 对齐 nm_modname=libvlcnapi。 */
@@ -85,13 +85,14 @@ function fmtSleepSpan(ms: number): string {
   const totalMin: number = Math.floor(ms / 60000);
   const h: number = Math.floor(totalMin / 60);
   const m: number = totalMin % 60;
+  const ctx = AppContext.get();
   if (h > 0 && m > 0) {
-    return `${h}小时${m}分`;
+    return ctx?.resourceManager.getStringSync($r('app.string.hours_minutes').id, h, m) ?? `${h}h ${m}m`;
   }
   if (h > 0) {
-    return `${h}小时`;
+    return ctx?.resourceManager.getStringSync($r('app.string.hours_only').id, h) ?? `${h}h`;
   }
-  return `${m}分钟`;
+  return ctx?.resourceManager.getStringSync($r('app.string.minutes_only').id, m) ?? `${m}m`;
 }
 
 /** 「视频屏幕方向」设置值 → HarmonyOS 窗口方向。 */
@@ -539,7 +540,6 @@ class VideoPlayerViewModel implements PlaybackListener {
       return;
     }
     svc.seek(ms);
-    this.position = ms;
   }
 
   setSpeed(rate: number): void {
@@ -849,13 +849,13 @@ export struct VideoPlayerPage {
       const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
       const opts = new picker.DocumentSelectOptions();
       opts.maxSelectNumber = 1;
-      opts.fileSuffixFilters = ['字幕|.srt,.ass,.ssa,.vtt,.sub'];
+      opts.fileSuffixFilters = ['.srt,.ass,.ssa,.vtt,.sub'];
       const docPicker = new picker.DocumentViewPicker(ctx);
       const uris: string[] = await docPicker.select(opts);
       if (uris.length > 0) {
         const ok: boolean = PlaybackService.getInstance().addSubtitleSlave(uris[0]);
         UiFeedback.showToast({
-          message: ok ? '字幕已加载' : '字幕加载失败',
+          message: ok ? $r('app.string.subtitle_loaded') : $r('app.string.subtitle_load_failed'),
         });
         hilog.info(0x0001, 'VLC', '[VLC] addSubtitleSlave ok=%{public}s uri=%{public}s',
           String(ok), uris[0]);
@@ -972,7 +972,7 @@ export struct VideoPlayerPage {
 
   onSpeedConfirm(action: PlaybackSpeedAction): void {
     this.vm.setSpeed(action.speed);
-    UiFeedback.showToast({ message: `播放速度已设为 ${action.speed.toFixed(2)}x` });
+    UiFeedback.showToast({ message: $r('app.string.speed_set_to', action.speed.toFixed(2)) });
     this.closeSheet();
   }
 
@@ -987,9 +987,8 @@ export struct VideoPlayerPage {
     Settings.put(Settings.ENABLE_DOUBLE_TAP_SEEK, s.doubleTapSeek);
     Settings.put(Settings.KEY_VIDEO_DOUBLE_TAP_JUMP_DELAY, s.doubleTapSeekDelay);
     Settings.put(Settings.ENABLE_DOUBLE_TAP_PLAY, s.doubleTapPlayPause);
-    Settings.put(Settings.ENABLE_FASTPLAY, s.fastPlayback);
     void this.touch.refreshPrefs();
-    UiFeedback.showToast({ message: '控制设置已保存' });
+    UiFeedback.showToast({ message: $r('app.string.controls_settings_saved') });
     this.closeSheet();
   }
 
@@ -997,7 +996,7 @@ export struct VideoPlayerPage {
   async onSavePlaylistConfirm(action: AddToPlaylistAction): Promise<void> {
     const uri: string = this.vm.uri;
     if (uri.length === 0) {
-      UiFeedback.showToast({ message: '当前没有可保存的视频' });
+      UiFeedback.showToast({ message: $r('app.string.no_video_to_save') });
       this.closeSheet();
       return;
     }
@@ -1010,7 +1009,8 @@ export struct VideoPlayerPage {
       }
     }
     const count: number = action.selectedIds.length;
-    UiFeedback.showToast({ message: count === 1 ? '已保存到播放列表' : `已保存到 ${count} 个播放列表` });
+    UiFeedback.showToast({ message: count === 1 ? $r('app.string.saved_to_playlist') :
+      $r('app.string.saved_to_playlist_count', count) });
     this.closeSheet();
   }
 
@@ -1032,7 +1032,7 @@ export struct VideoPlayerPage {
     const bm: BookMark = new BookMark(this.bookmarkIdSeq++, -1, timeMs, '');
     this.bookmarks = [...this.bookmarks, bm].sort((a: BookMark, b: BookMark) => a.timeMs - b.timeMs);
     void this.persistBookmarks();
-    UiFeedback.showToast({ message: '已保存书签' });
+    UiFeedback.showToast({ message: $r('app.string.bookmark_saved') });
   }
 
   /** 删除指定 id 的书签（自动持久化）。 */
@@ -1044,7 +1044,7 @@ export struct VideoPlayerPage {
   /** 重命名书签:本期直接在 toBoolean 提示里给出占位 toast。 */
   renameBookmark(id: number): void {
     void id;
-    UiFeedback.showToast({ message: '书签重命名功能开发中' });
+    UiFeedback.showToast({ message: $r('app.string.bookmark_rename_dev') });
   }
 
   /** A-B 循环点时间显示:mm:ss / h:mm:ss。 */
@@ -1070,6 +1070,8 @@ export struct VideoPlayerPage {
     void this.touch.refreshPrefs();
     this.resetHudTimer();
     this.appBackgroundListener = () => {
+      PlaybackService.getInstance().saveVideoResume();
+      this.touch.clearTouchAction();
       void this.handleAppBackground();
     };
     AppContext.onAppBackground(this.appBackgroundListener);
@@ -1123,7 +1125,7 @@ export struct VideoPlayerPage {
     const uri: string = cur?.uri ?? this.vm.uri;
     hilog.info(0x0001, 'VLC', '[VLC] playAsAudio start uri=%{public}s', uri);
     if (uri.length === 0) {
-      UiFeedback.showToast({ message: '没有可播放的视频' });
+      UiFeedback.showToast({ message: $r('app.string.no_video_to_play') });
       return;
     }
     const svc = PlaybackService.getInstance();
@@ -1155,17 +1157,17 @@ export struct VideoPlayerPage {
     await PlaybackService.play();
     // 现在安全 pop —— aboutToDisappear 会调 vm.release() → leaveEarly(stop) + cleanUI(detachViews)
     NavController.pop();
-    UiFeedback.showToast({ message: '已切换为仅播放音频' });
+    UiFeedback.showToast({ message: $r('app.string.play_as_audio_enabled') });
   }
 
   /** 进入画中画模式:用 XComponent 控制器创建 PiPController 并启动。 */
   async enterPopupPlayer(): Promise<void> {
     if (!PiPWindow.isPiPEnabled()) {
-      UiFeedback.showToast({ message: '当前设备不支持画中画' });
+      UiFeedback.showToast({ message: $r('app.string.pip_not_supported') });
       return;
     }
     if (!this.pipXc) {
-      UiFeedback.showToast({ message: '视频尚未就绪' });
+      UiFeedback.showToast({ message: $r('app.string.video_not_ready') });
       return;
     }
     try {
@@ -1199,10 +1201,10 @@ export struct VideoPlayerPage {
       });
       await controller.startPiP();
       this.pipController = controller;
-      UiFeedback.showToast({ message: '已进入画中画' });
+      UiFeedback.showToast({ message: $r('app.string.pip_entered') });
     } catch (e) {
       hilog.error(0x0001, 'VLC', '[PiP] failed: %{public}s', (e as Error).message ?? String(e));
-      UiFeedback.showToast({ message: '画中画启动失败' });
+      UiFeedback.showToast({ message: $r('app.string.pip_failed') });
     }
   }
 
@@ -1226,7 +1228,7 @@ export struct VideoPlayerPage {
   playerOrientationDialogContent() {
     Column() {
       ScreenOrientationDialog({
-        title: '视频屏幕方向',
+        title: $r('app.string.video_orientation'),
         labels: SCREEN_ORIENTATION_LABELS,
         values: SCREEN_ORIENTATION_VALUES,
         selectedValue: this.orientationValue,
@@ -1613,7 +1615,7 @@ export struct VideoPlayerPage {
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
           if (this.vm.abActive) {
-            Text('关闭')
+            Text($r('app.string.close'))
               .fontSize(12)
               .fontColor('#FFFFFF')
               .padding({
@@ -1626,7 +1628,7 @@ export struct VideoPlayerPage {
               .backgroundColor('#33FFFFFF')
               .onClick(() => this.vm.resetAb())
           } else {
-            Text('设置 B')
+            Text($r('app.string.set_b_point'))
               .fontSize(12)
               .fontColor('#FFFFFF')
               .padding({
@@ -1639,7 +1641,7 @@ export struct VideoPlayerPage {
               .backgroundColor('#FF8800')
               .onClick(() => {
                 this.vm.setAbPointB();
-                UiFeedback.showToast({ message: this.vm.abActive ? 'A-B 循环已开启' : 'B 点需在 A 点之后' });
+                UiFeedback.showToast({ message: this.vm.abActive ? $r('app.string.ab_repeat_enabled') : $r('app.string.ab_repeat_b_after_a') });
               })
           }
         }
@@ -1660,11 +1662,11 @@ export struct VideoPlayerPage {
         Stack({ alignContent: Alignment.TopStart }) {
           Slider({
             value: this.seeking
-              ? this.seekPercent
-              : (this.vm.duration > 0 ? this.vm.position * 100 / this.vm.duration : 0),
+              ? this.seekPercent * this.vm.duration / 100
+              : this.vm.position,
             min: 0,
-            max: 100,
-            step: 0.1,
+            max: Math.max(1, this.vm.duration),
+            step: 1,
             style: SliderStyle.OutSet,
           })
             .layoutWeight(1)
@@ -1673,16 +1675,20 @@ export struct VideoPlayerPage {
             .trackColor('#61FFFFFF')
             .enabled(true)
             .onChange((v: number, mode: SliderChangeMode) => {
+              if (this.vm.duration <= 0) {
+                return;
+              }
+              const percent: number = v * 100 / this.vm.duration;
               if (mode === SliderChangeMode.Begin) {
                 this.seeking = true;
-                this.seekPercent = v;
+                this.seekPercent = percent;
               } else if (mode === SliderChangeMode.Moving) {
-                this.seekPercent = v;
+                this.seekPercent = percent;
               } else {
                 // End / Click → 落 seek
-                this.seekPercent = v;
+                this.seekPercent = percent;
                 this.seeking = false;
-                this.vm.seekTo(Math.floor(this.vm.duration * v / 100));
+                this.vm.seekTo(Math.floor(v));
               }
               this.resetHudTimer();
             })
@@ -1761,19 +1767,17 @@ export struct VideoPlayerPage {
             .onClick(() => this.onBottomAction(actionRepeatItem.item.id))
         }).key((action: VideoPlayerBottomAction): string => action.id)
         // 循环模式:0=关闭(白),1=列表循环(橙),2=单曲循环(橙 + 数字 1)
-        Image(this.vm.repeatMode === 2 ? $r('app.media.ic_repeat_one_audio') : $r('app.media.ic_repeat_audio'))
+        Image(this.vm.repeatMode === 0 ? $r('app.media.ic_repeat_audio') :
+          (this.vm.repeatMode === 2 ? $r('app.media.ic_repeat_one_audio') : $r('app.media.ic_repeat_all_audio')))
           .width(32).height(32)
           .fillColor(this.vm.repeatMode > 0 ? '#FF8800' : '#FFFFFF')
           .onClick(() => {
             const svc = PlaybackService.getInstance();
-            // 二态切换(0↔1)：与高级菜单中 'repeat' 项保持一致。
-            const next = svc.getRepeatMode() === 0 ? 1 : 0;
-            while (svc.getRepeatMode() !== next) {
-              svc.cycleRepeat();
-            }
-            this.vm.repeatMode = next;
+            svc.cycleRepeat();
+            this.vm.repeatMode = svc.getRepeatMode();
             UiFeedback.showToast({
-              message: next === 1 ? '已开启循环播放' : '已关闭循环播放'
+              message: this.vm.repeatMode === 2 ? $r('app.string.repeat_one_enabled') :
+                (this.vm.repeatMode === 1 ? $r('app.string.repeat_all_enabled') : $r('app.string.repeat_disabled'))
             });
           })
       }
@@ -1795,7 +1799,7 @@ export struct VideoPlayerPage {
   @Builder
   seekHud() {
     Column({ space: 6 }) {
-      Text('进度')
+      Text($r('app.string.progress_label'))
         .fontSize(14).fontColor('#FFFFFF')
       Text(this.seekHudText)
         .fontSize(16).fontColor('#FF8800').fontWeight(FontWeight.Medium)
@@ -1814,7 +1818,7 @@ export struct VideoPlayerPage {
   @Builder
   brightnessHud() {
     Column({ space: 8 }) {
-      Text('亮度')
+      Text($r('app.string.brightness_label'))
         .fontSize(14).fontColor('#FFFFFF')
       Progress({
         value: this.brightnessLevel * 100,
@@ -1842,7 +1846,7 @@ export struct VideoPlayerPage {
   @Builder
   volumeHud() {
     Column({ space: 8 }) {
-      Text('音量')
+      Text($r('app.string.volume_label'))
         .fontSize(14).fontColor('#FFFFFF')
       Progress({
         value: this.volumeMax > this.volumeMin
@@ -2099,7 +2103,7 @@ export struct VideoPlayerPage {
     if (id === 'abRepeat') {
       if (this.vm.abActive) {
         this.vm.resetAb();
-        UiFeedback.showToast({ message: '已关闭 A-B 循环' });
+        UiFeedback.showToast({ message: $r('app.string.ab_repeat_closed') });
       } else if (this.vm.abPointA < 0) {
         this.vm.setAbPointA();
         // 强制 HUD 持续可见 —— 等待用户设 B 时不能自动隐藏。
@@ -2108,30 +2112,28 @@ export struct VideoPlayerPage {
           clearTimeout(this.hudTimer);
           this.hudTimer = -1;
         }
-        UiFeedback.showToast({ message: '已设置 A 点,请拖动至结束位置后再次点击 A-B 循环' });
+        UiFeedback.showToast({ message: $r('app.string.ab_repeat_set_a') });
       } else {
         this.vm.setAbPointB();
         if (this.vm.abActive) {
-          UiFeedback.showToast({ message: 'A-B 循环已开启' });
+          UiFeedback.showToast({ message: $r('app.string.ab_repeat_enabled') });
         } else {
-          UiFeedback.showToast({ message: 'B 点需在 A 点之后' });
+          UiFeedback.showToast({ message: $r('app.string.ab_repeat_b_after_a') });
         }
       }
       return;
     }
     if (id === 'repeat') {
       const svc = PlaybackService.getInstance();
-      // 二态切换(0↔1):用户视角是「开关」式,避免三态循环让「关闭循环」需要两次点击。
-      const next: number = svc.getRepeatMode() === 0 ? 1 : 0;
-      // 走 cycleRepeat 三次等价于循环回原值;此处用 emitQueue 让 onQueueChanged 同步 vm 状态。
-      while (svc.getRepeatMode() !== next) {
-        svc.cycleRepeat();
-      }
-      this.vm.repeatMode = next;
-      UiFeedback.showToast({ message: next === 1 ? '已开启循环播放' : '已关闭循环播放' });
+      svc.cycleRepeat();
+      this.vm.repeatMode = svc.getRepeatMode();
+      UiFeedback.showToast({
+        message: this.vm.repeatMode === 2 ? $r('app.string.repeat_one_enabled') :
+          (this.vm.repeatMode === 1 ? $r('app.string.repeat_all_enabled') : $r('app.string.repeat_disabled'))
+      });
       return;
     }
-    UiFeedback.showToast({ message: '该功能暂未实现' });
+    UiFeedback.showToast({ message: $r('app.string.feature_not_implemented') });
   }
 
   /** 应用退后台监听器(aboutToAppear 注册,aboutToDisappear 注销)。 */
@@ -2146,18 +2148,18 @@ export struct VideoPlayerPage {
    * - speed / savePlaylist 半屏(MEDIUM)。
    * - 其余自适应内容(FIT_CONTENT)。
    */
-   private sheetHeight(): SheetSize | Length {
-     if (this.sheetKind === 'audioSubInfo') {
-       return '40%';
-     }
-     if (this.sheetKind === 'speed' || this.sheetKind === 'savePlaylist') {
-       return SheetSize.MEDIUM;
-     }
-     if (this.sheetKind === 'controls') {
-       return SheetSize.LARGE;
-     }
-     return SheetSize.FIT_CONTENT;
-   }
+  private sheetHeight(): SheetSize | Length {
+    if (this.sheetKind === 'audioSubInfo') {
+      return '80%';
+    }
+    if (this.sheetKind === 'speed' || this.sheetKind === 'savePlaylist') {
+      return SheetSize.MEDIUM;
+    }
+    if (this.sheetKind === 'controls') {
+      return SheetSize.LARGE;
+    }
+    return SheetSize.LARGE;
+  }
 
   private armSleepTimer(): void {
     if (this.sleepMillis <= 0) {
@@ -2232,14 +2234,8 @@ export struct VideoPlayerPage {
         await this.enterPopupPlayer();
       }
     } else {
-      // 停止播放前保存位置（续播）
+      // stop persists this video's position through the shared resume store.
       const svc = PlaybackService.getInstance();
-      const pos: number = svc.getPosition();
-      const dur: number = svc.getDuration();
-      if (this.vm.uri.length > 0 && pos > 5000 && dur > 0 && pos < dur - 1000) {
-        Settings.put(Settings.VIDEO_RESUME_URI, this.vm.uri);
-        Settings.put(Settings.VIDEO_RESUME_TIME, Math.floor(pos));
-      }
       svc.stop();
     }
   }
@@ -2307,6 +2303,7 @@ export struct VideoPlayerPage {
         return this.vm.hudVisible;
       },
       onPanBegan: (): void => {
+        this.pendingSeekTarget = -1;
         if (this.vm.locked) {
           return;
         }
@@ -2351,7 +2348,7 @@ export struct VideoPlayerPage {
           return;
         }
         this.pendingSeekTarget = targetMs;
-        const sign: string = jumpMs >= 0 ? '+' : '';
+        const sign: string = jumpMs >= 0 ? '+' : '-';
         this.seekHudText = `${sign}${fmtTime(Math.abs(jumpMs))} (${fmtTime(targetMs)})`;
         this.seekHudVisible = true;
         this.volumeHudVisible = false;
@@ -2361,7 +2358,14 @@ export struct VideoPlayerPage {
           this.seekHudTimer = -1;
         }
       },
-      onPanEnded: (mode: VideoPanMode): void => {
+      onPanEnded: (mode: VideoPanMode, cancelled: boolean): void => {
+        if (cancelled) {
+          this.pendingSeekTarget = -1;
+          this.seekHudVisible = false;
+          this.armBrightnessHudTimer();
+          this.armVolumeHudTimer();
+          return;
+        }
         if (this.vm.locked) {
           return;
         }
@@ -2383,6 +2387,10 @@ export struct VideoPlayerPage {
           }
           this.armSeekHudTimer();
         }
+      },
+      onFastPlay: (active: boolean, rate: number): void => {
+        // Temporary speed must not overwrite the user's saved playback speed.
+        PlaybackService.getInstance().setSpeed(active ? rate : this.vm.speed);
       },
     });
   }
@@ -2539,7 +2547,7 @@ export struct VideoPlayerPage {
     Settings.put(Settings.VIDEO_RATIO, value);
     this.vm.setVideoRatioMode(value);
     this.closeVideoRatioDialog();
-    UiFeedback.showToast({ message: `画面比例：${videoRatioLabel(value)}` });
+    UiFeedback.showToast({ message: $r('app.string.video_aspect_ratio_label', videoRatioLabel(value)) });
   }
 
   private async applyBrightness(value: number): Promise<void> {

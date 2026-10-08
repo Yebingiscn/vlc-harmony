@@ -95,7 +95,7 @@ export struct OnboardingPage {
   @Builder
   welcomeContent() {
     Column() {
-      Image($r('app.media.ic_about_logo')).width(96).height(96).objectFit(ImageFit.Contain).margin({ bottom: 24 })
+      Image($r('app.media.Layer1')).width(96).height(96).objectFit(ImageFit.Contain).margin({ bottom: 24 })
       Text($r('app.string.welcome_title')).fontSize(24).fontColor($r('app.color.list_title')).fontWeight(FontWeight.Bold)
       Text($r('app.string.welcome_subtitle'))
         .fontSize(14)

@@ -122,12 +122,10 @@ export struct HistoryFragmentPage {
       }
       return items;
     }
-    items.push(this.createTitleMenuItem($r('app.media.ic_search'), '搜索',
-      () => UiFeedback.showToast({ message: '搜索功能暂未实现' })));
     items.push(this.createTitleMenuItem($r('app.media.ic_delete'), '清空',
       () => this.requestClearHistory()));
     items.push(this.createTitleMenuItem(
-      this.incognitoMode ? $r('app.media.ic_incognito') : $r('app.media.ic_about_logo'),
+      this.incognitoMode ? $r('app.media.ic_incognito') : $r('app.media.Layer1'),
       $r('app.string.incognito_mode'),
       () => void this.setIncognito(!this.incognitoMode)));
     items.push(this.createTitleMenuItem($r('app.media.ic_refresh'), $r('app.string.menu_refresh'),

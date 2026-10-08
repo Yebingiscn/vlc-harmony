@@ -5,7 +5,7 @@ import { AppColors } from '../common/constants/AppConstants';
  * 值:-1=自动(不干预,OHOS 默认优先硬解,失败自动回退软解) 0=禁用(强制软解)
  *      1=解码加速(硬解但关闭直渲) 2=完全加速(硬解+直渲)。
  */
-export const HARDWARE_ACCELERATION_DEFAULT: string = '-1';
+export const HARDWARE_ACCELERATION_DEFAULT: string = '2';
 
 export const HARDWARE_ACCELERATION_VALUES: string[] = ['-1', '0', '1', '2'];
 

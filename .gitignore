@@ -64,7 +64,12 @@ oh_modules
 # AI coding tool local workspace
 .codegenie
 .codegraph/
+.tmp/
+.tmp-run-*/
 *.dmp
+
+# Generated native build staging; packaged runtime libraries live in entry/libs.
+/ohos_vlc/library/
 # Signing material (private keys, certs) - never commit
 sign/
 sign/**

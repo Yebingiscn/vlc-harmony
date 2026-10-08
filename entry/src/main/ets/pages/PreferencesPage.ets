@@ -11,7 +11,7 @@ import { Settings } from '../common/data/Settings';
 import { AppTheme } from '../common/data/AppTheme';
 import { PreferenceGroup, PreferenceItem, PreferenceScreen } from '../common/models/PreferenceModels';
 import { PreferencesScreenParam } from '../common/models/MediaModels';
-import { i18n } from '@kit.LocalizationKit';
+
 import { LengthMetrics } from '@kit.ArkUI';
 import {
   DividerShowType,
@@ -31,7 +31,7 @@ const COLOR_PALETTE: number[] = [
 /**
  * PreferencesPage —— VLC 偏好设置通用引擎(@ComponentV2 NavDestination)。
  * 接收 @Param screenKey;从 buildScreens() 注册表(Map<key,PreferenceScreen>)取 screen;
- * VlcToolbar(标题=screen.title,showBack)+ Scroll{Column{ 分组标题 + ForEach items{ PreferenceRow } }}。
+ * HdsNavDestination 标题栏 + Scroll{Column{ 分组标题 + Repeat items{ PreferenceRow } }}。
  *
  * 各子 Preferences* 的 screen 数据定义在 buildScreens()(文案/分组/项 key 用 Settings 真实 key,
  * 文案优先 $r('app.string.*');string.json 未覆盖的 key 用字面量字符串,逐字照搬 spec)。
@@ -273,15 +273,7 @@ export struct PreferencesPage {
           $r('app.string.enable_black_theme')],
       }),
       new PreferenceItem({
-        key: 'set_locale',
-        title: $r('app.string.setting_language'),
-        type: 'list',
-        defaultValue: 'default',
-        optionValues: ['default', 'zh-CN', 'en-US'],
-        options: [$r('app.string.locale_follow_system'), $r('app.string.locale_simplified_chinese'),
-          $r('app.string.locale_english')],
-      }),
-      new PreferenceItem({
+
         key: Settings.LIST_TITLE_ELLIPSIZE,
         title: $r('app.string.list_title_ellipsize'),
         type: 'list',
@@ -1260,21 +1252,13 @@ export struct PreferencesPage {
         options: ['Disabled', 'Show the screenshot button', 'Tap with 3 fingers', 'Button and gesture']
       }),
       new PreferenceItem({
-        key: Settings.ENABLE_FASTPLAY,
-        title: 'Enable Fastplay',
-        type: 'toggle',
-        summary: 'Tap and hold to increase the playback speed',
-        defaultValue: false
-      }),
-      new PreferenceItem({
         key: Settings.FASTPLAY_SPEED,
         title: 'Fastplay speed',
         type: 'seekbar',
         min: 11,
         max: 80,
         defaultValue: 20,
-        step: 1,
-        dependency: Settings.ENABLE_FASTPLAY
+        step: 1
       }),
     ];
     const player: PreferenceItem[] = [
@@ -1825,19 +1809,7 @@ export struct PreferencesPage {
 
   /** list 单选确认 → Settings.put(key, 选中 optionValue)。 */
   onListConfirm(value: string): void {
-    if (this.sheetItem.key === 'set_locale') {
-      // HarmonyOS 会向当前进程分发语言配置更新，无需主动重启应用。
-      try {
-        i18n.System.setAppPreferredLanguage(this.appPreferredLanguage(value));
-      } catch (err) {
-        return;
-      }
-      this.listValue = value;
-      Settings.put(this.sheetItem.key, value);
-      this.rowVersion++;
-      this.closePreferenceDialog();
-      return;
-    }
+
     if (this.sheetItem.key === Settings.KEY_APP_THEME) {
       AppTheme.apply(value);
     }
@@ -2219,11 +2191,4 @@ export struct PreferencesPage {
     return map;
   }
 
-  /** 将旧版空字符串兼容为 HarmonyOS 的系统语言标识 default。 */
-  private appPreferredLanguage(value: string): string {
-    if (value.length === 0 || value === 'default') {
-      return 'default';
-    }
-    return value;
-  }
 }

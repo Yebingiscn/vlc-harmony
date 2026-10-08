@@ -30,7 +30,7 @@ export function screenOrientationLabel(value: string): string {
  */
 @ComponentV2
 export struct ScreenOrientationDialog {
-  @Param title: ResourceStr = '视频屏幕方向';
+  @Param title: ResourceStr = $r('app.string.video_orientation');
   @Param labels: string[] = SCREEN_ORIENTATION_LABELS;
   @Param values: string[] = SCREEN_ORIENTATION_VALUES;
   @Param selectedValue: string = SCREEN_ORIENTATION_DEFAULT;
@@ -40,7 +40,8 @@ export struct ScreenOrientationDialog {
   };
 
   build() {
-    Column() {
+    Scroll() {
+      Column() {
       Text(this.title)
         .fontSize(20)
         .fontWeight(FontWeight.Medium)
@@ -87,7 +88,11 @@ export struct ScreenOrientationDialog {
     .width('100%')
     .padding(20)
     .backgroundColor($r('app.color.background_default'))
-    .borderRadius(16)
+      .borderRadius(16)
+    }
+    .width('100%')
+    .constraintSize({ maxHeight: '85%' })
+    .scrollBar(BarState.Auto)
   }
 
   private valueAt(index: number): string {

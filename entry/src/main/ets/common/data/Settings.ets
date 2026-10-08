@@ -82,7 +82,7 @@ export class Settings {
   static readonly VIDEO_RATIO: string = 'video_ratio';
   static readonly SCREEN_ORIENTATION: string = 'screen_orientation';
   static readonly KEY_HARDWARE_ACCELERATION: string = 'hardware_acceleration';
-  static readonly HARDWARE_ACCELERATION_DEFAULT: string = '-1';
+  static readonly HARDWARE_ACCELERATION_DEFAULT: string = '2';
   static readonly VIDEO_HUD_TIMEOUT: string = 'video_hud_timeout_in_s';
   static readonly VIDEO_TRANSITION_SHOW: string = 'video_transition_show';
   static readonly ENABLE_SEEK_BUTTONS: string = 'enable_seek_buttons';
@@ -92,7 +92,6 @@ export class Settings {
   static readonly ENABLE_VOLUME_GESTURE: string = 'enable_volume_gesture';
   static readonly ENABLE_BRIGHTNESS_GESTURE: string = 'enable_brightness_gesture';
   static readonly ENABLE_SCALE_GESTURE: string = 'enable_scale_gesture';
-  static readonly ENABLE_FASTPLAY: string = 'enable_fastplay';
   static readonly FASTPLAY_SPEED: string = 'fastplay_speed';
   static readonly SAVE_BRIGHTNESS: string = 'save_brightness';
   static readonly BRIGHTNESS_VALUE: string = 'brightness_value';

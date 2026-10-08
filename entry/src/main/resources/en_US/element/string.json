@@ -1535,6 +1535,286 @@
     {
       "name": "reason_file_access_persist",
       "value": "Allows continued access to audio and video files you explicitly import"
+    },
+    {
+      "name": "video_controls_settings",
+      "value": "Controls settings"
+    },
+    {
+      "name": "audio_boost_title",
+      "value": "Audio boost"
+    },
+    {
+      "name": "audio_boost_summary",
+      "value": "Allow volume amplification up to 200%"
+    },
+    {
+      "name": "gesture_section",
+      "value": "Gestures"
+    },
+    {
+      "name": "volume_gesture_title",
+      "value": "Volume gesture"
+    },
+    {
+      "name": "volume_gesture_summary",
+      "value": "Control volume with gestures during video playback"
+    },
+    {
+      "name": "brightness_gesture_title",
+      "value": "Brightness gesture"
+    },
+    {
+      "name": "brightness_gesture_summary",
+      "value": "Control display brightness with gestures during video playback"
+    },
+    {
+      "name": "swipe_seek_title",
+      "value": "Swipe to seek"
+    },
+    {
+      "name": "swipe_seek_summary",
+      "value": "Swipe left or right to control the progress bar"
+    },
+    {
+      "name": "pinch_zoom_title",
+      "value": "Pinch to zoom"
+    },
+    {
+      "name": "pinch_zoom_summary",
+      "value": "Use two fingers to zoom in/out"
+    },
+    {
+      "name": "double_tap_seek_title",
+      "value": "Double tap to seek"
+    },
+    {
+      "name": "double_tap_seek_summary",
+      "value": "Double tap near screen edges to fast forward/rewind 10 seconds"
+    },
+    {
+      "name": "double_tap_play_pause_title",
+      "value": "Double tap to play/pause"
+    },
+    {
+      "name": "double_tap_play_pause_summary",
+      "value": "Double tap the center of the screen to play/pause"
+    },
+    {
+      "name": "screenshot_disabled_title",
+      "value": "Screenshot capture"
+    },
+    {
+      "name": "screenshot_disabled_summary",
+      "value": "Disabled"
+    },
+    {
+      "name": "save",
+      "value": "Save"
+    },
+    {
+      "name": "controls_settings_saved",
+      "value": "Controls settings saved"
+    },
+    {
+      "name": "repeat_one_enabled",
+      "value": "Single track repeat enabled"
+    },
+    {
+      "name": "repeat_all_enabled",
+      "value": "List repeat enabled"
+    },
+    {
+      "name": "repeat_disabled",
+      "value": "Repeat disabled"
+    },
+    {
+      "name": "ab_repeat_closed",
+      "value": "A-B repeat closed"
+    },
+    {
+      "name": "ab_repeat_set_a",
+      "value": "Point A set, drag to end position and tap A-B repeat again"
+    },
+    {
+      "name": "ab_repeat_enabled",
+      "value": "A-B repeat enabled"
+    },
+    {
+      "name": "ab_repeat_b_after_a",
+      "value": "Point B must be after point A"
+    },
+    {
+      "name": "feature_not_implemented",
+      "value": "This feature is not yet implemented"
+    },
+    {
+      "name": "set_b_point",
+      "value": "Set B"
+    },
+    {
+      "name": "progress_label",
+      "value": "Progress"
+    },
+    {
+      "name": "brightness_label",
+      "value": "Brightness"
+    },
+    {
+      "name": "volume_label",
+      "value": "Volume"
+    },
+    {
+      "name": "video_orientation",
+      "value": "Video orientation"
+    },
+    {
+      "name": "video_aspect_ratio_label",
+      "value": "Aspect ratio: %s"
+    },
+    {
+      "name": "no_video_to_play",
+      "value": "No video to play"
+    },
+    {
+      "name": "play_as_audio_enabled",
+      "value": "Switched to audio-only mode"
+    },
+    {
+      "name": "pip_not_supported",
+      "value": "Picture-in-picture is not supported on this device"
+    },
+    {
+      "name": "video_not_ready",
+      "value": "Video is not ready yet"
+    },
+    {
+      "name": "pip_entered",
+      "value": "Entered picture-in-picture"
+    },
+    {
+      "name": "pip_failed",
+      "value": "Failed to start picture-in-picture"
+    },
+    {
+      "name": "subtitle_loaded",
+      "value": "Subtitle loaded"
+    },
+    {
+      "name": "subtitle_load_failed",
+      "value": "Subtitle loading failed"
+    },
+    {
+      "name": "speed_set_to",
+      "value": "Playback speed set to %sx"
+    },
+    {
+      "name": "no_video_to_save",
+      "value": "No video to save"
+    },
+    {
+      "name": "saved_to_playlist",
+      "value": "Saved to playlist"
+    },
+    {
+      "name": "saved_to_playlist_count",
+      "value": "Saved to %d playlists"
+    },
+    {
+      "name": "bookmark_saved",
+      "value": "Bookmark saved"
+    },
+    {
+      "name": "bookmark_rename_dev",
+      "value": "Bookmark rename is under development"
+    },
+    {
+      "name": "custom_preset_name",
+      "value": "Custom %d"
+    },
+    {
+      "name": "sleep_timer_enabled",
+      "value": "Sleep timer enabled"
+    },
+    {
+      "name": "unknown_artist",
+      "value": "Unknown artist"
+    },
+    {
+      "name": "no_artist_info",
+      "value": "No artist information for this track"
+    },
+    {
+      "name": "sleep_timer_paused",
+      "value": "Sleep timer: playback paused"
+    },
+    {
+      "name": "sleep_timer_set",
+      "value": "Sleep timer set to %s"
+    },
+    {
+      "name": "no_track_to_save",
+      "value": "No track to save"
+    },
+    {
+      "name": "hours_minutes",
+      "value": "%dh %dm"
+    },
+    {
+      "name": "hours_only",
+      "value": "%dh"
+    },
+    {
+      "name": "minutes_only",
+      "value": "%dm"
+    },
+    {
+      "name": "encountered_error_message",
+      "value": "Unable to play this video"
+    },
+    {
+      "name": "sleep_timer_input_hint",
+      "value": "Enter digits for hours, :00 / :30 for minutes"
+    },
+    {
+      "name": "sleep_timer_set_wait",
+      "value": "Sleep timer set: %s, wait for media end"
+    },
+    {
+      "name": "sleep_timer_cancelled",
+      "value": "Sleep timer cancelled"
+    },
+    {
+      "name": "sleep_timer_fired",
+      "value": "Sleep timer ended, playback paused"
+    },
+    {
+      "name": "add_to_existing_playlist",
+      "value": "Add to existing playlist"
+    },
+    {
+      "name": "save_playlist_hint_zh",
+      "value": "To help everyone find the videos they love"
+    },
+    {
+      "name": "media_count_suffix",
+      "value": "%d media"
+    },
+    {
+      "name": "lock_player",
+      "value": "Lock"
+    },
+    {
+      "name": "swipe_to_unlock",
+      "value": "Swipe to unlock"
+    },
+    {
+      "name": "permission_media_warning",
+      "value": "To enable this, please disable full file access first"
+    },
+    {
+      "name": "permission_onboarding_perm_media",
+      "value": "You will be able to auto-discover regular media files"
     }
   ]
 }

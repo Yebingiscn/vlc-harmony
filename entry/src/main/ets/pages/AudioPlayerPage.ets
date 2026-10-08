@@ -202,7 +202,7 @@ export struct AudioPlayerPage {
             Row() {
               Image($r('app.media.ic_sleep'))
                 .width(20).height(20).fillColor('#FF8800').margin({ right: 6 })
-              Text('睡眠定时器已开启')
+              Text($r('app.string.sleep_timer_enabled'))
                 .fontSize(12).fontColor('#FF8800')
             }
             .width('100%')
@@ -239,7 +239,7 @@ export struct AudioPlayerPage {
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .margin({ bottom: 4 })
-            Text(this.vm.artist.length > 0 ? this.vm.artist : '未知艺术家')
+            Text(this.vm.artist.length > 0 ? this.vm.artist : $r('app.string.unknown_artist'))
               .fontSize(14).fontColor($r('app.color.list_subtitle'))
               .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
           }
@@ -256,7 +256,7 @@ export struct AudioPlayerPage {
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
               if (this.abActive) {
-                Text('关闭')
+                Text($r('app.string.close'))
                   .fontSize(12)
                   .fontColor('#FFFFFF')
                   .padding({
@@ -269,7 +269,7 @@ export struct AudioPlayerPage {
                   .backgroundColor('#33FFFFFF')
                   .onClick(() => this.resetAb())
               } else {
-                Text('设置 B')
+                Text($r('app.string.set_b_point'))
                   .fontSize(12)
                   .fontColor('#FFFFFF')
                   .padding({
@@ -296,9 +296,9 @@ export struct AudioPlayerPage {
           Row() {
             Text(formatDuration(this.vm.position)).fontSize(12).fontColor($r('app.color.list_subtitle')).width(48)
             Slider({
-              value: this.vm.duration > 0 ? this.vm.position * 100 / this.vm.duration : 0,
+              value: this.vm.position,
               min: 0,
-              max: 100,
+              max: Math.max(1, this.vm.duration),
               step: 1,
               style: SliderStyle.OutSet,
             })
@@ -306,10 +306,10 @@ export struct AudioPlayerPage {
               .blockColor($r('app.color.orange500'))
               .selectedColor($r('app.color.orange500'))
               .trackColor($r('app.color.card_border'))
-              .enabled(!this.vm.locked)
+              .enabled(!this.vm.locked && this.vm.duration > 0)
               .onChange((v: number, mode: SliderChangeMode) => {
                 if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-                  const seekMs = Math.floor(this.vm.duration * v / 100);
+                  const seekMs = Math.floor(v);
                   PlaybackService.seek(seekMs);
                 }
               })
@@ -637,7 +637,7 @@ export struct AudioPlayerPage {
         this.abPointA = Math.max(0, Math.floor(this.vm.position));
         this.abPointB = -1;
         this.abActive = false;
-        UiFeedback.showToast({ message: '已设置 A 点，拖动进度条后再次点击 A-B 循环设 B 点' });
+        UiFeedback.showToast({ message: $r('app.string.ab_repeat_set_a') });
       } else {
         this.setAbPointB();
       }
@@ -664,11 +664,11 @@ export struct AudioPlayerPage {
         AudioBrowserRequest.requestGoToArtist(cur.artistName);
         NavController.popToMain();
       } else {
-        UiFeedback.showToast({ message: '当前曲目没有艺术家信息' });
+        UiFeedback.showToast({ message: $r('app.string.no_artist_info') });
       }
       return;
     }
-    UiFeedback.showToast({ message: '该功能暂未实现' });
+    UiFeedback.showToast({ message: $r('app.string.feature_not_implemented') });
   }
 
   /**
@@ -711,7 +711,7 @@ export struct AudioPlayerPage {
     } else {
       PlaybackService.getInstance().setSpeed(action.speed);
     }
-    UiFeedback.showToast({ message: `播放速度已设为 ${action.speed.toFixed(2)}x` });
+    UiFeedback.showToast({ message: $r('app.string.speed_set_to', action.speed.toFixed(2)) });
     this.animateClose(() => {
       this.speedOpen = false;
     });
@@ -726,12 +726,12 @@ export struct AudioPlayerPage {
     }
     const b: number = Math.max(0, Math.floor(this.vm.position));
     if (b <= this.abPointA) {
-      UiFeedback.showToast({ message: 'B 点需在 A 点之后' });
+      UiFeedback.showToast({ message: $r('app.string.ab_repeat_b_after_a') });
       return;
     }
     this.abPointB = b;
     this.abActive = true;
-    UiFeedback.showToast({ message: 'A-B 循环已开启' });
+    UiFeedback.showToast({ message: $r('app.string.ab_repeat_enabled') });
   }
 
   /** 关闭并重置 A-B 循环(仿视频端 resetAb)。 */
@@ -739,7 +739,7 @@ export struct AudioPlayerPage {
     this.abPointA = -1;
     this.abPointB = -1;
     this.abActive = false;
-    UiFeedback.showToast({ message: '已关闭 A-B 循环' });
+    UiFeedback.showToast({ message: $r('app.string.ab_repeat_closed') });
   }
 
   fmtAbPoint(ms: number): string {
@@ -764,13 +764,13 @@ export struct AudioPlayerPage {
     this.sleepTimer = setTimeout(() => {
       this.sleepTimer = -1;
       PlaybackService.pause();
-      UiFeedback.showToast({ message: '睡眠定时器：播放已暂停' });
+      UiFeedback.showToast({ message: $r('app.string.sleep_timer_paused') });
     }, this.sleepMillis);
     const totalMin = Math.floor(millis / 60000);
     const h = Math.floor(totalMin / 60);
     const m = totalMin % 60;
     const span = h > 0 && m > 0 ? `${h}小时${m}分` : (h > 0 ? `${h}小时` : `${m}分钟`);
-    UiFeedback.showToast({ message: `睡眠定时器已设为 ${span}` });
+    UiFeedback.showToast({ message: $r('app.string.sleep_timer_set', span) });
     this.animateClose(() => {
       this.sleepOpen = false;
     });
@@ -798,7 +798,7 @@ export struct AudioPlayerPage {
     const timeMs = Math.max(0, Math.floor(this.vm.position));
     const bm = new BookMark(this.bookmarkIdSeq++, -1, timeMs, '');
     this.bookmarks = [...this.bookmarks, bm].sort((a, b) => a.timeMs - b.timeMs);
-    UiFeedback.showToast({ message: '已保存书签' });
+    UiFeedback.showToast({ message: $r('app.string.bookmark_saved') });
   }
 
   deleteBookmark(id: number): void {
@@ -808,7 +808,7 @@ export struct AudioPlayerPage {
   // ── 跳转至时间 ──
 
   renameBookmark(_id: number): void {
-    UiFeedback.showToast({ message: '书签重命名功能开发中' });
+    UiFeedback.showToast({ message: $r('app.string.bookmark_rename_dev') });
   }
 
   // ── 书签 ──
@@ -818,7 +818,7 @@ export struct AudioPlayerPage {
     const cur = svc.getCurrent();
     const uri = cur?.uri ?? '';
     if (uri.length === 0) {
-      UiFeedback.showToast({ message: '当前没有可保存的曲目' });
+      UiFeedback.showToast({ message: $r('app.string.no_track_to_save') });
       this.animateClose(() => {
         this.savePlaylistOpen = false;
       });
@@ -833,7 +833,8 @@ export struct AudioPlayerPage {
       }
     }
     const count = action.selectedIds.length;
-    UiFeedback.showToast({ message: count === 1 ? '已保存到播放列表' : `已保存到 ${count} 个播放列表` });
+    UiFeedback.showToast({ message: count === 1 ? $r('app.string.saved_to_playlist') :
+      $r('app.string.saved_to_playlist_count', count) });
     this.animateClose(() => {
       this.savePlaylistOpen = false;
     });

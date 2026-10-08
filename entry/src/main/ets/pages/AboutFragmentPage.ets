@@ -4,18 +4,18 @@ import { LengthMetrics } from '@kit.ArkUI';
 import { bundleManager } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import {
+  DividerShowType,
+  hdsMaterial,
   HdsNavDestination,
   HdsNavDestinationTitleMode,
-  DividerShowType,
-  ScrollEffectType,
-  hdsMaterial
+  ScrollEffectType
 } from '@kit.UIDesignKit';
+import { SuppressWarnings, SuppressWarningsType } from '@kit.BasicServicesKit';
 
 const SOURCE_CODE_URL: string = 'https://github.com/Yebingiscn/vlc-harmony';
 const DOMAIN: number = 0x0001;
 const TAG: string = 'AboutFragmentPage';
 
-/** 精简的应用信息页。 */
 @ComponentV2
 export struct AboutFragmentPage {
   @Local versionText: string = '';
@@ -24,24 +24,10 @@ export struct AboutFragmentPage {
     this.loadVersion();
   }
 
-  private async loadVersion(): Promise<void> {
-    try {
-      if (canIUse('SystemCapability.BundleManager.BundleFramework.Core')) {
-        const bundleInfo = await bundleManager.getBundleInfoForSelf(
-          bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION);
-        this.versionText = `${bundleInfo.versionName}(${bundleInfo.versionCode})`;
-      } else {
-        this.versionText = '未知版本';
-      }
-    } catch (error) {
-      hilog.error(DOMAIN, TAG, 'get bundleInfo failed, error is %{public}s', JSON.stringify(error));
-      this.versionText = '未知版本';
-    }
-  }
-
+  @SuppressWarnings({ rules: [SuppressWarningsType.SYSCAP] })
   build() {
     HdsNavDestination() {
-      Column() {
+      Scroll() {
         Column({ space: 16 }) {
           Image($r('app.media.sweet_vlc'))
             .width(120)
@@ -55,7 +41,7 @@ export struct AboutFragmentPage {
             .fontWeight(FontWeight.Bold)
             .fontColor($r('app.color.list_title'))
 
-          Text('基于 VLC')
+          Text('基于 VLC 内核')
             .fontSize(16)
             .fontColor($r('app.color.list_subtitle'))
 
@@ -83,14 +69,16 @@ export struct AboutFragmentPage {
             .width('100%')
             .textAlign(TextAlign.Center)
         }
-        .layoutWeight(1)
         .width('100%')
+        .constraintSize({ minHeight: '100%' })
         .justifyContent(FlexAlign.Center)
         .alignItems(HorizontalAlign.Center)
-        .padding({ left: 32, right: 32, bottom: 72 })
+        .padding({ left: 32, right: 32, top: 72, bottom: 72 })
       }
       .width('100%')
       .height('100%')
+      .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring)
       .backgroundColor($r('app.color.background_default'))
     }
     .titleBar({
@@ -169,5 +157,20 @@ export struct AboutFragmentPage {
       NavController.pop();
       return true;
     })
+  }
+
+  private async loadVersion(): Promise<void> {
+    try {
+      if (canIUse('SystemCapability.BundleManager.BundleFramework.Core')) {
+        const bundleInfo = await bundleManager.getBundleInfoForSelf(
+          bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION);
+        this.versionText = `${bundleInfo.versionName}(${bundleInfo.versionCode})`;
+      } else {
+        this.versionText = '未知版本';
+      }
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, 'get bundleInfo failed, error is %{public}s', JSON.stringify(error));
+      this.versionText = '未知版本';
+    }
   }
 }

@@ -213,11 +213,6 @@ export struct PreferencesActivityPage {
     .width('100%')
   }
 
-  /** 后续接入 PreferenceSearchActivityPage 的统一入口。 */
-  onSearch(): void {
-    UiFeedback.showToast({ message: '设置搜索功能暂未实现' });
-  }
-
   iconFor(item: SettingsHomeItem): Resource {
     if (item.iconKey === 'ui') {
       return $r('app.media.ic_ui');
@@ -427,16 +422,6 @@ export struct PreferencesActivityPage {
           icon: $r('app.media.ic_arrow_back'),
           label: '返回',
           action: () => NavController.pop()
-        },
-        menu: {
-          value: [{
-            content: {
-              icon: $r('app.media.ic_search'),
-              label: '搜索',
-              action: () => this.onSearch()
-            }
-          }],
-          maxCount: 3
         },
         divider: {
           showType: DividerShowType.AUTO

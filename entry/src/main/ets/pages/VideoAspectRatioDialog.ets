@@ -39,7 +39,8 @@ export struct VideoAspectRatioDialog {
   };
 
   build() {
-    Column() {
+    Scroll() {
+      Column() {
       Text('画面比例')
         .fontSize(20)
         .fontWeight(FontWeight.Medium)
@@ -81,7 +82,11 @@ export struct VideoAspectRatioDialog {
     .width('100%')
     .padding(20)
     .backgroundColor($r('app.color.background_default'))
-    .borderRadius(16)
+      .borderRadius(16)
+    }
+    .width('100%')
+    .constraintSize({ maxHeight: '85%' })
+    .scrollBar(BarState.Auto)
   }
 
   private valueAt(index: number): string {

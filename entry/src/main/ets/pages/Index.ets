@@ -142,7 +142,7 @@ struct Index {
     HdsNavigation(this.pathStack) {
       // navBar 根(启动闪屏:VLC logo + 背景色)
       Column() {
-        Image($r('app.media.ic_about_logo'))
+        Image($r('app.media.Layer1'))
           .width(96)
           .height(96)
           .objectFit(ImageFit.Contain)

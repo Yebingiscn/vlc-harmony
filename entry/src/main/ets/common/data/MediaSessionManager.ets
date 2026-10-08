@@ -255,7 +255,12 @@ export class MediaSessionManager {
     if (artworkPath.length > 0) {
       let source: image.ImageSource | null = null;
       try {
-        source = image.createImageSource(artworkPath);
+        // Image 组件接受 file:// URL，ImageSource 则需要沙箱文件路径。
+        const localPath: string = artworkPath.startsWith('file://') ? artworkPath.slice(7) : artworkPath;
+        source = image.createImageSource(localPath);
+        if (!source) {
+          throw new Error('Cannot create artwork ImageSource');
+        }
         return await source.createPixelMap({
           desiredSize: { width: 512, height: 512 },
           desiredPixelFormat: image.PixelMapFormat.RGBA_8888,
@@ -273,8 +278,11 @@ export class MediaSessionManager {
     }
     let defaultSource: image.ImageSource | null = null;
     try {
-      const content: Uint8Array = AppContext.get().resourceManager.getMediaContentSync($r('app.media.ic_about_logo').id);
+      const content: Uint8Array = AppContext.get().resourceManager.getMediaContentSync($r('app.media.Layer1').id);
       defaultSource = image.createImageSource(content.buffer);
+      if (!defaultSource) {
+        throw new Error('Cannot create default artwork ImageSource');
+      }
       return await defaultSource.createPixelMap({
         desiredSize: { width: 512, height: 512 },
         desiredPixelFormat: image.PixelMapFormat.RGBA_8888,

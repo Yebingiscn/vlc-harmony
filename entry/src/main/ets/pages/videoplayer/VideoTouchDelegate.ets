@@ -25,7 +25,8 @@ export interface VideoTouchHost {
   onBrightnessPan: (deltaNorm: number) => void;
   onSeekPan: (jumpMs: number, targetMs: number) => void;
   onPanBegan: () => void;
-  onPanEnded: (mode: VideoPanMode) => void;
+  onPanEnded: (mode: VideoPanMode, cancelled: boolean) => void;
+  onFastPlay: (active: boolean, rate: number) => void;
 }
 
 /**
@@ -42,6 +43,9 @@ export class VideoTouchDelegate {
   enableBrightnessGesture: boolean = true;
   enableSwipeSeek: boolean = true;
   jumpDelaySec: number = 10;
+  private fastPlayRate: number = 2;
+  private fastPlayTimer: number = -1;
+  private fastPlaying: boolean = false;
   private host: VideoTouchHost | null = null;
   private panMode: VideoPanMode = VideoPanMode.None;
   private tracking: boolean = false;
@@ -70,6 +74,7 @@ export class VideoTouchDelegate {
     this.enableBrightnessGesture = await Settings.getBoolean(Settings.ENABLE_BRIGHTNESS_GESTURE, true);
     this.enableSwipeSeek = await Settings.getBoolean(Settings.ENABLE_SWIPE_SEEK, true);
     this.jumpDelaySec = await Settings.getInt(Settings.KEY_VIDEO_DOUBLE_TAP_JUMP_DELAY, 10);
+    this.fastPlayRate = Math.max(1, (await Settings.getInt(Settings.FASTPLAY_SPEED, 20)) / 10);
     hilog.info(0x0001, 'VLC',
       '[VLC] TouchDelegate prefs play=%{public}s dseek=%{public}s swipe=%{public}s vol=%{public}s bri=%{public}s',
       String(this.enableDoubleTapPlay), String(this.enableDoubleTapSeek),
@@ -124,6 +129,7 @@ export class VideoTouchDelegate {
     }
 
     if (event.type === TouchType.Down) {
+      this.endFastPlay();
       if (!hasPoint) {
         return;
       }
@@ -137,6 +143,13 @@ export class VideoTouchDelegate {
       this.panMode = VideoPanMode.None;
       this.isSeeking = false;
       this.lastJumpMs = 0;
+      if (!this.shouldIgnoreSingleTapAt(y)) {
+        this.fastPlayTimer = setTimeout(() => {
+          this.fastPlayTimer = -1;
+          this.fastPlaying = true;
+          this.host?.onFastPlay(true, this.fastPlayRate);
+        }, 500);
+      }
       return;
     }
 
@@ -150,7 +163,11 @@ export class VideoTouchDelegate {
       }
       const dx: number = x - this.initX;
       const dy: number = y - this.initY;
+      if (this.fastPlaying) {
+        return;
+      }
       if (!this.moved && (Math.abs(dx) > this.panSlop || Math.abs(dy) > this.panSlop)) {
+        this.endFastPlay();
         this.moved = true;
         this.cancelSingleTap();
         if (Math.abs(dx) > Math.abs(dy)) {
@@ -170,11 +187,23 @@ export class VideoTouchDelegate {
 
     if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
       this.tracking = false;
+      const wasFastPlaying = this.fastPlaying;
+      this.endFastPlay();
+      if (wasFastPlaying) {
+        return;
+      }
+      if (event.type === TouchType.Cancel) {
+        if (this.panMode !== VideoPanMode.None) {
+          this.host.onPanEnded(this.panMode, true);
+        }
+        this.clearTouchAction();
+        return;
+      }
       if (this.panMode !== VideoPanMode.None) {
         const mode = this.panMode;
         this.panMode = VideoPanMode.None;
         this.isSeeking = false;
-        this.host.onPanEnded(mode);
+        this.host.onPanEnded(mode, false);
         hilog.info(0x0001, 'VLC', '[VLC] pan end mode=%{public}d jump=%{public}d', mode, this.lastJumpMs);
         this.lastJumpMs = 0;
         return;
@@ -210,6 +239,7 @@ export class VideoTouchDelegate {
   }
 
   clearTouchAction(): void {
+    this.endFastPlay();
     this.isSeeking = false;
     this.panMode = VideoPanMode.None;
     this.tracking = false;
@@ -229,6 +259,17 @@ export class VideoTouchDelegate {
       return false;
     }
     return localY < this.hudTopReserve || localY > h - this.hudBottomReserve;
+  }
+
+  private endFastPlay(): void {
+    if (this.fastPlayTimer !== -1) {
+      clearTimeout(this.fastPlayTimer);
+      this.fastPlayTimer = -1;
+    }
+    if (this.fastPlaying) {
+      this.fastPlaying = false;
+      this.host?.onFastPlay(false, this.fastPlayRate);
+    }
   }
 
   private scheduleSingleTap(): void {

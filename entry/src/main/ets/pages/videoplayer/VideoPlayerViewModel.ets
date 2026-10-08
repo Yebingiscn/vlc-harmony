@@ -200,7 +200,6 @@ export class VideoPlayerViewModel implements PlaybackListener {
 
   seekTo(ms: number): void {
     PlaybackService.getInstance().seek(ms);
-    this.position = ms;
   }
 
   setSpeed(rate: number): void {
@@ -219,14 +218,8 @@ export class VideoPlayerViewModel implements PlaybackListener {
       return;
     }
     this.leaving = true;
-    // 保存播放位置（续播）：播放超过 5s 且未到结尾才保存
     const svc = PlaybackService.getInstance();
-    const pos: number = svc.getPosition();
-    const dur: number = svc.getDuration();
-    if (this.uri.length > 0 && pos > 5000 && dur > 0 && pos < dur - 1000) {
-      Settings.put(Settings.VIDEO_RESUME_URI, this.uri);
-      Settings.put(Settings.VIDEO_RESUME_TIME, Math.floor(pos));
-    }
+    svc.saveVideoResume();
     if (this.listening) {
       svc.removeListener(this);
       this.listening = false;

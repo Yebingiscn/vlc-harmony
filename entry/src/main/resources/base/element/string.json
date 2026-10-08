@@ -1595,6 +1595,232 @@
     {
       "name": "reason_file_access_persist",
       "value": "用于在应用重启后继续访问您主动导入的音视频文件"
+    },
+    {
+      "name": "video_controls_settings",
+      "value": "控制设置"
+    },
+    {
+      "name": "audio_boost_title",
+      "value": "音频增强"
+    },
+    {
+      "name": "audio_boost_summary",
+      "value": "允许音量放大到 200%"
+    },
+    {
+      "name": "gesture_section",
+      "value": "手势"
+    },
+    {
+      "name": "volume_gesture_title",
+      "value": "音量手势"
+    },
+    {
+      "name": "volume_gesture_summary",
+      "value": "在视频回放过程中,通过手势控制音量"
+    },
+    {
+      "name": "brightness_gesture_title",
+      "value": "亮度手势"
+    },
+    {
+      "name": "brightness_gesture_summary",
+      "value": "在视频回放过程中,通过手势控制显示亮度"
+    },
+    {
+      "name": "swipe_seek_title",
+      "value": "滑动可进退"
+    },
+    {
+      "name": "swipe_seek_summary",
+      "value": "左右滑动手指可控制进度条"
+    },
+    {
+      "name": "pinch_zoom_title",
+      "value": "双指缩放"
+    },
+    {
+      "name": "pinch_zoom_summary",
+      "value": "用两根手指进行放大/缩小操作"
+    },
+    {
+      "name": "double_tap_seek_title",
+      "value": "轻按两下可进退"
+    },
+    {
+      "name": "double_tap_seek_summary",
+      "value": "在屏幕边缘轻按两下,可快进/快退 10 秒"
+    },
+    {
+      "name": "double_tap_play_pause_title",
+      "value": "轻按两下可播放/暂停"
+    },
+    {
+      "name": "double_tap_play_pause_summary",
+      "value": "在屏幕中央轻按两下可播放/暂停"
+    },
+    {
+      "name": "screenshot_disabled_title",
+      "value": "抓取截图"
+    },
+    {
+      "name": "screenshot_disabled_summary",
+      "value": "已禁用"
+    },
+    {
+
+      "name": "controls_settings_saved",
+      "value": "控制设置已保存"
+    },
+    {
+      "name": "repeat_one_enabled",
+      "value": "已开启单曲循环"
+    },
+    {
+      "name": "repeat_all_enabled",
+      "value": "已开启列表循环"
+    },
+    {
+      "name": "repeat_disabled",
+      "value": "已关闭循环播放"
+    },
+    {
+      "name": "ab_repeat_closed",
+      "value": "已关闭 A-B 循环"
+    },
+    {
+      "name": "ab_repeat_set_a",
+      "value": "已设置 A 点,请拖动至结束位置后再次点击 A-B 循环"
+    },
+    {
+      "name": "ab_repeat_enabled",
+      "value": "A-B 循环已开启"
+    },
+    {
+      "name": "ab_repeat_b_after_a",
+      "value": "B 点需在 A 点之后"
+    },
+    {
+      "name": "feature_not_implemented",
+      "value": "该功能暂未实现"
+    },
+    {
+      "name": "set_b_point",
+      "value": "设置 B"
+    },
+    {
+      "name": "progress_label",
+      "value": "进度"
+    },
+    {
+      "name": "brightness_label",
+      "value": "亮度"
+    },
+    {
+      "name": "volume_label",
+      "value": "音量"
+    },
+    {
+      "name": "video_orientation",
+      "value": "视频屏幕方向"
+    },
+    {
+      "name": "video_aspect_ratio_label",
+      "value": "画面比例：%s"
+    },
+    {
+      "name": "no_video_to_play",
+      "value": "没有可播放的视频"
+    },
+    {
+      "name": "play_as_audio_enabled",
+      "value": "已切换为仅播放音频"
+    },
+    {
+      "name": "pip_not_supported",
+      "value": "当前设备不支持画中画"
+    },
+    {
+      "name": "video_not_ready",
+      "value": "视频尚未就绪"
+    },
+    {
+      "name": "pip_entered",
+      "value": "已进入画中画"
+    },
+    {
+      "name": "pip_failed",
+      "value": "画中画启动失败"
+    },
+    {
+      "name": "subtitle_loaded",
+      "value": "字幕已加载"
+    },
+    {
+      "name": "subtitle_load_failed",
+      "value": "字幕加载失败"
+    },
+    {
+      "name": "speed_set_to",
+      "value": "播放速度已设为 %sx"
+    },
+    {
+      "name": "no_video_to_save",
+      "value": "当前没有可保存的视频"
+    },
+    {
+      "name": "saved_to_playlist",
+      "value": "已保存到播放列表"
+    },
+    {
+      "name": "saved_to_playlist_count",
+      "value": "已保存到 %d 个播放列表"
+    },
+    {
+      "name": "bookmark_saved",
+      "value": "已保存书签"
+    },
+    {
+      "name": "bookmark_rename_dev",
+      "value": "书签重命名功能开发中"
+    },
+    {
+      "name": "custom_preset_name",
+      "value": "自定义 %d"
+    },
+    {
+      "name": "sleep_timer_enabled",
+      "value": "睡眠定时器已开启"
+    },
+    {
+      "name": "unknown_artist",
+      "value": "未知艺术家"
+    },
+    {
+      "name": "no_artist_info",
+      "value": "当前曲目没有艺术家信息"
+    },
+    {
+      "name": "sleep_timer_paused",
+      "value": "睡眠定时器：播放已暂停"
+    },
+    {
+
+      "name": "no_track_to_save",
+      "value": "当前没有可保存的曲目"
+    },
+    {
+      "name": "hours_minutes",
+      "value": "%d小时%d分"
+    },
+    {
+      "name": "hours_only",
+      "value": "%d小时"
+    },
+    {
+      "name": "minutes_only",
+      "value": "%d分钟"
     }
   ]
 }

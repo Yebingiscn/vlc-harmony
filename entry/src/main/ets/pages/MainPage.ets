@@ -520,7 +520,7 @@ export struct MainPage {
         },
         subIcon: {
           content: {
-            icon: this.incognitoMode ? $r('app.media.ic_incognito') : $r('app.media.ic_about_logo'),
+            icon: this.incognitoMode ? $r('app.media.ic_incognito') : $r('app.media.Layer1'),
             label: $r('app.string.app_name'),
             isEnabled: false
           }

@@ -12,6 +12,7 @@ import { audio } from '@kit.AudioKit';
 import { call, observer as telephonyObserver } from '@kit.TelephonyKit';
 import { MediaWrapper, PlayState } from '../models/MediaModels';
 import { Settings } from './Settings';
+import { VideoResumeStore } from './VideoResumeStore';
 import { AppContext } from './AppContext';
 import { MediaSessionManager } from './MediaSessionManager';
 import { NetworkConnectionManager } from './NetworkConnectionManager';
@@ -170,6 +171,15 @@ export class PlaybackService {
   private pausedByCall: boolean = false;
   private audioEnvSubscribed: boolean = false;
   private lastTimeEmit: number = 0;
+  private timeEmitTimer: number = -1;
+  private subtitleChoiceMade: boolean = false;
+  private subtitleCheckAt: number = 0;
+  private progressWatchdog: number = -1;
+  private progressDiagnosticAt: number = 0;
+  private lastResumeSave: number = 0;
+  private resumeSaveChain: Promise<void> = Promise.resolve();
+  private pendingResumeMs: number = 0;
+  private activeVideoUri: string = '';
   /** AVSession 播放中进度同步定时器(确保通知栏进度条持续推进)。 */
   private sessionSyncTimer: number = -1;
   /**
@@ -518,7 +528,29 @@ export class PlaybackService {
   }
 
   setSpuTrack(id: number): boolean {
+    this.subtitleChoiceMade = true;
     return this.player ? this.player.setSpuTrack(id) : false;
+  }
+
+  private ensureSubtitleSelected(): void {
+    if (this.subtitleChoiceMade || this.activeVideoUri.length === 0 || !this.player) {
+      return;
+    }
+    const now: number = Date.now();
+    if (now - this.subtitleCheckAt < 1000) {
+      return;
+    }
+    this.subtitleCheckAt = now;
+    if (this.player.getSpuTrack() >= 0) {
+      this.subtitleChoiceMade = true;
+      return;
+    }
+    const tracks: VlcTrackInfo[] = this.player.getSpuTracks();
+    const candidate: VlcTrackInfo | undefined = tracks.find((track: VlcTrackInfo) => track.id >= 0);
+    if (candidate && this.player.setSpuTrack(candidate.id)) {
+      this.subtitleChoiceMade = true;
+      this.emitTracksChanged();
+    }
   }
 
   setVideoTrack(id: number): boolean {
@@ -830,6 +862,7 @@ export class PlaybackService {
   }
 
   pause(): void {
+    this.saveVideoResume();
     this.player?.pause();
   }
 
@@ -847,6 +880,9 @@ export class PlaybackService {
    * 本方法仅做同步簿记,立即返回;player 被标记失效,下次加载由 loadCurrent→ensureLivePlayer 重建。
    */
   stop(): void {
+    this.cancelTimeEmit();
+    this.saveVideoResume();
+    this.pendingResumeMs = 0;
     this.stopSessionSync();
     void this.stopContinuousTask();
     this.player?.stop();
@@ -1404,24 +1440,82 @@ export class PlaybackService {
    *  position 会触发 ArkUI 渲染风暴并积压 tsfn 队列;合并到 300ms 一刷。 */
   private onTimeChangedThrottled(ms: number): void {
     const now = Date.now();
+    this.position = ms;
+    if (now - this.lastResumeSave >= 5000) {
+      this.lastResumeSave = now;
+      this.saveVideoResume();
+    }
     if (now - this.lastTimeEmit < 300) {
+      if (this.timeEmitTimer === -1) {
+        this.timeEmitTimer = setTimeout(() => {
+          this.timeEmitTimer = -1;
+          this.lastTimeEmit = Date.now();
+          this.emitTime();
+        }, 300 - (now - this.lastTimeEmit));
+      }
       return;
     }
+    this.cancelTimeEmit();
     this.lastTimeEmit = now;
-    this.position = ms;
     this.emitTime();
+  }
+
+  private cancelTimeEmit(): void {
+    if (this.timeEmitTimer !== -1) {
+      clearTimeout(this.timeEmitTimer);
+      this.timeEmitTimer = -1;
+    }
+  }
+
+  saveVideoResume(completed: boolean = false): void {
+    if (!this.activeVideoUri || this.pendingResumeMs > 0 || Settings.incognitoMode) {
+      return;
+    }
+    const uri = this.activeVideoUri;
+    const time = this.position;
+    const duration = this.duration;
+    if (completed) {
+      this.activeVideoUri = '';
+    }
+    this.resumeSaveChain = this.resumeSaveChain.then(() => VideoResumeStore.save(uri, time, duration, completed));
   }
 
   private startSessionSync(): void {
     if (this.sessionSyncTimer !== -1) {
       return;
     }
+    this.progressWatchdog = setInterval(() => {
+      if (this.state !== PlayState.PLAYING || !this.player) {
+        return;
+      }
+      this.ensureSubtitleSelected();
+      const now: number = Date.now();
+      if (now - this.lastTimeEmit >= 1000) {
+        const nativeTime: number = this.player.getTime();
+        const nativeLength: number = this.player.getLength();
+        if (now - this.progressDiagnosticAt >= 5000) {
+          this.progressDiagnosticAt = now;
+          hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] progress fallback: native=%{public}d page=%{public}d length=%{public}d',
+            nativeTime, this.position, nativeLength);
+        }
+        if (nativeLength > 0) {
+          this.duration = nativeLength;
+        }
+        if (nativeTime >= 0) {
+          this.onTimeChangedThrottled(nativeTime);
+        }
+      }
+    }, 1000);
     this.sessionSyncTimer = setInterval(() => {
       void MediaSessionManager.updatePlaybackState(this.state, this.position, this.duration, this.speed);
     }, 10000);
   }
 
   private stopSessionSync(): void {
+    if (this.progressWatchdog !== -1) {
+      clearInterval(this.progressWatchdog);
+      this.progressWatchdog = -1;
+    }
     if (this.sessionSyncTimer !== -1) {
       clearInterval(this.sessionSyncTimer);
       this.sessionSyncTimer = -1;
@@ -1529,6 +1623,10 @@ export class PlaybackService {
     // 逐条打日志会把 hilog socket 写满导致 writev 阻塞,JS 主线程卡死(AppFreeze)。
     switch (event) {
       case 'playing':
+        if (this.pendingResumeMs > 0) {
+          this.player?.setTime(this.pendingResumeMs);
+          this.pendingResumeMs = 0;
+        }
         this.state = PlayState.PLAYING;
         this.emitState();
         this.refreshVideoSize();
@@ -1538,6 +1636,7 @@ export class PlaybackService {
         void MediaSessionManager.updatePlaybackState(PlayState.PLAYING, this.position, this.duration, this.speed);
         break;
       case 'paused':
+        this.saveVideoResume();
         this.state = PlayState.PAUSED;
         this.emitState();
         this.stopSessionSync();
@@ -1552,6 +1651,7 @@ export class PlaybackService {
         void MediaSessionManager.updatePlaybackState(PlayState.STOPPED, this.position, this.duration, this.speed);
         break;
       case 'ended':
+        this.saveVideoResume(true);
         this.emitMediaEnded();
         this.onComplete();
         this.stopSessionSync();
@@ -1567,6 +1667,7 @@ export class PlaybackService {
         void MediaSessionManager.updatePlaybackState(PlayState.ERROR, this.position, this.duration, this.speed);
         break;
       case 'timeChanged':
+        this.ensureSubtitleSelected();
         this.onTimeChangedThrottled(value);
         break;
       case 'lengthChanged':
@@ -1657,6 +1758,8 @@ export class PlaybackService {
   }
 
   private async loadCurrent(): Promise<void> {
+    this.saveVideoResume();
+    await this.resumeSaveChain;
     const item = this.getCurrent();
     if (!item || !this.lib) {
       hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] loadCurrent: empty queue or lib');
@@ -1731,6 +1834,7 @@ export class PlaybackService {
         hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] hardware acceleration: decoding (hw decode, no direct render)');
       } else if (hwAccel === '2') {
         media.addOption(':avcodec-hw=any');
+        media.addOption(':avcodec-dr');
         hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] hardware acceleration: full (hw decode + direct render)');
       } else {
         // 默认采用 OHCodec Surface 直出；字幕和 OSD 由独立透明 Surface 合成，
@@ -1762,6 +1866,10 @@ export class PlaybackService {
       return;
     }
 
+    this.cancelTimeEmit();
+    this.activeVideoUri = this.queueHistoryType === 'video' ? item.uri : '';
+    this.subtitleChoiceMade = false;
+    this.subtitleCheckAt = 0;
     this.duration = 0;
     this.position = 0;
     this.videoWidth = 0;
@@ -1772,23 +1880,15 @@ export class PlaybackService {
       this.emitVideoSize();
     }
     // 读取续播位置（匹配当前 URI 时恢复）
-    let resumeMs: number = 0;
-    const resumeUri: string = await Settings.getString(Settings.VIDEO_RESUME_URI, '');
-    if (resumeUri.length > 0 && resumeUri === item.uri) {
-      resumeMs = await Settings.getInt(Settings.VIDEO_RESUME_TIME, 0);
-      void Settings.put(Settings.VIDEO_RESUME_URI, '');
-      void Settings.put(Settings.VIDEO_RESUME_TIME, 0);
-    }
+    const resumeMs = await VideoResumeStore.load(this.activeVideoUri);
     // 按当前媒体的音视频语境应用速度:音频按 全局/单曲 优先级,视频沿用 this.speed(视频页自行管理)
     this.applyEffectiveSpeed();
     this.player.setScale(0);
     this.player.setVolume(this.volume);
+    this.pendingResumeMs = Math.max(0, resumeMs);
+    this.lastResumeSave = Date.now();
+    this.lastTimeEmit = 0;
     this.player.play();
-    if (resumeMs > 0) {
-      this.player.setTime(resumeMs);
-      this.position = resumeMs;
-      hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] resumed at %{public}d ms for %{public}s', resumeMs, item.uri);
-    }
     this.state = PlayState.PREPARED;
     this.emitState();
     const artwork: string = item.artworkPath.length > 0 ? item.artworkPath : item.artworkUrl;

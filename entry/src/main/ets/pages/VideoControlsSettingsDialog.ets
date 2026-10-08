@@ -8,19 +8,19 @@ import { Settings } from '../common/data/Settings';
  * 打开时从 Settings 读取已保存值,保存时回写全部开关。
  */
 
-export interface ControlsState {
-  audioBoost: boolean;
-  volGesture: boolean;
-  brightGesture: boolean;
-  swipeSeek: boolean;
-  pinchZoom: boolean;
-  doubleTapSeek: boolean;
-  doubleTapSeekDelay: number; // 秒
-  doubleTapPlayPause: boolean;
-  fastPlayback: boolean;
+@ObservedV2
+export class ControlsState {
+  @Trace audioBoost: boolean = false;
+  @Trace volGesture: boolean = true;
+  @Trace brightGesture: boolean = true;
+  @Trace swipeSeek: boolean = true;
+  @Trace pinchZoom: boolean = true;
+  @Trace doubleTapSeek: boolean = true;
+  @Trace doubleTapSeekDelay: number = 10;
+  @Trace doubleTapPlayPause: boolean = true;
 }
 
-type ToggleField = 'audioBoost' | 'volGesture' | 'brightGesture' | 'swipeSeek' | 'pinchZoom' | 'doubleTapPlayPause' | 'fastPlayback';
+type ToggleField = 'audioBoost' | 'volGesture' | 'brightGesture' | 'swipeSeek' | 'pinchZoom' | 'doubleTapPlayPause';
 
 @ComponentV2
 export struct VideoControlsSettingsDialog {
@@ -29,18 +29,8 @@ export struct VideoControlsSettingsDialog {
   readonly cDivider: Resource = $r('app.color.divider');
   // ── 视觉常量 ───────────────────────────────────────────
   readonly cCancelBg: Resource = $r('app.color.background_default_darker');
-  // 默认值:与参考图一致 —— 手势类全开,音频增强和快放默认关。
-  @Local state: ControlsState = {
-    audioBoost: false,
-    volGesture: true,
-    brightGesture: true,
-    swipeSeek: true,
-    pinchZoom: true,
-    doubleTapSeek: true,
-    doubleTapSeekDelay: 10,
-    doubleTapPlayPause: true,
-    fastPlayback: false,
-  };
+  // 默认值:与参考图一致 —— 手势类全开,音频增强默认关。
+  @Local state: ControlsState = new ControlsState();
 
   @Event onClose: () => void = () => {
   };
@@ -58,7 +48,6 @@ export struct VideoControlsSettingsDialog {
     this.state.doubleTapSeek = await Settings.getBoolean(Settings.ENABLE_DOUBLE_TAP_SEEK, true);
     this.state.doubleTapSeekDelay = await Settings.getInt(Settings.KEY_VIDEO_DOUBLE_TAP_JUMP_DELAY, 10);
     this.state.doubleTapPlayPause = await Settings.getBoolean(Settings.ENABLE_DOUBLE_TAP_PLAY, true);
-    this.state.fastPlayback = await Settings.getBoolean(Settings.ENABLE_FASTPLAY, false);
   }
 
   private isChecked(field: ToggleField): boolean {
@@ -75,8 +64,6 @@ export struct VideoControlsSettingsDialog {
         return this.state.pinchZoom;
       case 'doubleTapPlayPause':
         return this.state.doubleTapPlayPause;
-      case 'fastPlayback':
-        return this.state.fastPlayback;
     }
   }
 
@@ -100,9 +87,6 @@ export struct VideoControlsSettingsDialog {
       case 'doubleTapPlayPause':
         this.state.doubleTapPlayPause = !this.state.doubleTapPlayPause;
         break;
-      case 'fastPlayback':
-        this.state.fastPlayback = !this.state.fastPlayback;
-        break;
     }
   }
 
@@ -116,19 +100,17 @@ export struct VideoControlsSettingsDialog {
 
   /** 复选项行 —— 自绘 checkbox,整行可点。builder 内直接读 this.state 保证响应式。 */
   @Builder
-  toggleRow(title: string, summary: string, field: ToggleField) {
+  toggleRow(title: Resource, summary: Resource, field: ToggleField) {
     Row() {
       Column() {
         Text(title)
           .fontSize(16).fontWeight(FontWeight.Medium).fontColor($r('app.color.list_title'))
-        if (summary.length > 0) {
-          Text(summary)
-            .fontSize(12)
-            .fontColor(this.cSubtle)
-            .margin({ top: 4 })
-            .maxLines(2)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }
+        Text(summary)
+          .fontSize(12)
+          .fontColor(this.cSubtle)
+          .margin({ top: 4 })
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
@@ -164,7 +146,7 @@ export struct VideoControlsSettingsDialog {
 
   /** 不可点的行(灰色 + 不可交互)。 */
   @Builder
-  disabledRow(title: string, summary: string) {
+  disabledRow(title: Resource, summary: Resource) {
     Row() {
       Column() {
         Text(title)
@@ -199,9 +181,9 @@ export struct VideoControlsSettingsDialog {
   doubleTapSeekRow() {
     Row() {
       Column() {
-        Text('轻按两下可进退')
+        Text($r('app.string.double_tap_seek_title'))
           .fontSize(16).fontWeight(FontWeight.Medium).fontColor($r('app.color.list_title'))
-        Text('在屏幕边缘轻按两下,可快进/快退 10 秒')
+        Text($r('app.string.double_tap_seek_summary'))
           .fontSize(12)
           .fontColor(this.cSubtle)
           .margin({ top: 4 })
@@ -213,7 +195,7 @@ export struct VideoControlsSettingsDialog {
       .padding({ right: 12 })
 
       Row() {
-        Text(`${this.state.doubleTapSeekDelay} 秒`)
+        Text(`${this.state.doubleTapSeekDelay}s`)
           .fontSize(13).fontColor(this.cSubtle)
         Image($r('app.media.ic_arrow_right'))
           .width(16).height(16).fillColor(this.cSubtle)
@@ -238,7 +220,7 @@ export struct VideoControlsSettingsDialog {
       Scroll() {
         Column() {
           // ── 标题 ──────────────────────────────────────────
-          Text('控制设置')
+          Text($r('app.string.video_controls_settings'))
             .fontSize(19)
             .fontWeight(600)
             .fontColor($r('app.color.list_title'))
@@ -254,11 +236,11 @@ export struct VideoControlsSettingsDialog {
           this.thinDivider()
 
           // ── 音频增强 ──────────────────────────────────────
-          this.toggleRow('音频增强', '允许音量放大到 200%', 'audioBoost')
+          this.toggleRow($r('app.string.audio_boost_title'), $r('app.string.audio_boost_summary'), 'audioBoost')
           this.thinDivider()
 
           // ── 手势段标题(橙色) ─────────────────────────────
-          Text('手势')
+          Text($r('app.string.gesture_section'))
             .fontSize(13)
             .fontWeight(FontWeight.Medium)
             .fontColor(AppColors.orange500)
@@ -270,28 +252,27 @@ export struct VideoControlsSettingsDialog {
               bottom: 8
             })
 
-          this.toggleRow('音量手势', '在视频回放过程中,通过手势控制音量', 'volGesture')
+          this.toggleRow($r('app.string.volume_gesture_title'), $r('app.string.volume_gesture_summary'), 'volGesture')
           this.thinDivider()
 
-          this.toggleRow('亮度手势', '在视频回放过程中,通过手势控制显示亮度', 'brightGesture')
+          this.toggleRow($r('app.string.brightness_gesture_title'), $r('app.string.brightness_gesture_summary'), 'brightGesture')
           this.thinDivider()
 
-          this.toggleRow('滑动可进退', '左右滑动手指可控制进度条', 'swipeSeek')
+          this.toggleRow($r('app.string.swipe_seek_title'), $r('app.string.swipe_seek_summary'), 'swipeSeek')
           this.thinDivider()
 
-          this.toggleRow('双指缩放', '用两根手指进行放大/缩小操作', 'pinchZoom')
+          this.toggleRow($r('app.string.pinch_zoom_title'), $r('app.string.pinch_zoom_summary'), 'pinchZoom')
           this.thinDivider()
 
           this.doubleTapSeekRow()
           this.thinDivider()
 
-          this.toggleRow('轻按两下可播放/暂停', '在屏幕中央轻按两下可播放/暂停', 'doubleTapPlayPause')
+          this.toggleRow($r('app.string.double_tap_play_pause_title'), $r('app.string.double_tap_play_pause_summary'), 'doubleTapPlayPause')
           this.thinDivider()
 
-          this.disabledRow('抓取截图', '已禁用')
+          this.disabledRow($r('app.string.screenshot_disabled_title'), $r('app.string.screenshot_disabled_summary'))
           this.thinDivider()
 
-          this.toggleRow('启用「快放」功能', '长按按钮快进/快退,可加快播放速度', 'fastPlayback')
         }
         .width('100%')
       }
@@ -301,7 +282,7 @@ export struct VideoControlsSettingsDialog {
 
       // ── 底部 [取消][保存] ────────────────────────────
       Row({ space: 10 }) {
-        Button('取消')
+        Button($r('app.string.cancel'))
           .type(ButtonType.Capsule)
           .fontSize(16)
           .fontWeight(FontWeight.Medium)
@@ -310,7 +291,7 @@ export struct VideoControlsSettingsDialog {
           .height(46)
           .layoutWeight(1)
           .onClick(() => this.onClose())
-        Button('保存')
+        Button($r('app.string.save'))
           .type(ButtonType.Capsule)
           .fontSize(16)
           .fontWeight(FontWeight.Medium)

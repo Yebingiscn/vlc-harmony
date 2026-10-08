@@ -290,6 +290,7 @@ export struct AudioBrowserPage {
   @Local importActive: boolean = false;
   @Local importCurrent: number = 0;
   @Local importTotal: number = 0;
+  @Local fabBottom: number = 152;
   @Param settingsVersion: number = 0;
   @Param searchMode: boolean = false;
   @Param searchQuery: string = '';
@@ -536,10 +537,15 @@ export struct AudioBrowserPage {
       .borderRadius(24)
       .backgroundColor('#FF8800')
       .shadow({ radius: 8, color: '#44000000', offsetY: 4 })
-      .position({ right: 16, bottom: 152 })
+      .position({ right: 16, bottom: this.fabBottom })
       .onClick(() => this.pickAudioFiles())
     }
     .width('100%').height('100%')
+    .clip(false)
+    .onAreaChange((_oldArea: Area, newArea: Area) => {
+      const h: number = Number(newArea.height);
+      this.fabBottom = Math.max(16, Math.min(152, h - 64));
+    })
     .backgroundColor($r('app.color.background_default'))
     .bindSheet($$this.showSheet, this.albumSheet(), {
       showClose: false,

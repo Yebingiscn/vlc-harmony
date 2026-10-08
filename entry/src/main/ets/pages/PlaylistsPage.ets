@@ -119,6 +119,7 @@ export struct PlaylistsPage {
   /** 统一半模态状态:一个组件只能有一个 bindSheet。 */
   @Local sheetMode: SheetMode = 'none';
   @Local showSheet: boolean = false;
+  @Local fabBottom: number = 152;
   @Local ctxCard: PlaylistCard | null = null;
   @Param searchMode: boolean = false;
   @Param searchQuery: string = '';
@@ -339,12 +340,17 @@ export struct PlaylistsPage {
       .borderRadius(24)
       .backgroundColor('#FF8800')
       .shadow({ radius: 8, color: '#44000000', offsetY: 4 })
-      .position({ right: 16, bottom: 152 })
+      .position({ right: 16, bottom: this.fabBottom })
       .onClick(() => {
         this.openCreate();
       })
     }
     .width('100%').height('100%')
+    .clip(false)
+    .onAreaChange((_oldArea: Area, newArea: Area) => {
+      const h: number = Number(newArea.height);
+      this.fabBottom = Math.max(16, Math.min(152, h - 64));
+    })
     .backgroundColor($r('app.color.background_default'))
     // 唯一的 bindSheet,内部按 sheetMode 切换内容
     .bindSheet(this.showSheet, this.unifiedSheet(), {

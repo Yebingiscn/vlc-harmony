@@ -4,6 +4,7 @@ import { Settings } from '../common/data/Settings';
 import { AppColors } from '../common/constants/AppConstants';
 import { PlaybackService } from '../common/data/PlaybackService';
 import { Equalizer } from '../libvlc';
+import { AppContext } from '../common/data/AppContext';
 
 const FREQ_LABELS: string[] = ['60', '170', '310', '600', '1K', '3K', '6K', '12K'];
 
@@ -22,6 +23,9 @@ export struct EqualizerDialog {
   @Local snap: boolean = false;
   @Local presetIndex: number = 0;
   @Local presets: EqualizerPreset[] = [];
+  @Local savedBands: number[] = [0, 0, 0, 0, 0, 0, 0, 0];
+  @Local savedPreamp: number = 0;
+  @Local customPresetCount: number = 0;
   @Event onClose: () => void = () => {
   };
 
@@ -54,6 +58,8 @@ export struct EqualizerDialog {
   applyPreset(p: EqualizerPreset): void {
     this.presetIndex = p.id;
     this.bands = p.bands.slice();
+    this.savedBands = p.bands.slice();
+    this.savedPreamp = this.preamp;
     Settings.put(Settings.KEY_CURRENT_EQUALIZER_ID, p.id);
     this.pushToPlayer();
   }
@@ -186,6 +192,20 @@ export struct EqualizerDialog {
           .fillColor($r('app.color.list_title'))
           .margin({ right: 16 })
           .onClick(() => {
+            this.customPresetCount++;
+            const ctx = AppContext.get();
+            const name = ctx?.resourceManager.getStringSync($r('app.string.custom_preset_name').id, this.customPresetCount) ?? `Custom ${this.customPresetCount}`;
+            const newPreset = new EqualizerPreset(
+              this.presets.length,
+              name,
+              this.bands.slice()
+            );
+            this.presets = this.presets.concat([newPreset]);
+            this.presetIndex = newPreset.id;
+            this.savedBands = this.bands.slice();
+            this.savedPreamp = this.preamp;
+            Settings.put(Settings.KEY_CURRENT_EQUALIZER_ID, newPreset.id);
+            this.pushToPlayer();
           })
         Image($r('app.media.ic_undo'))
           .width(24)
@@ -193,6 +213,9 @@ export struct EqualizerDialog {
           .fillColor($r('app.color.list_title'))
           .margin({ right: 16 })
           .onClick(() => {
+            this.bands = this.savedBands.slice();
+            this.preamp = this.savedPreamp;
+            this.pushToPlayer();
           })
         Image($r('app.media.ic_delete'))
           .width(24)
@@ -200,6 +223,16 @@ export struct EqualizerDialog {
           .fillColor($r('app.color.list_title'))
           .margin({ right: 16 })
           .onClick(() => {
+            if (this.presetIndex >= Equalizer.getPresetCount()) {
+              this.presets = this.presets.filter((p: EqualizerPreset) => p.id !== this.presetIndex);
+              if (this.presets.length > 0) {
+                this.applyPreset(this.presets[0]);
+              } else {
+                this.presetIndex = 0;
+                this.bands = [0, 0, 0, 0, 0, 0, 0, 0];
+                this.pushToPlayer();
+              }
+            }
           })
       }
       .width('100%').padding(16).alignItems(VerticalAlign.Center)

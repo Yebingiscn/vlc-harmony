@@ -753,7 +753,8 @@ export class MediaLibrary {
     try {
       const uri = video.uri;
       MediaLibrary.videos = MediaLibrary.videos.filter((v: MediaWrapper) => v.uri !== uri);
-      await MediaLibrary.saveVideoLibrary();
+      MediaLibrary.storageItems = MediaLibrary.storageItems.filter((item: SheetItem) => item.uri !== uri);
+      await Promise.all([MediaLibrary.saveVideoLibrary(), MediaLibrary.saveStorageItemsToPrefs()]);
       HILog(`deleteVideo: removed library reference ${uri}`);
       return true;
     } catch (e) {
@@ -1586,6 +1587,15 @@ export class MediaLibrary {
         t.year = item.year;
         t.length = item.length;
         t.artworkPath = item.artworkPath ?? '';
+        if (!MediaLibrary.artworkExists(t.artworkPath)) {
+          // 与视频库一致：缓存被清理后重新提取内嵌封面，不保留失效路径。
+          const meta: AudioMeta = await MediaLibrary.parseFileMeta(item.uri);
+          const restoredArtwork: string = MediaLibrary.artworkExists(meta.artworkPath) ? meta.artworkPath : '';
+          if (t.artworkPath !== restoredArtwork) {
+            persistedDataChanged = true;
+          }
+          t.artworkPath = restoredArtwork;
+        }
         t.displayName = title;
         t.filePath = item.uri;
         MediaLibrary.audios.push(t);
