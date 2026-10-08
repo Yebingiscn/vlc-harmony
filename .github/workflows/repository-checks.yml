@@ -1,0 +1,57 @@
+name: Repository checks
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate repository metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s LICENSE
+          test -s README.md
+          test -s THIRD_PARTY_NOTICES.md
+          grep -q "MIT License" LICENSE
+          grep -q "Third-party notices" THIRD_PARTY_NOTICES.md
+
+      - name: Reject committed signing secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RInE '"(storePassword|keyPassword)"[[:space:]]*:' \
+            --include='*.json' --include='*.json5' \
+            --exclude-dir=.git --exclude-dir=build --exclude-dir=.hvigor .; then
+            echo "Signing passwords must stay in local or CI-only configuration."
+            exit 1
+          fi
+          if git ls-files | grep -Ei '\.(p12|p7b|cer)$'; then
+            echo "Signing material must not be committed."
+            exit 1
+          fi
+
+      - name: Check native-license resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s entry/src/main/resources/rawfile/vlc_license.txt
+          test -s entry/src/main/resources/rawfile/libraries.json
+          test -s entry/src/main/resources/rawfile/authors.json
+
+      - name: Check generated and local files
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-files | grep -E '(^|/)(build|oh_modules|\.hvigor)/'; then
+            echo "Generated build or dependency output is tracked."
+            exit 1
+          fi
