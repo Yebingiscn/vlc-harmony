@@ -1,0 +1,91 @@
+diff --git a/lib/media_player.c b/lib/media_player.c
+index 0748a84..aa0018f 100644
+--- a/lib/media_player.c
++++ b/lib/media_player.c
+@@ -649,6 +649,8 @@ libvlc_media_player_new( libvlc_instance_t *instance )
+ #ifdef __OHOS__
+     var_Create (mp, "drawable-ohos-nativewindow-ptr", VLC_VAR_ADDRESS);
+     var_Create (mp, "drawable-ohos-osd-nativewindow-ptr", VLC_VAR_ADDRESS);
++    /* Opt-in only while the UI reports an idle full-screen video scene. */
++    var_Create (mp, "ohcodec-video-vrr-allowed", VLC_VAR_BOOL);
+ #endif
+ #ifdef HAVE_EVAS
+     var_Create (mp, "drawable-evasobject", VLC_VAR_ADDRESS);
+@@ -1287,6 +1289,19 @@ void libvlc_media_player_set_ohos_nativewindow_ptr( libvlc_media_player_t *p_mi,
+ #endif
+ }
+ 
++void libvlc_media_player_set_ohos_video_vrr_allowed( libvlc_media_player_t *p_mi,
++                                                   bool allowed )
++{
++    assert (p_mi != NULL);
++#ifdef __OHOS__
++    /* Decoder reads this inherited variable on its own thread. No flush or
++     * restart is needed and the UI never calls the hardware decoder directly. */
++    var_SetBool (p_mi, "ohcodec-video-vrr-allowed", allowed);
++#else
++    (void) allowed;
++#endif
++}
++
+ void libvlc_media_player_set_ohos_osd_nativewindow_ptr( libvlc_media_player_t *p_mi,
+                                                        void *p_osd_window )
+ {
+diff --git a/lib/libvlc.sym b/lib/libvlc.sym
+index 125970a..1cad312 100644
+--- a/lib/libvlc.sym
++++ b/lib/libvlc.sym
+@@ -190,6 +190,7 @@ libvlc_media_player_set_agl
+ libvlc_media_player_set_android_context
+ libvlc_media_player_set_ohos_nativewindow_ptr
+ libvlc_media_player_set_ohos_osd_nativewindow_ptr
++libvlc_media_player_set_ohos_video_vrr_allowed
+ libvlc_video_set_ohos_window_size
+ libvlc_media_player_set_chapter
+ libvlc_media_player_set_equalizer
+diff --git a/include/vlc/libvlc_media_player.h b/include/vlc/libvlc_media_player.h
+index b997e79..3e648a7 100644
+--- a/include/vlc/libvlc_media_player.h
++++ b/include/vlc/libvlc_media_player.h
+@@ -612,6 +612,12 @@ LIBVLC_API void libvlc_media_player_set_ohos_nativewindow_ptr( libvlc_media_play
+ LIBVLC_API void libvlc_media_player_set_ohos_osd_nativewindow_ptr( libvlc_media_player_t *p_mi,
+                                                                   void *p_osd_window );
+ 
++/** Permit content-adaptive video refresh in an idle full-screen OHCodec scene.
++ * Defaults to false; has no effect on software or indirect Buffer output.
++ */
++LIBVLC_API void libvlc_media_player_set_ohos_video_vrr_allowed(
++    libvlc_media_player_t *p_mi, bool allowed );
++
+ LIBVLC_API void libvlc_video_set_ohos_window_size( libvlc_media_player_t *p_mi,
+                                                    unsigned width,
+                                                    unsigned height );
+diff --git a/modules/codec/avcodec/video.c b/modules/codec/avcodec/video.c
+index 2f3ca1a..764382f 100644
+--- a/modules/codec/avcodec/video.c
++++ b/modules/codec/avcodec/video.c
+@@ -184,6 +184,9 @@ static void ohos_update_playback_speed(decoder_t *p_dec)
+         strcmp(codec->wrapper_name, "ohcodec") != 0)
+         return;
+ 
++    avcodec_ohcodec_set_video_vrr_allowed(p_sys->p_context,
++        var_InheritBool(p_dec, "ohcodec-video-vrr-allowed"));
++
+     const int display_rate = decoder_GetDisplayRate(p_dec);
+     if (display_rate <= 0 || display_rate == p_sys->i_ohos_last_display_rate)
+         return;
+@@ -524,6 +527,14 @@ static int OpenVideoCodec( decoder_t *p_dec )
+         ctx->flags |= AV_CODEC_FLAG_LOW_DELAY;
+     }
+ 
++    /* Advertise the actual source cadence before OHCodec Configure. This is
++     * metadata for content-adaptive refresh, not a fixed screen refresh hint. */
++#ifdef HAVE_OHOS
++    if( codec->wrapper_name && !strcmp(codec->wrapper_name, "ohcodec") &&
++        p_dec->fmt_in.video.i_frame_rate && p_dec->fmt_in.video.i_frame_rate_base )
++        ctx->framerate = (AVRational){ p_dec->fmt_in.video.i_frame_rate,
++                                      p_dec->fmt_in.video.i_frame_rate_base };
++#endif
+     post_mt( p_sys );
+     ret = ffmpeg_OpenCodec( p_dec, ctx, codec );
+     wait_mt( p_sys );

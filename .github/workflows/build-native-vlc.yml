@@ -175,6 +175,14 @@ jobs:
             echo "Stale FFmpeg decoder detected: system-refresh marker is absent"
             exit 1
           fi
+          if ! grep -aFq 'MV bootstrap configured' "${ffmpeg_decoder}"; then
+            echo "Stale FFmpeg decoder detected: smart fluency initialization is absent"
+            exit 1
+          fi
+          if ! grep -aFq 'hardware-dependent' "${ffmpeg_decoder}"; then
+            echo "Stale FFmpeg decoder detected: scene-aware VRR policy is absent"
+            exit 1
+          fi
           if ! grep -aFq '[OHCodecQueue] bounded backlog' "${ffmpeg_decoder}"; then
             echo "Stale FFmpeg decoder detected: bounded output queue marker is absent"
             exit 1

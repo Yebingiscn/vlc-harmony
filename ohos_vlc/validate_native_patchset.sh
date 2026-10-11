@@ -103,6 +103,8 @@ test "$(git -C "$WORK_DIR/vlc" rev-parse HEAD)" = "$VLC_COMMIT"
 # Platform APIs are introduced by this patch; validate the final tree below.
 git -C "$WORK_DIR/vlc" apply --check "$VLC_PATCH"
 git -C "$WORK_DIR/vlc" apply "$VLC_PATCH"
+git -C "$WORK_DIR/vlc" apply --check "$ROOT_DIR/patches/0031-vlc-ohcodec-content-adaptive-policy.patch"
+git -C "$WORK_DIR/vlc" apply "$ROOT_DIR/patches/0031-vlc-ohcodec-content-adaptive-policy.patch"
 grep -q 'AC_INIT(vlc, 3.0.24)' "$WORK_DIR/vlc/configure.ac"
 grep -Fq '[PlaybackStage] receive' "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
 grep -Fq '[PlaybackStage] subtitle-render' "$WORK_DIR/vlc/src/video_output/video_output.c"
@@ -259,6 +261,8 @@ git -C "$WORK_DIR/ffmpeg" apply --check "$FFMPEG_SYNTHETIC_PTS_PATCH"
 git -C "$WORK_DIR/ffmpeg" apply "$FFMPEG_SYNTHETIC_PTS_PATCH"
 git -C "$WORK_DIR/ffmpeg" apply --check "$ROOT_DIR/patches/0019-ffmpeg-ohcodec-wake-for-output.patch"
 git -C "$WORK_DIR/ffmpeg" apply "$ROOT_DIR/patches/0019-ffmpeg-ohcodec-wake-for-output.patch"
+git -C "$WORK_DIR/ffmpeg" apply --check "$ROOT_DIR/patches/0020-ffmpeg-ohcodec-content-adaptive-policy.patch"
+git -C "$WORK_DIR/ffmpeg" apply "$ROOT_DIR/patches/0020-ffmpeg-ohcodec-content-adaptive-policy.patch"
 
 grep -q 'ohcodec_buffer.h' "$WORK_DIR/ffmpeg/libavcodec/Makefile"
 grep -q 'av_ohcodec_release_buffer_at_time' "$WORK_DIR/ffmpeg/libavcodec/ohcodec_buffer.h"
@@ -281,11 +285,19 @@ grep -q 's->bit_depth > 8 ? AV_PIX_FMT_P010' "$WORK_DIR/ffmpeg/libavcodec/ohdec.
 grep -q 'layout_width /= 2' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
 grep -q 'pkt->pts != AV_NOPTS_VALUE ? pkt->pts : pkt->dts' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
 grep -q '\[OHCodecPTS\] synthesized missing packet timestamp' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
-if grep -qE 'OH_MD_KEY_FRAME_RATE|OUTPUT_ENABLE_VRR|source_frame_rate' \
+if grep -qE 'effective_frame_rate|OH_FRAME_RETENTION_MODE_UNIFORM' \
     "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
 then
-    echo "ERROR: FFmpeg OHCodec still forces a decoder frame rate or VRR mode"
+    echo "ERROR: FFmpeg OHCodec uses a multiplied/fixed cadence or uniform frame dropping"
     exit 1
 fi
+
+grep -q 'MV bootstrap configured' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
+grep -q 's->direct_surface_output && !fast_playback && !s->output_pts_unreliable' "$WORK_DIR/ffmpeg/libavcodec/ohdec.c"
+grep -q 'avcodec_ohcodec_set_video_vrr_allowed' "$WORK_DIR/ffmpeg/libavcodec/avcodec.h"
+grep -q 'libvlc_media_player_set_ohos_video_vrr_allowed' "$WORK_DIR/vlc/lib/libvlc.sym"
+grep -q 'ohcodec-video-vrr-allowed' "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
+
+node "$ROOT_DIR/test_codec_policy.cjs" "$WORK_DIR/ffmpeg" clang "$WORK_DIR/policy-test"
 
 echo "Native VLC/FFmpeg patch preflight passed."

@@ -35,6 +35,7 @@ import {
   mediaPlayerSetMedia,
   mediaPlayerSetPosition,
   mediaPlayerSetRate,
+  mediaPlayerSetVideoVrrAllowed,
   mediaPlayerSetRenderer,
   mediaPlayerSetScale,
   mediaPlayerSetAspectRatio,
@@ -196,6 +197,10 @@ export class MediaPlayer extends VLCObject {
     if (!this.isReleased()) {
       mediaPlayerSetRate(this.handle, rate);
     }
+  }
+
+  setVideoVrrAllowed(allowed: boolean): boolean {
+    return !this.isReleased() && mediaPlayerSetVideoVrrAllowed(this.handle, allowed);
   }
 
   getRate(): number {

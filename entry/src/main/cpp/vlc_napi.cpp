@@ -365,6 +365,25 @@ struct SurfaceBinding {
 
 using SetOhosWindowSizeFn = void (*)(libvlc_media_player_t *, unsigned, unsigned);
 using SetOhosOsdNativeWindowFn = void (*)(libvlc_media_player_t *, void *);
+using SetOhosVideoVrrAllowedFn = void (*)(libvlc_media_player_t *, bool);
+
+SetOhosVideoVrrAllowedFn ResolveSetOhosVideoVrrAllowed()
+{
+    static SetOhosVideoVrrAllowedFn fn = []() -> SetOhosVideoVrrAllowedFn {
+        void *handle = dlopen("libvlc.so.5", RTLD_NOW | RTLD_LOCAL);
+        if (handle == nullptr)
+            return nullptr;
+        void *symbol = dlsym(handle, "libvlc_media_player_set_ohos_video_vrr_allowed");
+        if (symbol == nullptr) {
+            OH_LOG_WARN(LOG_APP, "Video VRR policy unavailable in current native libraries");
+            dlclose(handle);
+            return nullptr;
+        }
+        // Retain the handle for the cached function's lifetime.
+        return reinterpret_cast<SetOhosVideoVrrAllowedFn>(symbol);
+    }();
+    return fn;
+}
 
 SetOhosWindowSizeFn ResolveSetOhosWindowSize()
 {
@@ -1802,6 +1821,36 @@ napi_value MediaPlayerSetRate(napi_env env, napi_callback_info info)
     return nullptr;
 }
 
+napi_value MediaPlayerSetVideoVrrAllowed(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value argv[2];
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    uint32_t h = 0;
+    bool allowed = false;
+    if (argc < 2 || !GetU32(env, argv[0], &h) ||
+        napi_get_value_bool(env, argv[1], &allowed) != napi_ok)
+        return Bool(env, false);
+    auto setter = ResolveSetOhosVideoVrrAllowed();
+    if (setter == nullptr)
+        return Bool(env, false);
+    libvlc_media_player_t *mp = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(g_mtx);
+        PlayerEntry *pe = FindPlayerLocked(h);
+        if (pe && pe->mp) {
+            mp = pe->mp;
+            libvlc_media_player_retain(mp);
+        }
+    }
+    if (mp == nullptr)
+        return Bool(env, false);
+    // Only store eligibility here; OHCodec SetParameter runs on VLC's decoder thread.
+    setter(mp, allowed);
+    libvlc_media_player_release(mp);
+    return Bool(env, true);
+}
+
 napi_value MediaPlayerGetRate(napi_env env, napi_callback_info info)
 {
     size_t argc = 1;
@@ -3229,6 +3278,7 @@ napi_value VlcNapiInit(napi_env env, napi_value exports)
         {"mediaPlayerSetPosition", nullptr, MediaPlayerSetPosition, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerGetLength", nullptr, MediaPlayerGetLength, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerSetRate", nullptr, MediaPlayerSetRate, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"mediaPlayerSetVideoVrrAllowed", nullptr, MediaPlayerSetVideoVrrAllowed, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerGetRate", nullptr, MediaPlayerGetRate, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerSetVolume", nullptr, MediaPlayerSetVolume, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerGetVolume", nullptr, MediaPlayerGetVolume, nullptr, nullptr, nullptr, napi_default, nullptr},

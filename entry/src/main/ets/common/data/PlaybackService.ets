@@ -153,6 +153,7 @@ export class PlaybackService {
   private queueHistoryType: PlaybackQueueHistoryType | null = null;
   private lib: LibVLC | null = null;
   private player: MediaPlayer | null = null;
+  private videoVrrAllowed: boolean = false;
   private equalizer: Equalizer | null = null;
   private rendererDiscoverer: RendererDiscoverer | null = null;
   private currentRendererHandle: number = -1;
@@ -984,6 +985,12 @@ export class PlaybackService {
   setSpeed(rate: number): void {
     this.speed = rate;
     this.player?.setRate(rate);
+  }
+
+  /** Native code additionally restricts VRR to direct hardware Surface output. */
+  setVideoVrrAllowed(allowed: boolean): void {
+    this.videoVrrAllowed = allowed;
+    this.player?.setVideoVrrAllowed(allowed);
   }
 
   toggleShuffle(): void {
@@ -1858,6 +1865,7 @@ export class PlaybackService {
         '[VLC] iso/bluray MRL: force software decode (:avcodec-hw=none) mrl=%{public}s', mrl);
     }
 
+    this.player.setVideoVrrAllowed(this.videoVrrAllowed && this.videoOutId.length > 0);
     if (!this.player.setMedia(media)) {
       hilog.error(LOG_DOMAIN, LOG_TAG, '[VLC] setMedia FAILED uri=%{public}s', item.uri);
       media.release();

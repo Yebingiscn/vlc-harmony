@@ -279,6 +279,7 @@ function install_vlc_patches()
 
     cp -f "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD" "$vlc_recipe_dir/HPKBUILD" || return 1
     cp -f "$ROOT_DIR/patches/0030-vlc-3.0.24-ohos.patch" "$vlc_recipe_dir/" || return 1
+    cp -f "$ROOT_DIR/patches/0031-vlc-ohcodec-content-adaptive-policy.patch" "$vlc_recipe_dir/" || return 1
     return 0
 }
 
@@ -349,6 +350,7 @@ function install_ffmpeg_patches()
     cp -f "$ROOT_DIR/patches/0017-ffmpeg-ohcodec-handle-p010-buffer-output.patch" "$ffmpeg_recipe_dir/" || return 1
     cp -f "$ROOT_DIR/patches/0018-ffmpeg-ohcodec-synthesize-missing-timestamps.patch" "$ffmpeg_recipe_dir/" || return 1
     cp -f "$ROOT_DIR/patches/0019-ffmpeg-ohcodec-wake-for-output.patch" "$ffmpeg_recipe_dir/" || return 1
+    cp -f "$ROOT_DIR/patches/0020-ffmpeg-ohcodec-content-adaptive-policy.patch" "$ffmpeg_recipe_dir/" || return 1
     return 0
 }
 

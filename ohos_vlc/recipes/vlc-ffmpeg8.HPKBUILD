@@ -54,6 +54,14 @@ prepare() {
             cd $OLDPWD
             return -1
         }
+        git apply --check ../0031-vlc-ohcodec-content-adaptive-policy.patch >> $publicbuildlog 2>&1 || {
+            cd $OLDPWD
+            return -1
+        }
+        git apply ../0031-vlc-ohcodec-content-adaptive-policy.patch >> $publicbuildlog 2>&1 || {
+            cd $OLDPWD
+            return -1
+        }
         cd $OLDPWD
         cloneflag=false
     fi

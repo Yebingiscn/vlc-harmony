@@ -9,6 +9,7 @@ import { NavController } from '../common/data/NavController';
 import { AppContext } from '../common/data/AppContext';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
 import { PlaybackListener, PlaybackService, QueueItem } from '../common/data/PlaybackService';
+import { VideoRefreshPolicy } from '../common/data/VideoRefreshPolicy';
 import { VlcChapterInfo } from 'libvlcnapi.so';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { Settings } from '../common/data/Settings';
@@ -650,6 +651,32 @@ export struct VideoPlayerPage {
   @Local seekHudText: string = '';
   /** 拖动 seek 条期间冻结 timeUpdate 回写,否则滑块被不断拉回。 */
   @Local seeking: boolean = false;
+  @Local refreshFullScreen: boolean = false;
+  @Local refreshForeground: boolean = true;
+  @Local refreshPageVisible: boolean = true;
+  @Local refreshTouchActive: boolean = false;
+  @Local refreshFastPlay: boolean = false;
+  @Local refreshPipActive: boolean = false;
+  private refreshPageAlive: boolean = false;
+  private refreshWindow: window.Window | null = null;
+  private refreshPolicy: VideoRefreshPolicy = new VideoRefreshPolicy((allowed: boolean) => {
+    PlaybackService.getInstance().setVideoVrrAllowed(allowed);
+  });
+  private refreshWindowStatus: (status: window.WindowStatusType) => void =
+    (status: window.WindowStatusType) => {
+      this.refreshFullScreen = status === window.WindowStatusType.FULL_SCREEN;
+      this.refreshPolicy.blockFor(1200);
+      this.updateVideoRefreshScene();
+    };
+  private refreshWindowEvent: (event: window.WindowEventType) => void =
+    (event: window.WindowEventType) => {
+      if (event === window.WindowEventType.WINDOW_SHOWN || event === window.WindowEventType.WINDOW_ACTIVE) {
+        this.refreshForeground = true;
+      } else if (event === window.WindowEventType.WINDOW_HIDDEN || event === window.WindowEventType.WINDOW_INACTIVE) {
+        this.refreshForeground = false;
+      }
+      this.updateVideoRefreshScene();
+    };
   @Local seekPercent: number = 0;
   /** 睡眠倒计时状态。 */
   @Local sleepArmed: boolean = false;
@@ -716,6 +743,37 @@ export struct VideoPlayerPage {
    * 菜单还在消失时立刻 bindSheet 会被吞掉(sheet 不显示)。改为等菜单 onDisappear 后再执行。
    */
   private pendingAdvancedAction: PlayerAdvancedOptionId | null = null;
+
+  @Monitor('vm.hudVisible', 'vm.state', 'sheetOpen', 'bookmarkOpen', 'advancedOptionsOpen',
+    'brightnessHudVisible', 'volumeHudVisible', 'seekHudVisible', 'seeking', 'refreshTouchActive',
+    'refreshFastPlay', 'refreshPipActive', 'orientationDialogId', 'videoRatioDialogId')
+  onVideoRefreshSceneChanged(): void {
+    this.updateVideoRefreshScene();
+  }
+
+  private updateVideoRefreshScene(): void {
+    this.refreshPolicy.update(this.refreshPageAlive && this.refreshPageVisible && this.refreshForeground &&
+      this.refreshFullScreen && this.vm.state === PlayState.PLAYING && !this.vm.hudVisible &&
+      !this.sheetOpen && !this.bookmarkOpen && !this.advancedOptionsOpen &&
+      !this.brightnessHudVisible && !this.volumeHudVisible && !this.seekHudVisible && !this.seeking &&
+      !this.refreshTouchActive && !this.refreshFastPlay && !this.refreshPipActive &&
+      this.orientationDialogId === -1 && this.videoRatioDialogId === -1);
+  }
+
+  private watchVideoRefreshWindow(win: window.Window): void {
+    this.refreshWindow = win;
+    try {
+      win.on('windowStatusChange', this.refreshWindowStatus);
+      win.on('windowEvent', this.refreshWindowEvent);
+      this.refreshFullScreen = win.getWindowStatus() === window.WindowStatusType.FULL_SCREEN;
+      this.updateVideoRefreshScene();
+    } catch (e) {
+      // An unavailable window capability must not break brightness/keep-screen-on.
+      this.refreshFullScreen = false;
+      this.updateVideoRefreshScene();
+      hilog.warn(0x0001, 'VLC', '[VLC] VRR window scene unavailable %{public}s', String(e));
+    }
+  }
 
   /** 打开高级选项菜单。 */
   openOptions(): void {
@@ -1060,6 +1118,8 @@ export struct VideoPlayerPage {
   }
 
   aboutToAppear(): void {
+    this.refreshPageAlive = true;
+    this.refreshPolicy.dispose();
     this.bindTouch();
     void this.initVolumeAndBrightness();
     void this.applyScreenOrientation();
@@ -1070,6 +1130,8 @@ export struct VideoPlayerPage {
     void this.touch.refreshPrefs();
     this.resetHudTimer();
     this.appBackgroundListener = () => {
+      this.refreshForeground = false;
+      this.updateVideoRefreshScene();
       PlaybackService.getInstance().saveVideoResume();
       this.touch.clearTouchAction();
       void this.handleAppBackground();
@@ -1086,6 +1148,17 @@ export struct VideoPlayerPage {
   }
 
   aboutToDisappear(): void {
+    this.refreshPageAlive = false;
+    this.refreshPolicy.dispose();
+    if (this.refreshWindow !== null) {
+      try {
+        this.refreshWindow.off('windowStatusChange', this.refreshWindowStatus);
+        this.refreshWindow.off('windowEvent', this.refreshWindowEvent);
+      } catch (e) {
+        hilog.warn(0x0001, 'VLC', '[VLC] VRR window cleanup %{public}s', String(e));
+      }
+      this.refreshWindow = null;
+    }
     if (this.hudTimer !== -1) {
       clearTimeout(this.hudTimer);
       this.hudTimer = -1;
@@ -1170,6 +1243,8 @@ export struct VideoPlayerPage {
       UiFeedback.showToast({ message: $r('app.string.video_not_ready') });
       return;
     }
+    this.refreshPipActive = true;
+    this.updateVideoRefreshScene();
     try {
       const ctx = AppContext.get();
       const config: PiPWindow.PiPConfiguration = {
@@ -1183,10 +1258,12 @@ export struct VideoPlayerPage {
       const controller = await PiPWindow.create(config);
       controller.on('stateChange', (state: PiPWindow.PiPState, reason: string) => {
         hilog.info(0x0001, 'VLC', '[PiP] state=%{public}d reason=%{public}s', state, reason);
-        if (state === PiPWindow.PiPState.STOPPED || state === PiPWindow.PiPState.ABOUT_TO_STOP) {
+        if (state === PiPWindow.PiPState.STOPPED) {
           controller.off('stateChange');
           controller.off('controlPanelActionEvent');
           this.pipController = null;
+          this.refreshPipActive = false;
+          this.updateVideoRefreshScene();
         }
       });
       // 视频模板的控制事件:nextVideo / previousVideo 转发到 ViewModel
@@ -1204,6 +1281,8 @@ export struct VideoPlayerPage {
       UiFeedback.showToast({ message: $r('app.string.pip_entered') });
     } catch (e) {
       hilog.error(0x0001, 'VLC', '[PiP] failed: %{public}s', (e as Error).message ?? String(e));
+      this.refreshPipActive = false;
+      this.updateVideoRefreshScene();
       UiFeedback.showToast({ message: $r('app.string.pip_failed') });
     }
   }
@@ -1422,6 +1501,14 @@ export struct VideoPlayerPage {
           .backgroundColor('#01000000')
           .hitTestBehavior(HitTestMode.Transparent)
           .onTouch((event: TouchEvent) => {
+            if (event.type === TouchType.Down) {
+              this.refreshTouchActive = true;
+              this.refreshPolicy.update(false);
+            } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+              this.refreshTouchActive = false;
+              this.refreshPolicy.blockFor(1000);
+              this.updateVideoRefreshScene();
+            }
             if (this.vm.locked) {
               return;
             }
@@ -1496,10 +1583,19 @@ export struct VideoPlayerPage {
       .height('100%')
       .backgroundColor('#000000')
       .onAreaChange((_old: Area, area: Area) => {
+        this.refreshPolicy.blockFor(1200);
         this.vm.onContainerSize(Number(area.width), Number(area.height));
       })
     }
     .hideTitleBar(true)
+    .onShown(() => {
+      this.refreshPageVisible = true;
+      this.updateVideoRefreshScene();
+    })
+    .onHidden(() => {
+      this.refreshPageVisible = false;
+      this.updateVideoRefreshScene();
+    })
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .onBackPressed(() => {
       this.vm.leaveEarly();
@@ -2389,6 +2485,8 @@ export struct VideoPlayerPage {
         }
       },
       onFastPlay: (active: boolean, rate: number): void => {
+        this.refreshFastPlay = active;
+        this.updateVideoRefreshScene();
         // Temporary speed must not overwrite the user's saved playback speed.
         PlaybackService.getInstance().setSpeed(active ? rate : this.vm.speed);
       },
@@ -2407,6 +2505,10 @@ export struct VideoPlayerPage {
     }
     try {
       this.mainWindow = await window.getLastWindow(AppContext.get());
+      if (!this.refreshPageAlive) {
+        return;
+      }
+      this.watchVideoRefreshWindow(this.mainWindow);
       this.saveBrightness = await Settings.getBoolean(Settings.SAVE_BRIGHTNESS, false);
       if (this.saveBrightness) {
         const saved: number = await Settings.getFloat(Settings.BRIGHTNESS_VALUE, 0.5);
