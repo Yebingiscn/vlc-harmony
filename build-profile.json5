@@ -1,16 +1,31 @@
 {
   "app": {
-    "signingConfigs": [],
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "storeFile": "D:/流心视频/流心VLC/sweet_vlc.p12",
+          "storePassword": "0000001ADA228F6D4EED3F4F6A7D98CC0A78C59242E36244C4D9CB225BA3FA73AB55DF76940B6E5F7048",
+          "keyAlias": "sweet_vlc",
+          "keyPassword": "0000001A773A1925D462FCC05EEC37B1642975F7F062C4CBAE2AD14A8C08D584922AE301F67CB019D2D3",
+          "signAlg": "SHA256withECDSA",
+          "profile": "D:/流心视频/流心VLC/流心VLC发布ProfileRelease.p7b",
+          "certpath": "D:/流心视频/流心VLC/流心VLC发布证书.cer"
+        }
+      }
+    ],
     "products": [
       {
         "name": "default",
+        "signingConfig": "default",
         "targetSdkVersion": "6.1.1(24)",
         "compatibleSdkVersion": "6.1.0(23)",
         "runtimeOS": "HarmonyOS",
         "buildOption": {
           "strictMode": {
-            "caseSensitiveCheck": false,
-            "useNormalizedOHMUrl": false
+            "caseSensitiveCheck": true,
+            "useNormalizedOHMUrl": true
           },
           "nativeCompiler": "BiSheng"
         }

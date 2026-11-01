@@ -9,7 +9,7 @@ import { SecondaryParam } from '../common/models/MediaModels';
 import { AppContext } from '../common/data/AppContext';
 import { Settings } from '../common/data/Settings';
 import { AppTheme } from '../common/data/AppTheme';
-import { NavController } from '../common/data/NavController';
+import { AudioPlayerRoute, NavController } from '../common/data/NavController';
 import { RouteName } from '../common/constants/AppConstants';
 // Phase B 新增可导航页面。
 import { HeaderMediaListActivityPage, HeaderMediaListParam } from './HeaderMediaListActivityPage';
@@ -80,7 +80,10 @@ struct Index {
     } else if (name === RouteName.VideoPlayer) {
       VideoPlayerPage({ param: param as object as VideoParam })
     } else if (name === RouteName.AudioPlayer) {
-      AudioPlayerPage()
+      AudioPlayerPage({
+        fromMiniPlayer: param instanceof AudioPlayerRoute && param.fromMiniPlayer,
+        sourceRoute: param instanceof AudioPlayerRoute ? param : null
+      })
     } else if (name === RouteName.Info) {
       InfoPage({ param: param as object as InfoParam })
     } else if (name === RouteName.Secondary) {

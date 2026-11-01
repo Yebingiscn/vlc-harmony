@@ -1,5 +1,7 @@
 {
   "string": [
+    { "name": "audio_lyrics_loading", "value": "Reading embedded lyrics…" },
+    { "name": "audio_lyrics_empty", "value": "No readable embedded lyrics in this file" },
     {
       "name": "X",
       "value": "X"
@@ -807,6 +809,10 @@
     {
       "name": "pin_unlock_success",
       "value": "Successfully unlocked. To re-activate the safe mode, please tap this icon in the app:"
+    },
+    {
+      "name": "pause",
+      "value": "Pause"
     },
     {
       "name": "play",

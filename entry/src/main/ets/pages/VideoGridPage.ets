@@ -203,7 +203,7 @@ export struct VideoGridPage {
   @Local importActive: boolean = false;
   @Local importCurrent: number = 0;
   @Local importTotal: number = 0;
-  @Local fabBottom: number = 152;
+  @Local fabBottom: number = AppDimens.floating_content_bottom_inset;
   @Param settingsVersion: number = 0;
   @Param searchMode: boolean = false;
   @Param searchQuery: string = '';
@@ -515,7 +515,7 @@ export struct VideoGridPage {
     .clip(false)
     .onAreaChange((_oldArea: Area, newArea: Area) => {
       const h: number = Number(newArea.height);
-      this.fabBottom = Math.max(16, Math.min(152, h - 64));
+      this.fabBottom = Math.max(16, Math.min(AppDimens.floating_content_bottom_inset, h - 64));
     })
     .backgroundColor($r('app.color.background_default'))
     .bindSheet(this.showContext, this.contextSheet(), {

@@ -142,18 +142,22 @@ export struct MorePage {
   @Builder
   HistoryPreview() {
     if (this.vm.history.length === 0) {
-      Column() {
-        Text('暂无播放历史')
-          .fontSize(14).fontColor($r('app.color.list_subtitle'))
+      Row() {
+        Column() {
+          Text('暂无播放历史')
+            .fontSize(14).fontColor($r('app.color.list_subtitle'))
+        }
+        .width('100%')
+        .height(120)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Start)
+        .padding({ left: 16 })
+        .border({ width: 1, color: $r('app.color.card_border'), radius: 8 })
+        .onClick(() => this.openHistory())
       }
       .width('100%')
-      .height(120)
-      .justifyContent(FlexAlign.Center)
-      .alignItems(HorizontalAlign.Start)
-      .padding({ left: 16 })
-      .border({ width: 1, color: $r('app.color.card_border'), radius: 8 })
-      .margin({ left: 16, right: 16 })
-      .onClick(() => this.openHistory())
+      // 由外层内边距预留卡片空间，避免满宽卡片再叠加左右 margin 后溢出。
+      .padding({ left: 16, right: 16 })
     } else {
       Scroll() {
         Row() {

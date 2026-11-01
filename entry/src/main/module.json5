@@ -13,6 +13,13 @@
     "deliveryWithInstall": true,
     "installationFree": false,
     "pages": "$profile:main_pages",
+    "compressNativeLibs": true,
+    "metadata": [
+      {
+        "name": "ohos.arkui.UIMaterial.state",
+        "value": "enable"
+      }
+    ],
     "abilities": [
       {
         "name": "EntryAbility",
@@ -23,8 +30,15 @@
         "startWindowIcon": "$media:Layer1",
         "startWindowBackground": "$color:start_window_background",
         "exported": true,
+        "orientation": "auto_rotation_restricted",
+        "preferMultiWindowOrientation": "landscape_auto",
         "backgroundModes": [
           "audioPlayback"
+        ],
+        "supportWindowMode": [
+          "floating",
+          "fullscreen",
+          "split"
         ],
         "skills": [
           {

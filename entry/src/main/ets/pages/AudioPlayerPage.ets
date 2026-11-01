@@ -1,12 +1,15 @@
 import { UiFeedback } from '../common/utils/UiFeedback';
 import { PlaybackService, PlaybackState } from '../common/data/PlaybackService';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
-import { NavController } from '../common/data/NavController';
+import { AudioPlayerRoute, NavController } from '../common/data/NavController';
+import { AudioPlayerDismissDrag } from '../common/data/AudioPlayerDismissDrag';
+import { curves } from '@kit.ArkUI';
 import { AudioBrowserRequest } from '../common/data/AudioBrowserRequest';
 import { formatDuration, PlayState, Track } from '../common/models/MediaModels';
 import { PlaybackSpeedAction, PlaybackSpeedDialog } from './PlaybackSpeedDialog';
 import { EqualizerDialog } from './EqualizerDialog';
 import { AudioInfoDialog, AudioInfoParams } from './AudioInfoDialog';
+import { EmbeddedLyrics, LyricLine, LyricsDocument } from '../common/data/EmbeddedLyrics';
 
 import { SleepTimerDialog } from './SleepTimerDialog';
 import { JumpToTimeDialog } from './JumpToTimeDialog';
@@ -21,6 +24,13 @@ import {
   PlayerAdvancedOptions,
 } from '../common/components/PlayerAdvancedOptions';
 
+// 新增的详情控件随后渐入，共享封面/标题/歌手/当前歌词/播放按钮单独做几何转场。
+const AUDIO_DETAIL_TRANSITION: TransitionEffect = TransitionEffect.asymmetric(
+  TransitionEffect.OPACITY.combine(TransitionEffect.translate({ y: 16 }))
+    .animation({ duration: 240, delay: 80, curve: Curve.EaseOut }),
+  TransitionEffect.OPACITY.animation({ duration: 140, curve: Curve.EaseIn })
+);
+
 /**
  * AudioPlayerPage —— 音频播放详情页。
  * 封面 + 曲目标题/艺术家 + 时间轴 + 控制按钮。
@@ -28,6 +38,8 @@ import {
  */
 @ObservedV2
 class AudioPlayerViewModel {
+  @Trace uri: string = '';
+  waitingForUri: string = '';
   @Trace state: PlayState = PlayState.IDLE;
   @Trace duration: number = 0;
   @Trace position: number = 0;
@@ -41,23 +53,30 @@ class AudioPlayerViewModel {
   @Trace locked: boolean = false;
   /** A-B 循环回调：到 B 点时跳回 A。由 Page 层注入。 */
   onAbLoopCheck: (() => void) | null = null;
+  onProgress: (() => void) | null = null;
   private listenerId: number = 0;
   private lastRecordedUri: string = '';
 
   attach(): void {
     this.listenerId = setInterval(() => {
+      const currentUri: string = PlaybackService.getCurrent()?.uri ?? '';
+      // 队列准备是异步的，不能让上一首的轮询快照覆盖点击时的封面和标题。
+      if (this.waitingForUri.length > 0 && currentUri !== this.waitingForUri) { return; }
+      this.waitingForUri = '';
+      this.uri = currentUri;
       const s: PlaybackState = PlaybackService.snapshot();
       const prev = this.state;
       this.state = s.state;
       this.duration = s.duration;
       this.position = s.position;
       this.title = s.title;
-      this.artist = s.artist;
+      this.artist = s.artist.length > 0 ? s.artist : (PlaybackService.getCurrent()?.artistName ?? '');
       this.artworkPath = s.artworkPath;
       this.shuffle = s.shuffle;
       this.repeatMode = s.repeatMode;
       this.speed = s.speed;
       this.globalSpeedEnabled = s.globalSpeedEnabled;
+      this.onProgress?.();
       // 记录播放历史:状态转为 PLAYING 且非重复记录同一曲目
       if (s.state === PlayState.PLAYING && prev !== PlayState.PLAYING && this.title.length > 0) {
         const cur = PlaybackService.getCurrent();
@@ -94,7 +113,22 @@ class AudioPlayerViewModel {
 
 @ComponentV2
 export struct AudioPlayerPage {
+  @Param fromMiniPlayer: boolean = false;
+  @Param sourceRoute: AudioPlayerRoute | null = null;
   @Local vm: AudioPlayerViewModel = new AudioPlayerViewModel();
+  @Local showLyrics: boolean = false;
+  @Local lyrics: LyricsDocument = new LyricsDocument();
+  @Local lyricsLoading: boolean = false;
+  @Local lyricIndex: number = -1;
+  private lyricUri: string = '';
+  private lyricVersion: number = 0;
+  private lyricScroller: Scroller = new Scroller();
+  private contentSwiper: SwiperController = new SwiperController();
+  private lastLyricsTouch: number = 0;
+  @Local closing: boolean = false;
+  @Local dismissOffset: number = 0;
+  @Local dismissDragging: boolean = false;
+  private closingLayoutCallback: (() => void) | null = null;
   @Local advancedOptionsOpen: boolean = false;
   @Local bookmarkOpen: boolean = false;
   @Local speedOpen: boolean = false;
@@ -120,7 +154,7 @@ export struct AudioPlayerPage {
   aboutToAppear(): void {
     const s = PlaybackService.snapshot();
     this.vm.title = s.title;
-    this.vm.artist = s.artist;
+    this.vm.artist = s.artist.length > 0 ? s.artist : (PlaybackService.getCurrent()?.artistName ?? '');
     this.vm.artworkPath = s.artworkPath;
     this.vm.duration = s.duration;
     this.vm.position = s.position;
@@ -129,26 +163,269 @@ export struct AudioPlayerPage {
     this.vm.repeatMode = s.repeatMode;
     this.vm.speed = s.speed;
     this.vm.globalSpeedEnabled = s.globalSpeedEnabled;
+    this.vm.uri = PlaybackService.getCurrent()?.uri ?? '';
+    if (this.fromMiniPlayer && this.sourceRoute !== null && this.sourceRoute.uri === this.vm.uri) {
+      // 共享文本首帧就绪，不等异步标签读取完成后才创建歌词转场目标。
+      this.vm.artist = this.sourceRoute.artist;
+      if (this.sourceRoute.lyrics !== null) {
+        this.lyricUri = this.vm.uri;
+        this.lyrics = this.sourceRoute.lyrics;
+        this.lyricIndex = EmbeddedLyrics.activeLine(this.lyrics, this.vm.position);
+      }
+    }
+    if (this.sourceRoute !== null && (this.sourceRoute.sourcePrefix.length > 0
+      || this.sourceRoute.artistSourceId.length > 0)) {
+      this.vm.uri = this.sourceRoute.uri;
+      this.vm.title = this.sourceRoute.title;
+      this.vm.artist = this.sourceRoute.artist;
+      this.vm.artworkPath = this.sourceRoute.artworkPath;
+      this.vm.duration = 0;
+      this.vm.position = 0;
+      this.vm.state = PlayState.IDLE;
+      this.vm.waitingForUri = this.sourceRoute.uri;
+    }
     this.vm.onAbLoopCheck = () => {
       if (this.abActive && this.abPointB > this.abPointA && this.vm.position >= this.abPointB - 200) {
         PlaybackService.seek(this.abPointA);
       }
     };
     this.vm.attach();
+    this.vm.onProgress = () => this.updateLyrics();
+    this.updateLyrics();
   }
 
   aboutToDisappear(): void {
+    if (this.closingLayoutCallback !== null) {
+      this.getUIContext().getUIObserver().off('didLayout', this.closingLayoutCallback);
+      this.closingLayoutCallback = null;
+    }
     this.vm.detach();
+    this.vm.onProgress = null;
+    this.lyricVersion++;
+  }
+
+  private updateLyrics(): void {
+    if (this.vm.waitingForUri.length > 0) { return; }
+    const uri: string = PlaybackService.getCurrent()?.uri ?? '';
+    if (uri !== this.lyricUri) {
+      this.lyricUri = uri;
+      this.lyrics = new LyricsDocument();
+      this.lyricIndex = -1;
+      this.lastLyricsTouch = 0;
+      const version: number = ++this.lyricVersion;
+      this.lyricsLoading = uri.length > 0;
+      void this.loadLyrics(uri, version);
+    }
+    const index: number = EmbeddedLyrics.activeLine(this.lyrics, this.vm.position);
+    const changed: boolean = index !== this.lyricIndex;
+    this.lyricIndex = index;
+    if (this.showLyrics && index >= 0 && (changed || this.lastLyricsTouch > 0)
+      && Date.now() - this.lastLyricsTouch > 4000) {
+      this.lastLyricsTouch = 0;
+      this.lyricScroller.scrollToIndex(index, true, ScrollAlign.CENTER);
+    }
+  }
+
+  private async loadLyrics(uri: string, version: number): Promise<void> {
+    const document: LyricsDocument = await EmbeddedLyrics.load(uri);
+    if (version !== this.lyricVersion) { return; }
+    this.lyrics = document;
+    this.lyricsLoading = false;
+    this.lyricIndex = EmbeddedLyrics.activeLine(document, this.vm.position);
+    // 待 List 完成构建后才定位，避免切歌时使用旧列表的布局。
+    if (this.showLyrics) { this.lastLyricsTouch = 1; }
+  }
+
+  private selectContentPage(index: number): void {
+    if (!this.vm.locked && !this.dismissDragging) {
+      this.contentSwiper.changeIndex(index, true);
+    }
+  }
+
+  private compactLyricIndex(): number {
+    return EmbeddedLyrics.compactLineIndex(this.lyrics, this.vm.position);
+  }
+
+  private currentLyricText(): string {
+    const index: number = this.compactLyricIndex();
+    return index >= 0 ? this.lyrics.lines[index].text.trim() : '';
+  }
+
+  private nextLyricText(): string {
+    const index: number = this.lyrics.timed ? this.lyricIndex : this.compactLyricIndex();
+    return index + 1 < this.lyrics.lines.length ? this.lyrics.lines[index + 1].text.trim() : '';
+  }
+
+  private hasSharedEntry(): boolean {
+    return this.fromMiniPlayer || (this.sourceRoute !== null
+      && (this.sourceRoute.sourcePrefix.length > 0 || this.sourceRoute.artistSourceId.length > 0)
+      && this.vm.uri === this.sourceRoute.uri);
+  }
+
+  private sharedElementId(element: string): string {
+    if (this.fromMiniPlayer) { return `audio-player-${element}`; }
+    if (this.hasSharedEntry() && this.sourceRoute !== null) {
+      if (element === 'artist' && this.sourceRoute.artist.length > 0 && this.sourceRoute.artistSourceId.length > 0) {
+        return this.sourceRoute.artistSourceId;
+      }
+      if (this.sourceRoute.sourcePrefix.length > 0 && (element === 'cover' || element === 'title'
+        || (element === 'artist' && this.sourceRoute.artist.length > 0))) {
+        return `${this.sourceRoute.sourcePrefix}-${element}`;
+      }
+    }
+    return '';
+  }
+
+  private closePlayer(): void {
+    if (this.closing) { return; }
+    this.dismissDragging = false;
+    this.closing = true;
+    if (this.hasSharedEntry() && this.showLyrics) {
+      // Swiper 的封面页此时在屏幕外。先无动画复位并完成布局，避免从错误位置收回。
+      const callback: () => void = () => {
+        this.getUIContext().getUIObserver().off('didLayout', callback);
+        this.closingLayoutCallback = null;
+        NavController.closeAudioPlayer(this.getUIContext(), true);
+      };
+      this.closingLayoutCallback = callback;
+      this.getUIContext().getUIObserver().on('didLayout', callback);
+      this.contentSwiper.changeIndex(0, false);
+      this.showLyrics = false;
+      return;
+    }
+    this.showLyrics = false;
+    NavController.closeAudioPlayer(this.getUIContext(), this.hasSharedEntry());
+  }
+
+  private canDismissDrag(): boolean {
+    return !this.closing && !this.vm.locked && !this.advancedOptionsOpen && !this.bookmarkOpen
+      && !this.speedOpen && !this.eqOpen && !this.sleepOpen && !this.jumpOpen
+      && !this.savePlaylistOpen && !this.infoOpen;
+  }
+
+  private startDismissDrag(offsetY: number): void {
+    this.dismissDragging = this.canDismissDrag() && offsetY > 0;
+  }
+
+  private updateDismissDrag(offsetY: number): void {
+    if (this.dismissDragging && this.canDismissDrag()) {
+      this.dismissOffset = AudioPlayerDismissDrag.offset(offsetY);
+    }
+  }
+
+  private reboundDismissDrag(): void {
+    if (this.closing) { return; }
+    this.dismissDragging = false;
+    this.getUIContext().animateTo({ curve: curves.interpolatingSpring(0, 1, 342, 38) }, () => {
+      this.dismissOffset = 0;
+    });
+  }
+
+  private endDismissDrag(offsetY: number, velocityY: number): void {
+    if (!this.dismissDragging || this.closing) { return; }
+    if (!this.canDismissDrag()) { this.reboundDismissDrag(); return; }
+    this.dismissOffset = AudioPlayerDismissDrag.offset(offsetY);
+    this.dismissDragging = false;
+    if (AudioPlayerDismissDrag.shouldClose(offsetY, velocityY)) {
+      // 从手指松开时的位置反向共享转场，不先把页面复位，以免收回前跳一下。
+      this.closePlayer();
+    } else {
+      this.reboundDismissDrag();
+    }
+  }
+
+  @Builder
+  compactLyricsView() {
+    Column({ space: 6 }) {
+      if (this.currentLyricText().length > 0) {
+        Text(this.currentLyricText())
+          .fontSize(16)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.lyrics.timed && this.lyricIndex >= 0
+            ? $r('app.color.orange500') : $r('app.color.list_title'))
+          .textAlign(TextAlign.Center)
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+          .geometryTransition(this.fromMiniPlayer ? 'audio-player-lyric' : '')
+          .transition(this.fromMiniPlayer ? TransitionEffect.OPACITY : AUDIO_DETAIL_TRANSITION)
+          .id('audio-detail-lyric')
+      }
+      if (this.nextLyricText().length > 0) {
+        Text(this.nextLyricText())
+          .fontSize(12)
+          .fontColor($r('app.color.list_subtitle'))
+          .textAlign(TextAlign.Center)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+          .transition(AUDIO_DETAIL_TRANSITION)
+      }
+    }
+    .width('100%')
+    .height(76)
+    .padding({ left: 24, right: 24, top: 12, bottom: 8 })
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => this.selectContentPage(1))
+  }
+
+  @Builder
+  lyricsView() {
+    if (this.lyrics.lines.length > 0) {
+      List({ scroller: this.lyricScroller, space: 12 }) {
+        Repeat(this.lyrics.lines)
+          .each((item: RepeatItem<LyricLine>) => {
+            ListItem() {
+              Text(item.item.text.length > 0 ? item.item.text : '♪')
+                .fontSize(this.lyrics.timed && item.index === this.lyricIndex ? 22 : 18)
+                .fontWeight(item.index === this.lyricIndex ? FontWeight.Bold : FontWeight.Normal)
+                .fontColor(item.index === this.lyricIndex ? $r('app.color.orange500') : $r('app.color.list_subtitle'))
+                .textAlign(TextAlign.Center)
+                .width('100%')
+                .padding({ top: 8, bottom: 8, left: 24, right: 24 })
+                .onClick(() => {
+                  if (this.lyrics.timed && !this.vm.locked) {
+                    PlaybackService.seek(item.item.time);
+                    this.lastLyricsTouch = 0;
+                  }
+                })
+            }
+          })
+          .key((line: LyricLine, index: number) => `${index}:${line.time}`)
+          .virtualScroll()
+      }
+      .id('audio-lyrics-list')
+      .width('100%')
+      .height('100%')
+      .padding({ top: 36, bottom: 36 })
+      .scrollBar(BarState.Off)
+      .onTouch(() => this.lastLyricsTouch = Date.now())
+    } else {
+      Text(this.lyricsLoading ? $r('app.string.audio_lyrics_loading') : $r('app.string.audio_lyrics_empty'))
+        .fontSize(16)
+        .fontColor($r('app.color.list_subtitle'))
+        .textAlign(TextAlign.Center)
+        .padding(24)
+    }
   }
 
   build() {
     NavDestination() {
       Stack() {
+        Column()
+          .width('100%')
+          .height('100%')
+          .backgroundColor($r('app.color.background_default'))
+          .borderRadius(0)
+          .clip(true)
+          .geometryTransition(this.fromMiniPlayer ? 'audio-player-surface' : '')
+          .transition(TransitionEffect.OPACITY)
+          .id('audio-detail-surface')
         Column() {
           // 头部:返回 + 标题 + A-B 指示灯 + 更多
           Row() {
             Image($r('app.media.ic_arrow_back')).width(24).height(24).fillColor($r('app.color.list_title'))
-              .onClick(() => NavController.pop())
+              .onClick(() => this.closePlayer())
             Text(this.vm.title)
               .fontSize(16)
               .fontColor($r('app.color.list_title'))
@@ -196,6 +473,14 @@ export struct AudioPlayerPage {
           })
           .alignItems(VerticalAlign.Center)
           .linearGradient({ angle: 180, colors: [['#66000000', 0.0], ['#00000000', 1.0]] })
+          .transition(AUDIO_DETAIL_TRANSITION)
+          .gesture(
+            PanGesture({ direction: PanDirection.Vertical, distance: 8 })
+              .onActionStart((event: GestureEvent) => this.startDismissDrag(event.offsetY))
+              .onActionUpdate((event: GestureEvent) => this.updateDismissDrag(event.offsetY))
+              .onActionEnd((event: GestureEvent) => this.endDismissDrag(event.offsetY, event.velocityY))
+              .onActionCancel(() => { if (this.dismissDragging) { this.reboundDismissDrag(); } })
+          )
 
           // 睡眠定时器指示灯
           if (this.sleepTimer !== -1) {
@@ -215,20 +500,63 @@ export struct AudioPlayerPage {
             .onClick(() => this.clearSleepTimer())
           }
 
-          // 专辑封面
-          Column() {
-            Image(this.vm.artworkPath.length > 0 ? this.vm.artworkPath : $r('app.media.ic_song_big'))
-              .width('70%')
-              .aspectRatio(1)
-              .objectFit(ImageFit.Cover)
-              .borderRadius(8)
-              .shadow({ radius: 16, color: '#33000000', offsetY: 4 })
+          // 封面与歌词横向翻页；歌词列表内部仍可独立纵向滚动。
+          Swiper(this.contentSwiper) {
+            Column() {
+              Stack() {
+              Image(this.vm.artworkPath.length > 0 ? this.vm.artworkPath : $r('app.media.ic_song_big'))
+                .width('70%')
+                .aspectRatio(1)
+                .constraintSize({ maxHeight: '100%' })
+                .objectFit(ImageFit.Cover)
+                .autoResize(false)
+                .syncLoad(true)
+                .fillColor(this.vm.artworkPath.length > 0 ? Color.Transparent : $r('app.color.list_subtitle'))
+                .borderRadius(8)
+                .clip(true)
+                .shadow({ radius: 16, color: '#33000000', offsetY: 4 })
+                .geometryTransition(this.sharedElementId('cover'))
+                .transition(TransitionEffect.OPACITY)
+                .id('audio-detail-cover')
+              }
+              .width('100%')
+              .layoutWeight(1)
+              .clip(false)
+              this.compactLyricsView()
+            }
+            .width('100%')
+            .height('100%')
+            .clip(false)
+            // 只在封面页接管竖向拖动，不给歌词 List 或进度条挂全屏手势。
+            .gesture(
+              PanGesture({ direction: PanDirection.Vertical, distance: 8 })
+                .onActionStart((event: GestureEvent) => this.startDismissDrag(event.offsetY))
+                .onActionUpdate((event: GestureEvent) => this.updateDismissDrag(event.offsetY))
+                .onActionEnd((event: GestureEvent) => this.endDismissDrag(event.offsetY, event.velocityY))
+                .onActionCancel(() => { if (this.dismissDragging) { this.reboundDismissDrag(); } })
+            )
+            Stack() {
+              this.lyricsView()
+            }
+            .width('100%')
+            .height('100%')
           }
           .layoutWeight(1)
           .width('100%')
-          .justifyContent(FlexAlign.Center)
-          .alignItems(HorizontalAlign.Center)
           .padding({ top: 12, bottom: 12 })
+          .index(this.showLyrics ? 1 : 0)
+          .vertical(false)
+          .loop(false)
+          .indicator(false)
+          .cachedCount(1)
+          .duration(300)
+          // 共享封面需要跨出 Swiper 的最终边界，不能在入场时被父容器裁掉。
+          .clip(false)
+          .disableSwipe(this.vm.locked || this.dismissDragging)
+          .onChange((index: number) => {
+            this.showLyrics = index === 1;
+            if (this.showLyrics) { this.lastLyricsTouch = 1; }
+          })
 
           // 曲目标题 + 艺术家
           Column() {
@@ -236,12 +564,18 @@ export struct AudioPlayerPage {
               .fontSize(18)
               .fontColor($r('app.color.list_title'))
               .fontWeight(FontWeight.Medium)
+              .geometryTransition(this.sharedElementId('title'))
+              .transition(TransitionEffect.OPACITY)
+              .id('audio-detail-title')
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .margin({ bottom: 4 })
             Text(this.vm.artist.length > 0 ? this.vm.artist : $r('app.string.unknown_artist'))
               .fontSize(14).fontColor($r('app.color.list_subtitle'))
               .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+              .geometryTransition(this.sharedElementId('artist'))
+              .transition(this.sharedElementId('artist').length > 0 ? TransitionEffect.OPACITY : AUDIO_DETAIL_TRANSITION)
+              .id('audio-detail-artist')
           }
           .width('100%').padding({ left: 24, right: 24, bottom: 12 })
           .alignItems(HorizontalAlign.Center)
@@ -320,29 +654,39 @@ export struct AudioPlayerPage {
               .textAlign(TextAlign.End)
           }
           .width('100%').padding({ left: 12, right: 12, bottom: 12 }).alignItems(VerticalAlign.Center)
+          .transition(AUDIO_DETAIL_TRANSITION)
 
           // 控制按钮行
           Row() {
             Image($r('app.media.ic_shuffle_audio')).width(28).height(28)
               .fillColor(this.vm.shuffle ? $r('app.color.orange500') : $r('app.color.list_title'))
               .onClick(() => PlaybackService.toggleShuffle())
+              .transition(AUDIO_DETAIL_TRANSITION)
             Blank()
             Image($r('app.media.ic_player_previous')).width(40).height(40).fillColor($r('app.color.list_title'))
               .onClick(() => PlaybackService.prev())
+              .transition(AUDIO_DETAIL_TRANSITION)
             Blank()
             Image(
               this.vm.state === PlayState.PLAYING ? $r('app.media.ic_pause_player') : $r('app.media.ic_play_player'))
               .width(64).height(64).fillColor($r('app.color.orange500'))
               .onClick(() => PlaybackService.togglePlay())
+              .geometryTransition(this.fromMiniPlayer ? 'audio-player-play' : '')
+              .transition(TransitionEffect.OPACITY)
+              .id('audio-detail-play')
             Blank()
             Image($r('app.media.ic_player_next')).width(40).height(40).fillColor($r('app.color.list_title'))
               .onClick(() => PlaybackService.next())
+              .geometryTransition(this.fromMiniPlayer ? 'audio-player-next' : '')
+              .transition(TransitionEffect.OPACITY)
+              .id('audio-detail-next')
             Blank()
             Image(this.vm.repeatMode === 0 ? $r('app.media.ic_repeat_audio') :
               (this.vm.repeatMode === 2 ? $r('app.media.ic_repeat_one_audio') : $r('app.media.ic_repeat_all_audio')))
               .width(28).height(28)
               .fillColor(this.vm.repeatMode > 0 ? $r('app.color.orange500') : $r('app.color.list_title'))
               .onClick(() => PlaybackService.cycleRepeat())
+              .transition(AUDIO_DETAIL_TRANSITION)
           }
           .width('100%')
           .padding({
@@ -554,15 +898,20 @@ export struct AudioPlayerPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor($r('app.color.background_default'))
+      .backgroundColor(Color.Transparent)
+      .borderRadius(Math.min(24, this.dismissOffset / 8))
+      .clip(this.dismissDragging)
+      .translate({ y: this.dismissOffset })
+      .enabled(!this.closing)
     }
     .hideTitleBar(true)
+    .backgroundColor(this.hasSharedEntry() ? Color.Transparent : $r('app.color.background_default'))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .onBackPressed(() => {
       if (this.vm.locked) {
         return true;
       }
-      NavController.pop();
+      this.closePlayer();
       return true;
     })
   }

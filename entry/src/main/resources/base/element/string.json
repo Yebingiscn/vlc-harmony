@@ -1,5 +1,7 @@
 {
   "string": [
+    { "name": "audio_lyrics_loading", "value": "正在读取内嵌歌词…" },
+    { "name": "audio_lyrics_empty", "value": "此文件没有可读取的内嵌歌词" },
     {
       "name": "X",
       "value": "X"
@@ -867,6 +869,10 @@
     {
       "name": "pin_unlock_success",
       "value": "已成功解锁。要重新启用安全模式，请轻按此图标:"
+    },
+    {
+      "name": "pause",
+      "value": "暂停"
     },
     {
       "name": "play",

@@ -38,6 +38,7 @@ import {
 @ComponentV2
 export struct MainPage {
   private tabsController: HdsTabsController = new HdsTabsController();
+  @Local miniPlayerExpansionHeight: number = 420;
   private videoScroller: Scroller = new Scroller();
   private audioArtistScroller: Scroller = new Scroller();
   private audioAlbumListScroller: Scroller = new Scroller();
@@ -434,10 +435,13 @@ export struct MainPage {
             onDisappear: () => this.showFavoriteServer = false,
           })
 
-          MiniPlayer()
-            .width(328)
+          MiniPlayer({ expansionHeight: this.miniPlayerExpansionHeight })
+            .width('100%')
             .margin({ bottom: 100 })
         }.borderRadius(16)
+        .onAreaChange((_oldArea: Area, area: Area) => {
+          this.miniPlayerExpansionHeight = Math.max(160, Number(area.height) - 108);
+        })
         .layoutWeight(1)
         .width('100%')
 

@@ -1,7 +1,7 @@
 import { UiFeedback } from '../common/utils/UiFeedback';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
-import { NavController } from '../common/data/NavController';
+import { AudioPlayerRoute, NavController } from '../common/data/NavController';
 import { EmptyStateView } from '../common/components/EmptyStateView';
 import { EmptyLoadingState, formatDuration, Track } from '../common/models/MediaModels';
 import { Settings } from '../common/data/Settings';
@@ -290,7 +290,7 @@ export struct AudioBrowserPage {
   @Local importActive: boolean = false;
   @Local importCurrent: number = 0;
   @Local importTotal: number = 0;
-  @Local fabBottom: number = 152;
+  @Local fabBottom: number = AppDimens.floating_content_bottom_inset;
   @Param settingsVersion: number = 0;
   @Param searchMode: boolean = false;
   @Param searchQuery: string = '';
@@ -382,6 +382,20 @@ export struct AudioBrowserPage {
     }
   }
 
+  private artistHeaderId(artist: string): string {
+    return `audio-artist-header:${encodeURIComponent(artist)}`;
+  }
+
+  private albumArtistId(card: AlbumCard, mode: string): string {
+    return `audio-album-artist:${encodeURIComponent(mode)}:${encodeURIComponent(card.artist)}:${encodeURIComponent(card.name)}`;
+  }
+
+  private playAlbum(card: AlbumCard, artistSourceId: string): void {
+    if (card.tracks.length > 0) {
+      this.playTrack(card.tracks[0], card.tracks, '', artistSourceId);
+    }
+  }
+
   playAll(tracks: Track[]): void {
     if (tracks.length === 0) {
       return;
@@ -389,7 +403,7 @@ export struct AudioBrowserPage {
     this.playTrack(tracks[0], tracks);
   }
 
-  playTrack(t: Track, list: Track[]): void {
+  playTrack(t: Track, list: Track[], sourcePrefix: string = '', artistSourceId: string = ''): void {
     if (this.audioPlayerOpening || list.length === 0) {
       return;
     }
@@ -400,7 +414,19 @@ export struct AudioBrowserPage {
       this.audioPlayerOpening = false;
       UiFeedback.showToast({ message: '无法播放该音频' });
     });
-    NavController.push('AudioPlayer');
+    if (sourcePrefix.length > 0 || artistSourceId.length > 0) {
+      const route: AudioPlayerRoute = new AudioPlayerRoute();
+      route.fromMiniPlayer = false;
+      route.sourcePrefix = sourcePrefix;
+      route.artistSourceId = artistSourceId;
+      route.uri = t.uri;
+      route.title = t.title;
+      route.artist = t.artistName;
+      route.artworkPath = t.artworkPath;
+      NavController.openAudioPlayer(this.getUIContext(), route);
+    } else {
+      NavController.push('AudioPlayer');
+    }
     // MainPage 会常驻并仅切换可见性，返回时本组件不保证再次触发 aboutToAppear。
     // 因此锁只覆盖导航动画窗口，不能一直等生命周期回调释放。
     setTimeout(() => {
@@ -528,7 +554,7 @@ export struct AudioBrowserPage {
       .onRefreshing(() => this.doRefresh()).refreshOffset(64)
       .backgroundColor($r('app.color.background_default'))
 
-      // FAB：避让 64vp HdsTabs 底栏以及播放时显示在其上方的 MiniPlayer。
+      // FAB：与内容底部避让一致，在 64vp 悬浮播放器上方保留 16vp 间距。
       Button() {
         Image($r('app.media.ic_add')).width(22).height(22).fillColor($r('app.color.colorOnPrimary'))
       }
@@ -544,7 +570,7 @@ export struct AudioBrowserPage {
     .clip(false)
     .onAreaChange((_oldArea: Area, newArea: Area) => {
       const h: number = Number(newArea.height);
-      this.fabBottom = Math.max(16, Math.min(152, h - 64));
+      this.fabBottom = Math.max(16, Math.min(AppDimens.floating_content_bottom_inset, h - 64));
     })
     .backgroundColor($r('app.color.background_default'))
     .bindSheet($$this.showSheet, this.albumSheet(), {
@@ -593,7 +619,7 @@ export struct AudioBrowserPage {
             if (this.vm.displayAsList) {
               Column() {
                 Repeat(albumsRepeatItem.item).each((cardRepeatItem: RepeatItem<AlbumCard>) => {
-                  this.albumRow(cardRepeatItem.item)
+                  this.albumRow(cardRepeatItem.item, true)
                 }).key((card: AlbumCard) =>
                 `artist_list_${this.vm.renderVersion}_${this.vm.artistNames[albumsRepeatItem.index]}_${card.name}`)
               }
@@ -632,6 +658,8 @@ export struct AudioBrowserPage {
   artistHeader(aIdx: number) {
     Row() {
       Text(this.vm.artistNames[aIdx]).fontSize(16).fontColor($r('app.color.colorAccent')).fontWeight(FontWeight.Medium)
+        .geometryTransition(this.artistHeaderId(this.vm.artistNames[aIdx]), { follow: true })
+        .transition(TransitionEffect.OPACITY)
       Text(` · ${this.vm.artistAlbums[aIdx].length} 专辑`).fontSize(12).fontColor($r('app.color.list_subtitle'))
     }
     .width('100%')
@@ -672,9 +700,7 @@ export struct AudioBrowserPage {
     }
     .width('100%')
     .onClick(() => {
-      if (card.tracks.length > 0) {
-        this.playTrack(card.tracks[0], card.tracks);
-      }
+      this.playAlbum(card, this.artistHeaderId(card.artist));
     })
   }
 
@@ -685,7 +711,7 @@ export struct AudioBrowserPage {
     List({ scroller: this.albumListScroller }) {
       Repeat(this.vm.albums).each((cardRepeatItem: RepeatItem<AlbumCard>) => {
         ListItem() {
-          this.albumRow(cardRepeatItem.item)
+          this.albumRow(cardRepeatItem.item, false)
         }
       }).key((card: AlbumCard) =>
       `album_list_${this.vm.renderVersion}_${card.name}|${card.artist}`).virtualScroll()
@@ -703,7 +729,7 @@ export struct AudioBrowserPage {
   }
 
   @Builder
-  albumRow(card: AlbumCard) {
+  albumRow(card: AlbumCard, fromArtist: boolean) {
     Row() {
       Image(card.artwork.length > 0 ? card.artwork : $r('app.media.ic_album_big'))
         .width(52)
@@ -717,12 +743,23 @@ export struct AudioBrowserPage {
           .fontColor($r('app.color.list_title'))
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(`${card.trackCount} 首 · ${card.artist}`)
-          .fontSize(13)
-          .fontColor($r('app.color.list_subtitle'))
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .margin({ top: 3 })
+        Row() {
+          Text(`${card.trackCount} 首 · `)
+            .fontSize(13)
+            .fontColor($r('app.color.list_subtitle'))
+            .flexShrink(0)
+          Text(card.artist)
+            .fontSize(13)
+            .fontColor($r('app.color.list_subtitle'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
+            // 艺术家页复用分组标题作为唯一源，不在每张专辑重复注册同一歌手 ID。
+            .geometryTransition(fromArtist ? '' : this.albumArtistId(card, 'list'), { follow: true })
+            .transition(TransitionEffect.OPACITY)
+        }
+        .width('100%')
+        .margin({ top: 3 })
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
@@ -736,7 +773,7 @@ export struct AudioBrowserPage {
     .width('100%')
     .padding({ left: 12, right: 16, top: 8, bottom: 8 })
     .alignItems(VerticalAlign.Center)
-    .onClick(() => this.playAll(card.tracks))
+    .onClick(() => this.playAlbum(card, fromArtist ? this.artistHeaderId(card.artist) : this.albumArtistId(card, 'list')))
   }
 
   @Builder
@@ -767,14 +804,26 @@ export struct AudioBrowserPage {
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .margin({ top: 6 })
-            Text(`${cardRepeatItem.item.trackCount} 首 · ${cardRepeatItem.item.artist}`)
-              .fontSize(12)
-              .fontColor($r('app.color.list_subtitle'))
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
+            Row() {
+              Text(`${cardRepeatItem.item.trackCount} 首 · `)
+                .fontSize(12)
+                .fontColor($r('app.color.list_subtitle'))
+                .flexShrink(0)
+              Text(cardRepeatItem.item.artist)
+                .fontSize(12)
+                .fontColor($r('app.color.list_subtitle'))
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .flexShrink(1)
+                .geometryTransition(this.albumArtistId(cardRepeatItem.item, 'grid'), { follow: true })
+                .transition(TransitionEffect.OPACITY)
+            }
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
+            .alignItems(VerticalAlign.Center)
           }
           .width('100%').padding(6)
-          .onClick(() => this.playAll(cardRepeatItem.item.tracks))
+          .onClick(() => this.playAlbum(cardRepeatItem.item, this.albumArtistId(cardRepeatItem.item, 'grid')))
         }
       }).key((card: AlbumCard) =>
       `album_grid_${this.vm.renderVersion}_${card.name}|${card.artist}`).virtualScroll()
@@ -795,7 +844,7 @@ export struct AudioBrowserPage {
     List({ scroller: this.trackListScroller }) {
       Repeat(this.vm.tracks).each((tRepeatItem: RepeatItem<Track>) => {
         ListItem() {
-          this.trackRow(tRepeatItem.item, this.vm.tracks)
+          this.trackRow(tRepeatItem.item, this.vm.tracks, 'tracks')
         }
       }).key((t: Track) => `track_list_${this.vm.renderVersion}_${t.uri}`).virtualScroll()
     }
@@ -835,6 +884,8 @@ export struct AudioBrowserPage {
         .aspectRatio(1)
         .objectFit(ImageFit.Cover)
         .borderRadius(8)
+        .geometryTransition(`${AudioPlayerRoute.trackPrefix('grid', track.uri)}-cover`, { follow: true })
+        .transition(TransitionEffect.OPACITY)
       Text(track.title)
         .fontSize(14)
         .fontColor($r('app.color.list_title'))
@@ -842,16 +893,20 @@ export struct AudioBrowserPage {
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .margin({ top: 6 })
+        .geometryTransition(`${AudioPlayerRoute.trackPrefix('grid', track.uri)}-title`, { follow: true })
+        .transition(TransitionEffect.OPACITY)
       Text(track.artistName.length > 0 ? track.artistName : '未知艺术家')
         .fontSize(12)
         .fontColor($r('app.color.list_subtitle'))
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .geometryTransition(`${AudioPlayerRoute.trackPrefix('grid', track.uri)}-artist`, { follow: true })
+        .transition(TransitionEffect.OPACITY)
     }
     .width('100%')
     .padding(6)
     .alignItems(HorizontalAlign.Start)
-    .onClick(() => this.playTrack(track, queue))
+    .onClick(() => this.playTrack(track, queue, AudioPlayerRoute.trackPrefix('grid', track.uri)))
   }
 
   // ---- 流派列表 ----
@@ -863,7 +918,8 @@ export struct AudioBrowserPage {
         ListItemGroup({ header: this.genreHeader(this.vm.genreNames[tracksRepeatItem.index], tracksRepeatItem.item.length) }) {
           Repeat(tracksRepeatItem.item).each((tRepeatItem: RepeatItem<Track>) => {
             ListItem() {
-              this.trackRow(tRepeatItem.item, tracksRepeatItem.item)
+              this.trackRow(tRepeatItem.item, tracksRepeatItem.item,
+                `genre-${this.vm.genreNames[tracksRepeatItem.index]}`)
             }
           }).key((t: Track) =>
           `genre_${this.vm.renderVersion}_${this.vm.genreNames[tracksRepeatItem.index]}_${t.uri}`)
@@ -949,7 +1005,7 @@ export struct AudioBrowserPage {
   // ---- 曲目行 ----
 
   @Builder
-  trackRow(t: Track, list: Track[]) {
+  trackRow(t: Track, list: Track[], scope: string) {
     Row() {
       Image(t.artworkPath.length > 0 ? t.artworkPath : $r('app.media.ic_song'))
         .width(36)
@@ -957,14 +1013,20 @@ export struct AudioBrowserPage {
         .objectFit(ImageFit.Cover)
         .borderRadius(4)
         .margin({ right: 12 })
+        .geometryTransition(`${AudioPlayerRoute.trackPrefix(scope, t.uri)}-cover`, { follow: true })
+        .transition(TransitionEffect.OPACITY)
       Column() {
         Text(t.title)
           .fontSize(16)
           .fontColor($r('app.color.list_title'))
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .geometryTransition(`${AudioPlayerRoute.trackPrefix(scope, t.uri)}-title`, { follow: true })
+          .transition(TransitionEffect.OPACITY)
         if (t.artistName.length > 0) {
           Text(t.artistName).fontSize(13).fontColor($r('app.color.list_subtitle')).margin({ top: 2 })
+            .geometryTransition(`${AudioPlayerRoute.trackPrefix(scope, t.uri)}-artist`, { follow: true })
+            .transition(TransitionEffect.OPACITY)
         } else {
           Text(this.fileNameFromUri(t.filePath))
             .fontSize(11)
@@ -988,7 +1050,7 @@ export struct AudioBrowserPage {
     })
     .alignItems(VerticalAlign.Center)
     .onClick(() => {
-      this.playTrack(t, list);
+      this.playTrack(t, list, AudioPlayerRoute.trackPrefix(scope, t.uri));
     })
   }
 

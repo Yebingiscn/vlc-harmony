@@ -70,7 +70,8 @@ export class AppDimens {
   static readonly tab_layout_height: number = 24;
   static readonly tab_layout_horizontal_padding: number = 5;
   /** 悬浮底栏 + MiniPlayer 的内容避让高度，供主页各可滚动区域统一使用。 */
-  static readonly floating_content_bottom_inset: number = 160;
+  // 底栏上方 100vp + 悬浮播放器 64vp + 16vp 留白，避免新增歌手/歌词后挡住末项。
+  static readonly floating_content_bottom_inset: number = 180;
   static readonly navigation_margin: number = 0;
   static readonly player_peek_height: number = 72;
   static readonly audio_cover: number = 48;
