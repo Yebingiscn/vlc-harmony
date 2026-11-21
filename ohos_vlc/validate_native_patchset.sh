@@ -21,15 +21,21 @@ FFMPEG_P010_BUFFER_PATCH=$ROOT_DIR/patches/0017-ffmpeg-ohcodec-handle-p010-buffe
 FFMPEG_SYNTHETIC_PTS_PATCH=$ROOT_DIR/patches/0018-ffmpeg-ohcodec-synthesize-missing-timestamps.patch
 
 FFMPEG_REPO=https://github.com/FFmpeg/FFmpeg.git
-FFMPEG_TAG=n8.1.2
-FFMPEG_COMMIT=38b88335f99e76ed89ff3c93f877fdefce736c13
+FFMPEG_TAG=n9.0.2
+FFMPEG_COMMIT=946fcce07b6dcd0331c8cc609192aeff5e1924f8
 OHCODEC_PATCH_REPO=https://github.com/Yebingiscn/libmpv-ohos-ErBW_s-5en.git
 OHCODEC_PATCH_COMMIT=54f298cddd162f459ed49e58974e3b8e763db177
 
 bash -n "$ROOT_DIR/prebuild.sh"
 bash -n "$ROOT_DIR/recipes/brotli-v1.0.9.HPKBUILD"
-bash -n "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
-bash -n "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
+bash -n "$ROOT_DIR/recipes/openssl-3.5.9.HPKBUILD"
+bash -n "$ROOT_DIR/recipes/dav1d-1.5.5.HPKBUILD"
+FFMPEG_RECIPE="$ROOT_DIR/recipes/ffmpeg-${FFMPEG_TAG#n}.HPKBUILD"
+VLC_RECIPE="$ROOT_DIR/recipes/vlc-ffmpeg9.HPKBUILD"
+bash -n "$FFMPEG_RECIPE"
+bash -n "$VLC_RECIPE"
+grep -Fxq "pkgver=${FFMPEG_TAG#n}" "$FFMPEG_RECIPE"
+grep -Fxq "source_commit=$FFMPEG_COMMIT" "$FFMPEG_RECIPE"
 grep -q 'OHCodec Surface frames use VLC vout timing' "$WORKFLOW_FILE"
 grep -q 'OHCodec Surface vout is not ready; dropping frame' "$WORKFLOW_FILE"
 grep -q 'OHCodec transparent OSD Surface attached (async display-size RGBA blend' "$WORKFLOW_FILE"
@@ -49,20 +55,15 @@ grep -q 'patches/0015-ffmpeg-ohcodec-bounded-output-queue.patch' "$ROOT_DIR/preb
 grep -q 'patches/0016-ffmpeg-ohcodec-respect-output-offset.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0017-ffmpeg-ohcodec-handle-p010-buffer-output.patch' "$ROOT_DIR/prebuild.sh"
 grep -q 'patches/0018-ffmpeg-ohcodec-synthesize-missing-timestamps.patch' "$ROOT_DIR/prebuild.sh"
-grep -q '0014-ffmpeg-ohcodec-pts-fallback.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
-grep -q '0015-ffmpeg-ohcodec-bounded-output-queue.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
-grep -q '0016-ffmpeg-ohcodec-respect-output-offset.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
-grep -q '0017-ffmpeg-ohcodec-handle-p010-buffer-output.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
-grep -q '0018-ffmpeg-ohcodec-synthesize-missing-timestamps.patch' "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD"
+grep -q '0014-ffmpeg-ohcodec-pts-fallback.patch' "$FFMPEG_RECIPE"
+grep -q '0015-ffmpeg-ohcodec-bounded-output-queue.patch' "$FFMPEG_RECIPE"
+grep -q '0016-ffmpeg-ohcodec-respect-output-offset.patch' "$FFMPEG_RECIPE"
+grep -q '0017-ffmpeg-ohcodec-handle-p010-buffer-output.patch' "$FFMPEG_RECIPE"
+grep -q '0018-ffmpeg-ohcodec-synthesize-missing-timestamps.patch' "$FFMPEG_RECIPE"
 grep -q '0030-vlc-3.0.24-ohos.patch' "$ROOT_DIR/prebuild.sh"
-grep -q '0030-vlc-3.0.24-ohos.patch' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
-grep -q "source_commit=$VLC_COMMIT" "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
-grep -q '"openssl_3.4.3"' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
-if grep -q 'openssl-3.4.0' "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD"
-then
-    echo "ERROR: VLC recipe still references legacy OpenSSL 3.4.0"
-    exit 1
-fi
+grep -q '0030-vlc-3.0.24-ohos.patch' "$VLC_RECIPE"
+grep -q "source_commit=$VLC_COMMIT" "$VLC_RECIPE"
+grep -q '"openssl_3.4.3"' "$VLC_RECIPE"
 
 clone_with_retry() {
     local destination=$1

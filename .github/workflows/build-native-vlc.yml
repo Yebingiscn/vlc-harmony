@@ -93,7 +93,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ohos_vlc/library/libs/arm64-v8a
-          key: native-vlc-arm64-api26-ffmpeg8-v1-${{ hashFiles('ohos_vlc/prebuild.sh', 'ohos_vlc/recipes/**', 'ohos_vlc/patches/**', 'sync_native_libs.sh') }}
+          key: native-vlc-arm64-api26-ffmpeg9-v1-${{ hashFiles('ohos_vlc/prebuild.sh', 'ohos_vlc/recipes/**', 'ohos_vlc/patches/**', 'ohos_vlc/runtime-libs-arm64.txt', 'sync_native_libs.sh') }}
 
       - name: Restore compiled dependency checkpoint
         if: steps.native-cache.outputs.cache-hit != 'true'
@@ -101,9 +101,9 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ohos_vlc/tpc_c_cplusplus/lycium/usr
-          key: native-vlc-deps-arm64-api26-ffmpeg8-v1-${{ github.run_id }}
+          key: native-vlc-deps-arm64-api26-ffmpeg9-v1-${{ github.run_id }}
           restore-keys: |
-            native-vlc-deps-arm64-api26-ffmpeg8-v1-
+            native-vlc-deps-arm64-api26-ffmpeg9-v1-
 
       - name: Build FFmpeg and VLC
         if: steps.native-cache.outputs.cache-hit != 'true'
@@ -136,11 +136,25 @@ jobs:
           video_decoder=entry/libs/arm64-v8a/vlc/plugins/codec/libavcodec_plugin.so
           audio_output=entry/libs/arm64-v8a/vlc/plugins/audio_output/libohos_audiotrack_plugin.so
           osd_output=entry/libs/arm64-v8a/vlc/plugins/video_output/libohos_surface_display_plugin.so
-          ffmpeg_decoder=entry/libs/arm64-v8a/libavcodec.so.62
+          ffmpeg_decoder=entry/libs/arm64-v8a/libavcodec.so.63
           test -s "${video_decoder}"
           test -s "${audio_output}"
           test -s "${osd_output}"
           test -s "${ffmpeg_decoder}"
+          for lib in libavcodec.so.63 libavformat.so.63 libavutil.so.61 libswresample.so.7 libswscale.so.10 libssl.so.3 libcrypto.so.3 libdav1d.so.7 libz.so.1; do
+            readelf -d "entry/libs/arm64-v8a/${lib}" | grep -F "Library soname: [${lib}]"
+          done
+          readelf -d "${video_decoder}" | grep -F 'Shared library: [libavcodec.so.63]'
+          demuxer=entry/libs/arm64-v8a/vlc/plugins/demux/libavformat_plugin.so
+          readelf -d "${demuxer}" | grep -F 'Shared library: [libavformat.so.63]'
+          grep -aFq '9.0.2' entry/libs/arm64-v8a/libavutil.so.61
+          grep -aFq 'OpenSSL 3.5.9' entry/libs/arm64-v8a/libcrypto.so.3
+          for old_lib in libavcodec.so.62 libavformat.so.62 libavutil.so.60 libswresample.so.6 libswscale.so.9; do
+            if [[ -e "entry/libs/arm64-v8a/${old_lib}" ]]; then
+              echo "Unexpected FFmpeg 8 runtime library: ${old_lib}"
+              exit 1
+            fi
+          done
 
           if ! grep -aFq '3.0.24' entry/libs/arm64-v8a/libvlc.so.5; then
             echo "Stale VLC core detected: expected VLC 3.0.24"

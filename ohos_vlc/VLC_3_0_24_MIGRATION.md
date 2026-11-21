@@ -2,8 +2,8 @@
 
 - Base: official VideoLAN tag `3.0.24`, commit
   `6de05adcbaf2e8b85fe86aad4169393098628119`.
-- FFmpeg remains `n8.1.2` (`38b88335f99e76ed89ff3c93f877fdefce736c13`)
-  with the existing OHCodec patches, including the input/output wakeup fix.
+- The original VLC migration used FFmpeg `n8.1.2`; the native build now targets
+  `n9.0.2` with the same OHCodec patch series. See [native build versions](README.md).
 - `0030-vlc-3.0.24-ohos.patch` replaces the former VLC 3.0.21 patch sequence.
   Historical patches remain for reference, but are no longer applied.
 

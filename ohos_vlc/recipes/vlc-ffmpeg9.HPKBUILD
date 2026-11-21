@@ -5,7 +5,7 @@
 pkgname=vlc
 pkgver=3.0.24
 pkgrel=0
-pkgdesc="VLC 3.0.24 for OpenHarmony with FFmpeg 8 and OHCodec support"
+pkgdesc="VLC 3.0.24 for OpenHarmony with FFmpeg 9 and OHCodec support"
 url="https://www.videolan.org/"
 archs=("arm64-v8a")
 license=("GNU General Public License v2.0")

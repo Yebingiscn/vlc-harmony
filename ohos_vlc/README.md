@@ -3,7 +3,10 @@
 本目录归档 `ohos_vlc/` 工作区对 libVLC 源码的本地修改（补丁 + 构建脚本），
 供 vlc-harmony 应用构建时复现使用。原始修改位于工作区 `ohos_vlc/`，此处为版本化副本。
 
-## 补丁列表（按应用顺序）
+## 旧版补丁归档
+
+以下为此前的 VLC 3.0.21 迁移记录。当前 VLC 3.0.24 使用合并后的
+`0030-vlc-3.0.24-ohos.patch` 和 `0031-vlc-ohcodec-content-adaptive-policy.patch`。
 
 | 补丁                                                            | 内容                                                               |
 |---------------------------------------------------------------|------------------------------------------------------------------|
@@ -27,20 +30,23 @@
 
 ## 应用方式
 
-`prebuild.sh` 会用 `recipes/ffmpeg-8.1.2.HPKBUILD` 替换 Lycium 的旧 FFmpeg
-recipe，并从固定提交取得 libmpvnative 已验证的 OHCodec 补丁子集；同时从 VLC
-官方固定提交生成 3.0.21 之后的 FFmpeg 兼容补丁，再注入 OHOS VLC recipe。
+`prebuild.sh` 会用 `recipes/ffmpeg-9.0.2.HPKBUILD` 替换 Lycium 的旧 FFmpeg
+recipe，在 9.0.2 上按顺序应用 libmpvnative 的 OHCodec 补丁子集和本仓库的时钟、
+输出队列及硬解策略补丁。VLC 仍基于固定的 3.0.24 发布提交。
 只重新编译 HAP 不会让原生改动生效，修改这些补丁后必须重新运行
 `ohos_vlc/prebuild.sh`（Linux 环境、HarmonyOS 7.0 Beta1 API 26 SDK）。构建成功后脚本会自动调用项目根目录的
 `sync_native_libs.sh`，把新库同步到 `entry/libs/arm64-v8a` 和 NAPI 链接目录。
 
-当前原生版本基线：
+当前原生构建目标：
 
-- OHOS VLC：`ohos-3.0.21`（保留其 HarmonyOS 平台端口）
-- FFmpeg：`n8.1.2`，提交 `38b88335f99e76ed89ff3c93f877fdefce736c13`
-- OpenSSL：`3.4.3`
+- VLC：`3.0.24`，提交 `6de05adcbaf2e8b85fe86aad4169393098628119`，保留 HarmonyOS 端口
+- FFmpeg：`n9.0.2`，提交 `946fcce07b6dcd0331c8cc609192aeff5e1924f8`
+- OpenSSL：`3.5.9` LTS（沿用 Lycium 的 `openssl_3.4.3` 包名，实际构建版本是 3.5.9）
+- dav1d：`1.5.5`；zlib：`1.4`
 - OHCodec 补丁来源：libmpvnative 提交 `54f298cddd162f459ed49e58974e3b8e763db177`
-- VLC FFmpeg 兼容基线：官方提交 `1089af38fc26293d0b93a9456adf7ae4a5b0b930`
+
+FFmpeg 9 的动态库 ABI 与 8 不兼容。VLC 插件、FFmpeg 和依赖库必须使用同一次构建的完整产物，
+不能只替换单个 `libavcodec`。本仓库已提交的预编译库仍是旧版本，直到生成并同步新产物。
 
 没有设置固定 60 帧，也不向 OHCodec 请求特定 VRR 模式。可靠的视频时间戳仍用于
 音画同步；时间戳缺失时立即交给 Surface，最终刷新率和上屏节奏由 HarmonyOS 显示
@@ -80,5 +86,5 @@ for p in 0001-*.patch 0002-*.patch 0003-*.patch 0004-*.patch 0005-*.patch 0007-*
 done
 ```
 
-FFmpeg 8 与官方 VLC 兼容补丁由构建脚本按固定仓库提交生成和应用，建议不要手动
-拼装，以免遗漏应用顺序。
+以上手动示例只对应旧版补丁。新版本应运行 `validate_native_patchset.sh`
+验证补丁顺序，并由 `prebuild.sh` 统一重编。

@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: MIT
+
+pkgname=dav1d
+pkgver=1.5.5
+pkgrel=0
+pkgdesc="VideoLAN AV1 decoder for OpenHarmony"
+url="https://code.videolan.org/videolan/dav1d"
+source_commit=6c7bee685677fd997a431302be4fea8ea4017606
+archs=("arm64-v8a")
+license=("BSD-2-Clause")
+depends=()
+makedepends=(meson)
+buildtools="meson"
+downloadpackage=false
+autounpack=false
+builddir=$pkgname-$pkgver
+packagename=
+
+prepare() {
+    [ "$ARCH" = arm64-v8a ] || return 1
+    if [ ! -d "$builddir/.git" ]; then
+        git clone --depth=1 --branch "$pkgver" "$url.git" "$builddir" || return 1
+    fi
+    if [ "$(git -C "$builddir" rev-parse HEAD)" != "$source_commit" ]; then
+        echo "ERROR: unexpected dav1d $pkgver source commit" >> "$publicbuildlog"
+        return 1
+    fi
+    cp "$ARCH-cross-file.txt" "$builddir/" || return 1
+    sed -i "s|ohos_sdk|$OHOS_SDK|g" "$builddir/$ARCH-cross-file.txt"
+}
+
+build() (
+    cd "$builddir" || return 1
+    meson setup "$ARCH-build" --cross-file "$ARCH-cross-file.txt" \
+        --prefix="$LYCIUM_ROOT/usr/$pkgname/$ARCH" --libdir=lib --default-library=shared \
+        -Dtrim_dsp=false -Denable_tools=false -Denable_tests=false -Denable_asm=true \
+        > "$buildlog" 2>&1 || return 1
+    $Ninja -v -C "$ARCH-build" >> "$buildlog" 2>&1
+)
+
+package() (
+    cd "$builddir" || return 1
+    $Ninja -v -C "$ARCH-build" install >> "$buildlog" 2>&1
+)
+
+check() {
+    echo "Runtime decode tests require an OpenHarmony device."
+}
+
+cleanbuild() {
+    rm -rf -- "$builddir"
+}

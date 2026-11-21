@@ -2,11 +2,12 @@
 # SPDX-License-Identifier: MIT
 
 # This recipe replaces Lycium's legacy FFmpeg-surface-dev fork with upstream
-# FFmpeg 8.1.2 plus the audited OHCodec patch subset used by libmpvnative.
+# FFmpeg 9.0.2 plus the audited OHCodec patch subset from libmpvnative.
 pkgname=FFmpeg
-pkgver=8.1.2
+pkgver=9.0.2
 pkgrel=0
-pkgdesc="FFmpeg 8.1.2 with OpenHarmony OHCodec zero-copy decoding"
+pkgdesc="FFmpeg 9.0.2 with OpenHarmony OHCodec zero-copy decoding"
+source_commit=946fcce07b6dcd0331c8cc609192aeff5e1924f8
 url="https://ffmpeg.org/"
 archs=("arm64-v8a")
 license=("LGPL-2.1-or-later")
@@ -26,12 +27,12 @@ arch=
 prepare() {
     if $cloneflag
     then
-        git clone --branch n8.1.2 --depth=1 https://github.com/FFmpeg/FFmpeg.git $builddir
+        git clone --branch "n$pkgver" --depth=1 https://github.com/FFmpeg/FFmpeg.git "$builddir"
         if [ $? -ne 0 ]; then
             return -1
         fi
-        if [ "$(git -C $builddir rev-parse HEAD)" != "38b88335f99e76ed89ff3c93f877fdefce736c13" ]; then
-            echo "ERROR: FFmpeg n8.1.2 resolved to an unexpected commit"
+        if [ "$(git -C "$builddir" rev-parse HEAD)" != "$source_commit" ]; then
+            echo "ERROR: FFmpeg n$pkgver resolved to an unexpected commit"
             return -1
         fi
         for patch_name in \
@@ -71,7 +72,7 @@ prepare() {
     export LDFLAGS="$LYCIUM_ROOT/usr/libogg/$ARCH/lib/libogg.a -L$LYCIUM_ROOT/usr/lame/$ARCH/lib/ \
                     -L$LYCIUM_ROOT/usr/libvorbis/$ARCH/lib/ -lvorbis \
                     -L$LYCIUM_ROOT/usr/bzip2_1_0_8/$ARCH/lib $LDFLAGS"
-    # FFmpeg 8 probes <libxml2/libxml/xmlversion.h>, while libxml2.pc adds
+    # FFmpeg probes <libxml2/libxml/xmlversion.h>, while libxml2.pc adds
     # include/libxml2 for the conventional <libxml/...> form. Add the parent
     # include directory as well so the cross-compile probe resolves both.
     export CFLAGS="-I$LYCIUM_ROOT/usr/lame/$ARCH/include/ \
@@ -110,6 +111,15 @@ build() {
         cd $OLDPWD
         return 1
     fi
+    for decoder in H264_OH HEVC_OH LIBDAV1D
+    do
+        if ! grep -Eq "^#define CONFIG_${decoder}_DECODER 1$" config_components.h
+        then
+            echo "ERROR: FFmpeg decoder $decoder is not enabled" >> "$buildlog"
+            cd "$OLDPWD"
+            return 1
+        fi
+    done
     $MAKE V=1 >> $buildlog 2>&1
     ret=$?
     cd $OLDPWD
@@ -119,9 +129,11 @@ build() {
 package() {
     cd $builddir-$ARCH-build
     $MAKE install >> $buildlog 2>&1
+    local ret=$?
     cd $OLDPWD
     unset arch
     unsetarm64ENV
+    return "$ret"
 }
 
 check() {

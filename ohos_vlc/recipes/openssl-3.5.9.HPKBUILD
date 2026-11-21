@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: MIT
+
+# Keep Lycium's package key: live555 and both media recipes use this slot.
+# The sources and generated libraries are OpenSSL 3.5 LTS, not 3.4.
+pkgname=openssl_3.4.3
+pkgver=3.5.9
+pkgrel=0
+pkgdesc="OpenSSL 3.5 LTS for OpenHarmony"
+url="https://openssl-library.org/"
+source_commit=45e844fa2a14ec92d146bd8f5778ac130b6625fb
+archs=("arm64-v8a")
+license=("Apache-2.0")
+depends=(zlib)
+makedepends=(perl)
+
+autounpack=false
+downloadpackage=false
+buildtools="configure"
+builddir=openssl-$pkgver
+packagename=
+source envset.sh
+
+prepare() {
+    [ "$ARCH" = arm64-v8a ] || return 1
+    if [ ! -d "$builddir/.git" ]; then
+        git clone --depth=1 --branch "openssl-$pkgver" https://github.com/openssl/openssl.git "$builddir" || return 1
+    fi
+    if [ "$(git -C "$builddir" rev-parse HEAD)" != "$source_commit" ]; then
+        echo "ERROR: unexpected OpenSSL $pkgver source commit" >> "$publicbuildlog"
+        return 1
+    fi
+    setarm64ENV
+    mkdir -p "$builddir/$ARCH-build"
+}
+
+build() (
+    cd "$builddir/$ARCH-build" || return 1
+    local zlib_prefix="$LYCIUM_ROOT/usr/zlib/$ARCH"
+    CFLAGS="$CFLAGS -O3 -fstack-protector-strong -fPIC" \
+    LDFLAGS="$LDFLAGS -Wl,-z,relro,-z,now -Wl,--disable-new-dtags" \
+        ../Configure "$@" linux-aarch64 shared zlib no-engine no-tests \
+        --prefix="$LYCIUM_ROOT/usr/$pkgname/$ARCH" --libdir=lib \
+        --with-zlib-include="$zlib_prefix/include" --with-zlib-lib="$zlib_prefix/lib" \
+        > "$buildlog" 2>&1 || return 1
+    sed -i 's/"\$(MAKE)"/$(MAKE)/g' Makefile || return 1
+    $MAKE VERBOSE=1 >> "$buildlog" 2>&1
+)
+
+package() (
+    cd "$builddir/$ARCH-build" || return 1
+    $MAKE install_sw >> "$buildlog" 2>&1
+)
+
+check() {
+    unsetarm64ENV
+    echo "Runtime TLS tests require an OpenHarmony device."
+}
+
+cleanbuild() {
+    rm -rf -- "$builddir"
+}

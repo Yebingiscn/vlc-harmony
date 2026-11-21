@@ -168,13 +168,9 @@ function configure_lycium_build()
         return 1
     fi
 
-    # Keep one zlib provider in the dependency graph.
-    sed -i 's/depends=(zlib_1_3_1)/depends=(zlib)/' "$openssl_recipe"
-    if ! grep -Fq 'depends=(zlib)' "$openssl_recipe"
-    then
-        echo "ERROR: upgrade OpenSSL dependency failed!!!"
-        return 1
-    fi
+    # Keep the Lycium package names while replacing the source versions.
+    cp -f "$ROOT_DIR/recipes/openssl-3.5.9.HPKBUILD" "$openssl_recipe" || return 1
+    cp -f "$ROOT_DIR/recipes/dav1d-1.5.5.HPKBUILD" "$LYCIUM_THIRDPARTY_DIR/dav1d/HPKBUILD" || return 1
 
     # FriBidi 1.0.12 generates a shared version header from several recursive
     # targets. Parallel generators can truncate that header while host tools
@@ -190,19 +186,19 @@ function configure_lycium_build()
         return 1
     fi
 
-    # zlib.net currently serves an HTML error page for its 1.3.2 fossils URL.
-    # Use the upstream project's GitHub release asset and pin its SHA-512.
+    # Update the pinned Lycium zlib recipe without changing its OHOS toolchain.
     if ! grep -Fq 'pkgver=1.3.2' "$zlib_recipe"
     then
         echo "ERROR: unsupported zlib recipe version!!!"
         return 1
     fi
     sed -i \
-        's#https://$pkgname.net/fossils/$pkgname-$pkgver.tar.gz#https://github.com/madler/zlib/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz#' \
-        "$zlib_recipe"
+        -e 's/^pkgver=1\.3\.2$/pkgver=1.4/' \
+        -e 's#https://\$pkgname.net/fossils/\$pkgname-\$pkgver.tar.gz#https://github.com/madler/zlib/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz#' \
+        "$zlib_recipe" || return 1
     printf '%s  %s\n' \
-        '70963771ea5d763614278a69b474f09b7d237ef8f53b675a10fe31d9923aeef601504b35d7ebd1b1e7f347e9ebb048e6b3b47fffdf137e7bdc7e8d5eb4ec4692' \
-        'zlib-1.3.2.tar.gz' > "$zlib_checksum"
+        '13f02285da85956ff722d814695b96807aff7a511ebf4b6d98cf708c353920666093cc18b6653cd7992c8e75c103f7b4baf2de3a105c2db9dcd62bab2c940859' \
+        'zlib-1.4.tar.gz' > "$zlib_checksum" || return 1
     if ! grep -Fq \
         'source="https://github.com/madler/zlib/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz"' \
         "$zlib_recipe"
@@ -277,7 +273,7 @@ function install_vlc_patches()
 {
     local vlc_recipe_dir=$LYCIUM_THIRDPARTY_DIR/vlc
 
-    cp -f "$ROOT_DIR/recipes/vlc-ffmpeg8.HPKBUILD" "$vlc_recipe_dir/HPKBUILD" || return 1
+    cp -f "$ROOT_DIR/recipes/vlc-ffmpeg9.HPKBUILD" "$vlc_recipe_dir/HPKBUILD" || return 1
     cp -f "$ROOT_DIR/patches/0030-vlc-3.0.24-ohos.patch" "$vlc_recipe_dir/" || return 1
     cp -f "$ROOT_DIR/patches/0031-vlc-ohcodec-content-adaptive-policy.patch" "$vlc_recipe_dir/" || return 1
     return 0
@@ -316,8 +312,8 @@ function install_ffmpeg_patches()
     local ffmpeg_recipe_dir=$LYCIUM_COMMUNITY_DIR/FFmpeg-surface-dev
     local patch_source_dir=$LYCIUM_ROOT_DIR/libmpv-ohos-patches
 
-    cp -f "$ROOT_DIR/recipes/ffmpeg-8.1.2.HPKBUILD" "$ffmpeg_recipe_dir/HPKBUILD"
-    cp -f "$ROOT_DIR/recipes/brotli-v1.0.9.HPKBUILD" "$LYCIUM_COMMUNITY_DIR/brotli/HPKBUILD"
+    cp -f "$ROOT_DIR/recipes/ffmpeg-9.0.2.HPKBUILD" "$ffmpeg_recipe_dir/HPKBUILD" || return 1
+    cp -f "$ROOT_DIR/recipes/brotli-v1.0.9.HPKBUILD" "$LYCIUM_COMMUNITY_DIR/brotli/HPKBUILD" || return 1
     git_clone_with_retry "$patch_source_dir" --filter=blob:none --depth=1 --no-checkout \
         "$FFMPEG_OHCODEC_PATCH_REPO"
     if [ $? -ne 0 ]; then
@@ -358,25 +354,30 @@ function install_depends()
 {
     mkdir -p $ROOT_DIR/library/libs/arm64-v8a/
     local install_dir=$ROOT_DIR/library/libs/arm64-v8a/
+    # A clean Linux build starts with the checked-in FFmpeg 8 bundle.
+    # Replace the complete ABI set, not just the names that happen to match.
+    rm -f -- "${install_dir}libavcodec.so.62" "${install_dir}libavformat.so.62" \
+        "${install_dir}libavutil.so.60" "${install_dir}libswresample.so.6" \
+        "${install_dir}libswscale.so.9" || return 1
     cp -arf $LYCIUM_TOOLS_DIR/usr/vlc/arm64-v8a/lib/vlc "$install_dir"
     cp -fL $LYCIUM_TOOLS_DIR/usr/vlc/arm64-v8a/lib/libvlc.so.5 "$install_dir/libvlc.so.5"
     cp -fL $LYCIUM_TOOLS_DIR/usr/vlc/arm64-v8a/lib/libvlccore.so.9 "$install_dir/libvlccore.so.9"
     cp -f $LYCIUM_TOOLS_DIR/usr/a52dec/arm64-v8a/lib/liba52.so.0 "$install_dir"
     cp -f $LYCIUM_TOOLS_DIR/usr/aribb24/arm64-v8a/lib/libaribb24.so.0 "$install_dir"
-    cp -fL $LYCIUM_TOOLS_DIR/usr/FFmpeg/arm64-v8a/lib/libavcodec.so.62 "$install_dir/libavcodec.so.62"
-    cp -fL $LYCIUM_TOOLS_DIR/usr/FFmpeg/arm64-v8a/lib/libavformat.so.62 "$install_dir/libavformat.so.62"
-    cp -fL $LYCIUM_TOOLS_DIR/usr/FFmpeg/arm64-v8a/lib/libavutil.so.60 "$install_dir/libavutil.so.60"
+    cp -fL "$LYCIUM_TOOLS_DIR/usr/FFmpeg/arm64-v8a/lib/libavcodec.so.63" "$install_dir" || return 1
+    cp -fL "$LYCIUM_TOOLS_DIR/usr/FFmpeg/arm64-v8a/lib/libavformat.so.63" "$install_dir" || return 1
+    cp -fL "$LYCIUM_TOOLS_DIR/usr/FFmpeg/arm64-v8a/lib/libavutil.so.61" "$install_dir" || return 1
     cp -f $LYCIUM_TOOLS_DIR/usr/libdca/arm64-v8a/lib/libdca.so.0 "$install_dir"
     cp -f $LYCIUM_TOOLS_DIR/usr/libkate/arm64-v8a/lib/libkate.so.1 "$install_dir"
     cp -f $LYCIUM_TOOLS_DIR/usr/libpng/arm64-v8a/lib/libpng16.so.16 "$install_dir"
     cp -f $LYCIUM_TOOLS_DIR/usr/speex/arm64-v8a/lib/libspeex.so.1 "$install_dir"
     cp -f $LYCIUM_TOOLS_DIR/usr/speexdsp/arm64-v8a/lib/libspeexdsp.so.1 "$install_dir"
-    cp -fL $LYCIUM_TOOLS_DIR/usr/FFmpeg/arm64-v8a/lib/libswresample.so.6 "$install_dir/libswresample.so.6"
-    cp -fL $LYCIUM_TOOLS_DIR/usr/FFmpeg/arm64-v8a/lib/libswscale.so.9 "$install_dir/libswscale.so.9"
+    cp -fL "$LYCIUM_TOOLS_DIR/usr/FFmpeg/arm64-v8a/lib/libswresample.so.7" "$install_dir" || return 1
+    cp -fL "$LYCIUM_TOOLS_DIR/usr/FFmpeg/arm64-v8a/lib/libswscale.so.10" "$install_dir" || return 1
     cp -f $LYCIUM_TOOLS_DIR/usr/libtheora/arm64-v8a/lib/libtheoradec.so.1 "$install_dir"
     cp -f $LYCIUM_TOOLS_DIR/usr/libtheora/arm64-v8a/lib/libtheoraenc.so.1 "$install_dir"
     # Transitive deps of libavcodec.so (required for h264/aac decode)
-    cp -f $LYCIUM_TOOLS_DIR/usr/dav1d/arm64-v8a/lib/libdav1d.so.7 "$install_dir"
+    cp -fL "$LYCIUM_TOOLS_DIR/usr/dav1d/arm64-v8a/lib/libdav1d.so.7" "$install_dir" || return 1
     cp -f $LYCIUM_TOOLS_DIR/usr/lame/arm64-v8a/lib/libmp3lame.so.0 "$install_dir"
     cp -f $LYCIUM_TOOLS_DIR/usr/openh264/arm64-v8a/lib/libopenh264.so.8 "$install_dir"
     # Opus, Ogg and Vorbis recipes produce static archives for HarmonyOS.
@@ -384,9 +385,9 @@ function install_depends()
     # files to copy into the HAP.
     cp -f $LYCIUM_TOOLS_DIR/usr/libxml2/arm64-v8a/lib/libxml2.so.2 "$install_dir"
     cp -f $LYCIUM_TOOLS_DIR/usr/xz/arm64-v8a/lib/liblzma.so.5 "$install_dir"
-    cp -f $LYCIUM_TOOLS_DIR/usr/openssl_3.4.3/arm64-v8a/lib/libssl.so.3 "$install_dir"
-    cp -f $LYCIUM_TOOLS_DIR/usr/openssl_3.4.3/arm64-v8a/lib/libcrypto.so.3 "$install_dir"
-    cp -f $LYCIUM_TOOLS_DIR/usr/zlib/arm64-v8a/lib/libz.so.1 "$install_dir"
+    cp -fL "$LYCIUM_TOOLS_DIR/usr/openssl_3.4.3/arm64-v8a/lib/libssl.so.3" "$install_dir" || return 1
+    cp -fL "$LYCIUM_TOOLS_DIR/usr/openssl_3.4.3/arm64-v8a/lib/libcrypto.so.3" "$install_dir" || return 1
+    cp -fL "$LYCIUM_TOOLS_DIR/usr/zlib/arm64-v8a/lib/libz.so.1" "$install_dir" || return 1
 
     local runtime_lib
     while IFS= read -r runtime_lib

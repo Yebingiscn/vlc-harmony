@@ -8,10 +8,18 @@ OHOS_LIBS="${ROOT_DIR}/ohos_vlc/library/libs/arm64-v8a"
 DIST_USR="${ROOT_DIR}/dist/usr"
 DEST_LIBS="${ROOT_DIR}/entry/libs/arm64-v8a"
 DEST_LINK="${ROOT_DIR}/entry/src/main/cpp/third_party/libvlc/arm64-v8a"
+FFMPEG_RUNTIME=(libavcodec.so.63 libavformat.so.63 libavutil.so.61 libswresample.so.7 libswscale.so.10)
 
 mkdir -p "$DEST_LIBS" "$DEST_LINK"
 
 if [[ -d "$OHOS_LIBS" && -f "$OHOS_LIBS/libvlc.so.5" && -f "$OHOS_LIBS/libvlccore.so.9" ]]; then
+  while IFS= read -r lib; do
+    [[ -z "$lib" ]] && continue
+    if [[ ! -s "$OHOS_LIBS/$lib" ]]; then
+      echo "Missing runtime library $lib; rebuild the native bundle before syncing" >&2
+      exit 1
+    fi
+  done < "${ROOT_DIR}/ohos_vlc/runtime-libs-arm64.txt"
   echo "Sync runtime libs from ohos_vlc: $OHOS_LIBS"
   rm -rf "$DEST_LIBS"
   mkdir -p "$DEST_LIBS"
@@ -22,6 +30,12 @@ if [[ -d "$OHOS_LIBS" && -f "$OHOS_LIBS/libvlc.so.5" && -f "$OHOS_LIBS/libvlccor
   cp -fL "$OHOS_LIBS/libvlccore.so.9" "$DEST_LINK/libvlccore.so.9"
 else
   echo "ohos_vlc libs missing, fallback to dist (dereference versioned ELF)"
+  for lib in "${FFMPEG_RUNTIME[@]}"; do
+    test -s "${DIST_USR}/FFmpeg/arm64-v8a/lib/$lib" || {
+      echo "Missing FFmpeg 9 runtime library in dist: $lib" >&2
+      exit 1
+    }
+  done
   mkdir -p "$DEST_LIBS"
   # shellcheck disable=SC2043
   for pair in \
@@ -29,16 +43,16 @@ else
     "vlc/arm64-v8a/lib/libvlccore.so.9.0.1:libvlccore.so.9" \
     "a52dec/arm64-v8a/lib/liba52.so.0:liba52.so.0" \
     "aribb24/arm64-v8a/lib/libaribb24.so.0:libaribb24.so.0" \
-    "FFmpeg/arm64-v8a/lib/libavcodec.so.62:libavcodec.so.62" \
-    "FFmpeg/arm64-v8a/lib/libavformat.so.62:libavformat.so.62" \
-    "FFmpeg/arm64-v8a/lib/libavutil.so.60:libavutil.so.60" \
+    "FFmpeg/arm64-v8a/lib/libavcodec.so.63:libavcodec.so.63" \
+    "FFmpeg/arm64-v8a/lib/libavformat.so.63:libavformat.so.63" \
+    "FFmpeg/arm64-v8a/lib/libavutil.so.61:libavutil.so.61" \
     "libdca/arm64-v8a/lib/libdca.so.0:libdca.so.0" \
     "libkate/arm64-v8a/lib/libkate.so.1:libkate.so.1" \
     "libpng/arm64-v8a/lib/libpng16.so.16:libpng16.so.16" \
     "speex/arm64-v8a/lib/libspeex.so.1:libspeex.so.1" \
     "speexdsp/arm64-v8a/lib/libspeexdsp.so.1:libspeexdsp.so.1" \
-    "FFmpeg/arm64-v8a/lib/libswresample.so.6:libswresample.so.6" \
-    "FFmpeg/arm64-v8a/lib/libswscale.so.9:libswscale.so.9" \
+    "FFmpeg/arm64-v8a/lib/libswresample.so.7:libswresample.so.7" \
+    "FFmpeg/arm64-v8a/lib/libswscale.so.10:libswscale.so.10" \
     "libtheora/arm64-v8a/lib/libtheoradec.so.1:libtheoradec.so.1" \
     "libtheora/arm64-v8a/lib/libtheoraenc.so.1:libtheoraenc.so.1" \
     "dav1d/arm64-v8a/lib/libdav1d.so.7:libdav1d.so.7" \
@@ -61,6 +75,9 @@ else
   cp -f "$DEST_LINK/libvlc.so" "$DEST_LINK/libvlc.so.5"
   cp -f "$DEST_LINK/libvlccore.so" "$DEST_LINK/libvlccore.so.9"
 fi
+
+rm -f -- "$DEST_LIBS/libavcodec.so.62" "$DEST_LIBS/libavformat.so.62" \
+  "$DEST_LIBS/libavutil.so.60" "$DEST_LIBS/libswresample.so.6" "$DEST_LIBS/libswscale.so.9"
 
 echo "Done."
 echo "  runtime: $DEST_LIBS"

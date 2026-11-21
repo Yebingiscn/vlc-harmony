@@ -54,6 +54,8 @@ static void ConfigureFfmpegTrace(bool enabled)
 {
     // Optional dynamic lookup: no additional link-time FFmpeg dependency.
     static void *avutil = nullptr;
+    if (!avutil) avutil = dlopen("libavutil.so.61", RTLD_NOW | RTLD_LOCAL);
+    // The checked-in runtime remains on FFmpeg 8 until the new bundle is built.
     if (!avutil) avutil = dlopen("libavutil.so.60", RTLD_NOW | RTLD_LOCAL);
     if (!avutil) return;
     using Callback = void (*)(void *, int, const char *, va_list);
