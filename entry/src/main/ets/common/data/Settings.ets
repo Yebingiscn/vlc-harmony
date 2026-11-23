@@ -102,6 +102,7 @@ export class Settings {
   // Equalizer
   static readonly KEY_CURRENT_EQUALIZER_ID: string = 'current_equalizer_id';
   static readonly KEY_EQUALIZER_ENABLED: string = 'equalizer_enabled';
+  static readonly KEY_AUDIO_EFFECT_PRESET: string = 'audio_suite_preset';
   // Tips
   static readonly PREF_TIPS_SHOWN: string = 'video_player_tips_shown';
   static readonly KEY_OBSOLETE_RESTORE_FILE_WARNED: string = 'obsolete_restore_file_warned';

@@ -1,0 +1,206 @@
+diff --git a/lib/libvlc.sym b/lib/libvlc.sym
+index 1cad312..3e4ff3e 100644
+--- a/lib/libvlc.sym
++++ b/lib/libvlc.sym
+@@ -191,6 +191,8 @@ libvlc_media_player_set_android_context
+ libvlc_media_player_set_ohos_nativewindow_ptr
+ libvlc_media_player_set_ohos_osd_nativewindow_ptr
+ libvlc_media_player_set_ohos_video_vrr_allowed
++libvlc_media_player_set_ohos_audio_effect
++libvlc_media_player_get_ohos_audio_effect_status
+ libvlc_video_set_ohos_window_size
+ libvlc_media_player_set_chapter
+ libvlc_media_player_set_equalizer
+diff --git a/lib/media_player.c b/lib/media_player.c
+index aa0018f..b0ec36a 100644
+--- a/lib/media_player.c
++++ b/lib/media_player.c
+@@ -42,6 +42,7 @@
+ #include "media_internal.h" // libvlc_media_set_state()
+ #include "media_player_internal.h"
+ #include "renderer_discoverer_internal.h"
++#include "../modules/audio_output/ohos_audio_effects.h"
+ 
+ #define ES_INIT (-2) /* -1 is reserved for ES deselect */
+ 
+@@ -707,6 +708,7 @@ libvlc_media_player_new( libvlc_instance_t *instance )
+     var_Create (mp, "volume", VLC_VAR_FLOAT);
+     var_Create (mp, "corks", VLC_VAR_INTEGER);
+     var_Create (mp, "audio-filter", VLC_VAR_STRING);
++    var_Create (mp, VLC_OHOS_EFFECT_VAR, VLC_VAR_INTEGER);
+     var_Create (mp, "role", VLC_VAR_STRING | VLC_VAR_DOINHERIT);
+     var_Create (mp, "amem-data", VLC_VAR_ADDRESS);
+     var_Create (mp, "amem-setup", VLC_VAR_ADDRESS);
+@@ -2050,6 +2052,27 @@ int libvlc_media_player_add_slave( libvlc_media_player_t *p_mi,
+  */
+ #define EQZ_BAND_VALUE_SIZE 12
+ 
++/* Per player, independent of "audio-filter" (which the equalizer rewrites). */
++LIBVLC_API int libvlc_media_player_set_ohos_audio_effect(libvlc_media_player_t *mp, int preset)
++{
++    if (preset < 0 || preset > VLC_OHOS_EFFECT_MAX)
++        return -1;
++    return var_SetInteger(mp, VLC_OHOS_EFFECT_VAR, preset) == VLC_SUCCESS ? 0 : -1;
++}
++
++LIBVLC_API int libvlc_media_player_get_ohos_audio_effect_status(libvlc_media_player_t *mp)
++{
++    int preset = var_GetInteger(mp, VLC_OHOS_EFFECT_VAR);
++    if (preset == 0)
++        return 0;
++    audio_output_t *aout = input_resource_HoldAout(mp->input.p_resource);
++    if (aout == NULL)
++        return 1;
++    int value = var_GetInteger(aout, VLC_OHOS_EFFECT_STATUS_VAR);
++    vlc_object_release(aout);
++    return value / 4 == preset ? value % 4 : 1;
++}
++
+ int libvlc_media_player_set_equalizer( libvlc_media_player_t *p_mi, libvlc_equalizer_t *p_equalizer )
+ {
+     char bands[EQZ_BANDS_MAX * EQZ_BAND_VALUE_SIZE + 1];
+diff --git a/modules/audio_output/Makefile.am b/modules/audio_output/Makefile.am
+index d4cc1b9..d6d5945 100644
+--- a/modules/audio_output/Makefile.am
++++ b/modules/audio_output/Makefile.am
+@@ -16,9 +16,10 @@ if HAVE_ANDROID
+ aout_LTLIBRARIES += libandroid_audiotrack_plugin.la libopensles_android_plugin.la
+ endif
+ 
+-libohos_audiotrack_plugin_la_SOURCES = audio_output/audiounit_ohos.c
++libohos_audiotrack_plugin_la_SOURCES = audio_output/audiounit_ohos.c \
++    audio_output/ohos_audio_effects.c audio_output/ohos_audio_effects.h
+ libohos_audiotrack_plugin_la_CFLAGS = $(AM_CFLAGS)
+-libohos_audiotrack_plugin_la_LIBADD = $(LIBCOM) -lohaudio
++libohos_audiotrack_plugin_la_LIBADD = $(LIBCOM) -lohaudio -ldl
+ 
+ if HAVE_OHOS
+ $(info build audio_output openharmony)
+diff --git a/modules/audio_output/audiounit_ohos.c b/modules/audio_output/audiounit_ohos.c
+index 80067e0..5aa2224 100644
+--- a/modules/audio_output/audiounit_ohos.c
++++ b/modules/audio_output/audiounit_ohos.c
+@@ -32,6 +32,7 @@
+ #include <ohaudio/native_audiostream_base.h>
+ #include <ohaudio/native_audiostreambuilder.h>
+ #include <hilog/log.h>
++#include "ohos_audio_effects.h"
+ 
+ /* Description of the module */
+ static int  Open(vlc_object_t *);
+@@ -121,8 +122,65 @@ struct aout_sys_t {
+     vlc_tick_t last_write_time;
+     size_t max_queue_size;
+     bool flushed_since_play;
++    /* Play/Start/Flush/Stop are serialized under VLC's output lock.
++     * The system write callback never touches this graph. */
++    ohos_audio_effects *suite;
++    int suite_preset;
++    bool suite_stereo;
++    bool suite_rendered;
+ };
+ 
++static vlc_tick_t vlc_tick_from_samples(uint64_t samples, uint32_t sample_rate);
++
++static void ResetEffects(audio_output_t *aout)
++{
++    aout_sys_t *s = aout->sys;
++    ohos_effects_close(s->suite);
++    s->suite = NULL;
++    s->suite_preset = 0;
++    s->suite_rendered = false;
++    var_SetInteger(aout, VLC_OHOS_EFFECT_STATUS_VAR, 0);
++}
++
++static const uint8_t *ApplyEffects(audio_output_t *aout, const block_t *block)
++{
++    aout_sys_t *s = aout->sys;
++    int preset = var_InheritInteger(aout, VLC_OHOS_EFFECT_VAR);
++    if (s->suite_preset != preset) {
++        ResetEffects(aout);
++        s->suite_preset = preset;
++        if (preset != 0) {
++            ohos_pcm_type type = s->sample_format == AUDIOSTREAM_SAMPLE_S16LE ? OHOS_PCM_S16 :
++                                 s->sample_format == AUDIOSTREAM_SAMPLE_S32LE ? OHOS_PCM_S32 : OHOS_PCM_FLOAT;
++            if (s->suite_stereo)
++                s->suite = ohos_effects_open(preset, s->sample_rate, type);
++            if (!s->suite) {
++                msg_Dbg(aout, "AudioSuite preset %d unavailable for this output; using original PCM", preset);
++                var_SetInteger(aout, VLC_OHOS_EFFECT_STATUS_VAR, preset * 4 + 3);
++            }
++        }
++    }
++    if (!s->suite)
++        return block->p_buffer;
++
++    const vlc_tick_t start = mdate();
++    const uint8_t *pcm = ohos_effects_render(s->suite, block->p_buffer, block->i_buffer);
++    const vlc_tick_t block_time = vlc_tick_from_samples(block->i_nb_samples, s->sample_rate);
++    if (!pcm || mdate() - start > __MAX(block_time, VLC_TICK_FROM_MS(8))) {
++        msg_Warn(aout, "AudioSuite preset %d render failed or exceeded its time budget; using original PCM", preset);
++        ohos_effects_close(s->suite);
++        s->suite = NULL;
++        var_SetInteger(aout, VLC_OHOS_EFFECT_STATUS_VAR, preset * 4 + 3);
++        return block->p_buffer;
++    }
++    if (!s->suite_rendered) {
++        s->suite_rendered = true;
++        var_SetInteger(aout, VLC_OHOS_EFFECT_STATUS_VAR, preset * 4 + 2);
++        msg_Dbg(aout, "AudioSuite playback effect active: preset %d", preset);
++    }
++    return pcm;
++}
++
+ // Initiating the queue operation
+ static int audio_queue_init(audio_queue_t *queue)
+ {
+@@ -385,8 +443,11 @@ static int Start(audio_output_t *p_aout, audio_sample_format_t *p_fmt)
+     }
+ 
+     // Setting audio parameters
++    ResetEffects(p_aout);
+     p_sys->sample_rate = p_fmt->i_rate;
+     p_sys->channels = aout_FormatNbChannels(p_fmt);
++    p_sys->suite_stereo = p_sys->channels == 2 &&
++                          p_fmt->i_physical_channels == AOUT_CHANS_STEREO;
+     if (p_sys->sample_rate == 0 || p_sys->channels == 0) {
+         msg_Warn(p_aout, "Rejecting invalid audio format: %u channels, %u Hz",
+                  p_sys->channels, p_sys->sample_rate);
+@@ -522,6 +583,7 @@ static void Stop(audio_output_t *p_aout)
+ 
+     p_sys->is_playing = false;
+     audio_queue_clear(&p_sys->queue);
++    ResetEffects(p_aout);
+ 
+     if (p_sys->p_renderer) {
+         OH_AudioRenderer_Stop(p_sys->p_renderer);
+@@ -564,7 +626,8 @@ static void Play(audio_output_t *p_aout, block_t *p_block)
+ 
+     if (p_block && p_block->i_buffer > 0) {
+         p_sys->flushed_since_play = false;
+-        if (!audio_queue_push(&p_sys->queue, p_block->p_buffer,
++        const uint8_t *pcm = ApplyEffects(p_aout, p_block);
++        if (!audio_queue_push(&p_sys->queue, pcm,
+                               p_block->i_buffer, p_sys->max_queue_size)) {
+             static vlc_tick_t last_overflow_log;
+             const vlc_tick_t now = mdate();
+@@ -610,6 +673,11 @@ static void Flush(audio_output_t *p_aout, bool wait)
+ 
+     msg_Dbg(p_aout, "Flushing audio queue");
+     audio_queue_clear(&p_sys->queue);
++    // An active graph can contain samples or a reverb tail from before the seek.
++    // Keep a failed graph bypassed for this track/preset instead of retrying
++    // on VLC's potentially frequent drift corrections.
++    if (p_sys->suite)
++        ResetEffects(p_aout);
+ 
+     /* VLC can request repeated flushes while discarding stale timestamps.
+      * With no intervening Play there is no new audio to flush. */
+@@ -791,6 +859,7 @@ static int Open(vlc_object_t *obj)
+     }
+ 
+     p_aout->sys = p_sys;
++    var_Create(p_aout, VLC_OHOS_EFFECT_STATUS_VAR, VLC_VAR_INTEGER);
+     p_aout->start = Start;
+     p_aout->stop = Stop;
+     p_aout->time_get = TimeGet;

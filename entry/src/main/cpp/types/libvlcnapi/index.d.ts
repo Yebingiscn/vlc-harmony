@@ -169,6 +169,9 @@ export const mediaPlayerSetRate: (playerHandle: number, rate: number) => void;
 
 /** Scene eligibility only; unsupported native libraries return false safely. */
 export const mediaPlayerSetVideoVrrAllowed: (playerHandle: number, allowed: boolean) => boolean;
+export const audioEffectsGetSupport: () => number;
+export const mediaPlayerSetAudioEffect: (playerHandle: number, preset: number) => boolean;
+export const mediaPlayerGetAudioEffectStatus: (playerHandle: number) => number;
 
 export const mediaPlayerGetRate: (playerHandle: number) => number;
 

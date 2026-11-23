@@ -8,6 +8,7 @@ import { AudioBrowserRequest } from '../common/data/AudioBrowserRequest';
 import { formatDuration, PlayState, Track } from '../common/models/MediaModels';
 import { PlaybackSpeedAction, PlaybackSpeedDialog } from './PlaybackSpeedDialog';
 import { EqualizerDialog } from './EqualizerDialog';
+import { AudioEffectsDialog } from './AudioEffectsDialog';
 import { AudioInfoDialog, AudioInfoParams } from './AudioInfoDialog';
 import { EmbeddedLyrics, LyricLine, LyricsDocument } from '../common/data/EmbeddedLyrics';
 
@@ -133,6 +134,7 @@ export struct AudioPlayerPage {
   @Local bookmarkOpen: boolean = false;
   @Local speedOpen: boolean = false;
   @Local eqOpen: boolean = false;
+  @Local audioEffectsOpen: boolean = false;
   @Local sleepOpen: boolean = false;
   @Local jumpOpen: boolean = false;
   @Local savePlaylistOpen: boolean = false;
@@ -299,7 +301,7 @@ export struct AudioPlayerPage {
 
   private canDismissDrag(): boolean {
     return !this.closing && !this.vm.locked && !this.advancedOptionsOpen && !this.bookmarkOpen
-      && !this.speedOpen && !this.eqOpen && !this.sleepOpen && !this.jumpOpen
+      && !this.speedOpen && !this.eqOpen && !this.audioEffectsOpen && !this.sleepOpen && !this.jumpOpen
       && !this.savePlaylistOpen && !this.infoOpen;
   }
 
@@ -778,6 +780,18 @@ export struct AudioPlayerPage {
           .transition(TransitionEffect.translate({ y: '100%' }).animation({ duration: 300, curve: Curve.EaseOut }))
         }
 
+        if (this.audioEffectsOpen) {
+          Column() {
+            Column()
+              .width('100%').layoutWeight(1)
+              .backgroundColor(Color.Transparent)
+              .onClick(() => this.animateClose(() => this.audioEffectsOpen = false))
+            AudioEffectsDialog({ onClose: () => this.animateClose(() => this.audioEffectsOpen = false) })
+          }
+          .width('100%')
+          .height('100%')
+          .transition(TransitionEffect.translate({ y: '100%' }).animation({ duration: 300, curve: Curve.EaseOut }))
+        }
         // 均衡器弹框
         if (this.eqOpen) {
           Column() {
@@ -908,6 +922,10 @@ export struct AudioPlayerPage {
     .backgroundColor(this.hasSharedEntry() ? Color.Transparent : $r('app.color.background_default'))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .onBackPressed(() => {
+      if (this.audioEffectsOpen) {
+        this.animateClose(() => this.audioEffectsOpen = false);
+        return true;
+      }
       if (this.vm.locked) {
         return true;
       }
@@ -971,6 +989,10 @@ export struct AudioPlayerPage {
       this.animateOpen(() => {
         this.eqOpen = true;
       });
+      return;
+    }
+    if (id === 'audioEffects') {
+      this.animateOpen(() => this.audioEffectsOpen = true);
       return;
     }
     if (id === 'bookmark') {

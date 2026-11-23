@@ -154,6 +154,8 @@ export class PlaybackService {
   private lib: LibVLC | null = null;
   private player: MediaPlayer | null = null;
   private videoVrrAllowed: boolean = false;
+  private audioEffectPreset: number = 0;
+  private audioEffectSave: Promise<void> = Promise.resolve();
   private equalizer: Equalizer | null = null;
   private rendererDiscoverer: RendererDiscoverer | null = null;
   private currentRendererHandle: number = -1;
@@ -596,6 +598,31 @@ export class PlaybackService {
 
   getAudioDelay(): number {
     return this.audioDelayUs;
+  }
+
+  getAudioEffectPreset(): number {
+    return this.audioEffectPreset;
+  }
+
+  getAudioEffectSupport(): number {
+    return MediaPlayer.audioEffectsSupport();
+  }
+
+  getAudioEffectStatus(): number {
+    return this.player?.audioEffectStatus() ?? 0;
+  }
+
+  setAudioEffectPreset(preset: number): boolean {
+    if (!Number.isInteger(preset) || preset < 0 || preset > 25) {
+      return false;
+    }
+    if (!this.player?.setAudioEffect(preset)) {
+      return false;
+    }
+    this.audioEffectPreset = preset;
+    // Serialize rapid preset changes so the most recent choice wins on disk.
+    this.audioEffectSave = this.audioEffectSave.then(() => Settings.put(Settings.KEY_AUDIO_EFFECT_PRESET, preset));
+    return true;
   }
 
   applyEqualizer(enabled: boolean, presetIndex: number, preamp: number, bands: number[]): void {
@@ -1087,6 +1114,10 @@ export class PlaybackService {
         return;
       }
       this.player.setEventListener((event: string, value: number) => this.onNativeEvent(event, value));
+      const savedEffect: number = await Settings.getInt(Settings.KEY_AUDIO_EFFECT_PRESET, 0);
+      if (savedEffect > 0 && savedEffect <= 25 && this.player.setAudioEffect(savedEffect)) {
+        this.audioEffectPreset = savedEffect;
+      }
       this.inited = true;
       // 订阅音频环境事件(耳机/通知闪避/通话),各回调内动态读设置,开关即时生效
       this.setupAudioEnvironment();
@@ -1182,6 +1213,9 @@ export class PlaybackService {
     np.setEventListener((event: string, value: number) => this.onNativeEvent(event, value));
     np.setVolume(this.volume);
     np.setRate(this.speed);
+    if (this.audioEffectPreset !== 0) {
+      np.setAudioEffect(this.audioEffectPreset);
+    }
     if (this.videoOutId.length > 0) {
       const bound = np.attachViews(this.videoOutId);
       hilog.info(LOG_DOMAIN, LOG_TAG,

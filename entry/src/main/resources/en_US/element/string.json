@@ -1,5 +1,157 @@
 {
   "string": [
+    {
+      "name": "audio_effects_title",
+      "value": "Audio effects"
+    },
+    {
+      "name": "audio_effects_off",
+      "value": "Original"
+    },
+    {
+      "name": "audio_effects_soundfield",
+      "value": "Sound field"
+    },
+    {
+      "name": "audio_effects_space",
+      "value": "Spatial rendering"
+    },
+    {
+      "name": "audio_effects_beauty",
+      "value": "Sound enhancement"
+    },
+    {
+      "name": "audio_effects_environment",
+      "value": "Environment"
+    },
+    {
+      "name": "audio_effects_voice",
+      "value": "Voice effects"
+    },
+    {
+      "name": "audio_effects_unavailable",
+      "value": "These effects are not available on this device or native build."
+    },
+    {
+      "name": "audio_effects_bypassed",
+      "value": "This track or output is not suitable for the effect. Playing original audio."
+    },
+    {
+      "name": "audio_effects_active",
+      "value": "Effect active · VLC equalizer unchanged"
+    },
+    {
+      "name": "audio_effects_pending",
+      "value": "Waiting for stereo audio. Changes take effect after buffered audio plays."
+    },
+    {
+      "name": "audio_effects_hint",
+      "value": "For 44.1 / 48 kHz stereo. Incompatible audio plays unchanged."
+    },
+    {
+      "name": "audio_effects_apply_failed",
+      "value": "Could not change audio effect"
+    },
+    {
+      "name": "audio_fx_front",
+      "value": "Front-facing"
+    },
+    {
+      "name": "audio_fx_grand",
+      "value": "Grand"
+    },
+    {
+      "name": "audio_fx_near",
+      "value": "Near"
+    },
+    {
+      "name": "audio_fx_wide",
+      "value": "Wide"
+    },
+    {
+      "name": "audio_fx_position",
+      "value": "Fixed position"
+    },
+    {
+      "name": "audio_fx_rotation",
+      "value": "Rotation"
+    },
+    {
+      "name": "audio_fx_extension",
+      "value": "Extension"
+    },
+    {
+      "name": "audio_fx_clear",
+      "value": "Clear"
+    },
+    {
+      "name": "audio_fx_theatre",
+      "value": "Theatre"
+    },
+    {
+      "name": "audio_fx_cd",
+      "value": "CD"
+    },
+    {
+      "name": "audio_fx_studio",
+      "value": "Studio"
+    },
+    {
+      "name": "audio_fx_broadcast",
+      "value": "Broadcast"
+    },
+    {
+      "name": "audio_fx_earpiece",
+      "value": "Earpiece"
+    },
+    {
+      "name": "audio_fx_underwater",
+      "value": "Underwater"
+    },
+    {
+      "name": "audio_fx_gramophone",
+      "value": "Gramophone"
+    },
+    {
+      "name": "audio_fx_cute",
+      "value": "Cute"
+    },
+    {
+      "name": "audio_fx_cyberpunk",
+      "value": "Cyberpunk"
+    },
+    {
+      "name": "audio_fx_female",
+      "value": "Female"
+    },
+    {
+      "name": "audio_fx_male",
+      "value": "Male"
+    },
+    {
+      "name": "audio_fx_reverb",
+      "value": "Reverb"
+    },
+    {
+      "name": "audio_fx_monster",
+      "value": "Monster"
+    },
+    {
+      "name": "audio_fx_seasoned",
+      "value": "Seasoned"
+    },
+    {
+      "name": "audio_fx_synth",
+      "value": "Synth"
+    },
+    {
+      "name": "audio_fx_trill",
+      "value": "Trill"
+    },
+    {
+      "name": "audio_fx_war",
+      "value": "War"
+    },
     { "name": "audio_lyrics_loading", "value": "Reading embedded lyrics…" },
     { "name": "audio_lyrics_empty", "value": "No readable embedded lyrics in this file" },
     {

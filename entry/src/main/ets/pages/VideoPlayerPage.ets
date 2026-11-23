@@ -26,6 +26,7 @@ import { RenderersDialog } from './RenderersDialog';
 import { PlaybackSpeedAction, PlaybackSpeedDialog } from './PlaybackSpeedDialog';
 import { ControlsState, VideoControlsSettingsDialog } from './VideoControlsSettingsDialog';
 import { EqualizerDialog } from './EqualizerDialog';
+import { AudioEffectsDialog } from './AudioEffectsDialog';
 import { VideoInfoDialog } from './VideoInfoDialog';
 import { SubtitleDownloaderDialog } from './SubtitleDownloaderDialog';
 import { BookmarkDialog } from './BookmarkDialog';
@@ -2044,6 +2045,8 @@ export struct VideoPlayerPage {
           reserveSystemCloseSpace: true,
           onClose: () => this.closeSheet(),
         }).width('100%')
+      } else if (this.sheetKind === 'audioEffects') {
+        AudioEffectsDialog({ reserveSystemCloseSpace: true, onClose: () => this.closeSheet() }).width('100%')
       } else if (this.sheetKind === 'videoInfo') {
         VideoInfoDialog({
           title: this.vm.title,
@@ -2168,6 +2171,10 @@ export struct VideoPlayerPage {
     }
     if (id === 'equalizer') {
       this.openSub('equalizer');
+      return;
+    }
+    if (id === 'audioEffects') {
+      this.openSub('audioEffects');
       return;
     }
     if (id === 'videoInfo') {

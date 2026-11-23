@@ -1,11 +1,13 @@
 import {
   hasNativeWindow,
+  audioEffectsGetSupport,
   mediaPlayerAddSlave,
   mediaPlayerClearEqualizer,
   mediaPlayerClearRenderer,
   mediaPlayerCreate,
   mediaPlayerDetachViews,
   mediaPlayerGetAudioDelay,
+  mediaPlayerGetAudioEffectStatus,
   mediaPlayerGetAudioTrack,
   mediaPlayerGetAudioTracks,
   mediaPlayerGetChapter,
@@ -28,6 +30,7 @@ import {
   mediaPlayerRelease,
   mediaPlayerReleaseAsync,
   mediaPlayerSetAudioDelay,
+  mediaPlayerSetAudioEffect,
   mediaPlayerSetAudioTrack,
   mediaPlayerSetChapter,
   mediaPlayerSetEqualizer,
@@ -201,6 +204,18 @@ export class MediaPlayer extends VLCObject {
 
   setVideoVrrAllowed(allowed: boolean): boolean {
     return !this.isReleased() && mediaPlayerSetVideoVrrAllowed(this.handle, allowed);
+  }
+
+  static audioEffectsSupport(): number {
+    return audioEffectsGetSupport();
+  }
+
+  setAudioEffect(preset: number): boolean {
+    return !this.isReleased() && mediaPlayerSetAudioEffect(this.handle, preset);
+  }
+
+  audioEffectStatus(): number {
+    return this.isReleased() ? 0 : mediaPlayerGetAudioEffectStatus(this.handle);
   }
 
   getRate(): number {

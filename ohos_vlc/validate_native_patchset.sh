@@ -106,6 +106,11 @@ git -C "$WORK_DIR/vlc" apply --check "$VLC_PATCH"
 git -C "$WORK_DIR/vlc" apply "$VLC_PATCH"
 git -C "$WORK_DIR/vlc" apply --check "$ROOT_DIR/patches/0031-vlc-ohcodec-content-adaptive-policy.patch"
 git -C "$WORK_DIR/vlc" apply "$ROOT_DIR/patches/0031-vlc-ohcodec-content-adaptive-policy.patch"
+git -C "$WORK_DIR/vlc" apply --check "$ROOT_DIR/patches/0032-vlc-ohaudiosuite-effects.patch"
+git -C "$WORK_DIR/vlc" apply "$ROOT_DIR/patches/0032-vlc-ohaudiosuite-effects.patch"
+cp "$ROOT_DIR/audio/ohos_audio_effects.c" "$ROOT_DIR/audio/ohos_audio_effects.h" "$WORK_DIR/vlc/modules/audio_output/"
+grep -Fq 'libvlc_media_player_set_ohos_audio_effect' "$WORK_DIR/vlc/lib/libvlc.sym"
+grep -Fq 'const uint8_t *pcm = ApplyEffects(p_aout, p_block);' "$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
 grep -q 'AC_INIT(vlc, 3.0.24)' "$WORK_DIR/vlc/configure.ac"
 grep -Fq '[PlaybackStage] receive' "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
 grep -Fq '[PlaybackStage] subtitle-render' "$WORK_DIR/vlc/src/video_output/video_output.c"
@@ -300,5 +305,6 @@ grep -q 'libvlc_media_player_set_ohos_video_vrr_allowed' "$WORK_DIR/vlc/lib/libv
 grep -q 'ohcodec-video-vrr-allowed' "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
 
 node "$ROOT_DIR/test_codec_policy.cjs" "$WORK_DIR/ffmpeg" clang "$WORK_DIR/policy-test"
+node "$ROOT_DIR/test_audio_effects.cjs" clang "$WORK_DIR/audio-effects-test"
 
 echo "Native VLC/FFmpeg patch preflight passed."

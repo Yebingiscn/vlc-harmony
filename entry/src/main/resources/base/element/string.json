@@ -1,5 +1,157 @@
 {
   "string": [
+    {
+      "name": "audio_effects_title",
+      "value": "音效"
+    },
+    {
+      "name": "audio_effects_off",
+      "value": "原声"
+    },
+    {
+      "name": "audio_effects_soundfield",
+      "value": "声场"
+    },
+    {
+      "name": "audio_effects_space",
+      "value": "空间渲染"
+    },
+    {
+      "name": "audio_effects_beauty",
+      "value": "声音美化"
+    },
+    {
+      "name": "audio_effects_environment",
+      "value": "环境"
+    },
+    {
+      "name": "audio_effects_voice",
+      "value": "变声"
+    },
+    {
+      "name": "audio_effects_unavailable",
+      "value": "当前设备或原生库不支持这些音效。"
+    },
+    {
+      "name": "audio_effects_bypassed",
+      "value": "当前音轨或输出不适用，正在播放原声。"
+    },
+    {
+      "name": "audio_effects_active",
+      "value": "音效已生效 · VLC 均衡器保持不变"
+    },
+    {
+      "name": "audio_effects_pending",
+      "value": "等待立体声播放。切换需要等已缓冲的音频播完。"
+    },
+    {
+      "name": "audio_effects_hint",
+      "value": "适用于 44.1 / 48 kHz 立体声；不兼容时播放原声。"
+    },
+    {
+      "name": "audio_effects_apply_failed",
+      "value": "无法切换音效"
+    },
+    {
+      "name": "audio_fx_front",
+      "value": "前置"
+    },
+    {
+      "name": "audio_fx_grand",
+      "value": "宏大"
+    },
+    {
+      "name": "audio_fx_near",
+      "value": "聆听"
+    },
+    {
+      "name": "audio_fx_wide",
+      "value": "宽广"
+    },
+    {
+      "name": "audio_fx_position",
+      "value": "固定摆位"
+    },
+    {
+      "name": "audio_fx_rotation",
+      "value": "环绕旋转"
+    },
+    {
+      "name": "audio_fx_extension",
+      "value": "空间扩展"
+    },
+    {
+      "name": "audio_fx_clear",
+      "value": "清晰"
+    },
+    {
+      "name": "audio_fx_theatre",
+      "value": "剧场"
+    },
+    {
+      "name": "audio_fx_cd",
+      "value": "CD"
+    },
+    {
+      "name": "audio_fx_studio",
+      "value": "录音棚"
+    },
+    {
+      "name": "audio_fx_broadcast",
+      "value": "广播"
+    },
+    {
+      "name": "audio_fx_earpiece",
+      "value": "听筒"
+    },
+    {
+      "name": "audio_fx_underwater",
+      "value": "水下"
+    },
+    {
+      "name": "audio_fx_gramophone",
+      "value": "留声机"
+    },
+    {
+      "name": "audio_fx_cute",
+      "value": "可爱"
+    },
+    {
+      "name": "audio_fx_cyberpunk",
+      "value": "赛博朋克"
+    },
+    {
+      "name": "audio_fx_female",
+      "value": "女声"
+    },
+    {
+      "name": "audio_fx_male",
+      "value": "男声"
+    },
+    {
+      "name": "audio_fx_reverb",
+      "value": "混响"
+    },
+    {
+      "name": "audio_fx_monster",
+      "value": "怪兽"
+    },
+    {
+      "name": "audio_fx_seasoned",
+      "value": "成熟"
+    },
+    {
+      "name": "audio_fx_synth",
+      "value": "合成器"
+    },
+    {
+      "name": "audio_fx_trill",
+      "value": "颤音"
+    },
+    {
+      "name": "audio_fx_war",
+      "value": "战争"
+    },
     { "name": "audio_lyrics_loading", "value": "正在读取内嵌歌词…" },
     { "name": "audio_lyrics_empty", "value": "此文件没有可读取的内嵌歌词" },
     {

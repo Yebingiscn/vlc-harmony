@@ -276,6 +276,8 @@ function install_vlc_patches()
     cp -f "$ROOT_DIR/recipes/vlc-ffmpeg9.HPKBUILD" "$vlc_recipe_dir/HPKBUILD" || return 1
     cp -f "$ROOT_DIR/patches/0030-vlc-3.0.24-ohos.patch" "$vlc_recipe_dir/" || return 1
     cp -f "$ROOT_DIR/patches/0031-vlc-ohcodec-content-adaptive-policy.patch" "$vlc_recipe_dir/" || return 1
+    cp -f "$ROOT_DIR/patches/0032-vlc-ohaudiosuite-effects.patch" "$vlc_recipe_dir/" || return 1
+    cp -f "$ROOT_DIR/audio/ohos_audio_effects.c" "$ROOT_DIR/audio/ohos_audio_effects.h" "$vlc_recipe_dir/" || return 1
     return 0
 }
 

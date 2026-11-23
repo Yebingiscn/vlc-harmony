@@ -7,6 +7,7 @@
 #include <vlc/deprecated.h>
 #include <ace/xcomponent/native_interface_xcomponent.h>
 #include <hilog/log.h>
+#include <ohaudiosuite/native_audio_suite_engine.h>
 
 #include <dlfcn.h>
 #include <unistd.h>
@@ -368,6 +369,31 @@ struct SurfaceBinding {
 using SetOhosWindowSizeFn = void (*)(libvlc_media_player_t *, unsigned, unsigned);
 using SetOhosOsdNativeWindowFn = void (*)(libvlc_media_player_t *, void *);
 using SetOhosVideoVrrAllowedFn = void (*)(libvlc_media_player_t *, bool);
+
+struct OhosAudioEffectsApi {
+    int (*set)(libvlc_media_player_t *, int) = nullptr;
+    int (*status)(libvlc_media_player_t *) = nullptr;
+};
+
+static const OhosAudioEffectsApi &ResolveOhosAudioEffects()
+{
+    static const auto api = [] {
+        OhosAudioEffectsApi result;
+        void *lib = dlopen("libvlc.so.5", RTLD_NOW | RTLD_LOCAL);
+        if (lib == nullptr)
+            return result;
+        result.set = reinterpret_cast<decltype(result.set)>(
+            dlsym(lib, "libvlc_media_player_set_ohos_audio_effect"));
+        result.status = reinterpret_cast<decltype(result.status)>(
+            dlsym(lib, "libvlc_media_player_get_ohos_audio_effect_status"));
+        if (!result.set || !result.status) {
+            dlclose(lib);
+            return OhosAudioEffectsApi{};
+        }
+        return result;
+    }();
+    return api;
+}
 
 SetOhosVideoVrrAllowedFn ResolveSetOhosVideoVrrAllowed()
 {
@@ -1853,6 +1879,77 @@ napi_value MediaPlayerSetVideoVrrAllowed(napi_env env, napi_callback_info info)
     return Bool(env, true);
 }
 
+static libvlc_media_player_t *RetainAudioEffectsPlayer(napi_env env, napi_value arg)
+{
+    uint32_t handle = 0;
+    if (!GetU32(env, arg, &handle))
+        return nullptr;
+    std::lock_guard<std::mutex> lock(g_mtx);
+    PlayerEntry *entry = FindPlayerLocked(handle);
+    if (!entry || !entry->mp)
+        return nullptr;
+    libvlc_media_player_retain(entry->mp);
+    return entry->mp;
+}
+
+napi_value AudioEffectsGetSupport(napi_env env, napi_callback_info)
+{
+    if (!ResolveOhosAudioEffects().set)
+        return I32(env, 0);
+    void *suite = dlopen("libohaudiosuite.so", RTLD_NOW | RTLD_LOCAL);
+    if (!suite)
+        return I32(env, 0);
+    using Probe = decltype(&OH_AudioSuiteEngine_IsNodeTypeSupported);
+    auto probe = reinterpret_cast<Probe>(dlsym(suite, "OH_AudioSuiteEngine_IsNodeTypeSupported"));
+    constexpr OH_AudioNode_Type nodes[] = {
+        EFFECT_NODE_TYPE_SOUND_FIELD, EFFECT_NODE_TYPE_SPACE_RENDER,
+        EFFECT_NODE_TYPE_VOICE_BEAUTIFIER, EFFECT_NODE_TYPE_ENVIRONMENT_EFFECT,
+        EFFECT_NODE_TYPE_GENERAL_VOICE_CHANGE,
+    };
+    int mask = 0;
+    if (probe) {
+        for (unsigned i = 0; i < sizeof(nodes) / sizeof(nodes[0]); ++i) {
+            bool supported = false;
+            if (probe(nodes[i], &supported) == AUDIOSUITE_SUCCESS && supported)
+                mask |= 1 << i;
+        }
+    }
+    dlclose(suite);
+    return I32(env, mask);
+}
+
+napi_value MediaPlayerSetAudioEffect(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value argv[2];
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    double preset = 0;
+    auto setter = ResolveOhosAudioEffects().set;
+    if (!setter || argc != 2 || napi_get_value_double(env, argv[1], &preset) != napi_ok ||
+        !std::isfinite(preset) || preset < 0 || preset > 25 || std::floor(preset) != preset)
+        return Bool(env, false);
+    libvlc_media_player_t *mp = RetainAudioEffectsPlayer(env, argv[0]);
+    if (!mp)
+        return Bool(env, false);
+    bool ok = setter(mp, static_cast<int>(preset)) == 0;
+    libvlc_media_player_release(mp);
+    return Bool(env, ok);
+}
+
+napi_value MediaPlayerGetAudioEffectStatus(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value argv[1];
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    auto getter = ResolveOhosAudioEffects().status;
+    libvlc_media_player_t *mp = argc == 1 && getter ? RetainAudioEffectsPlayer(env, argv[0]) : nullptr;
+    if (!mp)
+        return I32(env, 0);
+    int status = getter(mp);
+    libvlc_media_player_release(mp);
+    return I32(env, status);
+}
+
 napi_value MediaPlayerGetRate(napi_env env, napi_callback_info info)
 {
     size_t argc = 1;
@@ -3281,6 +3378,9 @@ napi_value VlcNapiInit(napi_env env, napi_value exports)
         {"mediaPlayerGetLength", nullptr, MediaPlayerGetLength, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerSetRate", nullptr, MediaPlayerSetRate, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerSetVideoVrrAllowed", nullptr, MediaPlayerSetVideoVrrAllowed, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"audioEffectsGetSupport", nullptr, AudioEffectsGetSupport, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"mediaPlayerSetAudioEffect", nullptr, MediaPlayerSetAudioEffect, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"mediaPlayerGetAudioEffectStatus", nullptr, MediaPlayerGetAudioEffectStatus, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerGetRate", nullptr, MediaPlayerGetRate, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerSetVolume", nullptr, MediaPlayerSetVolume, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"mediaPlayerGetVolume", nullptr, MediaPlayerGetVolume, nullptr, nullptr, nullptr, napi_default, nullptr},

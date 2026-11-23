@@ -93,7 +93,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ohos_vlc/library/libs/arm64-v8a
-          key: native-vlc-arm64-api26-ffmpeg9-v1-${{ hashFiles('ohos_vlc/prebuild.sh', 'ohos_vlc/recipes/**', 'ohos_vlc/patches/**', 'ohos_vlc/runtime-libs-arm64.txt', 'sync_native_libs.sh') }}
+          key: native-vlc-arm64-api26-ffmpeg9-v1-${{ hashFiles('ohos_vlc/prebuild.sh', 'ohos_vlc/recipes/**', 'ohos_vlc/patches/**', 'ohos_vlc/audio/**', 'ohos_vlc/runtime-libs-arm64.txt', 'sync_native_libs.sh') }}
 
       - name: Restore compiled dependency checkpoint
         if: steps.native-cache.outputs.cache-hit != 'true'
@@ -141,6 +141,12 @@ jobs:
           test -s "${audio_output}"
           test -s "${osd_output}"
           test -s "${ffmpeg_decoder}"
+          readelf -Ws entry/libs/arm64-v8a/libvlc.so.5 | grep -F 'libvlc_media_player_set_ohos_audio_effect'
+          grep -aFq 'AudioSuite playback effect active' "${audio_output}"
+          if readelf -d "${audio_output}" | grep -F 'Shared library: [libohaudiosuite.so]'; then
+            echo "AudioSuite must be loaded optionally at runtime"
+            exit 1
+          fi
           for lib in libavcodec.so.63 libavformat.so.63 libavutil.so.61 libswresample.so.7 libswscale.so.10 libssl.so.3 libcrypto.so.3 libdav1d.so.7 libz.so.1; do
             readelf -d "entry/libs/arm64-v8a/${lib}" | grep -F "Library soname: [${lib}]"
           done

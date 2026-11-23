@@ -62,6 +62,11 @@ prepare() {
             cd $OLDPWD
             return -1
         }
+        git apply ../0032-vlc-ohaudiosuite-effects.patch >> "$publicbuildlog" 2>&1 &&
+        cp ../ohos_audio_effects.c ../ohos_audio_effects.h modules/audio_output/ || {
+            cd "$OLDPWD"
+            return 1
+        }
         cd $OLDPWD
         cloneflag=false
     fi
