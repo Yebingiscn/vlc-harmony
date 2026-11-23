@@ -1,6 +1,7 @@
 #!/bin/bash
 
-set -euo pipefail
+set -Eeuo pipefail
+trap 'printf "ERROR: native preflight failed at line %s: %s\n" "$LINENO" "$BASH_COMMAND" >&2' ERR
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 WORKFLOW_FILE="$ROOT_DIR/../.github/workflows/build-native-vlc.yml"
@@ -110,7 +111,13 @@ git -C "$WORK_DIR/vlc" apply --check "$ROOT_DIR/patches/0032-vlc-ohaudiosuite-ef
 git -C "$WORK_DIR/vlc" apply "$ROOT_DIR/patches/0032-vlc-ohaudiosuite-effects.patch"
 cp "$ROOT_DIR/audio/ohos_audio_effects.c" "$ROOT_DIR/audio/ohos_audio_effects.h" "$WORK_DIR/vlc/modules/audio_output/"
 grep -Fq 'libvlc_media_player_set_ohos_audio_effect' "$WORK_DIR/vlc/lib/libvlc.sym"
-grep -Fq 'const uint8_t *pcm = ApplyEffects(p_aout, p_block);' "$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
+audio_output="$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
+if ! grep -Fq 'if (!ApplyEffects(p_aout, p_block))' "$audio_output" ||
+   ! grep -Fq 'ohos_effects_feed(' "$audio_output" ||
+   ! grep -Fq 'AudioSuite playback effect active' "$audio_output"; then
+    echo "ERROR: VLC audio output is missing the streaming AudioSuite bridge" >&2
+    exit 1
+fi
 grep -q 'AC_INIT(vlc, 3.0.24)' "$WORK_DIR/vlc/configure.ac"
 grep -Fq '[PlaybackStage] receive' "$WORK_DIR/vlc/modules/codec/avcodec/video.c"
 grep -Fq '[PlaybackStage] subtitle-render' "$WORK_DIR/vlc/src/video_output/video_output.c"
