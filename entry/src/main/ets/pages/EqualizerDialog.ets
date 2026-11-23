@@ -7,60 +7,132 @@ import { Equalizer } from '../libvlc';
 import { AppContext } from '../common/data/AppContext';
 
 const FREQ_LABELS: string[] = ['60', '170', '310', '600', '1K', '3K', '6K', '12K'];
+const FLAT_BANDS: number[] = [0, 0, 0, 0, 0, 0, 0, 0];
+let equalizerPanelSave: Promise<void> = Promise.resolve();
 
-/**
- * EqualizerDialog —— 底部 BottomSheet 均衡器。
- * 标题(18sp Medium)+ 启用开关 + 预设 Chip 横滑条 + 前置放大滑块 + 频段竖直条(EqualizerBar,150dp)
- * + snap 开关 + 增删改撤销图标。启用态持久化(KEY_EQUALIZER_ENABLED),预设 id 持久化(KEY_CURRENT_EQUALIZER_ID)。
- */
+class PanelPreset extends EqualizerPreset {
+  preamp: number;
+
+  constructor(id: number, name: string, bands: number[], preamp: number) {
+    super(id, name, bands);
+    this.preamp = preamp;
+  }
+}
+
+class EqualizerPanelState {
+  id: number = 0;
+  preamp: number = 0;
+  bands: number[] = [];
+  snap: boolean = false;
+  custom: PanelPreset[] = [];
+}
+
+/** Equalizer controls embedded in the shared Audio Effects panel. */
 @ComponentV2
 export struct EqualizerDialog {
-  /** bindSheet 自带关闭按钮时，为右上角按钮预留空间。 */
-  @Param reserveSystemCloseSpace: boolean = false;
+  @Local ready: boolean = false;
   @Local eqEnabled: boolean = false;
   @Local preamp: number = 0;
   @Local bands: number[] = [0, 0, 0, 0, 0, 0, 0, 0];
   @Local snap: boolean = false;
   @Local presetIndex: number = 0;
-  @Local presets: EqualizerPreset[] = [];
+  @Local presets: PanelPreset[] = [];
   @Local savedBands: number[] = [0, 0, 0, 0, 0, 0, 0, 0];
   @Local savedPreamp: number = 0;
-  @Local customPresetCount: number = 0;
-  @Event onClose: () => void = () => {
-  };
+  private builtInCount: number = 0;
+  private alive: boolean = false;
+  private dirty: boolean = false;
 
   async aboutToAppear(): Promise<void> {
-    const count = Equalizer.getPresetCount();
-    const bandCount = Equalizer.getBandCount();
-    const next: EqualizerPreset[] = [];
-    if (count > 0) {
-      for (let i = 0; i < count; i++) {
-        const name = Equalizer.getPresetName(i);
-        const bands: number[] = [];
-        for (let b = 0; b < Math.min(bandCount, 8); b++) {
-          bands.push(0);
-        }
-        while (bands.length < 8) {
-          bands.push(0);
-        }
-        next.push(new EqualizerPreset(i, name.length > 0 ? name : `Preset ${i}`, bands));
-      }
-    } else {
-      next.push(new EqualizerPreset(0, 'Flat', [0, 0, 0, 0, 0, 0, 0, 0]));
-    }
-    this.presets = next;
+    this.alive = true;
+    await equalizerPanelSave;
     const savedId = await Settings.getInt(Settings.KEY_CURRENT_EQUALIZER_ID, 0);
-    const idx = savedId >= 0 && savedId < this.presets.length ? savedId : 0;
-    this.eqEnabled = await Settings.getBoolean(Settings.KEY_EQUALIZER_ENABLED, false);
-    this.applyPreset(this.presets[idx]);
+    const enabled = await Settings.getBoolean(Settings.KEY_EQUALIZER_ENABLED, false);
+    const json = await Settings.getString(Settings.KEY_EQUALIZER_PANEL, '');
+    if (!this.alive) {
+      return;
+    }
+    const count = Equalizer.getPresetCount();
+    const bandCount = Math.min(Equalizer.getBandCount(), FLAT_BANDS.length);
+    const next: PanelPreset[] = [];
+    for (let i = 0; i < count; i++) {
+      const name = Equalizer.getPresetName(i);
+      const eq = Equalizer.fromPreset(i);
+      const bands = FLAT_BANDS.slice();
+      for (let b = 0; b < bandCount; b++) {
+        bands[b] = eq?.getAmp(b) ?? 0;
+      }
+      next.push(new PanelPreset(i, name.length > 0 ? name : `Preset ${i}`, bands, eq?.getPreAmp() ?? 0));
+      eq?.release();
+    }
+    if (next.length === 0) {
+      next.push(new PanelPreset(0, 'Flat', FLAT_BANDS.slice(), 0));
+    }
+    this.builtInCount = next.length;
+    let state: EqualizerPanelState = new EqualizerPanelState();
+    try {
+      if (json.length > 0) {
+        state = JSON.parse(json) as EqualizerPanelState;
+        for (const preset of state.custom) {
+          if (Number.isInteger(preset.id) && preset.id >= this.builtInCount &&
+            this.validCurve(preset.bands, preset.preamp) &&
+            typeof preset.name === 'string' && !next.some((p: PanelPreset) => p.id === preset.id)) {
+            next.push(new PanelPreset(preset.id, preset.name, preset.bands.slice(), preset.preamp));
+          }
+        }
+      }
+    } catch (_error) {
+      state = new EqualizerPanelState();
+    }
+    const preset = next.find((p: PanelPreset) => p.id === savedId) ?? next[0];
+    this.presets = next;
+    this.eqEnabled = enabled;
+    this.snap = state.snap === true;
+    this.loadPreset(preset);
+    if (state.id === preset.id && this.validCurve(state.bands, state.preamp)) {
+      this.bands = state.bands.slice();
+      this.preamp = state.preamp;
+    }
+    this.ready = true;
+    this.pushToPlayer(false);
   }
 
-  applyPreset(p: EqualizerPreset): void {
+  aboutToDisappear(): void {
+    this.alive = false;
+    if (!this.dirty) {
+      return;
+    }
+    const state = new EqualizerPanelState();
+    state.id = this.presetIndex;
+    state.bands = this.bands.slice();
+    state.preamp = this.preamp;
+    state.snap = this.snap;
+    state.custom = this.presets.filter((p: PanelPreset) => p.id >= this.builtInCount);
+    const enabled = this.eqEnabled;
+    const json = JSON.stringify(state);
+    equalizerPanelSave = equalizerPanelSave.then(async () => {
+      await Settings.put(Settings.KEY_EQUALIZER_PANEL, json);
+      await Settings.put(Settings.KEY_CURRENT_EQUALIZER_ID, state.id);
+      await Settings.put(Settings.KEY_EQUALIZER_ENABLED, enabled);
+    });
+  }
+
+  private validCurve(bands: number[], preamp: number): boolean {
+    return Number.isFinite(preamp) && preamp >= -20 && preamp <= 20 &&
+      Array.isArray(bands) && bands.length === FLAT_BANDS.length &&
+      bands.every((gain: number) => Number.isFinite(gain) && gain >= -20 && gain <= 20);
+  }
+
+  private loadPreset(p: PanelPreset): void {
     this.presetIndex = p.id;
     this.bands = p.bands.slice();
     this.savedBands = p.bands.slice();
-    this.savedPreamp = this.preamp;
-    Settings.put(Settings.KEY_CURRENT_EQUALIZER_ID, p.id);
+    this.preamp = p.preamp;
+    this.savedPreamp = p.preamp;
+  }
+
+  private applyPreset(p: PanelPreset): void {
+    this.loadPreset(p);
     this.pushToPlayer();
   }
 
@@ -68,11 +140,6 @@ export struct EqualizerDialog {
     const next = this.bands.slice();
     next[index] = v;
     this.bands = next;
-  }
-
-  toggleEnabled(): void {
-    this.eqEnabled = !this.eqEnabled;
-    Settings.put(Settings.KEY_EQUALIZER_ENABLED, this.eqEnabled);
   }
 
   build() {
@@ -88,23 +155,22 @@ export struct EqualizerDialog {
           .selectedColor(AppColors.orange500)
           .onChange((on: boolean) => {
             this.eqEnabled = on;
-            Settings.put(Settings.KEY_EQUALIZER_ENABLED, on);
             this.pushToPlayer();
           })
       }
       .width('100%')
       .padding({
         left: 16,
-        right: this.reserveSystemCloseSpace ? 72 : 16,
-        top: 16,
-        bottom: 16,
+        right: 16,
+        top: 4,
+        bottom: 8,
       })
       .alignItems(VerticalAlign.Center)
 
       // 预设 Chip 横滑条
       Scroll() {
         Row() {
-          Repeat(this.presets).each((pRepeatItem: RepeatItem<EqualizerPreset>) => {
+          Repeat(this.presets).each((pRepeatItem: RepeatItem<PanelPreset>) => {
             Text(pRepeatItem.item.name)
               .fontSize(16)
               .fontColor(this.presetIndex === pRepeatItem.item.id ? $r('app.color.list_title') : $r('app.color.font_light'))
@@ -118,7 +184,7 @@ export struct EqualizerDialog {
               })
               .margin({ left: 4, right: 4 })
               .onClick(() => this.applyPreset(pRepeatItem.item))
-          }).key((p: EqualizerPreset) => `${p.id}`)
+          }).key((p: PanelPreset) => `${p.id}`)
         }
         .padding({ left: 12, right: 12 })
       }
@@ -140,6 +206,7 @@ export struct EqualizerDialog {
             max: 20,
             step: 1,
             direction: Axis.Vertical,
+            reverse: true,
             style: SliderStyle.OutSet
           })
             .width(40)
@@ -181,6 +248,7 @@ export struct EqualizerDialog {
           Toggle({ type: ToggleType.Switch, isOn: this.snap }).selectedColor(AppColors.orange500)
             .onChange((on: boolean) => {
               this.snap = on;
+              this.dirty = true;
             })
           Text($r('app.string.eq_snap_bands')).fontSize(12).fontColor($r('app.color.font_light')).margin({ left: 8 })
         }
@@ -192,20 +260,14 @@ export struct EqualizerDialog {
           .fillColor($r('app.color.list_title'))
           .margin({ right: 16 })
           .onClick(() => {
-            this.customPresetCount++;
+            const id = this.presets.reduce((max: number, p: PanelPreset) => Math.max(max, p.id), -1) + 1;
+            const labelIndex = id - this.builtInCount + 1;
             const ctx = AppContext.get();
-            const name = ctx?.resourceManager.getStringSync($r('app.string.custom_preset_name').id, this.customPresetCount) ?? `Custom ${this.customPresetCount}`;
-            const newPreset = new EqualizerPreset(
-              this.presets.length,
-              name,
-              this.bands.slice()
-            );
+            const name = ctx?.resourceManager.getStringSync($r('app.string.custom_preset_name').id, labelIndex) ??
+              `Custom ${labelIndex}`;
+            const newPreset = new PanelPreset(id, name, this.bands.slice(), this.preamp);
             this.presets = this.presets.concat([newPreset]);
-            this.presetIndex = newPreset.id;
-            this.savedBands = this.bands.slice();
-            this.savedPreamp = this.preamp;
-            Settings.put(Settings.KEY_CURRENT_EQUALIZER_ID, newPreset.id);
-            this.pushToPlayer();
+            this.applyPreset(newPreset);
           })
         Image($r('app.media.ic_undo'))
           .width(24)
@@ -223,39 +285,24 @@ export struct EqualizerDialog {
           .fillColor($r('app.color.list_title'))
           .margin({ right: 16 })
           .onClick(() => {
-            if (this.presetIndex >= Equalizer.getPresetCount()) {
-              this.presets = this.presets.filter((p: EqualizerPreset) => p.id !== this.presetIndex);
-              if (this.presets.length > 0) {
-                this.applyPreset(this.presets[0]);
-              } else {
-                this.presetIndex = 0;
-                this.bands = [0, 0, 0, 0, 0, 0, 0, 0];
-                this.pushToPlayer();
-              }
+            if (this.presetIndex >= this.builtInCount) {
+              this.presets = this.presets.filter((p: PanelPreset) => p.id !== this.presetIndex);
+              this.applyPreset(this.presets[0]);
             }
           })
       }
       .width('100%').padding(16).alignItems(VerticalAlign.Center)
-
-      Button($r('app.string.ok'))
-        .type(ButtonType.Normal)
-        .borderRadius(4)
-        .backgroundColor(AppColors.orange500)
-        .fontColor('#FFFFFF')
-        .width('80%')
-        .onClick(() => {
-          this.pushToPlayer();
-          this.onClose();
-        })
-        .margin({ bottom: 24 })
     }
     .width('100%')
-    .backgroundColor($r('app.color.background_default'))
-    .borderRadius({ topLeft: 16, topRight: 16 })
+    .enabled(this.ready)
     .alignItems(HorizontalAlign.Center)
   }
 
-  private pushToPlayer(): void {
+  private pushToPlayer(save: boolean = true): void {
+    if (!this.ready) {
+      return;
+    }
+    this.dirty = this.dirty || save;
     PlaybackService.getInstance().applyEqualizer(this.eqEnabled, this.presetIndex, this.preamp, this.bands);
   }
 }

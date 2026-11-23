@@ -25,7 +25,6 @@ import { AudioSubtitlePanelDialog } from './AudioSubtitlePanelDialog';
 import { RenderersDialog } from './RenderersDialog';
 import { PlaybackSpeedAction, PlaybackSpeedDialog } from './PlaybackSpeedDialog';
 import { ControlsState, VideoControlsSettingsDialog } from './VideoControlsSettingsDialog';
-import { EqualizerDialog } from './EqualizerDialog';
 import { AudioEffectsDialog } from './AudioEffectsDialog';
 import { VideoInfoDialog } from './VideoInfoDialog';
 import { SubtitleDownloaderDialog } from './SubtitleDownloaderDialog';
@@ -689,7 +688,7 @@ export struct VideoPlayerPage {
   /** 更多选项/二级弹窗的 sheet 状态。sheetKind 空串=主选项列表;否则=对应二级弹窗。 */
   @Local sheetOpen: boolean = false;
   @Local sheetKind: string =
-    ''; // '' | 'jump' | 'sleep' | 'chapter' | 'tracks' | 'renderer' | 'speed' | 'controls' | 'equalizer' | 'videoInfo' | 'savePlaylist' | 'audioSubInfo' | 'downloadSubtitle'
+    ''; // '' | 'jump' | 'sleep' | 'chapter' | 'tracks' | 'renderer' | 'speed' | 'controls' | 'audioEffects' | 'videoInfo' | 'savePlaylist' | 'audioSubInfo' | 'downloadSubtitle'
   /**
    * 当前字幕延迟(微秒)。libvlc 没有 get_spu_delay 桥接;
    * 权威源在 PlaybackService.spuidDelayUs,这里仅镜像用于面板绑定显示。
@@ -2040,11 +2039,6 @@ export struct VideoPlayerPage {
           onClose: () => this.closeSheet(),
           onConfirm: (s: ControlsState) => this.onControlsConfirm(s),
         }).width('100%')
-      } else if (this.sheetKind === 'equalizer') {
-        EqualizerDialog({
-          reserveSystemCloseSpace: true,
-          onClose: () => this.closeSheet(),
-        }).width('100%')
       } else if (this.sheetKind === 'audioEffects') {
         AudioEffectsDialog({ reserveSystemCloseSpace: true, onClose: () => this.closeSheet() }).width('100%')
       } else if (this.sheetKind === 'videoInfo') {
@@ -2167,10 +2161,6 @@ export struct VideoPlayerPage {
     }
     if (id === 'jumpToTime') {
       this.openSub('jump');
-      return;
-    }
-    if (id === 'equalizer') {
-      this.openSub('equalizer');
       return;
     }
     if (id === 'audioEffects') {

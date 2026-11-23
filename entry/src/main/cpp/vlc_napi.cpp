@@ -373,7 +373,12 @@ using SetOhosVideoVrrAllowedFn = void (*)(libvlc_media_player_t *, bool);
 struct OhosAudioEffectsApi {
     int (*set)(libvlc_media_player_t *, int) = nullptr;
     int (*status)(libvlc_media_player_t *) = nullptr;
+    int (*maxPreset)() = nullptr;
 };
+
+constexpr int kOhosLegacyAudioEffectMax = 25;
+constexpr int kOhosSeparationPresetMax = 27;
+constexpr int kOhosSeparationBit = 1 << 5;
 
 static const OhosAudioEffectsApi &ResolveOhosAudioEffects()
 {
@@ -386,6 +391,8 @@ static const OhosAudioEffectsApi &ResolveOhosAudioEffects()
             dlsym(lib, "libvlc_media_player_set_ohos_audio_effect"));
         result.status = reinterpret_cast<decltype(result.status)>(
             dlsym(lib, "libvlc_media_player_get_ohos_audio_effect_status"));
+        result.maxPreset = reinterpret_cast<decltype(result.maxPreset)>(
+            dlsym(lib, "libvlc_media_player_get_ohos_audio_effect_max_preset"));
         if (!result.set || !result.status) {
             dlclose(lib);
             return OhosAudioEffectsApi{};
@@ -1894,7 +1901,8 @@ static libvlc_media_player_t *RetainAudioEffectsPlayer(napi_env env, napi_value 
 
 napi_value AudioEffectsGetSupport(napi_env env, napi_callback_info)
 {
-    if (!ResolveOhosAudioEffects().set)
+    const auto &api = ResolveOhosAudioEffects();
+    if (!api.set)
         return I32(env, 0);
     void *suite = dlopen("libohaudiosuite.so", RTLD_NOW | RTLD_LOCAL);
     if (!suite)
@@ -1913,6 +1921,12 @@ napi_value AudioEffectsGetSupport(napi_env env, napi_callback_info)
             if (probe(nodes[i], &supported) == AUDIOSUITE_SUCCESS && supported)
                 mask |= 1 << i;
         }
+        bool supported = false;
+        if (api.maxPreset && api.maxPreset() >= kOhosSeparationPresetMax &&
+            dlsym(suite, "OH_AudioSuiteEngine_MultiRenderFrame") &&
+            probe(EFFECT_MULTII_OUTPUT_NODE_TYPE_AUDIO_SEPARATION, &supported) == AUDIOSUITE_SUCCESS &&
+            supported)
+            mask |= kOhosSeparationBit;
     }
     dlclose(suite);
     return I32(env, mask);
@@ -1924,14 +1938,15 @@ napi_value MediaPlayerSetAudioEffect(napi_env env, napi_callback_info info)
     napi_value argv[2];
     napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
     double preset = 0;
-    auto setter = ResolveOhosAudioEffects().set;
-    if (!setter || argc != 2 || napi_get_value_double(env, argv[1], &preset) != napi_ok ||
-        !std::isfinite(preset) || preset < 0 || preset > 25 || std::floor(preset) != preset)
+    const auto &api = ResolveOhosAudioEffects();
+    const int maxPreset = api.maxPreset ? api.maxPreset() : kOhosLegacyAudioEffectMax;
+    if (!api.set || argc != 2 || napi_get_value_double(env, argv[1], &preset) != napi_ok ||
+        !std::isfinite(preset) || preset < 0 || preset > maxPreset || std::floor(preset) != preset)
         return Bool(env, false);
     libvlc_media_player_t *mp = RetainAudioEffectsPlayer(env, argv[0]);
     if (!mp)
         return Bool(env, false);
-    bool ok = setter(mp, static_cast<int>(preset)) == 0;
+    bool ok = api.set(mp, static_cast<int>(preset)) == 0;
     libvlc_media_player_release(mp);
     return Bool(env, ok);
 }

@@ -20,6 +20,7 @@ export struct EqualizerBar {
         step: 1,
         style: SliderStyle.OutSet,
         direction: Axis.Vertical,
+        reverse: true, // 由下往上增加增益，保持实际 dB 值不变。
       })
         .width(40)
         .height(150)

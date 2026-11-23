@@ -10,6 +10,7 @@ const state = source.slice(source.indexOf('#define RENDER_MS'), source.indexOf('
   .replace(/#define DECLARE_ENGINE[\s\S]*?#undef DECLARE_BUILDER/, `
     void *pipeline;
     OH_AudioSuite_Result (*engine_RenderFrame)(void *, void *, int32_t, int32_t *, bool *);
+    OH_AudioSuite_Result (*engine_MultiRenderFrame)(void *, OH_AudioDataArray *, int32_t *, bool *);
   `);
 const bridge = source.slice(source.indexOf('bool ohos_effects_feed('), source.indexOf('static bool node_create('));
 const render = source.slice(source.indexOf('ohos_effect_result ohos_effects_render('));
@@ -20,6 +21,7 @@ fs.writeFileSync(c, `
 #include "ohos_audio_effects.h"
 typedef int OH_AudioSuite_Result;
 typedef void OH_AudioNode;
+typedef struct { void **audioDataArray; int32_t arraySize, requestFrameSize; } OH_AudioDataArray;
 #define AUDIOSUITE_SUCCESS 0
 void *memcpy(void *d, const void *s, size_t n) {
     for (size_t i = 0; i < n; i++) ((uint8_t*)d)[i] = ((const uint8_t*)s)[i];
@@ -89,12 +91,24 @@ static OH_AudioSuite_Result fake_render(void *p, void *out, int32_t len,
     return AUDIOSUITE_SUCCESS;
 }
 
+static OH_AudioSuite_Result fake_multi_render(void *p, OH_AudioDataArray *array,
+                                             int32_t *response, bool *finished) {
+    if (array->arraySize != 2 || array->audioDataArray[0] == array->audioDataArray[1])
+        return -1;
+    OH_AudioSuite_Result rc = fake_render(p, array->audioDataArray[0], array->requestFrameSize, response, finished);
+    for (int32_t i = 0; i < *response; ++i)
+        ((uint8_t *)array->audioDataArray[1])[i] = original(played + i) ^ 0x55;
+    return rc;
+}
+
 static void start(unsigned rate, unsigned frame_bytes) {
     memset(&suite, 0, sizeof(suite));
     suite.frame_bytes = frame_bytes;
     suite.bytes_per_second = rate * frame_bytes;
     suite.pipeline = &suite;
     suite.engine_RenderFrame = fake_render;
+    suite.engine_MultiRenderFrame = fake_multi_render;
+    suite.stem = -1;
     mode = NORMAL;
     calls = input_corrupted = 0;
     fed = pulled = played = 0;
@@ -157,10 +171,40 @@ static int rejected(int kind) {
     return drain_dry();
 }
 
+static int separation(unsigned rate, unsigned frame_bytes) {
+    start(rate, frame_bytes);
+    if (ohos_effects_select_stem(&suite, VLC_OHOS_EFFECT_ACCOMPANIMENT)) return 0;
+    suite.stem = stem_index(VLC_OHOS_EFFECT_ACCOMPANIMENT);
+    suite.engine_RenderFrame = NULL; // A separation graph must never call the single-output API.
+    const size_t half = suite.bytes_per_second * SEPARATION_LOOKAHEAD_MS / 2000u;
+    const uint8_t *output;
+    size_t bytes;
+    ohos_effect_report report;
+    if (!append(half) || ohos_effects_render(&suite, &output, &bytes, &report) != OHOS_EFFECT_WAIT || calls != 0)
+        return 0;
+    if (!append(half) || ohos_effects_render(&suite, &output, &bytes, &report) != OHOS_EFFECT_WAIT || calls != 1)
+        return 0;
+    for (int i = 0; i < 3; ++i) {
+        const bool vocals = i == 1;
+        const int preset = vocals ? VLC_OHOS_EFFECT_VOCALS : VLC_OHOS_EFFECT_ACCOMPANIMENT;
+        if (!ohos_effects_select_stem(&suite, preset) || ohos_effects_select_stem(&suite, 1) ||
+            !append(suite.bytes_per_second / 50u) ||
+            ohos_effects_render(&suite, &output, &bytes, &report) != OHOS_EFFECT_READY ||
+            !bytes || calls != i + 2 || input_corrupted)
+            return 0;
+        for (size_t j = 0; j < bytes; ++j)
+            if (output[j] != (uint8_t)(original(played + j) ^ (vocals ? 0xff : 0x55))) return 0;
+        ohos_effects_consume(&suite, bytes);
+        played += bytes;
+    }
+    return drain_dry();
+}
+
 int main(void) {
     if (!continuous(44100, 8, 0)) return 1;
     if (!continuous(48000, 4, 0)) return 2;
     if (!continuous(44100, 8, 1)) return 3;
+    if (!separation(44100, 8) || !separation(48000, 4)) return 13;
     for (int k = STARVE; k <= STALL; ++k)
         if (!rejected(k)) return 4 + k;
     start(44100, 8);
@@ -183,4 +227,4 @@ if (process.platform === 'win32') {
   cp.execFileSync(clang, [...flags, c, '-o', exe], {stdio: 'inherit'});
   cp.execFileSync(exe, [], {stdio: 'inherit'});
 }
-console.log('PASS AudioSuite: 44.1/48 kHz, variable PCM chunks, prefetch, priming, short output, wraparound, ordered dry fallback, malformed input and bounded stalls.');
+console.log('PASS AudioSuite: single- and dual-output rendering, live stem switching, 44.1/48 kHz, prefetch, short output, wraparound, and bounded dry fallback.');

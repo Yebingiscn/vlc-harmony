@@ -7,7 +7,9 @@
 #include <stdbool.h>
 
 /* Stable preset IDs shared with AudioEffectsDialog. Never renumber them. */
-#define VLC_OHOS_EFFECT_MAX 25
+#define VLC_OHOS_EFFECT_ACCOMPANIMENT 26
+#define VLC_OHOS_EFFECT_VOCALS 27
+#define VLC_OHOS_EFFECT_MAX VLC_OHOS_EFFECT_VOCALS
 #define VLC_OHOS_EFFECT_VAR "ohos-audio-effect"
 #define VLC_OHOS_EFFECT_STATUS_VAR "ohos-audio-effect-status"
 
@@ -20,6 +22,8 @@ typedef enum {
 
 ohos_audio_effects *ohos_effects_open(int preset, unsigned rate, ohos_pcm_type type);
 void ohos_effects_close(ohos_audio_effects *effect);
+/* A stem-only switch can reuse the running separation model and its PCM. */
+bool ohos_effects_select_stem(ohos_audio_effects *, int preset);
 
 typedef enum {
     OHOS_EFFECT_WAIT,   /* Keep the graph; more input may produce output. */

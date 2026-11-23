@@ -5,7 +5,6 @@ export type PlayerAdvancedOptionId =
     | 'sleep'
     | 'speed'
     | 'jumpToTime'
-    | 'equalizer'
   | 'audioEffects'
     | 'playAsAudio'
     | 'popupPlayer'
@@ -43,7 +42,6 @@ export function buildPlayerAdvancedOptions(mode: PlayerAdvancedMenuMode): Player
     new PlayerAdvancedOption('sleep', '睡眠定时器', $r('app.media.ic_sleep')),
     new PlayerAdvancedOption('speed', '播放速度', $r('app.media.ic_speed')),
     new PlayerAdvancedOption('jumpToTime', '跳转至时间', $r('app.media.ic_jumpto')),
-    new PlayerAdvancedOption('equalizer', '均衡器', $r('app.media.ic_equalizer')),
     new PlayerAdvancedOption('audioEffects', '音效', $r('app.media.ic_options_equalizer')),
   ];
 

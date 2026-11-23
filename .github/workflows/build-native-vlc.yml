@@ -142,7 +142,9 @@ jobs:
           test -s "${osd_output}"
           test -s "${ffmpeg_decoder}"
           readelf -Ws entry/libs/arm64-v8a/libvlc.so.5 | grep -F 'libvlc_media_player_set_ohos_audio_effect'
+          readelf --dyn-syms --wide entry/libs/arm64-v8a/libvlc.so.5 | grep -F 'libvlc_media_player_get_ohos_audio_effect_max_preset'
           grep -aFq 'AudioSuite playback effect active' "${audio_output}"
+          grep -aFq 'OH_AudioSuiteEngine_MultiRenderFrame' "${audio_output}"
           if readelf -d "${audio_output}" | grep -F 'Shared library: [libohaudiosuite.so]'; then
             echo "AudioSuite must be loaded optionally at runtime"
             exit 1

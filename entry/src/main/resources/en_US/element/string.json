@@ -5,6 +5,30 @@
       "value": "Audio effects"
     },
     {
+      "name": "audio_effects_presets",
+      "value": "Presets"
+    },
+    {
+      "name": "audio_separation_title",
+      "value": "AI Karaoke"
+    },
+    {
+      "name": "audio_separation_accompaniment",
+      "value": "Accompaniment only"
+    },
+    {
+      "name": "audio_separation_vocals",
+      "value": "Vocals only"
+    },
+    {
+      "name": "audio_separation_hint",
+      "value": "Separate vocals and accompaniment on-device. Replaces the active effect preset; the equalizer stays available."
+    },
+    {
+      "name": "audio_separation_unavailable",
+      "value": "NPU source separation is not available on this device or native build."
+    },
+    {
       "name": "audio_effects_off",
       "value": "Original"
     },

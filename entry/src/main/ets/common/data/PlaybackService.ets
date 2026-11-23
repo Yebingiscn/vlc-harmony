@@ -19,6 +19,7 @@ import { NetworkConnectionManager } from './NetworkConnectionManager';
 import { Equalizer, LibVLC, Media, MediaPlayer, MediaSlaveType, RendererDiscoverer } from '../../libvlc';
 import { VlcChapterInfo, VlcMediaTrackInfo, VlcRendererInfo, VlcTrackInfo } from 'libvlcnapi.so';
 import { PlaybackQueueHistory, PlaybackQueueHistoryType } from './PlaybackQueueHistory';
+import { AUDIO_EFFECT_SEPARATION_BIT, AUDIO_EFFECT_VOCALS, isAudioSeparation } from '../constants/AudioEffectModes';
 
 const LOG_DOMAIN: number = 0x0001;
 const LOG_TAG: string = 'VLC';
@@ -613,7 +614,7 @@ export class PlaybackService {
   }
 
   setAudioEffectPreset(preset: number): boolean {
-    if (!Number.isInteger(preset) || preset < 0 || preset > 25) {
+    if (!this.canUseAudioEffect(preset)) {
       return false;
     }
     if (!this.player?.setAudioEffect(preset)) {
@@ -625,12 +626,14 @@ export class PlaybackService {
     return true;
   }
 
+  private canUseAudioEffect(preset: number): boolean {
+    return Number.isInteger(preset) && preset >= 0 && preset <= AUDIO_EFFECT_VOCALS &&
+      (!isAudioSeparation(preset) || (this.getAudioEffectSupport() & AUDIO_EFFECT_SEPARATION_BIT) !== 0);
+  }
+
   applyEqualizer(enabled: boolean, presetIndex: number, preamp: number, bands: number[]): void {
-    if (!this.player) {
-      return;
-    }
     if (!enabled) {
-      this.player.setEqualizer(null);
+      this.player?.setEqualizer(null);
       if (this.equalizer) {
         this.equalizer.release();
         this.equalizer = null;
@@ -649,7 +652,7 @@ export class PlaybackService {
     for (let i = 0; i < bands.length; i++) {
       this.equalizer.setAmp(i, bands[i]);
     }
-    this.player.setEqualizer(this.equalizer);
+    this.player?.setEqualizer(this.equalizer);
   }
 
   async startRendererDiscovery(): Promise<VlcRendererInfo[]> {
@@ -1115,7 +1118,7 @@ export class PlaybackService {
       }
       this.player.setEventListener((event: string, value: number) => this.onNativeEvent(event, value));
       const savedEffect: number = await Settings.getInt(Settings.KEY_AUDIO_EFFECT_PRESET, 0);
-      if (savedEffect > 0 && savedEffect <= 25 && this.player.setAudioEffect(savedEffect)) {
+      if (savedEffect > 0 && this.canUseAudioEffect(savedEffect) && this.player.setAudioEffect(savedEffect)) {
         this.audioEffectPreset = savedEffect;
       }
       this.inited = true;
@@ -1213,6 +1216,9 @@ export class PlaybackService {
     np.setEventListener((event: string, value: number) => this.onNativeEvent(event, value));
     np.setVolume(this.volume);
     np.setRate(this.speed);
+    if (this.equalizer) {
+      np.setEqualizer(this.equalizer);
+    }
     if (this.audioEffectPreset !== 0) {
       np.setAudioEffect(this.audioEffectPreset);
     }

@@ -1,18 +1,19 @@
 diff --git a/lib/libvlc.sym b/lib/libvlc.sym
-index 1cad312..3e4ff3e 100644
+index 1cad312..b745c44 100644
 --- a/lib/libvlc.sym
 +++ b/lib/libvlc.sym
-@@ -191,6 +191,8 @@ libvlc_media_player_set_android_context
+@@ -191,6 +191,9 @@ libvlc_media_player_set_android_context
  libvlc_media_player_set_ohos_nativewindow_ptr
  libvlc_media_player_set_ohos_osd_nativewindow_ptr
  libvlc_media_player_set_ohos_video_vrr_allowed
 +libvlc_media_player_set_ohos_audio_effect
 +libvlc_media_player_get_ohos_audio_effect_status
++libvlc_media_player_get_ohos_audio_effect_max_preset
  libvlc_video_set_ohos_window_size
  libvlc_media_player_set_chapter
  libvlc_media_player_set_equalizer
 diff --git a/lib/media_player.c b/lib/media_player.c
-index aa0018f..b0ec36a 100644
+index aa0018f..bfd0d1b 100644
 --- a/lib/media_player.c
 +++ b/lib/media_player.c
 @@ -42,6 +42,7 @@
@@ -31,11 +32,16 @@ index aa0018f..b0ec36a 100644
      var_Create (mp, "role", VLC_VAR_STRING | VLC_VAR_DOINHERIT);
      var_Create (mp, "amem-data", VLC_VAR_ADDRESS);
      var_Create (mp, "amem-setup", VLC_VAR_ADDRESS);
-@@ -2050,6 +2052,27 @@ int libvlc_media_player_add_slave( libvlc_media_player_t *p_mi,
+@@ -2050,6 +2052,32 @@ int libvlc_media_player_add_slave( libvlc_media_player_t *p_mi,
   */
  #define EQZ_BAND_VALUE_SIZE 12
  
 +/* Per player, independent of "audio-filter" (which the equalizer rewrites). */
++LIBVLC_API int libvlc_media_player_get_ohos_audio_effect_max_preset(void)
++{
++    return VLC_OHOS_EFFECT_MAX;
++}
++
 +LIBVLC_API int libvlc_media_player_set_ohos_audio_effect(libvlc_media_player_t *mp, int preset)
 +{
 +    if (preset < 0 || preset > VLC_OHOS_EFFECT_MAX)
@@ -77,7 +83,7 @@ index d4cc1b9..d6d5945 100644
  if HAVE_OHOS
  $(info build audio_output openharmony)
 diff --git a/modules/audio_output/audiounit_ohos.c b/modules/audio_output/audiounit_ohos.c
-index 80067e0..b68a3eb 100644
+index 80067e0..56a5232 100644
 --- a/modules/audio_output/audiounit_ohos.c
 +++ b/modules/audio_output/audiounit_ohos.c
 @@ -32,6 +32,7 @@
@@ -88,7 +94,7 @@ index 80067e0..b68a3eb 100644
  
  /* Description of the module */
  static int  Open(vlc_object_t *);
-@@ -121,8 +122,111 @@ struct aout_sys_t {
+@@ -121,8 +122,114 @@ struct aout_sys_t {
      vlc_tick_t last_write_time;
      size_t max_queue_size;
      bool flushed_since_play;
@@ -131,7 +137,10 @@ index 80067e0..b68a3eb 100644
 +{
 +    aout_sys_t *s = aout->sys;
 +    int preset = var_InheritInteger(aout, VLC_OHOS_EFFECT_VAR);
-+    if (s->suite_preset != preset) {
++    if (s->suite_preset != preset && ohos_effects_select_stem(s->suite, preset)) {
++        s->suite_preset = preset;
++        s->suite_rendered = false;
++    } else if (s->suite_preset != preset) {
 +        QueueDryEffectTail(aout);
 +        ResetEffects(aout);
 +        s->suite_preset = preset;
@@ -200,7 +209,7 @@ index 80067e0..b68a3eb 100644
  // Initiating the queue operation
  static int audio_queue_init(audio_queue_t *queue)
  {
-@@ -385,8 +489,11 @@ static int Start(audio_output_t *p_aout, audio_sample_format_t *p_fmt)
+@@ -385,8 +492,11 @@ static int Start(audio_output_t *p_aout, audio_sample_format_t *p_fmt)
      }
  
      // Setting audio parameters
@@ -212,7 +221,7 @@ index 80067e0..b68a3eb 100644
      if (p_sys->sample_rate == 0 || p_sys->channels == 0) {
          msg_Warn(p_aout, "Rejecting invalid audio format: %u channels, %u Hz",
                   p_sys->channels, p_sys->sample_rate);
-@@ -495,7 +602,7 @@ static size_t get_bytes_per_sample(audio_output_t *p_aout, OH_AudioStream_Sample
+@@ -495,7 +605,7 @@ static size_t get_bytes_per_sample(audio_output_t *p_aout, OH_AudioStream_Sample
  }
  
  // Convert vlc_tick_t to milliseconds (for log output)
@@ -221,7 +230,7 @@ index 80067e0..b68a3eb 100644
  {
      return ticks / 1000;
  }
-@@ -522,6 +629,7 @@ static void Stop(audio_output_t *p_aout)
+@@ -522,6 +632,7 @@ static void Stop(audio_output_t *p_aout)
  
      p_sys->is_playing = false;
      audio_queue_clear(&p_sys->queue);
@@ -229,7 +238,7 @@ index 80067e0..b68a3eb 100644
  
      if (p_sys->p_renderer) {
          OH_AudioRenderer_Stop(p_sys->p_renderer);
-@@ -539,6 +647,18 @@ static void Stop(audio_output_t *p_aout)
+@@ -539,6 +650,18 @@ static void Stop(audio_output_t *p_aout)
      msg_Info(p_aout, "Audio output stopped completely");
  }
  
@@ -248,7 +257,7 @@ index 80067e0..b68a3eb 100644
  static void Play(audio_output_t *p_aout, block_t *p_block)
  {
      aout_sys_t *p_sys = p_aout->sys;
-@@ -564,17 +684,8 @@ static void Play(audio_output_t *p_aout, block_t *p_block)
+@@ -564,17 +687,8 @@ static void Play(audio_output_t *p_aout, block_t *p_block)
  
      if (p_block && p_block->i_buffer > 0) {
          p_sys->flushed_since_play = false;
@@ -268,7 +277,7 @@ index 80067e0..b68a3eb 100644
      }
  
      if (p_block) {
-@@ -605,11 +716,33 @@ static void Pause(audio_output_t *p_aout, bool b_paused, vlc_tick_t i_date)
+@@ -605,11 +719,33 @@ static void Pause(audio_output_t *p_aout, bool b_paused, vlc_tick_t i_date)
  
  static void Flush(audio_output_t *p_aout, bool wait)
  {
@@ -303,7 +312,7 @@ index 80067e0..b68a3eb 100644
  
      /* VLC can request repeated flushes while discarding stale timestamps.
       * With no intervening Play there is no new audio to flush. */
-@@ -729,7 +862,7 @@ static int TimeGet(audio_output_t *p_aout, vlc_tick_t *delay)
+@@ -729,7 +865,7 @@ static int TimeGet(audio_output_t *p_aout, vlc_tick_t *delay)
      /* Sample queued and submitted bytes atomically: the callback transfers
       * bytes between these two states under the same lock. */
      vlc_tick_t queue_delay = p_sys->queue.bytes_per_second > 0
@@ -312,7 +321,7 @@ index 80067e0..b68a3eb 100644
            p_sys->queue.bytes_per_second : 0;
      hardware_delay += __MAX(p_sys->queue.submitted_until - mdate(), 0);
      vlc_mutex_unlock(&p_sys->queue.lock);
-@@ -791,6 +924,7 @@ static int Open(vlc_object_t *obj)
+@@ -791,6 +927,7 @@ static int Open(vlc_object_t *obj)
      }
  
      p_aout->sys = p_sys;

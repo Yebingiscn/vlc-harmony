@@ -7,7 +7,6 @@ import { curves } from '@kit.ArkUI';
 import { AudioBrowserRequest } from '../common/data/AudioBrowserRequest';
 import { formatDuration, PlayState, Track } from '../common/models/MediaModels';
 import { PlaybackSpeedAction, PlaybackSpeedDialog } from './PlaybackSpeedDialog';
-import { EqualizerDialog } from './EqualizerDialog';
 import { AudioEffectsDialog } from './AudioEffectsDialog';
 import { AudioInfoDialog, AudioInfoParams } from './AudioInfoDialog';
 import { EmbeddedLyrics, LyricLine, LyricsDocument } from '../common/data/EmbeddedLyrics';
@@ -133,7 +132,6 @@ export struct AudioPlayerPage {
   @Local advancedOptionsOpen: boolean = false;
   @Local bookmarkOpen: boolean = false;
   @Local speedOpen: boolean = false;
-  @Local eqOpen: boolean = false;
   @Local audioEffectsOpen: boolean = false;
   @Local sleepOpen: boolean = false;
   @Local jumpOpen: boolean = false;
@@ -301,7 +299,7 @@ export struct AudioPlayerPage {
 
   private canDismissDrag(): boolean {
     return !this.closing && !this.vm.locked && !this.advancedOptionsOpen && !this.bookmarkOpen
-      && !this.speedOpen && !this.eqOpen && !this.audioEffectsOpen && !this.sleepOpen && !this.jumpOpen
+      && !this.speedOpen && !this.audioEffectsOpen && !this.sleepOpen && !this.jumpOpen
       && !this.savePlaylistOpen && !this.infoOpen;
   }
 
@@ -792,25 +790,6 @@ export struct AudioPlayerPage {
           .height('100%')
           .transition(TransitionEffect.translate({ y: '100%' }).animation({ duration: 300, curve: Curve.EaseOut }))
         }
-        // 均衡器弹框
-        if (this.eqOpen) {
-          Column() {
-            Column()
-              .width('100%').layoutWeight(1)
-              .backgroundColor(Color.Transparent)
-              .onClick(() => this.animateClose(() => {
-                this.eqOpen = false;
-              }))
-            EqualizerDialog({
-              onClose: () => this.animateClose(() => {
-                this.eqOpen = false;
-              }),
-            }).width('100%')
-          }
-          .width('100%')
-          .height('100%')
-          .transition(TransitionEffect.translate({ y: '100%' }).animation({ duration: 300, curve: Curve.EaseOut }))
-        }
 
         // 睡眠定时器弹框
         if (this.sleepOpen) {
@@ -982,12 +961,6 @@ export struct AudioPlayerPage {
     if (id === 'jumpToTime') {
       this.animateOpen(() => {
         this.jumpOpen = true;
-      });
-      return;
-    }
-    if (id === 'equalizer') {
-      this.animateOpen(() => {
-        this.eqOpen = true;
       });
       return;
     }

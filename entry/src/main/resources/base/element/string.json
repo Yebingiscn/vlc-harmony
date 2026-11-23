@@ -5,6 +5,30 @@
       "value": "音效"
     },
     {
+      "name": "audio_effects_presets",
+      "value": "音效预设"
+    },
+    {
+      "name": "audio_separation_title",
+      "value": "AI 伴唱"
+    },
+    {
+      "name": "audio_separation_accompaniment",
+      "value": "仅伴奏"
+    },
+    {
+      "name": "audio_separation_vocals",
+      "value": "仅人声"
+    },
+    {
+      "name": "audio_separation_hint",
+      "value": "用本机 NPU 分离人声与伴奏。与音效预设互斥，均衡器仍可使用。"
+    },
+    {
+      "name": "audio_separation_unavailable",
+      "value": "当前设备或原生库不支持 NPU 音源分离。"
+    },
+    {
       "name": "audio_effects_off",
       "value": "原声"
     },

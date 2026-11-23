@@ -111,9 +111,11 @@ git -C "$WORK_DIR/vlc" apply --check "$ROOT_DIR/patches/0032-vlc-ohaudiosuite-ef
 git -C "$WORK_DIR/vlc" apply "$ROOT_DIR/patches/0032-vlc-ohaudiosuite-effects.patch"
 cp "$ROOT_DIR/audio/ohos_audio_effects.c" "$ROOT_DIR/audio/ohos_audio_effects.h" "$WORK_DIR/vlc/modules/audio_output/"
 grep -Fq 'libvlc_media_player_set_ohos_audio_effect' "$WORK_DIR/vlc/lib/libvlc.sym"
+grep -Fxq 'libvlc_media_player_get_ohos_audio_effect_max_preset' "$WORK_DIR/vlc/lib/libvlc.sym"
 audio_output="$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
 if ! grep -Fq 'if (!ApplyEffects(p_aout, p_block))' "$audio_output" ||
    ! grep -Fq 'ohos_effects_feed(' "$audio_output" ||
+   ! grep -Fq 'ohos_effects_select_stem(' "$audio_output" ||
    ! grep -Fq 'AudioSuite playback effect active' "$audio_output"; then
     echo "ERROR: VLC audio output is missing the streaming AudioSuite bridge" >&2
     exit 1
