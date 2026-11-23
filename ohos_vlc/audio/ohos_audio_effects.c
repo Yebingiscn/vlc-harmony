@@ -14,6 +14,12 @@
     X(IsNodeTypeSupported)
 #define BUILDER_API(X) X(Create) X(Destroy) X(Reset) X(SetNodeType) X(SetFormat) X(SetRequestDataCallback)
 
+#define RENDER_MS 20u
+#define LOOKAHEAD_MS 60u
+#define STALL_MS 120u
+#define PCM_CAPACITY 65536u
+#define OUTPUT_CAPACITY (48000u * 8u * RENDER_MS / 1000u)
+
 struct ohos_audio_effects {
     void *library;
     OH_AudioSuiteEngine *engine;
@@ -21,16 +27,20 @@ struct ohos_audio_effects {
     OH_AudioNode *input, *effect, *output;
     bool started;
     unsigned frame_bytes;
-    const uint8_t *input_data;
-    size_t input_left;
-    bool padded;
+    unsigned bytes_per_second;
+    /* Keep originals until their output is committed. fed may run ahead
+     * of rendered output because of effects and resampler buffering. */
+    size_t head, pending, fed;
+    size_t pulled, padded;
+    bool invalid_pull;
 #define DECLARE_ENGINE(name) __typeof__(&OH_AudioSuiteEngine_##name) engine_##name;
     ENGINE_API(DECLARE_ENGINE)
 #undef DECLARE_ENGINE
 #define DECLARE_BUILDER(name) __typeof__(&OH_AudioSuiteNodeBuilder_##name) builder_##name;
     BUILDER_API(DECLARE_BUILDER)
 #undef DECLARE_BUILDER
-    uint8_t scratch[65536];
+    _Alignas(float) uint8_t scratch[OUTPUT_CAPACITY];
+    uint8_t pcm[PCM_CAPACITY];
 };
 
 static OH_AudioNode_Type preset_node(int preset)
@@ -88,25 +98,69 @@ static bool configure(ohos_audio_effects *s, int preset)
 #undef SETTER
 }
 
+bool ohos_effects_feed(ohos_audio_effects *s, const uint8_t *data, size_t bytes)
+{
+    if (!data || !bytes || bytes % s->frame_bytes != 0 ||
+        bytes > PCM_CAPACITY - s->pending)
+        return false;
+    size_t tail = (s->head + s->pending) % PCM_CAPACITY;
+    size_t first = bytes < PCM_CAPACITY - tail ? bytes : PCM_CAPACITY - tail;
+    memcpy(s->pcm + tail, data, first);
+    memcpy(s->pcm, data + first, bytes - first);
+    s->pending += bytes;
+    return true;
+}
+
+size_t ohos_effects_pending(const ohos_audio_effects *s)
+{
+    return s ? s->pending : 0;
+}
+
+const uint8_t *ohos_effects_dry(const ohos_audio_effects *s, size_t *bytes)
+{
+    *bytes = s->pending < PCM_CAPACITY - s->head ? s->pending : PCM_CAPACITY - s->head;
+    return s->pcm + s->head;
+}
+
+void ohos_effects_consume(ohos_audio_effects *s, size_t bytes)
+{
+    s->head = (s->head + bytes) % PCM_CAPACITY;
+    s->pending -= bytes;
+    s->fed = bytes <= s->fed ? s->fed - bytes : 0;
+}
+
 static int32_t request_pcm(OH_AudioNode *node, void *user, void *out, int32_t bytes, bool *finished)
 {
     (void)node;
     ohos_audio_effects *s = user;
     *finished = false;
-    if (bytes <= 0)
+    if (bytes <= 0 || (size_t)bytes % s->frame_bytes != 0) {
+        s->invalid_pull = true;
+        if (bytes > 0 && out) {
+            memset(out, 0, (size_t)bytes);
+            return bytes;
+        }
         return 0;
-    size_t n = (size_t)bytes < s->input_left ? (size_t)bytes : s->input_left;
-    n -= n % s->frame_bytes;
+    }
+    if (!out) {
+        s->invalid_pull = true;
+        return 0;
+    }
+    size_t unread = s->pending - s->fed;
+    size_t n = (size_t)bytes < unread ? (size_t)bytes : unread;
     if (n > 0) {
-        memcpy(out, s->input_data, n);
-        s->input_data += n;
-        s->input_left -= n;
+        size_t pos = (s->head + s->fed) % PCM_CAPACITY;
+        size_t first = n < PCM_CAPACITY - pos ? n : PCM_CAPACITY - pos;
+        memcpy(out, s->pcm + pos, first);
+        memcpy((uint8_t *)out + first, s->pcm, n - first);
+        s->fed += n;
+        s->pulled += n;
     }
     /* Don't block, and don't let a device repeatedly pull an empty input.
      * A render using these synthetic bytes is rejected by the caller. */
     if (n != (size_t)bytes) {
         memset((uint8_t *)out + n, 0, (size_t)bytes - n);
-        s->padded = true;
+        s->padded += (size_t)bytes - n;
     }
     return bytes;
 }
@@ -154,6 +208,7 @@ ohos_audio_effects *ohos_effects_open(int preset, unsigned rate, ohos_pcm_type p
     ohos_audio_effects *s = calloc(1, sizeof(*s));
     if (!s) return NULL;
     s->frame_bytes = pcm == OHOS_PCM_S16 ? 4 : 8;
+    s->bytes_per_second = rate * s->frame_bytes;
     OH_AudioNodeBuilder *builder = NULL;
     s->library = dlopen("libohaudiosuite.so", RTLD_NOW | RTLD_LOCAL);
     if (!s->library) goto error;
@@ -190,23 +245,44 @@ error:
     return NULL;
 }
 
-const uint8_t *ohos_effects_render(ohos_audio_effects *s, const uint8_t *data, size_t bytes)
+ohos_effect_result ohos_effects_render(ohos_audio_effects *s, const uint8_t **output,
+                                      size_t *bytes, ohos_effect_report *report)
 {
-    if (!s || !data || !bytes || bytes > sizeof(s->scratch) || bytes % s->frame_bytes)
-        return NULL;
-    s->input_data = data;
-    s->input_left = bytes;
-    s->padded = false;
-    int32_t rendered = 0;
-    bool finished = false;
-    OH_AudioSuite_Result status = s->engine_RenderFrame(s->pipeline, s->scratch, (int32_t)bytes,
-                                                       &rendered, &finished);
-    const bool complete = s->input_left == 0;
-    s->input_data = NULL;
-    s->input_left = 0;
-    /* A short frame, read-ahead, or error can leave the effect's internal
-     * buffers at a different position. Never enqueue that frame or reuse
-     * that graph after failure; the caller keeps the untouched input. */
-    return status == AUDIOSUITE_SUCCESS && !finished && !s->padded &&
-           complete && rendered == (int32_t)bytes ? s->scratch : NULL;
+    *output = NULL;
+    *bytes = 0;
+    *report = (ohos_effect_report){0};
+    /* Request a fixed render quantum, not an arbitrary decoder block size.
+     * At 44.1 kHz stereo float the input node alone pulls 7056 bytes (20 ms).
+     * Reserve several quanta so effects can pull ahead without padding. */
+    if (s->pending < s->bytes_per_second * LOOKAHEAD_MS / 1000u)
+        return OHOS_EFFECT_WAIT;
+    s->pulled = s->padded = 0;
+    s->invalid_pull = false;
+    report->requested = s->bytes_per_second * RENDER_MS / 1000u;
+    report->status = s->engine_RenderFrame(s->pipeline, s->scratch, (int32_t)report->requested,
+                                          &report->returned, &report->finished);
+    report->pulled = s->pulled;
+    report->padded = s->padded;
+    if (s->invalid_pull)
+        report->reason = "invalid input request";
+    else if (s->padded)
+        report->reason = "input exhausted during render";
+    else if (report->status != AUDIOSUITE_SUCCESS)
+        report->reason = "engine render error";
+    else if (report->finished)
+        report->reason = "unexpected end of stream";
+    else if (report->returned < 0 || (size_t)report->returned > report->requested ||
+             (size_t)report->returned % s->frame_bytes != 0 ||
+             (size_t)report->returned > s->fed)
+        report->reason = "invalid render output size";
+    else if (report->returned > 0) {
+        *output = s->scratch;
+        *bytes = (size_t)report->returned;
+        return OHOS_EFFECT_READY;
+    } else if (s->pending >= s->bytes_per_second * STALL_MS / 1000u) {
+        report->reason = "no render progress";
+    } else {
+        return OHOS_EFFECT_WAIT;
+    }
+    return OHOS_EFFECT_ERROR;
 }

@@ -1,98 +1,186 @@
-// Exercise the production PCM bridge without running the proprietary DSP.
-const assert = require('node:assert/strict');
+// Exercise the production PCM bridge without loading the proprietary DSP.
 const cp = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
-const [clang = 'clang', output = '.tmp/audio-effects-test'] = process.argv.slice(2);
-const source = fs.readFileSync(path.join(__dirname, 'audio/ohos_audio_effects.c'), 'utf8');
-const request = source.slice(source.indexOf('static int32_t request_pcm('), source.indexOf('static bool node_create('));
-const render = source.slice(source.indexOf('const uint8_t *ohos_effects_render('));
-assert(request.includes('return bytes;') && render.includes('s->engine_RenderFrame'));
+const [clang = 'clang', buildDir = '.tmp/audio-effects-test'] = process.argv.slice(2);
+const include = path.join(__dirname, 'audio');
+const source = fs.readFileSync(path.join(include, 'ohos_audio_effects.c'), 'utf8').replace(/\r\n/g, '\n');
+const state = source.slice(source.indexOf('#define RENDER_MS'), source.indexOf('static OH_AudioNode_Type'))
+  .replace(/^    (?:void|OH_AudioSuiteEngine|OH_AudioSuitePipeline|OH_AudioNode) \*.*;\n/gm, '')
+  .replace(/#define DECLARE_ENGINE[\s\S]*?#undef DECLARE_BUILDER/, `
+    void *pipeline;
+    OH_AudioSuite_Result (*engine_RenderFrame)(void *, void *, int32_t, int32_t *, bool *);
+  `);
+const bridge = source.slice(source.indexOf('bool ohos_effects_feed('), source.indexOf('static bool node_create('));
+const render = source.slice(source.indexOf('ohos_effect_result ohos_effects_render('));
+const output = path.resolve(buildDir);
 fs.mkdirSync(output, {recursive: true});
-const c = path.resolve(output, 'effects.c');
+const c = path.join(output, 'effects.c');
 fs.writeFileSync(c, `
-typedef __SIZE_TYPE__ size_t;
-typedef _Bool bool;
-typedef unsigned char uint8_t;
-typedef int int32_t;
+#include "ohos_audio_effects.h"
 typedef int OH_AudioSuite_Result;
 typedef void OH_AudioNode;
-#define NULL ((void *)0)
-#define false 0
-#define true 1
 #define AUDIOSUITE_SUCCESS 0
 void *memcpy(void *d, const void *s, size_t n) {
-    for (size_t i=0;i<n;i++) ((uint8_t*)d)[i]=((const uint8_t*)s)[i];
+    for (size_t i = 0; i < n; i++) ((uint8_t*)d)[i] = ((const uint8_t*)s)[i];
     return d;
 }
 void *memset(void *d, int v, size_t n) {
-    for (size_t i=0;i<n;i++) ((uint8_t*)d)[i]=v;
+    for (size_t i = 0; i < n; i++) ((uint8_t*)d)[i] = v;
     return d;
 }
-typedef struct {
-    unsigned frame_bytes;
-    const uint8_t *input_data;
-    size_t input_left;
-    bool padded;
-    uint8_t scratch[32];
-    void *pipeline;
-    OH_AudioSuite_Result (*engine_RenderFrame)(void *,void *,int32_t,int32_t *,bool *);
-} ohos_audio_effects;
-${request}
+${state}
+${bridge}
 ${render}
-static int scenario, calls;
-static OH_AudioSuite_Result fake_render(void *p, void *out, int32_t len, int32_t *response, bool *finished) {
-    uint8_t input[32];
-    ++calls;
-    if (scenario == 1) return -1;
-    if (scenario == 2) request_pcm(NULL,p,input,len+4,finished);
-    else if (scenario == 3) request_pcm(NULL,p,input,len-4,finished);
-    else if (scenario == 4) request_pcm(NULL,p,input,len-1,finished);
-    else {
-        request_pcm(NULL,p,input,len/2,finished);
-        request_pcm(NULL,p,input+len/2,len/2,finished);
-    }
-    *response = scenario == 5 ? len-4 : len;
-    *finished = scenario == 6;
-    for (int i=0;i<len;i++) ((uint8_t *)out)[i]=42;
-    return AUDIOSUITE_SUCCESS;
+
+enum test_mode { NORMAL, ERROR, STARVE, BAD_PULL, BAD_SIZE, EOF_, STALL };
+static ohos_audio_effects suite;
+static uint8_t data[PCM_CAPACITY + 8], input[OUTPUT_CAPACITY * 2];
+static size_t fed, pulled, played;
+static int mode, calls, input_corrupted;
+
+static uint8_t original(size_t offset) {
+    return (uint8_t)((offset * 31u + (offset >> 8) * 13u) % 251u);
 }
-int run(int mode) {
-    ohos_audio_effects s;
-    memset(&s,0,sizeof(s));
-    s.frame_bytes=4;
-    s.pipeline=&s;
-    s.engine_RenderFrame=fake_render;
-    uint8_t input[32];
-    memset(input,7,sizeof(input));
-    calls=0;
-    scenario=mode;
-    size_t bytes=mode==7 ? 7 : mode==8 ? 36 : mode==9 ? 0 : 16;
-    const uint8_t *result=ohos_effects_render(&s,input,bytes);
-    for (int i=0;i<32;i++) if (input[i]!=7) return 0;
-    if (mode >= 7) return result==NULL && calls==0;
-    if (s.input_data!=NULL || calls!=1) return 0;
-    if (mode!=0) return result==NULL;
-    if (result!=s.scratch) return 0;
-    for (int i=0;i<16;i++) if (result[i]!=42) return 0;
+
+static int append(size_t bytes) {
+    for (size_t i = 0; i < bytes; ++i)
+        data[i] = original(fed + i);
+    if (!ohos_effects_feed(&suite, data, bytes))
+        return 0;
+    fed += bytes;
     return 1;
 }
+
+static OH_AudioSuite_Result fake_render(void *p, void *out, int32_t len,
+                                       int32_t *response, bool *finished) {
+    ++calls;
+    if (mode == ERROR) return -4;
+    if (mode == STALL) return AUDIOSUITE_SUCCESS;
+    if (mode == EOF_) {
+        *finished = true;
+        return AUDIOSUITE_SUCCESS;
+    }
+    if (mode == BAD_PULL || mode == STARVE) {
+        request_pcm(NULL, p, input, mode == BAD_PULL ? len - 1 : len * 2, finished);
+        if (mode == STARVE)
+            request_pcm(NULL, p, input, len * 2, finished);
+        return AUDIOSUITE_SUCCESS;
+    }
+    // Prime with two 20 ms pulls despite a single 20 ms output request.
+    // Return zero initially, then a short frame; later use already pulled
+    // input without requiring a new pull on every render.
+    int32_t count = calls == 1 ? 2 : pulled - played < (size_t)len ? 1 : 0;
+    for (int i = 0; i < count; ++i) {
+        if (request_pcm(NULL, p, input, len, finished) != len || *finished)
+            input_corrupted = 1;
+        for (int j = 0; j < len; ++j)
+            if (input[j] != original(pulled + j))
+                input_corrupted = 1;
+        pulled += len;
+    }
+    if (mode == BAD_SIZE) {
+        *response = len - 1;
+        return AUDIOSUITE_SUCCESS;
+    }
+    *response = calls == 1 ? 0 : calls == 2 ? len / 2 : len;
+    for (int32_t i = 0; i < *response; ++i)
+        ((uint8_t *)out)[i] = original(played + i) ^ 0xff;
+    return AUDIOSUITE_SUCCESS;
+}
+
+static void start(unsigned rate, unsigned frame_bytes) {
+    memset(&suite, 0, sizeof(suite));
+    suite.frame_bytes = frame_bytes;
+    suite.bytes_per_second = rate * frame_bytes;
+    suite.pipeline = &suite;
+    suite.engine_RenderFrame = fake_render;
+    mode = NORMAL;
+    calls = input_corrupted = 0;
+    fed = pulled = played = 0;
+}
+
+static int drain_dry(void) {
+    while (ohos_effects_pending(&suite) != 0) {
+        size_t bytes;
+        const uint8_t *pcm = ohos_effects_dry(&suite, &bytes);
+        if (!bytes) return 0;
+        for (size_t i = 0; i < bytes; ++i)
+            if (pcm[i] != original(played + i)) return 0;
+        ohos_effects_consume(&suite, bytes);
+        played += bytes;
+    }
+    return played == fed;
+}
+
+static int continuous(unsigned rate, unsigned frame_bytes, int fail_late) {
+    start(rate, frame_bytes);
+    for (int i = 0; i < 140; ++i) {
+        const unsigned frames[] = {1152, 166, 512, 1024, 347};
+        if (!append(frames[i % 5] * frame_bytes)) return 0;
+        if (fail_late && i == 15) mode = ERROR;
+        for (;;) {
+            const uint8_t *output;
+            size_t bytes;
+            ohos_effect_report report;
+            ohos_effect_result result = ohos_effects_render(&suite, &output, &bytes, &report);
+            if (input_corrupted || ohos_effects_pending(&suite) != fed - played) return 0;
+            if (result == OHOS_EFFECT_ERROR)
+                return mode == ERROR && played != 0 && report.status == -4 && drain_dry();
+            if (result == OHOS_EFFECT_WAIT) {
+                if (bytes != 0 || output != NULL || (i == 0 && calls != 0)) return 0;
+                break;
+            }
+            if (calls == 2 && bytes != rate * frame_bytes / 100u) return 0;
+            for (size_t j = 0; j < bytes; ++j)
+                if (output[j] != (uint8_t)(original(played + j) ^ 0xff)) return 0;
+            ohos_effects_consume(&suite, bytes);
+            played += bytes;
+        }
+    }
+    return !fail_late && played > PCM_CAPACITY * 2 && drain_dry();
+}
+
+static int rejected(int kind) {
+    start(44100, 8);
+    mode = kind;
+    unsigned duration = kind == STALL ? STALL_MS : LOOKAHEAD_MS;
+    if (!append(suite.bytes_per_second * duration / 1000u)) return 0;
+    const uint8_t *output;
+    size_t bytes;
+    ohos_effect_report report;
+    if (ohos_effects_render(&suite, &output, &bytes, &report) != OHOS_EFFECT_ERROR ||
+        bytes != 0 || output != NULL || !report.reason)
+        return 0;
+    if (kind == STARVE && report.padded == 0) return 0;
+    if (kind == EOF_ && !report.finished) return 0;
+    return drain_dry();
+}
+
 int main(void) {
-    for (int i=0;i<10;i++) if(!run(i)) return i+1;
+    if (!continuous(44100, 8, 0)) return 1;
+    if (!continuous(48000, 4, 0)) return 2;
+    if (!continuous(44100, 8, 1)) return 3;
+    for (int k = STARVE; k <= STALL; ++k)
+        if (!rejected(k)) return 4 + k;
+    start(44100, 8);
+    if (ohos_effects_feed(&suite, data, 7) || append(PCM_CAPACITY + 8) ||
+        !append(PCM_CAPACITY) || append(8) || !drain_dry()) return 12;
     return 0;
 }
 `);
+const flags = ['-std=c11', '-ffreestanding', '-O0', '-fno-builtin', '-I', include];
 if (process.platform === 'win32') {
-  const obj = path.resolve(output, 'effects.obj');
-  const exe = path.resolve(output, 'effects.exe');
-  cp.execFileSync(clang, ['--target=x86_64-pc-windows-msvc', '-O0', '-fno-builtin', '-fno-stack-protector',
+  const obj = path.join(output, 'effects.obj');
+  const exe = path.join(output, 'effects.exe');
+  cp.execFileSync(clang, ['--target=x86_64-pc-windows-msvc', ...flags, '-fno-stack-protector',
     '-c', c, '-o', obj], {stdio: 'inherit'});
   cp.execFileSync(path.join(path.dirname(clang), 'lld-link.exe'),
-    ['/entry:main', '/subsystem:console', '/nodefaultlib', obj, '/out:'+exe], {stdio: 'inherit'});
+    ['/entry:main', '/subsystem:console', '/nodefaultlib', obj, '/out:' + exe], {stdio: 'inherit'});
   cp.execFileSync(exe, [], {stdio: 'inherit'});
 } else {
-  const exe = path.resolve(output, 'effects');
-  cp.execFileSync(clang, ['-O0', '-fno-builtin', c, '-o', exe], {stdio: 'inherit'});
+  const exe = path.join(output, 'effects');
+  cp.execFileSync(clang, [...flags, c, '-o', exe], {stdio: 'inherit'});
   cp.execFileSync(exe, [], {stdio: 'inherit'});
 }
-console.log('PASS AudioSuite PCM bridge: exact block, render error, overread, underread, misalignment, short output, EOF, and bounded buffer.');
+console.log('PASS AudioSuite: 44.1/48 kHz, variable PCM chunks, prefetch, priming, short output, wraparound, ordered dry fallback, malformed input and bounded stalls.');

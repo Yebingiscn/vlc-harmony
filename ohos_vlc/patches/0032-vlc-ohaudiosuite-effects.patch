@@ -77,7 +77,7 @@ index d4cc1b9..d6d5945 100644
  if HAVE_OHOS
  $(info build audio_output openharmony)
 diff --git a/modules/audio_output/audiounit_ohos.c b/modules/audio_output/audiounit_ohos.c
-index 80067e0..5aa2224 100644
+index 80067e0..b68a3eb 100644
 --- a/modules/audio_output/audiounit_ohos.c
 +++ b/modules/audio_output/audiounit_ohos.c
 @@ -32,6 +32,7 @@
@@ -88,7 +88,7 @@ index 80067e0..5aa2224 100644
  
  /* Description of the module */
  static int  Open(vlc_object_t *);
-@@ -121,8 +122,65 @@ struct aout_sys_t {
+@@ -121,8 +122,111 @@ struct aout_sys_t {
      vlc_tick_t last_write_time;
      size_t max_queue_size;
      bool flushed_since_play;
@@ -98,6 +98,7 @@ index 80067e0..5aa2224 100644
 +    int suite_preset;
 +    bool suite_stereo;
 +    bool suite_rendered;
++    vlc_tick_t last_overflow_log;
  };
  
 +static vlc_tick_t vlc_tick_from_samples(uint64_t samples, uint32_t sample_rate);
@@ -112,11 +113,26 @@ index 80067e0..5aa2224 100644
 +    var_SetInteger(aout, VLC_OHOS_EFFECT_STATUS_VAR, 0);
 +}
 +
-+static const uint8_t *ApplyEffects(audio_output_t *aout, const block_t *block)
++static void QueuePCM(audio_output_t *aout, const uint8_t *pcm, size_t bytes);
++
++static void QueueDryEffectTail(audio_output_t *aout)
++{
++    ohos_audio_effects *suite = aout->sys->suite;
++    while (ohos_effects_pending(suite) > 0) {
++        size_t bytes;
++        const uint8_t *pcm = ohos_effects_dry(suite, &bytes);
++        QueuePCM(aout, pcm, bytes);
++        ohos_effects_consume(suite, bytes);
++    }
++}
++
++/* True means the bridge has handled the block; it need not be queued again. */
++static bool ApplyEffects(audio_output_t *aout, const block_t *block)
 +{
 +    aout_sys_t *s = aout->sys;
 +    int preset = var_InheritInteger(aout, VLC_OHOS_EFFECT_VAR);
 +    if (s->suite_preset != preset) {
++        QueueDryEffectTail(aout);
 +        ResetEffects(aout);
 +        s->suite_preset = preset;
 +        if (preset != 0) {
@@ -125,36 +141,66 @@ index 80067e0..5aa2224 100644
 +            if (s->suite_stereo)
 +                s->suite = ohos_effects_open(preset, s->sample_rate, type);
 +            if (!s->suite) {
-+                msg_Dbg(aout, "AudioSuite preset %d unavailable for this output; using original PCM", preset);
++                msg_Dbg(aout, "AudioSuite preset %d unavailable (%u Hz, %u channels, format %d); using original PCM",
++                        preset, s->sample_rate, s->channels, (int)s->sample_format);
 +                var_SetInteger(aout, VLC_OHOS_EFFECT_STATUS_VAR, preset * 4 + 3);
 +            }
 +        }
 +    }
 +    if (!s->suite)
-+        return block->p_buffer;
++        return false;
 +
-+    const vlc_tick_t start = mdate();
-+    const uint8_t *pcm = ohos_effects_render(s->suite, block->p_buffer, block->i_buffer);
-+    const vlc_tick_t block_time = vlc_tick_from_samples(block->i_nb_samples, s->sample_rate);
-+    if (!pcm || mdate() - start > __MAX(block_time, VLC_TICK_FROM_MS(8))) {
-+        msg_Warn(aout, "AudioSuite preset %d render failed or exceeded its time budget; using original PCM", preset);
-+        ohos_effects_close(s->suite);
-+        s->suite = NULL;
-+        var_SetInteger(aout, VLC_OHOS_EFFECT_STATUS_VAR, preset * 4 + 3);
-+        return block->p_buffer;
++    bool accepted = ohos_effects_feed(s->suite, block->p_buffer, block->i_buffer);
++    if (accepted) {
++        const vlc_tick_t budget = __MAX(vlc_tick_from_samples(block->i_nb_samples, s->sample_rate),
++                                      VLC_TICK_FROM_MS(20));
++        vlc_tick_t spent = 0;
++        for (;;) {
++            const uint8_t *pcm;
++            size_t bytes;
++            ohos_effect_report report;
++            vlc_tick_t start = mdate();
++            ohos_effect_result result = ohos_effects_render(s->suite, &pcm, &bytes, &report);
++            spent += mdate() - start;
++            if (result == OHOS_EFFECT_ERROR || (report.requested != 0 && spent > budget)) {
++                msg_Warn(aout, "AudioSuite preset %d bypassed: %s (rc=%d, requested=%zu, "
++                         "returned=%d, pulled=%zu, padded=%zu, pending=%zu, finished=%d, "
++                         "render=%" PRId64 " us, budget=%" PRId64 " us); using original PCM",
++                         preset, result == OHOS_EFFECT_ERROR ? report.reason : "render budget exceeded",
++                         report.status, report.requested, (int)report.returned, report.pulled,
++                         report.padded, ohos_effects_pending(s->suite), (int)report.finished,
++                         spent, budget);
++                break;
++            }
++            if (result == OHOS_EFFECT_WAIT)
++                return true;
++
++            QueuePCM(aout, pcm, bytes);
++            ohos_effects_consume(s->suite, bytes);
++            if (!s->suite_rendered) {
++                s->suite_rendered = true;
++                var_SetInteger(aout, VLC_OHOS_EFFECT_STATUS_VAR, preset * 4 + 2);
++                msg_Dbg(aout, "AudioSuite playback effect active: preset %d (%u Hz, "
++                        "requested=%zu, returned=%zu, pulled=%zu)",
++                        preset, s->sample_rate, report.requested, bytes, report.pulled);
++            }
++        }
++    } else {
++        msg_Warn(aout, "AudioSuite preset %d bypassed: PCM input not buffered "
++                 "(block=%zu, pending=%zu); using original PCM",
++                 preset, block->i_buffer, ohos_effects_pending(s->suite));
 +    }
-+    if (!s->suite_rendered) {
-+        s->suite_rendered = true;
-+        var_SetInteger(aout, VLC_OHOS_EFFECT_STATUS_VAR, preset * 4 + 2);
-+        msg_Dbg(aout, "AudioSuite playback effect active: preset %d", preset);
-+    }
-+    return pcm;
++    QueueDryEffectTail(aout);
++    ohos_effects_close(s->suite);
++    s->suite = NULL;
++    var_SetInteger(aout, VLC_OHOS_EFFECT_STATUS_VAR, preset * 4 + 3);
++    return accepted;
 +}
 +
  // Initiating the queue operation
  static int audio_queue_init(audio_queue_t *queue)
  {
-@@ -385,8 +443,11 @@ static int Start(audio_output_t *p_aout, audio_sample_format_t *p_fmt)
+@@ -385,8 +489,11 @@ static int Start(audio_output_t *p_aout, audio_sample_format_t *p_fmt)
      }
  
      // Setting audio parameters
@@ -166,7 +212,16 @@ index 80067e0..5aa2224 100644
      if (p_sys->sample_rate == 0 || p_sys->channels == 0) {
          msg_Warn(p_aout, "Rejecting invalid audio format: %u channels, %u Hz",
                   p_sys->channels, p_sys->sample_rate);
-@@ -522,6 +583,7 @@ static void Stop(audio_output_t *p_aout)
+@@ -495,7 +602,7 @@ static size_t get_bytes_per_sample(audio_output_t *p_aout, OH_AudioStream_Sample
+ }
+ 
+ // Convert vlc_tick_t to milliseconds (for log output)
+-inline int64_t vlc_tick_to_ms(vlc_tick_t ticks)
++static inline int64_t vlc_tick_to_ms(vlc_tick_t ticks)
+ {
+     return ticks / 1000;
+ }
+@@ -522,6 +629,7 @@ static void Stop(audio_output_t *p_aout)
  
      p_sys->is_playing = false;
      audio_queue_clear(&p_sys->queue);
@@ -174,18 +229,70 @@ index 80067e0..5aa2224 100644
  
      if (p_sys->p_renderer) {
          OH_AudioRenderer_Stop(p_sys->p_renderer);
-@@ -564,7 +626,8 @@ static void Play(audio_output_t *p_aout, block_t *p_block)
+@@ -539,6 +647,18 @@ static void Stop(audio_output_t *p_aout)
+     msg_Info(p_aout, "Audio output stopped completely");
+ }
+ 
++static void QueuePCM(audio_output_t *aout, const uint8_t *pcm, size_t bytes)
++{
++    aout_sys_t *s = aout->sys;
++    if (!audio_queue_push(&s->queue, pcm, bytes, s->max_queue_size)) {
++        vlc_tick_t now = mdate();
++        if (now - s->last_overflow_log > VLC_TICK_FROM_MS(1000)) {
++            msg_Warn(aout, "Audio low-latency queue timed out, dropping %zu bytes", bytes);
++            s->last_overflow_log = now;
++        }
++    }
++}
++
+ static void Play(audio_output_t *p_aout, block_t *p_block)
+ {
+     aout_sys_t *p_sys = p_aout->sys;
+@@ -564,17 +684,8 @@ static void Play(audio_output_t *p_aout, block_t *p_block)
  
      if (p_block && p_block->i_buffer > 0) {
          p_sys->flushed_since_play = false;
 -        if (!audio_queue_push(&p_sys->queue, p_block->p_buffer,
-+        const uint8_t *pcm = ApplyEffects(p_aout, p_block);
-+        if (!audio_queue_push(&p_sys->queue, pcm,
-                               p_block->i_buffer, p_sys->max_queue_size)) {
-             static vlc_tick_t last_overflow_log;
-             const vlc_tick_t now = mdate();
-@@ -610,6 +673,11 @@ static void Flush(audio_output_t *p_aout, bool wait)
+-                              p_block->i_buffer, p_sys->max_queue_size)) {
+-            static vlc_tick_t last_overflow_log;
+-            const vlc_tick_t now = mdate();
+-            if (now - last_overflow_log > VLC_TICK_FROM_MS(1000)) {
+-                msg_Warn(p_aout,
+-                         "Audio low-latency queue timed out, dropping %zu bytes",
+-                         p_block->i_buffer);
+-                last_overflow_log = now;
+-            }
+-        }
++        if (!ApplyEffects(p_aout, p_block))
++            QueuePCM(p_aout, p_block->p_buffer, p_block->i_buffer);
+     }
  
+     if (p_block) {
+@@ -605,11 +716,33 @@ static void Pause(audio_output_t *p_aout, bool b_paused, vlc_tick_t i_date)
+ 
+ static void Flush(audio_output_t *p_aout, bool wait)
+ {
+-    VLC_UNUSED(wait);
+     aout_sys_t *p_sys = p_aout->sys;
+ 
++    if (wait && p_sys->suite && p_sys->p_renderer && p_sys->is_playing) {
++        /* Decoder drain is not a seek: play any PCM held for lookahead.
++         * The remainder is dry because no more input will arrive. */
++        QueueDryEffectTail(p_aout);
++        ResetEffects(p_aout);
++        audio_queue_t *q = &p_sys->queue;
++        const vlc_tick_t deadline = mdate() + VLC_TICK_FROM_MS(500);
++        vlc_mutex_lock(&q->lock);
++        while (q->total_size && vlc_cond_timedwait(&q->writable, &q->lock, deadline) == 0)
++            ;
++        vlc_tick_t played_at = q->total_size == 0 && q->submitted_until > 0
++            ? q->submitted_until + p_sys->estimated_hardware_latency : 0;
++        vlc_mutex_unlock(&q->lock);
++        if (played_at > mdate())
++            mwait(__MIN(played_at, deadline));
++        return;
++    }
++
      msg_Dbg(p_aout, "Flushing audio queue");
      audio_queue_clear(&p_sys->queue);
 +    // An active graph can contain samples or a reverb tail from before the seek.
@@ -196,7 +303,16 @@ index 80067e0..5aa2224 100644
  
      /* VLC can request repeated flushes while discarding stale timestamps.
       * With no intervening Play there is no new audio to flush. */
-@@ -791,6 +859,7 @@ static int Open(vlc_object_t *obj)
+@@ -729,7 +862,7 @@ static int TimeGet(audio_output_t *p_aout, vlc_tick_t *delay)
+     /* Sample queued and submitted bytes atomically: the callback transfers
+      * bytes between these two states under the same lock. */
+     vlc_tick_t queue_delay = p_sys->queue.bytes_per_second > 0
+-        ? (vlc_tick_t)p_sys->queue.total_size * CLOCK_FREQ /
++        ? (vlc_tick_t)(p_sys->queue.total_size + ohos_effects_pending(p_sys->suite)) * CLOCK_FREQ /
+           p_sys->queue.bytes_per_second : 0;
+     hardware_delay += __MAX(p_sys->queue.submitted_until - mdate(), 0);
+     vlc_mutex_unlock(&p_sys->queue.lock);
+@@ -791,6 +924,7 @@ static int Open(vlc_object_t *obj)
      }
  
      p_aout->sys = p_sys;
