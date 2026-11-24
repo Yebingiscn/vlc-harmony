@@ -12,8 +12,12 @@ const state = source.slice(source.indexOf('#define RENDER_MS'), source.indexOf('
     OH_AudioSuite_Result (*engine_RenderFrame)(void *, void *, int32_t, int32_t *, bool *);
     OH_AudioSuite_Result (*engine_MultiRenderFrame)(void *, OH_AudioDataArray *, int32_t *, bool *);
   `);
-const bridge = source.slice(source.indexOf('bool ohos_effects_feed('), source.indexOf('static bool node_create('));
+const bridge = source.slice(source.indexOf('static bool buffer_pcm('), source.indexOf('static bool node_create('));
 const render = source.slice(source.indexOf('ohos_effect_result ohos_effects_render('));
+const aoutPatch = fs.readFileSync(path.join(__dirname, 'patches', '0032-vlc-ohaudiosuite-effects.patch'), 'utf8');
+const additions = aoutPatch.split(/\r?\n/).filter(line => line.startsWith('+')).map(line => line.slice(1)).join('\n');
+const driver = additions.slice(additions.indexOf('static void QueueDryEffectTail('),
+  additions.indexOf('/* True means the bridge has handled the block'));
 const output = path.resolve(buildDir);
 fs.mkdirSync(output, {recursive: true});
 const c = path.join(output, 'effects.c');
@@ -39,7 +43,7 @@ enum test_mode { NORMAL, ERROR, STARVE, BAD_PULL, BAD_SIZE, EOF_, STALL };
 static ohos_audio_effects suite;
 static uint8_t data[PCM_CAPACITY + 8], input[OUTPUT_CAPACITY * 2];
 static size_t fed, pulled, played;
-static int mode, calls, input_corrupted;
+static int mode, calls, input_corrupted, error_call;
 
 static uint8_t original(size_t offset) {
     return (uint8_t)((offset * 31u + (offset >> 8) * 13u) % 251u);
@@ -48,7 +52,7 @@ static uint8_t original(size_t offset) {
 static int append(size_t bytes) {
     for (size_t i = 0; i < bytes; ++i)
         data[i] = original(fed + i);
-    if (!ohos_effects_feed(&suite, data, bytes))
+    if (!buffer_pcm(&suite, data, bytes))
         return 0;
     fed += bytes;
     return 1;
@@ -57,7 +61,7 @@ static int append(size_t bytes) {
 static OH_AudioSuite_Result fake_render(void *p, void *out, int32_t len,
                                        int32_t *response, bool *finished) {
     ++calls;
-    if (mode == ERROR) return -4;
+    if (mode == ERROR || calls == error_call) return -4;
     if (mode == STALL) return AUDIOSUITE_SUCCESS;
     if (mode == EOF_) {
         *finished = true;
@@ -110,7 +114,7 @@ static void start(unsigned rate, unsigned frame_bytes) {
     suite.engine_MultiRenderFrame = fake_multi_render;
     suite.stem = -1;
     mode = NORMAL;
-    calls = input_corrupted = 0;
+    calls = input_corrupted = error_call = 0;
     fed = pulled = played = 0;
 }
 
@@ -200,15 +204,105 @@ static int separation(unsigned rate, unsigned frame_bytes) {
     return drain_dry();
 }
 
+// Execute the actual output loop with the fake processor and a byte-exact sink.
+typedef struct {
+    ohos_audio_effects *suite;
+    unsigned sample_rate;
+    bool suite_rendered;
+} aout_sys_t;
+typedef struct { aout_sys_t *sys; int status; } audio_output_t;
+typedef struct { uint8_t *p_buffer; size_t i_buffer, i_nb_samples; } block_t;
+typedef int64_t vlc_tick_t;
+#define __MAX(a, b) ((a) > (b) ? (a) : (b))
+#define VLC_TICK_FROM_MS(ms) ((vlc_tick_t)(ms) * 1000)
+#define msg_Dbg(...) ((void)0)
+#define msg_Warn(...) ((void)0)
+
+static uint8_t decoder[PCM_CAPACITY * 2];
+static uint8_t queued[PCM_CAPACITY * 6];
+static bool closed, queue_overflow;
+static vlc_tick_t mdate(void) { static vlc_tick_t now; return ++now; }
+static vlc_tick_t vlc_tick_from_samples(uint64_t count, uint32_t rate) {
+    return VLC_TICK_FROM_MS(1000) * count / rate;
+}
+static void var_SetInteger(audio_output_t *aout, const char *key, int value) {
+    (void)key;
+    aout->status = value;
+}
+void ohos_effects_close(ohos_audio_effects *s) { closed = s == &suite; }
+static void QueuePCM(audio_output_t *aout, const uint8_t *pcm, size_t bytes) {
+    (void)aout;
+    if (bytes > sizeof(queued) - played) {
+        queue_overflow = true;
+        return;
+    }
+    memcpy(queued + played, pcm, bytes);
+    played += bytes;
+}
+
+${driver}
+
+static int decoder_blocks(unsigned rate, size_t block_bytes, int count, bool fail) {
+    start(rate, 8);
+    int preset = VLC_OHOS_EFFECT_ACCOMPANIMENT;
+    suite.stem = stem_index(preset);
+    suite.engine_RenderFrame = NULL;
+    error_call = fail ? 3 : 0; // Prime, produce one short frame, then fail.
+    closed = queue_overflow = false;
+    aout_sys_t sys = { .suite = &suite, .sample_rate = rate };
+    audio_output_t aout = { .sys = &sys };
+    block_t block = { .p_buffer = decoder, .i_buffer = block_bytes,
+                      .i_nb_samples = block_bytes / 8 };
+    size_t switch_at = 0;
+    for (int i = 0; i < count; ++i) {
+        if (!fail && i == 2) {
+            switch_at = played;
+            preset = VLC_OHOS_EFFECT_VOCALS;
+            if (!switch_at || !ohos_effects_select_stem(&suite, preset)) return 0;
+            sys.suite_rendered = false;
+        }
+        for (size_t j = 0; j < block_bytes; ++j)
+            decoder[j] = original(fed + j);
+        fed += block_bytes;
+        ProcessEffectBlock(&aout, &block, preset);
+        if (queue_overflow || input_corrupted) return 0;
+        if (i == 0 && block_bytes < lookahead_bytes(&suite) &&
+            (calls || played || ohos_effects_pending(sys.suite) != block_bytes)) return 0;
+        if (closed) {
+            if (!fail || sys.suite || aout.status != preset * 4 + 3 || played != fed ||
+                calls != error_call || !sys.suite_rendered || suite.pending) return 0;
+            const size_t short_frame = rate * 8 / 100;
+            for (size_t j = 0; j < played; ++j)
+                if (queued[j] != (uint8_t)(original(j) ^ (j < short_frame ? 0x55 : 0))) return 0;
+            return 1;
+        }
+        if (!sys.suite || played + suite.pending != fed) return 0;
+    }
+    if (fail || !switch_at || played <= switch_at || aout.status != preset * 4 + 2) return 0;
+    const size_t wet_end = played;
+    QueueDryEffectTail(&aout);
+    if (queue_overflow || played != fed) return 0;
+    for (size_t j = 0; j < played; ++j) {
+        uint8_t mask = j < switch_at ? 0x55 : j < wet_end ? 0xff : 0;
+        if (queued[j] != (uint8_t)(original(j) ^ mask)) return 0;
+    }
+    return 1;
+}
+
 int main(void) {
     if (!continuous(44100, 8, 0)) return 1;
     if (!continuous(48000, 4, 0)) return 2;
     if (!continuous(44100, 8, 1)) return 3;
     if (!separation(44100, 8) || !separation(48000, 4)) return 13;
+    // Two consecutive blocks from the device log exceeded the 64 KiB ring.
+    if (!decoder_blocks(44100, 32944, 4, false)) return 14;
+    if (!decoder_blocks(48000, PCM_CAPACITY + 32000, 3, false)) return 15;
+    if (!decoder_blocks(44100, 32944, 2, true) ||
+        !decoder_blocks(48000, PCM_CAPACITY + 32000, 1, true)) return 16;
     for (int k = STARVE; k <= STALL; ++k)
         if (!rejected(k)) return 4 + k;
     start(44100, 8);
-    if (ohos_effects_feed(&suite, data, 7) || append(PCM_CAPACITY + 8) ||
+    if (ohos_effects_feed_chunk(&suite, data, 7) || append(PCM_CAPACITY + 8) ||
         !append(PCM_CAPACITY) || append(8) || !drain_dry()) return 12;
     return 0;
 }
@@ -227,4 +321,4 @@ if (process.platform === 'win32') {
   cp.execFileSync(clang, [...flags, c, '-o', exe], {stdio: 'inherit'});
   cp.execFileSync(exe, [], {stdio: 'inherit'});
 }
-console.log('PASS AudioSuite: single- and dual-output rendering, live stem switching, 44.1/48 kHz, prefetch, short output, wraparound, and bounded dry fallback.');
+console.log('PASS AudioSuite: single and dual output, live stem switching, 44.1/48 kHz, and partial PCM ingestion. Reproduced 32944-byte blocks and oversized blocks; mid-block failure preserves audio order without duplication.');

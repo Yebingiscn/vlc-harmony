@@ -122,7 +122,7 @@ static bool configure(ohos_audio_effects *s, int preset)
 #undef SETTER
 }
 
-bool ohos_effects_feed(ohos_audio_effects *s, const uint8_t *data, size_t bytes)
+static bool buffer_pcm(ohos_audio_effects *s, const uint8_t *data, size_t bytes)
 {
     if (!data || !bytes || bytes % s->frame_bytes != 0 ||
         bytes > PCM_CAPACITY - s->pending)
@@ -133,6 +133,28 @@ bool ohos_effects_feed(ohos_audio_effects *s, const uint8_t *data, size_t bytes)
     memcpy(s->pcm, data + first, bytes - first);
     s->pending += bytes;
     return true;
+}
+
+static size_t lookahead_bytes(const ohos_audio_effects *s)
+{
+    return s->bytes_per_second * (s->stem >= 0 ? SEPARATION_LOOKAHEAD_MS : LOOKAHEAD_MS) / 1000u;
+}
+
+size_t ohos_effects_feed_chunk(ohos_audio_effects *s, const uint8_t *data, size_t bytes)
+{
+    if (bytes % s->frame_bytes != 0)
+        return 0;
+    /* Allow an extra render quantum for prefetch. After that, interleave small
+     * writes and renders so a large decoder block can't fill the entire ring
+     * before a priming render has a chance to produce output. */
+    size_t quantum = s->bytes_per_second * RENDER_MS / 1000u;
+    size_t target = lookahead_bytes(s) + quantum;
+    size_t limit = s->pending < target ? target - s->pending : quantum;
+    size_t room = PCM_CAPACITY - s->pending;
+    size_t chunk = bytes < limit ? bytes : limit;
+    if (chunk > room)
+        chunk = room;
+    return buffer_pcm(s, data, chunk) ? chunk : 0;
 }
 
 size_t ohos_effects_pending(const ohos_audio_effects *s)
@@ -282,8 +304,7 @@ ohos_effect_result ohos_effects_render(ohos_audio_effects *s, const uint8_t **ou
     /* Request a fixed render quantum, not an arbitrary decoder block size.
      * At 44.1 kHz stereo float the input node alone pulls 7056 bytes (20 ms).
      * Reserve several quanta so effects can pull ahead without padding. */
-    unsigned lookahead = s->stem >= 0 ? SEPARATION_LOOKAHEAD_MS : LOOKAHEAD_MS;
-    if (s->pending < s->bytes_per_second * lookahead / 1000u)
+    if (s->pending < lookahead_bytes(s))
         return OHOS_EFFECT_WAIT;
     s->pulled = s->padded = 0;
     s->invalid_pull = false;

@@ -115,7 +115,7 @@ grep -Fq 'libvlc_media_player_set_ohos_audio_effect' "$WORK_DIR/vlc/lib/libvlc.s
 grep -Fxq 'libvlc_media_player_get_ohos_audio_effect_max_preset' "$WORK_DIR/vlc/lib/libvlc.sym"
 audio_output="$WORK_DIR/vlc/modules/audio_output/audiounit_ohos.c"
 if ! grep -Fq 'if (!ApplyEffects(p_aout, p_block))' "$audio_output" ||
-   ! grep -Fq 'ohos_effects_feed(' "$audio_output" ||
+   ! grep -Fq 'ohos_effects_feed_chunk(' "$audio_output" ||
    ! grep -Fq 'ohos_effects_select_stem(' "$audio_output" ||
    ! grep -Fq 'AudioSuite playback effect active' "$audio_output"; then
     echo "ERROR: VLC audio output is missing the streaming AudioSuite bridge" >&2

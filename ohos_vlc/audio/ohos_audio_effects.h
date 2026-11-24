@@ -39,7 +39,9 @@ typedef struct {
     bool finished;
 } ohos_effect_report;
 
-bool ohos_effects_feed(ohos_audio_effects *, const uint8_t *, size_t);
+/* Accept part of a frame-aligned decoder block; the caller renders before feeding more.
+ * Returns the number of bytes accepted (zero if invalid or no space). */
+size_t ohos_effects_feed_chunk(ohos_audio_effects *, const uint8_t *, size_t);
 size_t ohos_effects_pending(const ohos_audio_effects *);
 /* Peek the oldest contiguous dry PCM, including bytes already pulled by the graph. */
 const uint8_t *ohos_effects_dry(const ohos_audio_effects *, size_t *);

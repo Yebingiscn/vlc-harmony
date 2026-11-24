@@ -94,7 +94,7 @@ index 80067e0..56a5232 100644
  
  /* Description of the module */
  static int  Open(vlc_object_t *);
-@@ -121,8 +122,114 @@ struct aout_sys_t {
+@@ -121,8 +122,131 @@ struct aout_sys_t {
      vlc_tick_t last_write_time;
      size_t max_queue_size;
      bool flushed_since_play;
@@ -132,6 +132,66 @@ index 80067e0..56a5232 100644
 +    }
 +}
 +
++static void ProcessEffectBlock(audio_output_t *aout, const block_t *block, int preset)
++{
++    aout_sys_t *s = aout->sys;
++    const vlc_tick_t budget = __MAX(vlc_tick_from_samples(block->i_nb_samples, s->sample_rate),
++                                  VLC_TICK_FROM_MS(20));
++    vlc_tick_t spent = 0;
++    size_t offset = 0;
++    while (offset < block->i_buffer) {
++        const size_t accepted = ohos_effects_feed_chunk(s->suite, block->p_buffer + offset,
++                                                        block->i_buffer - offset);
++        if (!accepted) {
++            msg_Warn(aout, "AudioSuite preset %d bypassed: PCM input not buffered "
++                     "(block=%zu, accepted=%zu, pending=%zu); using original PCM",
++                     preset, block->i_buffer, offset, ohos_effects_pending(s->suite));
++            goto bypass;
++        }
++        offset += accepted;
++        for (;;) {
++            const uint8_t *pcm;
++            size_t bytes;
++            ohos_effect_report report;
++            vlc_tick_t start = mdate();
++            ohos_effect_result result = ohos_effects_render(s->suite, &pcm, &bytes, &report);
++            spent += mdate() - start;
++            if (result == OHOS_EFFECT_ERROR || (report.requested != 0 && spent > budget)) {
++                msg_Warn(aout, "AudioSuite preset %d bypassed: %s (rc=%d, requested=%zu, "
++                         "returned=%d, pulled=%zu, padded=%zu, pending=%zu, finished=%d, "
++                         "render=%" PRId64 " us, budget=%" PRId64 " us); using original PCM",
++                         preset, result == OHOS_EFFECT_ERROR ? report.reason : "render budget exceeded",
++                         report.status, report.requested, (int)report.returned, report.pulled,
++                         report.padded, ohos_effects_pending(s->suite), (int)report.finished,
++                         spent, budget);
++                goto bypass;
++            }
++            if (result == OHOS_EFFECT_WAIT)
++                break;
++
++            QueuePCM(aout, pcm, bytes);
++            ohos_effects_consume(s->suite, bytes);
++            if (!s->suite_rendered) {
++                s->suite_rendered = true;
++                var_SetInteger(aout, VLC_OHOS_EFFECT_STATUS_VAR, preset * 4 + 2);
++                msg_Dbg(aout, "AudioSuite playback effect active: preset %d (%u Hz, "
++                        "requested=%zu, returned=%zu, pulled=%zu)",
++                        preset, s->sample_rate, report.requested, bytes, report.pulled);
++            }
++        }
++    }
++    return;
++
++bypass:
++    /* Only replay uncommitted PCM, then the rest of this decoder block. */
++    QueueDryEffectTail(aout);
++    if (offset < block->i_buffer)
++        QueuePCM(aout, block->p_buffer + offset, block->i_buffer - offset);
++    ohos_effects_close(s->suite);
++    s->suite = NULL;
++    var_SetInteger(aout, VLC_OHOS_EFFECT_STATUS_VAR, preset * 4 + 3);
++}
++
 +/* True means the bridge has handled the block; it need not be queued again. */
 +static bool ApplyEffects(audio_output_t *aout, const block_t *block)
 +{
@@ -159,57 +219,14 @@ index 80067e0..56a5232 100644
 +    if (!s->suite)
 +        return false;
 +
-+    bool accepted = ohos_effects_feed(s->suite, block->p_buffer, block->i_buffer);
-+    if (accepted) {
-+        const vlc_tick_t budget = __MAX(vlc_tick_from_samples(block->i_nb_samples, s->sample_rate),
-+                                      VLC_TICK_FROM_MS(20));
-+        vlc_tick_t spent = 0;
-+        for (;;) {
-+            const uint8_t *pcm;
-+            size_t bytes;
-+            ohos_effect_report report;
-+            vlc_tick_t start = mdate();
-+            ohos_effect_result result = ohos_effects_render(s->suite, &pcm, &bytes, &report);
-+            spent += mdate() - start;
-+            if (result == OHOS_EFFECT_ERROR || (report.requested != 0 && spent > budget)) {
-+                msg_Warn(aout, "AudioSuite preset %d bypassed: %s (rc=%d, requested=%zu, "
-+                         "returned=%d, pulled=%zu, padded=%zu, pending=%zu, finished=%d, "
-+                         "render=%" PRId64 " us, budget=%" PRId64 " us); using original PCM",
-+                         preset, result == OHOS_EFFECT_ERROR ? report.reason : "render budget exceeded",
-+                         report.status, report.requested, (int)report.returned, report.pulled,
-+                         report.padded, ohos_effects_pending(s->suite), (int)report.finished,
-+                         spent, budget);
-+                break;
-+            }
-+            if (result == OHOS_EFFECT_WAIT)
-+                return true;
-+
-+            QueuePCM(aout, pcm, bytes);
-+            ohos_effects_consume(s->suite, bytes);
-+            if (!s->suite_rendered) {
-+                s->suite_rendered = true;
-+                var_SetInteger(aout, VLC_OHOS_EFFECT_STATUS_VAR, preset * 4 + 2);
-+                msg_Dbg(aout, "AudioSuite playback effect active: preset %d (%u Hz, "
-+                        "requested=%zu, returned=%zu, pulled=%zu)",
-+                        preset, s->sample_rate, report.requested, bytes, report.pulled);
-+            }
-+        }
-+    } else {
-+        msg_Warn(aout, "AudioSuite preset %d bypassed: PCM input not buffered "
-+                 "(block=%zu, pending=%zu); using original PCM",
-+                 preset, block->i_buffer, ohos_effects_pending(s->suite));
-+    }
-+    QueueDryEffectTail(aout);
-+    ohos_effects_close(s->suite);
-+    s->suite = NULL;
-+    var_SetInteger(aout, VLC_OHOS_EFFECT_STATUS_VAR, preset * 4 + 3);
-+    return accepted;
++    ProcessEffectBlock(aout, block, preset);
++    return true;
 +}
 +
  // Initiating the queue operation
  static int audio_queue_init(audio_queue_t *queue)
  {
-@@ -385,8 +492,11 @@ static int Start(audio_output_t *p_aout, audio_sample_format_t *p_fmt)
+@@ -385,8 +509,11 @@ static int Start(audio_output_t *p_aout, audio_sample_format_t *p_fmt)
      }
  
      // Setting audio parameters
@@ -221,7 +238,7 @@ index 80067e0..56a5232 100644
      if (p_sys->sample_rate == 0 || p_sys->channels == 0) {
          msg_Warn(p_aout, "Rejecting invalid audio format: %u channels, %u Hz",
                   p_sys->channels, p_sys->sample_rate);
-@@ -495,7 +605,7 @@ static size_t get_bytes_per_sample(audio_output_t *p_aout, OH_AudioStream_Sample
+@@ -495,7 +622,7 @@ static size_t get_bytes_per_sample(audio_output_t *p_aout, OH_AudioStream_Sample
  }
  
  // Convert vlc_tick_t to milliseconds (for log output)
@@ -230,7 +247,7 @@ index 80067e0..56a5232 100644
  {
      return ticks / 1000;
  }
-@@ -522,6 +632,7 @@ static void Stop(audio_output_t *p_aout)
+@@ -522,6 +649,7 @@ static void Stop(audio_output_t *p_aout)
  
      p_sys->is_playing = false;
      audio_queue_clear(&p_sys->queue);
@@ -238,7 +255,7 @@ index 80067e0..56a5232 100644
  
      if (p_sys->p_renderer) {
          OH_AudioRenderer_Stop(p_sys->p_renderer);
-@@ -539,6 +650,18 @@ static void Stop(audio_output_t *p_aout)
+@@ -539,6 +667,18 @@ static void Stop(audio_output_t *p_aout)
      msg_Info(p_aout, "Audio output stopped completely");
  }
  
@@ -257,7 +274,7 @@ index 80067e0..56a5232 100644
  static void Play(audio_output_t *p_aout, block_t *p_block)
  {
      aout_sys_t *p_sys = p_aout->sys;
-@@ -564,17 +687,8 @@ static void Play(audio_output_t *p_aout, block_t *p_block)
+@@ -564,17 +704,8 @@ static void Play(audio_output_t *p_aout, block_t *p_block)
  
      if (p_block && p_block->i_buffer > 0) {
          p_sys->flushed_since_play = false;
@@ -277,7 +294,7 @@ index 80067e0..56a5232 100644
      }
  
      if (p_block) {
-@@ -605,11 +719,33 @@ static void Pause(audio_output_t *p_aout, bool b_paused, vlc_tick_t i_date)
+@@ -605,11 +736,33 @@ static void Pause(audio_output_t *p_aout, bool b_paused, vlc_tick_t i_date)
  
  static void Flush(audio_output_t *p_aout, bool wait)
  {
@@ -312,7 +329,7 @@ index 80067e0..56a5232 100644
  
      /* VLC can request repeated flushes while discarding stale timestamps.
       * With no intervening Play there is no new audio to flush. */
-@@ -729,7 +865,7 @@ static int TimeGet(audio_output_t *p_aout, vlc_tick_t *delay)
+@@ -729,7 +882,7 @@ static int TimeGet(audio_output_t *p_aout, vlc_tick_t *delay)
      /* Sample queued and submitted bytes atomically: the callback transfers
       * bytes between these two states under the same lock. */
      vlc_tick_t queue_delay = p_sys->queue.bytes_per_second > 0
@@ -321,7 +338,7 @@ index 80067e0..56a5232 100644
            p_sys->queue.bytes_per_second : 0;
      hardware_delay += __MAX(p_sys->queue.submitted_until - mdate(), 0);
      vlc_mutex_unlock(&p_sys->queue.lock);
-@@ -791,6 +927,7 @@ static int Open(vlc_object_t *obj)
+@@ -791,6 +944,7 @@ static int Open(vlc_object_t *obj)
      }
  
      p_aout->sys = p_sys;
