@@ -314,7 +314,7 @@ function install_ffmpeg_patches()
     local ffmpeg_recipe_dir=$LYCIUM_COMMUNITY_DIR/FFmpeg-surface-dev
     local patch_source_dir=$LYCIUM_ROOT_DIR/libmpv-ohos-patches
 
-    cp -f "$ROOT_DIR/recipes/ffmpeg-9.0.2.HPKBUILD" "$ffmpeg_recipe_dir/HPKBUILD" || return 1
+    cp -f "$ROOT_DIR/recipes/ffmpeg-9.1.HPKBUILD" "$ffmpeg_recipe_dir/HPKBUILD" || return 1
     cp -f "$ROOT_DIR/recipes/brotli-v1.0.9.HPKBUILD" "$LYCIUM_COMMUNITY_DIR/brotli/HPKBUILD" || return 1
     git_clone_with_retry "$patch_source_dir" --filter=blob:none --depth=1 --no-checkout \
         "$FFMPEG_OHCODEC_PATCH_REPO"

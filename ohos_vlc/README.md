@@ -30,8 +30,8 @@
 
 ## 应用方式
 
-`prebuild.sh` 会用 `recipes/ffmpeg-9.0.2.HPKBUILD` 替换 Lycium 的旧 FFmpeg
-recipe，在 9.0.2 上按顺序应用 libmpvnative 的 OHCodec 补丁子集和本仓库的时钟、
+`prebuild.sh` 会用 `recipes/ffmpeg-9.1.HPKBUILD` 替换 Lycium 的旧 FFmpeg
+recipe，在 9.1 上按顺序应用 libmpvnative 的 OHCodec 补丁子集和本仓库的时钟、
 输出队列及硬解策略补丁。VLC 仍基于固定的 3.0.24 发布提交。
 只重新编译 HAP 不会让原生改动生效，修改这些补丁后必须重新运行
 `ohos_vlc/prebuild.sh`（Linux 环境、HarmonyOS 7.0 Beta1 API 26 SDK）。构建成功后脚本会自动调用项目根目录的
@@ -40,7 +40,7 @@ recipe，在 9.0.2 上按顺序应用 libmpvnative 的 OHCodec 补丁子集和�
 当前原生构建目标：
 
 - VLC：`3.0.24`，提交 `6de05adcbaf2e8b85fe86aad4169393098628119`，保留 HarmonyOS 端口
-- FFmpeg：`n9.0.2`，提交 `946fcce07b6dcd0331c8cc609192aeff5e1924f8`
+- FFmpeg：`n9.1`，提交 `74e4393595cf2b5857f0da925c4e0dd74ea306e5`
 - OpenSSL：`3.5.9` LTS（沿用 Lycium 的 `openssl_3.4.3` 包名，实际构建版本是 3.5.9）
 - dav1d：`1.5.5`；zlib：`1.4`
 - OHCodec 补丁来源：libmpvnative 提交 `54f298cddd162f459ed49e58974e3b8e763db177`

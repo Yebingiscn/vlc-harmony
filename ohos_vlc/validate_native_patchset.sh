@@ -22,8 +22,8 @@ FFMPEG_P010_BUFFER_PATCH=$ROOT_DIR/patches/0017-ffmpeg-ohcodec-handle-p010-buffe
 FFMPEG_SYNTHETIC_PTS_PATCH=$ROOT_DIR/patches/0018-ffmpeg-ohcodec-synthesize-missing-timestamps.patch
 
 FFMPEG_REPO=https://github.com/FFmpeg/FFmpeg.git
-FFMPEG_TAG=n9.0.2
-FFMPEG_COMMIT=946fcce07b6dcd0331c8cc609192aeff5e1924f8
+FFMPEG_TAG=n9.1
+FFMPEG_COMMIT=74e4393595cf2b5857f0da925c4e0dd74ea306e5
 OHCODEC_PATCH_REPO=https://github.com/Yebingiscn/libmpv-ohos-ErBW_s-5en.git
 OHCODEC_PATCH_COMMIT=54f298cddd162f459ed49e58974e3b8e763db177
 
@@ -37,6 +37,7 @@ bash -n "$FFMPEG_RECIPE"
 bash -n "$VLC_RECIPE"
 grep -Fxq "pkgver=${FFMPEG_TAG#n}" "$FFMPEG_RECIPE"
 grep -Fxq "source_commit=$FFMPEG_COMMIT" "$FFMPEG_RECIPE"
+grep -Fq "recipes/ffmpeg-${FFMPEG_TAG#n}.HPKBUILD" "$ROOT_DIR/prebuild.sh"
 grep -q 'OHCodec Surface frames use VLC vout timing' "$WORKFLOW_FILE"
 grep -q 'OHCodec Surface vout is not ready; dropping frame' "$WORKFLOW_FILE"
 grep -q 'OHCodec transparent OSD Surface attached (async display-size RGBA blend' "$WORKFLOW_FILE"
@@ -239,6 +240,11 @@ fi
 
 clone_with_retry "$WORK_DIR/ffmpeg" --depth=1 --branch "$FFMPEG_TAG" "$FFMPEG_REPO"
 test "$(git -C "$WORK_DIR/ffmpeg" rev-parse HEAD)" = "$FFMPEG_COMMIT"
+ffmpeg_version=$(sh "$WORK_DIR/ffmpeg/ffbuild/version.sh" "$WORK_DIR/ffmpeg")
+if [[ "${ffmpeg_version#n}" != "${FFMPEG_TAG#n}" ]]; then
+    echo "ERROR: FFmpeg would embed '$ffmpeg_version', expected release ${FFMPEG_TAG#n}" >&2
+    exit 1
+fi
 clone_with_retry "$WORK_DIR/ohcodec-patches" --filter=blob:none --no-checkout \
     "$OHCODEC_PATCH_REPO"
 fetch_with_retry "$WORK_DIR/ohcodec-patches" --depth=1 origin "$OHCODEC_PATCH_COMMIT"

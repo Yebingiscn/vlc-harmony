@@ -2,12 +2,12 @@
 # SPDX-License-Identifier: MIT
 
 # This recipe replaces Lycium's legacy FFmpeg-surface-dev fork with upstream
-# FFmpeg 9.0.2 plus the audited OHCodec patch subset from libmpvnative.
+# FFmpeg 9.1 plus the audited OHCodec patch subset from libmpvnative.
 pkgname=FFmpeg
-pkgver=9.0.2
+pkgver=9.1
 pkgrel=0
-pkgdesc="FFmpeg 9.0.2 with OpenHarmony OHCodec zero-copy decoding"
-source_commit=946fcce07b6dcd0331c8cc609192aeff5e1924f8
+pkgdesc="FFmpeg 9.1 with OpenHarmony OHCodec zero-copy decoding"
+source_commit=74e4393595cf2b5857f0da925c4e0dd74ea306e5
 url="https://ffmpeg.org/"
 archs=("arm64-v8a")
 license=("LGPL-2.1-or-later")

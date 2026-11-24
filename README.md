@@ -57,7 +57,7 @@ Linux environment, an OpenHarmony/HarmonyOS native SDK, and the dependencies
 installed by the prebuild script.
 
 The native pipeline builds VLC 3.0.24 with its OHOS platform patches,
-FFmpeg 9.0.2, OpenSSL 3.5.9 LTS, dav1d 1.5.5, and zlib 1.4. Checked-in runtime
+FFmpeg 9.1, OpenSSL 3.5.9 LTS, dav1d 1.5.5, and zlib 1.4. Checked-in runtime
 libraries are updated separately after a successful native build. OHCodec output uses source
 timestamps and the system's refresh-rate policy; the app does not force a
 fixed 60 Hz or 120 Hz display cadence.
