@@ -1,3 +1,4 @@
+import { NATIVE_BOTTOM_SHEET_RADIUS } from '../common/constants/BottomSheetStyle';
 import { UiFeedback } from '../common/utils/UiFeedback';
 import { Settings } from '../common/data/Settings';
 import { MediaLibrary } from '../common/data/MediaLibrary';
@@ -519,6 +520,7 @@ export struct VideoGridPage {
     })
     .backgroundColor($r('app.color.background_default'))
     .bindSheet(this.showContext, this.contextSheet(), {
+      radius: NATIVE_BOTTOM_SHEET_RADIUS,
       height: SheetSize.FIT_CONTENT,
       dragBar: true,
       backgroundColor: $r('app.color.bottom_sheet_background'),
@@ -567,10 +569,6 @@ export struct VideoGridPage {
         .width('100%')
         .padding(16)
         .alignItems(VerticalAlign.Center)
-
-        Divider()
-          .strokeWidth(0.5)
-          .color($r('app.color.divider'))
 
         // 播放
         Row() {
@@ -703,15 +701,11 @@ export struct VideoGridPage {
           });
         })
 
-        Divider()
-          .strokeWidth(0.5)
-          .color($r('app.color.divider'))
         Blank()
           .height(24)
       }
     }
     .width('100%').backgroundColor($r('app.color.bottom_sheet_background'))
-    .borderRadius({ topLeft: 16, topRight: 16 })
   }
 
   /** ContextSheet 弹窗内容(自定义组件 → builder 必须 .width('100%'))。 */
@@ -735,10 +729,6 @@ export struct VideoGridPage {
             top: 20,
             bottom: 8
           })
-
-        Divider()
-          .strokeWidth(0.5)
-          .color($r('app.color.divider'))
 
         // 播放(播放第一个视频)
         Row() {
@@ -863,16 +853,12 @@ export struct VideoGridPage {
           this.markFolderSeen(folder, false);
         })
 
-        Divider()
-          .strokeWidth(0.5)
-          .color($r('app.color.divider'))
         Blank()
           .height(24)
       }
     }
     .width('100%')
     .backgroundColor($r('app.color.bottom_sheet_background'))
-    .borderRadius({ topLeft: 16, topRight: 16 })
   }
 
   /** 搜索态:跳转全局搜索页的矩形按钮(橙字灰边居中)。 */

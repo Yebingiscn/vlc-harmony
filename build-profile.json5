@@ -1,11 +1,26 @@
 {
   "app": {
-    "signingConfigs": [],
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\a1309\\.ohos\\config\\default_vlc-harmony_2enwF20bSr7s37wmjMYBy2xh3ewuroznCqPVs3PSH8w=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001ADAAA0DAFA629BECD4142AACFDA6676D900F045AE936F0013876656E5C0A2A93E47701E6DA025",
+          "profile": "C:\\Users\\a1309\\.ohos\\config\\default_vlc-harmony_2enwF20bSr7s37wmjMYBy2xh3ewuroznCqPVs3PSH8w=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\a1309\\.ohos\\config\\default_vlc-harmony_2enwF20bSr7s37wmjMYBy2xh3ewuroznCqPVs3PSH8w=.p12",
+          "storePassword": "0000001A2236011F793F23ECF96B0706BC4C71345A6E7C5F8CCF76666B1391DBA0EA9536ED30B78AD080"
+        }
+      }
+    ],
     "products": [
       {
         "name": "default",
-        "targetSdkVersion": "6.1.1(24)",
-        "compatibleSdkVersion": "6.1.0(23)",
+        "signingConfig": "default",
+        "targetSdkVersion": "26.0.0",
+        "compatibleSdkVersion": "26.0.0",
         "runtimeOS": "HarmonyOS",
         "buildOption": {
           "strictMode": {

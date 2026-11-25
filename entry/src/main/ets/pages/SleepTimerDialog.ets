@@ -181,7 +181,6 @@ export struct SleepTimerDialog {
     .width('100%')
     .padding({ left: 40, right: 40 })
     .backgroundColor($r('sys.color.background_primary'))
-    .borderRadius({ topLeft: 36, topRight: 36 })
     .alignItems(HorizontalAlign.Center)
   }
 

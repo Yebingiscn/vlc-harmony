@@ -1,3 +1,5 @@
+export type PlaybackHistoryKind = 'audio' | 'video' | 'unknown';
+
 /** 一条可持久化的本地媒体播放历史。 */
 export class PlaybackHistoryEntry {
   uri: string;
@@ -7,6 +9,7 @@ export class PlaybackHistoryEntry {
   playedAt: number;
   artistName: string;
   albumName: string;
+  kind: PlaybackHistoryKind;
 
   constructor(
     uri: string,
@@ -16,6 +19,7 @@ export class PlaybackHistoryEntry {
     playedAt: number,
     artistName: string = '',
     albumName: string = '',
+    kind: PlaybackHistoryKind = 'unknown',
   ) {
     this.uri = uri;
     this.title = title;
@@ -24,6 +28,7 @@ export class PlaybackHistoryEntry {
     this.playedAt = playedAt;
     this.artistName = artistName;
     this.albumName = albumName;
+    this.kind = kind;
   }
 }
 

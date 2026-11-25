@@ -1,3 +1,4 @@
+import { NATIVE_BOTTOM_SHEET_RADIUS } from '../common/constants/BottomSheetStyle';
 import { UiFeedback } from '../common/utils/UiFeedback';
 import { NavController } from '../common/data/NavController';
 import { AppColors } from '../common/constants/AppConstants';
@@ -359,8 +360,6 @@ export struct HeaderMediaListActivityPage {
         }
         .width('100%').padding(16).alignItems(VerticalAlign.Center)
 
-        Divider().strokeWidth(0.5).color($r('app.color.divider'))
-
         // 播放
         Row() {
           Image($r('app.media.ic_play_player')).width(24).height(24)
@@ -473,12 +472,10 @@ export struct HeaderMediaListActivityPage {
           });
         })
 
-        Divider().strokeWidth(0.5).color($r('app.color.divider'))
         Blank().height(24)
       }
     }
     .width('100%').backgroundColor($r('app.color.bottom_sheet_background'))
-    .borderRadius({ topLeft: 16, topRight: 16 })
   }
 
   build() {
@@ -642,6 +639,7 @@ export struct HeaderMediaListActivityPage {
       return true;
     })
     .bindSheet(this.showContext, this.trackContextSheet(), {
+      radius: NATIVE_BOTTOM_SHEET_RADIUS,
       height: SheetSize.FIT_CONTENT,
       dragBar: true,
       backgroundColor: $r('app.color.bottom_sheet_background'),

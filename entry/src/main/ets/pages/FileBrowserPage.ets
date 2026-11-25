@@ -1,3 +1,4 @@
+import { NATIVE_BOTTOM_SHEET_RADIUS } from '../common/constants/BottomSheetStyle';
 import { NavController } from '../common/data/NavController';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { EmptyStateView } from '../common/components/EmptyStateView';
@@ -118,6 +119,7 @@ export struct FileBrowserPage {
       .width('100%').height('100%')
       .backgroundColor($r('app.color.background_default'))
       .bindSheet(this.showServerDialog, this.serverSheet(), {
+        radius: NATIVE_BOTTOM_SHEET_RADIUS,
         height: SheetSize.FIT_CONTENT,
         dragBar: true,
         onDisappear: () => this.showServerDialog = false,

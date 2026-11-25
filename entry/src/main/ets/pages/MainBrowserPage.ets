@@ -1,3 +1,4 @@
+import { NATIVE_BOTTOM_SHEET_RADIUS } from '../common/constants/BottomSheetStyle';
 import { UiFeedback } from '../common/utils/UiFeedback';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
@@ -194,6 +195,7 @@ export struct MainBrowserPage {
     }
     .width('100%').height('100%')
     .bindSheet(this.showCtxSheet, this.ctxSheet(), {
+      radius: NATIVE_BOTTOM_SHEET_RADIUS,
       height: SheetSize.FIT_CONTENT,
       showClose: false,
       dragBar: true,
@@ -338,10 +340,6 @@ export struct MainBrowserPage {
         .padding(16)
         .alignItems(VerticalAlign.Center)
 
-        Divider()
-          .strokeWidth(0.5)
-          .color('#E0E0E0')
-
         // 播放
         Row() {
           Image($r('app.media.ic_play_player'))
@@ -476,15 +474,11 @@ export struct MainBrowserPage {
           })
         }
 
-        Divider()
-          .strokeWidth(0.5)
-          .color('#E0E0E0')
         Blank()
           .height(24)
       }
     }
     .width('100%')
     .backgroundColor('#FFFFFF')
-    .borderRadius({ topLeft: 16, topRight: 16 })
   }
 }

@@ -188,7 +188,6 @@ export struct JumpToTimeDialog {
     }
     .width('100%')
     .backgroundColor(this.cPanelBg)
-    .borderRadius({ topLeft: 20, topRight: 20 })
   }
 
   private parts(): string[] {

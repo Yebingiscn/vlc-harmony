@@ -199,7 +199,6 @@ export struct SubtitleDownloaderDialog {
     }
     .width('100%').height('100%')
     .backgroundColor($r('app.color.background_default'))
-    .borderRadius({ topLeft: 20, topRight: 20 })
   }
 
   /** arkts 严格模式禁止未类型化对象字面量，Select 必须接 LangOption[]。 */

@@ -1,3 +1,4 @@
+import { BOTTOM_SHEET_TOP_CORNERS, NATIVE_BOTTOM_SHEET_RADIUS } from '../common/constants/BottomSheetStyle';
 import { UiFeedback } from '../common/utils/UiFeedback';
 import { window } from '@kit.ArkUI';
 import { audio, AVVolumePanel } from '@kit.AudioKit';
@@ -30,6 +31,8 @@ import { VideoInfoDialog } from './VideoInfoDialog';
 import { SubtitleDownloaderDialog } from './SubtitleDownloaderDialog';
 import { BookmarkDialog } from './BookmarkDialog';
 import { AddToPlaylistAction, AddToPlaylistDialog } from './AddToPlaylistDialog';
+import { PlayerModeButton } from '../common/components/PlayerModeButton';
+import { PlayerQueuePanel } from '../common/components/PlayerQueuePanel';
 import {
   SCREEN_ORIENTATION_DEFAULT,
   SCREEN_ORIENTATION_FOLLOW_VIDEO,
@@ -202,6 +205,8 @@ class VideoPlayerViewModel implements PlaybackListener {
   @Trace locked: boolean = false;
   /** 当前循环模式:0=关闭,1=列表循环,2=单曲循环。 */
   @Trace repeatMode: number = 0;
+  @Trace shuffle: boolean = false;
+  @Trace queueReady: boolean = false;
   /** A-B 循环状态。-1 表示未设。 */
   @Trace abPointA: number = -1;
   @Trace abPointB: number = -1;
@@ -235,6 +240,7 @@ class VideoPlayerViewModel implements PlaybackListener {
   /** XComponent onLoad 后调用:准备队列并 bindAndPlay。 */
   async setup(param: VideoParam, xcomponentId: string): Promise<void> {
     hilog.info(0x0001, 'VLC', '[VLC] VideoPlayer setup: uri=%{public}s xc=%{public}s', param.uri, xcomponentId);
+    this.queueReady = false;
 
     // 如果从"仅播放音频"模式(单元素队列、无 XComponent、player 仍 PLAYING)
     // 切到新的视频,先把 player 彻底 reset,否则 attachViews 会失败导致
@@ -266,12 +272,13 @@ class VideoPlayerViewModel implements PlaybackListener {
     this.speed = await Settings.getFloat(Settings.VIDEO_SPEED, 1.0);
 
     // 检测 ISO 光盘镜像,加载章节用于虚拟时间轴导航。
-    this.isIsoFile = param.uri.toLowerCase().endsWith('.iso');
+    this.isIsoFile = this.uri.toLowerCase().endsWith('.iso');
     this.isoChapters = [];
     this.isoChapterIdx = 0;
 
     const svc = PlaybackService.getInstance();
     this.repeatMode = svc.getRepeatMode();
+    this.shuffle = svc.getShuffle();
     if (!this.listening) {
       svc.addListener(this);
       this.listening = true;
@@ -286,6 +293,7 @@ class VideoPlayerViewModel implements PlaybackListener {
     await svc.prepareList(mws, this.index, true, 'video');
     svc.setSpeed(this.speed);
     const bound = await svc.bindAndPlay(xcomponentId, this.uri, this.title, VLC_OSD_XCOMPONENT_ID);
+    this.queueReady = !this.leaving && svc.getCurrent() !== null;
     this.setVideoRatioMode(this.videoRatioMode);
     this.state = svc.getState();
     this.duration = svc.getDuration();
@@ -298,23 +306,19 @@ class VideoPlayerViewModel implements PlaybackListener {
       this.state = PlayState.ERROR;
       this.errorMsg = 'bind video surface failed';
     }
+  }
 
-    // ISO 文件:延迟加载章节(媒体解析需要时间),构建虚拟时间轴。
-    if (this.isIsoFile) {
-      await new Promise<void>((r: () => void) => setTimeout(r, 500));
-      this.isoChapters = svc.getChapters();
-      hilog.info(0x0001, 'VLC', '[VLC] ISO chapters count=%{public}d', this.isoChapters.length);
-      if (this.isoChapters.length > 0) {
-        // 总时长 = 各章节时长之和。
-        let total = 0;
-        for (const ch of this.isoChapters) {
-          total += ch.duration;
-        }
-        this.duration = total;
-        this.isoChapterIdx = svc.getChapterIdx();
-        hilog.info(0x0001, 'VLC', '[VLC] ISO chapters=%{public}d totalDuration=%{public}d', this.isoChapters.length,
-          total);
-      }
+  private async loadIsoChapters(uri: string): Promise<void> {
+    // Wait for disc parsing and discard the result if the user switches videos.
+    await new Promise<void>((resolve: () => void) => setTimeout(resolve, 500));
+    if (this.leaving || this.uri !== uri) {
+      return;
+    }
+    const svc = PlaybackService.getInstance();
+    this.isoChapters = svc.getChapters();
+    if (this.isoChapters.length > 0) {
+      this.duration = this.isoChapters.reduce((total: number, chapter: VlcChapterInfo) => total + chapter.duration, 0);
+      this.isoChapterIdx = svc.getChapterIdx();
     }
   }
 
@@ -324,6 +328,9 @@ class VideoPlayerViewModel implements PlaybackListener {
       this.errorMsg = 'playback error';
     } else if (state === PlayState.PLAYING) {
       this.errorMsg = '';
+      if (this.isIsoFile && this.isoChapters.length === 0) {
+        void this.loadIsoChapters(this.uri);
+      }
       if (!this.autoPipFired) {
         this.autoPipFired = true;
         if (this.onPlaybackStarted !== null) {
@@ -335,7 +342,7 @@ class VideoPlayerViewModel implements PlaybackListener {
       if (shouldRecordPlaybackStart('playing', this.lastHistoryUri, this.uri)) {
         this.lastHistoryUri = this.uri;
         void PlaybackHistory.record(this.uri, this.title, svc.getDuration(),
-          this.currentArtworkUrl);
+          this.currentArtworkUrl, '', '', 'video');
       }
     }
   }
@@ -373,19 +380,23 @@ class VideoPlayerViewModel implements PlaybackListener {
     const svc = PlaybackService.getInstance();
     const cur = svc.getCurrent();
     if (cur) {
+      if (cur.uri !== this.uri) {
+        this.resetAb();
+        this.isIsoFile = cur.uri.toLowerCase().endsWith('.iso');
+        this.isoChapters = [];
+        this.isoChapterIdx = 0;
+      }
       this.uri = cur.uri;
       this.title = cur.title;
+      this.currentArtworkUrl = cur.artworkUrl || cur.artworkPath;
       if (cur.width > 0 && cur.height > 0) {
         this.onVideoSize(cur.width, cur.height);
       }
     }
     this.index = svc.getCurrentIndex();
     this.listLen = Math.max(this.list.length, svc.getQueue().length);
-    // cycleRepeat() 等内部操作通过 emitQueue() 通知 ViewModel,避免高级菜单需点击两次才看到激活态变化。
-    const nextMode = svc.getRepeatMode();
-    if (this.repeatMode !== nextMode) {
-      this.repeatMode = nextMode;
-    }
+    this.repeatMode = svc.getRepeatMode();
+    this.shuffle = svc.getShuffle();
   }
 
   onVideoSize(width: number, height: number): void {
@@ -461,19 +472,6 @@ class VideoPlayerViewModel implements PlaybackListener {
     if (this.xcomponentId.length > 0) {
       await svc.bindAndPlay(this.xcomponentId, this.uri, this.title, VLC_OSD_XCOMPONENT_ID);
       this.setVideoRatioMode(this.videoRatioMode);
-    }
-    // ISO:延迟重新加载章节
-    if (this.isIsoFile) {
-      await new Promise<void>((r: () => void) => setTimeout(r, 500));
-      this.isoChapters = svc.getChapters();
-      if (this.isoChapters.length > 0) {
-        let total = 0;
-        for (const ch of this.isoChapters) {
-          total += ch.duration;
-        }
-        this.duration = total;
-        this.isoChapterIdx = svc.getChapterIdx();
-      }
     }
   }
 
@@ -688,7 +686,7 @@ export struct VideoPlayerPage {
   /** 更多选项/二级弹窗的 sheet 状态。sheetKind 空串=主选项列表;否则=对应二级弹窗。 */
   @Local sheetOpen: boolean = false;
   @Local sheetKind: string =
-    ''; // '' | 'jump' | 'sleep' | 'chapter' | 'tracks' | 'renderer' | 'speed' | 'controls' | 'audioEffects' | 'videoInfo' | 'savePlaylist' | 'audioSubInfo' | 'downloadSubtitle'
+    ''; // '' | 'jump' | 'sleep' | 'chapter' | 'tracks' | 'renderer' | 'speed' | 'controls' | 'audioEffects' | 'videoInfo' | 'savePlaylist' | 'audioSubInfo' | 'downloadSubtitle' | 'queue'
   /**
    * 当前字幕延迟(微秒)。libvlc 没有 get_spu_delay 桥接;
    * 权威源在 PlaybackService.spuidDelayUs,这里仅镜像用于面板绑定显示。
@@ -703,6 +701,7 @@ export struct VideoPlayerPage {
   /** 当前视频的书签列表（每次变更自动持久化）。 */
   @Local bookmarks: BookMark[] = [];
   @Local advancedOptionsOpen: boolean = false;
+  @Local modeMenuOpen: boolean = false;
   /** VideoInfo 用的轨道元数据(由 refreshVideoInfoTracks 刷新)。 */
   @Local videoCodecName: string = '';
   @Local audioCodecName: string = '';
@@ -1352,7 +1351,7 @@ export struct VideoPlayerPage {
       // A-B 循环等待设 B 时也保持可见:用户需要看到「设置 B」按钮。
       const waitingAbB: boolean = this.vm.abPointA >= 0 && !this.vm.abActive;
       if (this.vm.state === PlayState.PLAYING && !this.seeking && !this.sheetOpen &&
-        !this.advancedOptionsOpen && !waitingAbB) {
+        !this.advancedOptionsOpen && !this.modeMenuOpen && !waitingAbB) {
         this.vm.hudVisible = false;
       }
     }, 4000);
@@ -1574,6 +1573,8 @@ export struct VideoPlayerPage {
             })
               .width('100%')
               .height('66.66%')
+              .borderRadius(BOTTOM_SHEET_TOP_CORNERS)
+              .clip(true)
           }
           .width('100%')
           .height('100%')
@@ -1598,11 +1599,17 @@ export struct VideoPlayerPage {
     })
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .onBackPressed(() => {
+      if (this.sheetOpen && this.sheetKind === 'queue') {
+        this.closeSheet();
+        this.resetHudTimer();
+        return true;
+      }
       this.vm.leaveEarly();
       NavController.pop();
       return true;
     })
     .bindSheet(this.sheetOpen, this.playerSheet(), {
+      radius: NATIVE_BOTTOM_SHEET_RADIUS,
       height: this.sheetHeight(),
       dragBar: true,
       backgroundColor: $r('app.color.background_default'),
@@ -1677,8 +1684,6 @@ export struct VideoPlayerPage {
         .bindMenu(this.advancedOptionsOpen!!, this.advancedOptionsMenu(), {
           placement: Placement.BottomRight,
           showInSubWindow: true,
-          backgroundColor: Color.Transparent,
-          backgroundBlurStyle: BlurStyle.COMPONENT_ULTRA_THICK,
           outlineColor: Color.Transparent,
           outlineWidth: 0,
           onDisappear: () => this.runPendingAdvancedAction(),
@@ -1853,8 +1858,17 @@ export struct VideoPlayerPage {
       .padding({ left: 12, right: 12 })
       .alignItems(VerticalAlign.Center)
 
-      // 音轨和字幕、屏幕方向、播放、宽高比、高级选项。
       Row() {
+        PlayerModeButton({
+          shuffle: this.vm.shuffle,
+          repeatMode: this.vm.repeatMode,
+          iconSize: 32,
+          iconColor: Color.White,
+          onMenuVisibility: (visible: boolean) => {
+            this.modeMenuOpen = visible;
+            this.resetHudTimer();
+          },
+        })
         Repeat(buildVideoPlayerBottomActions()).each((actionRepeatItem: RepeatItem<VideoPlayerBottomAction>) => {
           Image(this.bottomActionIcon(actionRepeatItem.item))
             .width(actionRepeatItem.item.id === 'play' ? 56 : 32)
@@ -1862,19 +1876,17 @@ export struct VideoPlayerPage {
             .fillColor('#FFFFFF')
             .onClick(() => this.onBottomAction(actionRepeatItem.item.id))
         }).key((action: VideoPlayerBottomAction): string => action.id)
-        // 循环模式:0=关闭(白),1=列表循环(橙),2=单曲循环(橙 + 数字 1)
-        Image(this.vm.repeatMode === 0 ? $r('app.media.ic_repeat_audio') :
-          (this.vm.repeatMode === 2 ? $r('app.media.ic_repeat_one_audio') : $r('app.media.ic_repeat_all_audio')))
-          .width(32).height(32)
-          .fillColor(this.vm.repeatMode > 0 ? '#FF8800' : '#FFFFFF')
+        Button({ type: ButtonType.Normal }) {
+          Image($r('app.media.ic_player_playqueue')).width(32).height(32).fillColor(Color.White)
+        }
+          .width(40).height(40)
+          .padding(0)
+          .backgroundColor(Color.Transparent)
+          .accessibilityText($r('app.string.player_queue'))
+          .enabled(this.vm.queueReady)
           .onClick(() => {
-            const svc = PlaybackService.getInstance();
-            svc.cycleRepeat();
-            this.vm.repeatMode = svc.getRepeatMode();
-            UiFeedback.showToast({
-              message: this.vm.repeatMode === 2 ? $r('app.string.repeat_one_enabled') :
-                (this.vm.repeatMode === 1 ? $r('app.string.repeat_all_enabled') : $r('app.string.repeat_disabled'))
-            });
+            this.openSub('queue');
+            this.resetHudTimer();
           })
       }
       .width('100%')
@@ -1975,6 +1987,8 @@ export struct VideoPlayerPage {
     Column() {
       if (this.sheetKind === '') {
         this.optionsList()
+      } else if (this.sheetKind === 'queue') {
+        PlayerQueuePanel()
       } else if (this.sheetKind === 'jump') {
         JumpToTimeDialog({
           onClose: () => this.closeSheet(),
@@ -2092,7 +2106,6 @@ export struct VideoPlayerPage {
     .width('100%')
     .padding({ bottom: 16 })
     .backgroundColor($r('app.color.background_default'))
-    .borderRadius({ topLeft: 16, topRight: 16 })
     .alignItems(HorizontalAlign.Start)
   }
 
@@ -2119,9 +2132,6 @@ export struct VideoPlayerPage {
     const ids: PlayerAdvancedOptionId[] = [];
     if (this.vm.locked) {
       ids.push('lock');
-    }
-    if (this.vm.repeatMode !== 0) {
-      ids.push('repeat');
     }
     return ids;
   }
@@ -2214,16 +2224,6 @@ export struct VideoPlayerPage {
           UiFeedback.showToast({ message: $r('app.string.ab_repeat_b_after_a') });
         }
       }
-      return;
-    }
-    if (id === 'repeat') {
-      const svc = PlaybackService.getInstance();
-      svc.cycleRepeat();
-      this.vm.repeatMode = svc.getRepeatMode();
-      UiFeedback.showToast({
-        message: this.vm.repeatMode === 2 ? $r('app.string.repeat_one_enabled') :
-          (this.vm.repeatMode === 1 ? $r('app.string.repeat_all_enabled') : $r('app.string.repeat_disabled'))
-      });
       return;
     }
     UiFeedback.showToast({ message: $r('app.string.feature_not_implemented') });

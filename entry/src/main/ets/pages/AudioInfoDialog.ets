@@ -30,7 +30,6 @@ export struct AudioInfoDialog {
   // ── 视觉常量(与 PlaybackSpeedDialog / VideoInfoDialog 对齐) ──────────
   readonly cPanelBg: Resource = $r('app.color.background_default');
   readonly cHeaderBg: Resource = $r('app.color.background_default');
-  readonly cDivider: Resource = $r('app.color.divider');
   readonly cDim: Resource = $r('app.color.list_subtitle');
   readonly cSubtle: Resource = $r('app.color.font_light');
   readonly cAccent: string = '#FF8800';
@@ -160,11 +159,6 @@ export struct AudioInfoDialog {
       .scrollBar(BarState.Off)
       .align(Alignment.TopStart)
 
-      // 底部分隔(视觉封闭)
-      Row()
-        .width('100%')
-        .height(0.5)
-        .backgroundColor(this.cDivider)
     }
     .width('100%')
     .height('100%')

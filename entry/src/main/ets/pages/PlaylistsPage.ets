@@ -1,3 +1,4 @@
+import { NATIVE_BOTTOM_SHEET_RADIUS } from '../common/constants/BottomSheetStyle';
 import { UiFeedback } from '../common/utils/UiFeedback';
 import { NavController } from '../common/data/NavController';
 import { MediaLibrary } from '../common/data/MediaLibrary';
@@ -354,6 +355,7 @@ export struct PlaylistsPage {
     .backgroundColor($r('app.color.background_default'))
     // 唯一的 bindSheet,内部按 sheetMode 切换内容
     .bindSheet(this.showSheet, this.unifiedSheet(), {
+      radius: NATIVE_BOTTOM_SHEET_RADIUS,
       height: SheetSize.FIT_CONTENT, dragBar: true,
       backgroundColor: $r('app.color.bottom_sheet_background'),
       onDisappear: () => {
@@ -430,8 +432,6 @@ export struct PlaylistsPage {
       }
       .width('100%').padding(16).alignItems(VerticalAlign.Center)
 
-      Divider().strokeWidth(0.5).color($r('app.color.divider'))
-
       // 播放全部
       Row() {
         Image($r('app.media.ic_play_player'))
@@ -494,7 +494,6 @@ export struct PlaylistsPage {
       Blank().height(24)
     }
     .width('100%').backgroundColor($r('app.color.bottom_sheet_background'))
-    .borderRadius({ topLeft: 16, topRight: 16 })
   }
 
   /** 持有 emitter 回调引用,aboutToDisappear 时按引用解绑。 */

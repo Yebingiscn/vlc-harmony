@@ -1,3 +1,4 @@
+import { NATIVE_BOTTOM_SHEET_RADIUS } from '../common/constants/BottomSheetStyle';
 import { UiFeedback } from '../common/utils/UiFeedback';
 import {
   DividerShowType,
@@ -353,6 +354,7 @@ export struct PreferencesActivityPage {
       .backgroundColor($r('app.color.background_default'))
     }
     .bindSheet(this.historyDisableConfirmOpen, this.historyDisableSheet(), {
+      radius: NATIVE_BOTTOM_SHEET_RADIUS,
       height: SheetSize.FIT_CONTENT,
       dragBar: true,
       onDisappear: () => this.cancelHistoryDisableSheet(),

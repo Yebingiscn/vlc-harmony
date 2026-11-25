@@ -1,8 +1,8 @@
 import { NavController } from '../common/data/NavController';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
+import { HistoryPlayback } from '../common/data/HistoryPlayback';
 import { Settings } from '../common/data/Settings';
-import { formatDuration, VideoNavParam } from '../common/models/MediaModels';
-import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
+import { formatDuration } from '../common/models/MediaModels';
 import { PlaybackHistoryEntry } from '../common/models/PlaybackHistoryModels';
 import { historyPreview } from '../common/models/MoreHomeModels';
 import { ParentalControlAction, ParentalControlParam } from './ParentalControlPage';
@@ -30,8 +30,6 @@ export struct MorePage {
       this.removeSettingsListener();
       this.removeSettingsListener = null;
     }
-    this.vm.history = historyPreview(await PlaybackHistory.load());
-    this.showVideoThumbnails = await Settings.getBoolean(Settings.SHOW_VIDEO_THUMBNAILS, true);
     this.removeHistoryListener = PlaybackHistory.subscribe((entries: PlaybackHistoryEntry[]) => {
       this.vm.history = historyPreview(entries);
     });
@@ -40,6 +38,8 @@ export struct MorePage {
         this.showVideoThumbnails = Settings.showVideoThumbs;
       }
     });
+    this.vm.history = historyPreview(await PlaybackHistory.load());
+    this.showVideoThumbnails = await Settings.getBoolean(Settings.SHOW_VIDEO_THUMBNAILS, true);
   }
 
   aboutToDisappear(): void {
@@ -144,7 +144,7 @@ export struct MorePage {
     if (this.vm.history.length === 0) {
       Row() {
         Column() {
-          Text('暂无播放历史')
+          Text($r('app.string.playback_history_empty'))
             .fontSize(14).fontColor($r('app.color.list_subtitle'))
         }
         .width('100%')
@@ -227,16 +227,6 @@ export struct MorePage {
   }
 
   private playHistoryItem(item: PlaybackHistoryEntry): void {
-    const lower = item.uri.toLowerCase();
-    const audioExts = ['.mp3', '.flac', '.ogg', '.wav', '.aac', '.m4a', '.wma', '.opus'];
-    const isAudio = audioExts.some(e => lower.endsWith(e));
-    if (isAudio) {
-      const qi = new QueueItem(0, item.title, item.uri, item.artistName, item.albumName, item.artworkUrl);
-      PlaybackService.playList([qi], 0, true);
-      NavController.push('AudioPlayer');
-    } else {
-      const param: VideoNavParam = { uri: item.uri, title: item.title, artworkUrl: item.artworkUrl };
-      NavController.push('VideoPlayer', param);
-    }
+    void HistoryPlayback.open(item);
   }
 }

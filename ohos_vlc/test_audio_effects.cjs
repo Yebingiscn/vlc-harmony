@@ -299,6 +299,11 @@ int main(void) {
     if (!decoder_blocks(48000, PCM_CAPACITY + 32000, 3, false)) return 15;
     if (!decoder_blocks(44100, 32944, 2, true) ||
         !decoder_blocks(48000, PCM_CAPACITY + 32000, 1, true)) return 16;
+    // 96 kHz stereo float needs 15360 bytes per render and 76800 bytes of
+    // separation lookahead. Exercise both output modes and dry fallback.
+    if (!continuous(96000, 8, 0) || !separation(96000, 8)) return 17;
+    if (!decoder_blocks(96000, 153600, 3, false) ||
+        !decoder_blocks(96000, 153600, 1, true)) return 18;
     for (int k = STARVE; k <= STALL; ++k)
         if (!rejected(k)) return 4 + k;
     start(44100, 8);
@@ -321,4 +326,4 @@ if (process.platform === 'win32') {
   cp.execFileSync(clang, [...flags, c, '-o', exe], {stdio: 'inherit'});
   cp.execFileSync(exe, [], {stdio: 'inherit'});
 }
-console.log('PASS AudioSuite: single and dual output, live stem switching, 44.1/48 kHz, and partial PCM ingestion. Reproduced 32944-byte blocks and oversized blocks; mid-block failure preserves audio order without duplication.');
+console.log('PASS AudioSuite: single and dual output, live stem switching, 44.1/48/96 kHz, and partial PCM ingestion. Reproduced 32944-byte blocks and oversized blocks; mid-block failure preserves audio order without duplication.');

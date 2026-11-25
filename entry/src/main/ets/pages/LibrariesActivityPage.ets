@@ -1,3 +1,4 @@
+import { NATIVE_BOTTOM_SHEET_RADIUS } from '../common/constants/BottomSheetStyle';
 import { UiFeedback } from '../common/utils/UiFeedback';
 import { NavController } from '../common/data/NavController';
 import { LibEntry, LicenseInfo, RawData } from '../common/data/RawData';
@@ -189,6 +190,7 @@ export struct LibrariesActivityPage {
       .height('100%')
       .backgroundColor($r('app.color.background_default'))
       .bindSheet($$this.vm.dialogVisible, this.LicenseSheet(), {
+        radius: NATIVE_BOTTOM_SHEET_RADIUS,
         height: SheetSize.LARGE,
         dragBar: true,
         backgroundColor: $r('app.color.background_default'),

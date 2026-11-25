@@ -95,7 +95,7 @@ struct TrackSection {
 
 /**
  * VideoTracksDialog —— 视频/音频/字幕轨道选择 BottomSheet(播放器黑色半透明卡)。
- * 三段(Audio / Subtitles / Video)纵向排列,段间 1vp white_transparent_10 分隔线。Video 段不显示折叠菜单。
+ * 三段(Audio / Subtitles / Video)纵向排列,段间留白。Video 段不显示折叠菜单。
  * TODO(契约): trackSelectionListener(id, TrackType) → PlaybackService 切换轨道;menuItemListener(opt)→延迟/选择字幕文件/下载字幕(由宿主决定)。
  */
 @ComponentV2
@@ -138,8 +138,7 @@ export struct VideoTracksDialog {
             this.onClose();
           },
         })
-        Divider().color($r('app.color.divider')).strokeWidth(1).width('100%')
-          .margin({ top: 8, bottom: 8 })
+        Blank().height(16)
         TrackSection({
           title: 'Subtitles',
           showMore: true,
@@ -152,8 +151,7 @@ export struct VideoTracksDialog {
             this.onClose();
           },
         })
-        Divider().color($r('app.color.divider')).strokeWidth(1).width('100%')
-          .margin({ top: 8, bottom: 8 })
+        Blank().height(16)
         TrackSection({
           title: 'Video',
           showMore: false,
@@ -174,6 +172,5 @@ export struct VideoTracksDialog {
     .layoutWeight(1)
     .scrollBar(BarState.Auto)
     .backgroundColor($r('app.color.background_default'))
-    .borderRadius({ topLeft: 16, topRight: 16 })
   }
 }

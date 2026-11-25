@@ -27,7 +27,6 @@ export struct MrlPanelPage {
       }
       .width('100%').height(52).padding({ left: 16, right: 12 }).alignItems(VerticalAlign.Center)
 
-      Divider().color($r('app.color.divider')).strokeWidth(1)
       Text('刷新')
         .fontSize(16)
         .fontColor($r('app.color.list_title'))

@@ -74,6 +74,5 @@ export struct RenameDialog {
     }
     .width('100%')
     .backgroundColor($r('app.color.bottom_sheet_background'))
-    .borderRadius({ topLeft: 16, topRight: 16 })
   }
 }

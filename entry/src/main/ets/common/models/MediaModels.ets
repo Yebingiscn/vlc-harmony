@@ -148,6 +148,7 @@ export class Track extends MediaLibraryItem {
   length: number = 0;
   artistName: string = '';
   albumName: string = '';
+  albumArtistName?: string;
   genre: string = '';
   trackNumber: number = 0;
   year: string = '';

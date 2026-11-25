@@ -3,6 +3,7 @@ import { MediaLibrary } from './MediaLibrary';
 import { MediaWrapper, Track } from '../models/MediaModels';
 import {
   PlaybackHistoryEntry,
+  PlaybackHistoryKind,
   prependPlaybackHistory,
   shouldRecordPlaybackHistory,
 } from '../models/PlaybackHistoryModels';
@@ -15,6 +16,7 @@ interface PersistedPlaybackHistoryEntry {
   playedAt: number;
   artistName?: string;
   albumName?: string;
+  kind?: PlaybackHistoryKind;
 }
 
 const AUDIO_EXTENSIONS: string[] = ['.mp3', '.flac', '.ogg', '.wav', '.aac', '.m4a', '.wma', '.opus'];
@@ -22,7 +24,7 @@ const AUDIO_EXTENSIONS: string[] = ['.mp3', '.flac', '.ogg', '.wav', '.aac', '.m
 type PlaybackHistoryListener = (entries: PlaybackHistoryEntry[]) => void;
 
 /**
- * 独立于媒体库的视频播放历史：负责持久化、进程内通知和无痕保护。
+ * 音视频共用的播放历史：负责持久化、进程内通知和无痕保护。
  */
 export class PlaybackHistory {
   private static readonly MAX_ENTRIES: number = 50;
@@ -52,6 +54,7 @@ export class PlaybackHistory {
     artworkUrl: string = '',
     artistName: string = '',
     albumName: string = '',
+    kind: PlaybackHistoryKind = 'unknown',
   ): Promise<void> {
     await PlaybackHistory.ensureLoaded();
     const historyEnabled = await Settings.getBoolean(Settings.ENABLE_PLAYBACK_HISTORY, true);
@@ -71,6 +74,7 @@ export class PlaybackHistory {
       Date.now(),
       artistName,
       albumName,
+      kind,
     );
     PlaybackHistory.entries = prependPlaybackHistory(PlaybackHistory.entries, entry, PlaybackHistory.MAX_ENTRIES);
     await PlaybackHistory.persist();
@@ -142,6 +146,7 @@ export class PlaybackHistory {
                 typeof item.playedAt === 'number' ? item.playedAt : 0,
                 typeof item.artistName === 'string' ? item.artistName : '',
                 typeof item.albumName === 'string' ? item.albumName : '',
+                item.kind === 'audio' || item.kind === 'video' ? item.kind : 'unknown',
               ));
             }
           }
@@ -166,7 +171,7 @@ export class PlaybackHistory {
     const hasMissingArtwork: boolean = PlaybackHistory.entries.some((entry: PlaybackHistoryEntry) =>
     entry.artworkUrl.length === 0);
     const hasMissingAudioMetadata: boolean = PlaybackHistory.entries.some((entry: PlaybackHistoryEntry) =>
-    PlaybackHistory.isAudioUri(entry.uri) && (entry.artistName.length === 0 || entry.albumName.length === 0));
+      PlaybackHistory.isAudio(entry) && (entry.artistName.length === 0 || entry.albumName.length === 0));
     if (!hasMissingArtwork && !hasMissingAudioMetadata) {
       return;
     }
@@ -218,8 +223,29 @@ export class PlaybackHistory {
     return video && video.artworkUrl.length > 0 ? video.artworkUrl : '';
   }
 
-  private static isAudioUri(uri: string): boolean {
-    const lower: string = uri.toLowerCase();
+  static isAudio(entry: PlaybackHistoryEntry): boolean {
+    if (entry.kind !== 'unknown') {
+      return entry.kind === 'audio';
+    }
+    // 旧记录没有类型；文件选择器返回的 URI 也不一定包含文件名。
+    if (MediaLibrary.getAudios().some((item: Track) => item.uri === entry.uri)) {
+      return true;
+    }
+    if (MediaLibrary.getVideos().some((item: MediaWrapper) => item.uri === entry.uri)) {
+      return false;
+    }
+    let path: string = entry.uri.split(/[?#]/)[0];
+    try {
+      path = decodeURIComponent(path);
+    } catch (error) {
+      // 老记录可能包含未转义的百分号，仍然尝试按后缀识别。
+    }
+    return entry.artistName.length > 0 || entry.albumName.length > 0 ||
+      PlaybackHistory.hasAudioExtension(path) || PlaybackHistory.hasAudioExtension(entry.title);
+  }
+
+  private static hasAudioExtension(value: string): boolean {
+    const lower: string = value.trim().toLowerCase();
     return AUDIO_EXTENSIONS.some((extension: string) => lower.endsWith(extension));
   }
 
@@ -232,6 +258,7 @@ export class PlaybackHistory {
       item.playedAt,
       item.artistName,
       item.albumName,
+      item.kind,
     ));
   }
 

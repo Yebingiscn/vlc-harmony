@@ -1,5 +1,7 @@
+import { NATIVE_BOTTOM_SHEET_RADIUS } from '../common/constants/BottomSheetStyle';
 import { UiFeedback } from '../common/utils/UiFeedback';
 import { MediaLibrary } from '../common/data/MediaLibrary';
+import { audioAlbumArtist, audioAlbumKey, audioTag, audioTagKey } from '../common/data/AudioLibraryIdentity';
 import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
 import { AudioPlayerRoute, NavController } from '../common/data/NavController';
 import { EmptyStateView } from '../common/components/EmptyStateView';
@@ -8,25 +10,29 @@ import { Settings } from '../common/data/Settings';
 import { picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { CapsuleSegmentButtonV2, ColorMetrics, SegmentButtonV2ItemOptions, SegmentButtonV2Items } from '@kit.ArkUI';
 import { pinyin4js } from '@ohos/pinyin4js';
 import { AppColors, AppDimens } from '../common/constants/AppConstants';
 
 const TAG = 'VLC-Audio';
+const TRACKS_TAB: number = 2;
+const AUDIO_MORE_BUTTON_SIZE: number = 40;
+const AUDIO_COVER_MORE_INSET: number = 4;
 
 // ---- 网格卡片数据 ----
 
 class AlbumCard {
+  key: string;
   name: string;
   artist: string;
   trackCount: number;
   artwork: string;
   tracks: Track[];
 
-  constructor(name: string, artist: string, trackCount: number, artwork: string, tracks: Track[]) {
+  constructor(key: string, name: string, artist: string, artwork: string, tracks: Track[]) {
+    this.key = key;
     this.name = name;
     this.artist = artist;
-    this.trackCount = trackCount;
+    this.trackCount = tracks.length;
     this.artwork = artwork;
     this.tracks = tracks;
   }
@@ -35,17 +41,38 @@ class AlbumCard {
 class AlbumMapEntry {
   name: string = '';
   artist: string = '';
-  count: number = 0;
   art: string = '';
   tracks: Track[] = [];
+}
+
+class AlbumPlaybackRequest {
+  track: Track;
+  tracks: Track[];
+  artistSourceId: string;
+
+  constructor(track: Track, tracks: Track[], artistSourceId: string) {
+    this.track = track;
+    this.tracks = tracks;
+    this.artistSourceId = artistSourceId;
+  }
+}
+
+class ArtistGroup {
+  key: string;
+  name: string;
+  albums: AlbumCard[] = [];
+
+  constructor(key: string, name: string) {
+    this.key = key;
+    this.name = name;
+  }
 }
 
 // ---- ViewModel ----
 
 @ObservedV2
-class AudioBrowserVM {
-  @Trace artistNames: string[] = [];
-  @Trace artistAlbums: AlbumCard[][] = []; // 每个歌手下的专辑列表
+export class AudioBrowserVM {
+  @Trace artistGroups: ArtistGroup[] = [];
   @Trace albums: AlbumCard[] = [];
   @Trace tracks: Track[] = [];
   @Trace genres: Track[][] = [];
@@ -146,20 +173,53 @@ class AudioBrowserVM {
     this.loading = false;
   }
 
+  private addAlbum(index: Map<string, AlbumMapEntry>, key: string, track: Track): void {
+    let album = index.get(key);
+    if (album === undefined) {
+      album = new AlbumMapEntry();
+      album.name = audioTag(track.albumName) || '未知专辑';
+      album.artist = audioAlbumArtist(track) || '未知艺术家';
+      index.set(key, album);
+    }
+    album.tracks.push(track);
+    if (album.art.length === 0 && track.artworkPath.length > 0) {
+      album.art = track.artworkPath;
+    }
+  }
+
+  private albumCards(index: Map<string, AlbumMapEntry>): AlbumCard[] {
+    return Array.from(index.entries())
+      .sort((a, b) => this.compareNames(a[1].name, b[1].name) || this.compareNames(a[1].artist, b[1].artist))
+      .map(e => new AlbumCard(e[0], e[1].name, e[1].artist, e[1].art, this.sortAlbumTracks(e[1].tracks)));
+  }
+
+  private sortAlbumTracks(tracks: Track[]): Track[] {
+    return tracks.slice().sort((a, b) => this.compareNames(a.title, b.title) ||
+      (a.uri < b.uri ? -1 : a.uri > b.uri ? 1 : 0));
+  }
+
+  albumDetails(card: AlbumCard): AlbumCard {
+    const tracks = MediaLibrary.getAudios().filter((track: Track) => audioAlbumKey(track) === card.key);
+    return new AlbumCard(card.key, card.name, card.artist, card.artwork,
+      this.sortAlbumTracks(tracks.length > 0 ? tracks : card.tracks));
+  }
+
   syncData(forceRebuild: boolean = false): void {
     const raw = MediaLibrary.getAudios();
-    const trimmed = this.searchQuery.trim().toLowerCase();
+    const trimmed = audioTagKey(this.searchQuery);
     // 当前 Tab 内搜索:按标题/艺术家/专辑/流派过滤,四个子 Tab 共用过滤后的结果集
     let all = trimmed.length > 0
       ? raw.filter((t: Track) =>
-      t.title.toLowerCase().includes(trimmed) ||
-        t.artistName.toLowerCase().includes(trimmed) ||
-        t.albumName.toLowerCase().includes(trimmed) ||
+      audioTagKey(t.title).includes(trimmed) ||
+        audioTagKey(t.artistName).includes(trimmed) ||
+        audioTagKey(t.albumName).includes(trimmed) ||
+        audioTagKey(audioAlbumArtist(t)).includes(trimmed) ||
         t.genre.toLowerCase().includes(trimmed))
       : raw;
     // 仅显示收藏:按专辑键过滤,四个子 Tab 共用过滤后的结果集
     if (this.onlyFavs) {
-      all = all.filter((t: Track) => MediaLibrary.isMediaFav(MediaLibrary.albumFavKey(t.albumName, t.artistName)));
+      const favorites = MediaLibrary.getFavoriteAudioAlbumKeys();
+      all = all.filter((t: Track) => favorites.has(audioAlbumKey(t)));
     }
     hilog.info(0x0001, TAG, 'syncData: total tracks=%{public}d', all.length);
     for (let i = 0; i < all.length; i++) {
@@ -173,57 +233,26 @@ class AudioBrowserVM {
       return titleResult !== 0 ? titleResult : this.compareNames(a.artistName, b.artistName);
     });
 
-    // 艺术家分组:每个歌手 → 专辑列表。
-    const artistMap = new Map<string, Map<string, Track[]>>();
-    for (const t of all) {
-      const aKey = t.artistName.length > 0 ? t.artistName : '未知艺术家';
-      const alKey = t.albumName.length > 0 ? t.albumName : '未知专辑';
-      if (!artistMap.has(aKey)) {
-        artistMap.set(aKey, new Map());
-      }
-      const albumMap2 = artistMap.get(aKey)!;
-      if (!albumMap2.has(alKey)) {
-        albumMap2.set(alKey, []);
-      }
-      albumMap2.get(alKey)!.push(t);
-    }
-    this.artistNames = Array.from(artistMap.keys()).sort((a, b) => this.compareNames(a, b));
-    hilog.info(0x0001, TAG, 'artists: %{public}s', this.artistNames.join(', '));
-    this.artistAlbums = this.artistNames.map(name => {
-      const alMap = artistMap.get(name)!;
-      return Array.from(alMap.entries()).sort((a, b) => this.compareNames(a[0], b[0])).map((e) => {
-        const tracks = e[1].slice().sort((a, b) => this.compareNames(a.title, b.title));
-        const art = tracks.find(x => x.artworkPath.length > 0);
-        return new AlbumCard(e[0], name, tracks.length, art ? art.artworkPath : '', tracks);
-      });
-    });
-
-    // 专辑卡片
+    // Store each heading with its albums so virtual reuse never reads an old index.
+    const artistMap = new Map<string, ArtistGroup>();
+    const artistAlbums = new Map<string, Map<string, AlbumMapEntry>>();
     const albumMap = new Map<string, AlbumMapEntry>();
     for (const t of all) {
-      const key = t.albumName.length > 0 ? t.albumName : '未知专辑';
-      const compositeKey = `${key}|${t.artistName}`;
-      if (!albumMap.has(compositeKey)) {
-        const ae = new AlbumMapEntry();
-        ae.name = key;
-        ae.artist = t.artistName.length > 0 ? t.artistName : '未知艺术家';
-        ae.art = t.artworkPath;
-        albumMap.set(compositeKey, ae);
+      const aKey = audioTagKey(t.artistName);
+      const alKey = audioAlbumKey(t);
+      if (!artistMap.has(aKey)) {
+        artistMap.set(aKey, new ArtistGroup(aKey, audioTag(t.artistName) || '未知艺术家'));
+        artistAlbums.set(aKey, new Map<string, AlbumMapEntry>());
       }
-      const alEntry = albumMap.get(compositeKey)!;
-      alEntry.count++;
-      alEntry.tracks.push(t);
-      if (alEntry.art.length === 0 && t.artworkPath.length > 0) {
-        alEntry.art = t.artworkPath;
-      }
+      this.addAlbum(artistAlbums.get(aKey)!, alKey, t);
+      this.addAlbum(albumMap, alKey, t);
     }
-    this.albums = Array.from(albumMap.values())
-      .sort((a, b) => {
-        const albumResult = this.compareNames(a.name, b.name);
-        return albumResult !== 0 ? albumResult : this.compareNames(a.artist, b.artist);
-      })
-      .map(e => new AlbumCard(e.name, e.artist, e.count, e.art,
-        e.tracks.slice().sort((a, b) => this.compareNames(a.title, b.title))));
+    const groups = Array.from(artistMap.values()).sort((a, b) => this.compareNames(a.name, b.name));
+    for (const group of groups) {
+      group.albums = this.albumCards(artistAlbums.get(group.key)!);
+    }
+    this.artistGroups = groups;
+    this.albums = this.albumCards(albumMap);
 
     // 流派分组
     const genreMap = new Map<string, Track[]>();
@@ -274,23 +303,19 @@ class AudioBrowserVM {
 
 @ComponentV2
 export struct AudioBrowserPage {
-  @Local vm: AudioBrowserVM = new AudioBrowserVM();
+  @Param @Require vm: AudioBrowserVM = new AudioBrowserVM();
+  @Param @Require controller: TabsController = new TabsController();
   @Local refreshing: boolean = false;
   @Local sheetAlbum: AlbumCard | null = null;
   @Local showSheet: boolean = false;
   @Local sheetAlbumFav: boolean = false;
-  @Local segmentItems: SegmentButtonV2Items = new SegmentButtonV2Items([
-    { text: $r('app.string.artists') } as SegmentButtonV2ItemOptions,
-    { text: $r('app.string.albums') } as SegmentButtonV2ItemOptions,
-    { text: $r('app.string.tracks') } as SegmentButtonV2ItemOptions,
-    { text: $r('app.string.genres') } as SegmentButtonV2ItemOptions
-  ]);
-  @Local segmentSelectedBackgroundColor: ColorMetrics | undefined = undefined;
-  @Local segmentSelectedFontColor: ColorMetrics | undefined = undefined;
+  @Local showAlbumTracks: boolean = false;
+  @Local duplicateAlbumTitles: Set<string> = new Set<string>();
   @Local importActive: boolean = false;
   @Local importCurrent: number = 0;
   @Local importTotal: number = 0;
   @Local fabBottom: number = AppDimens.floating_content_bottom_inset;
+  @Local selectedTrackUris: string[] = [];
   @Param settingsVersion: number = 0;
   @Param searchMode: boolean = false;
   @Param searchQuery: string = '';
@@ -306,26 +331,28 @@ export struct AudioBrowserPage {
   @Param goToArtistName: string = '';
   /** "转到艺人"请求版本号:自增保证同名艺人连续定位也触发 @Monitor。 */
   @Param goToArtistVersion: number = 0;
-  private controller: TabsController = new TabsController();
+  @Param selectionActionVersion: number = 0;
+  @Param selectionActionType: string = '';
   /** 防止播放器首次初始化期间连续点击同一专辑，重复压入 AudioPlayer 页面。 */
   private audioPlayerOpening: boolean = false;
+  private removingTrack: boolean = false;
+  private albumSheetArtistId: string = '';
+  private pendingAlbumPlayback: AlbumPlaybackRequest | null = null;
   @Event onSearchGlobal: () => void = () => {
   };
+  @Event onSelectionChange: (active: boolean, count: number, allSelected: boolean) => void =
+    (_active: boolean, _count: number, _allSelected: boolean): void => {};
 
   aboutToAppear(): void {
     // 从播放器返回后允许再次进入；成功 push 后则一直保持锁定到页面重新显示。
     this.audioPlayerOpening = false;
-    try {
-      this.segmentSelectedBackgroundColor = ColorMetrics.resourceColor($r('app.color.orange500'));
-      this.segmentSelectedFontColor = ColorMetrics.resourceColor($r('app.color.colorOnPrimary'));
-    } catch (_error) {
-    }
     this.vm.load();
   }
 
   @Monitor('settingsVersion')
-  onSettingsVersionChange(): void {
-    this.vm.reloadSettings();
+  async onSettingsVersionChange(): Promise<void> {
+    await this.vm.reloadSettings();
+    this.pruneTrackSelection();
   }
 
   /** 收到 MainPage "转到艺人"派发:切到"艺术家"子 Tab 并滚动到对应歌手分组。 */
@@ -335,10 +362,11 @@ export struct AudioBrowserPage {
     if (artist.length === 0) {
       return;
     }
+    this.exitTrackSelection();
     this.vm.saveTab(0);
     this.controller.changeIndex(0);
-    // artistNames 下标 = ListItemGroup 下标;等 Tab 切换动画 + 列表渲染后再滚动。
-    const idx = this.vm.artistNames.indexOf(artist);
+    const artistKey = audioTagKey(artist);
+    const idx = this.vm.artistGroups.findIndex((group: ArtistGroup) => group.key === artistKey);
     if (idx >= 0) {
       setTimeout(() => {
         this.artistScroller.scrollToIndex(idx, true);
@@ -347,14 +375,20 @@ export struct AudioBrowserPage {
   }
 
   async doRefresh(): Promise<void> {
+    if (this.hasTrackSelection()) {
+      this.refreshing = false;
+      return;
+    }
     this.refreshing = true;
     await this.vm.reload();
+    this.pruneTrackSelection();
     this.refreshing = false;
   }
 
   @Monitor('searchQuery')
   onSearchQueryChange(): void {
     this.vm.applySearch(this.searchQuery);
+    this.pruneTrackSelection();
   }
 
   async pickAudioFiles(): Promise<void> {
@@ -376,24 +410,139 @@ export struct AudioBrowserPage {
         });
         this.importActive = false;
         this.vm.syncData(true);
+        this.pruneTrackSelection();
       }
     } catch (e) {
       this.importActive = false;
     }
   }
 
-  private artistHeaderId(artist: string): string {
-    return `audio-artist-header:${encodeURIComponent(artist)}`;
+  private hasTrackSelection(): boolean {
+    return this.selectedTrackUris.length > 0;
+  }
+
+  private setTrackSelection(uris: string[]): void {
+    this.selectedTrackUris = uris;
+    this.onSelectionChange(uris.length > 0, uris.length, uris.length > 0 && uris.length === this.vm.tracks.length);
+  }
+
+  private exitTrackSelection(): void {
+    if (this.hasTrackSelection()) {
+      this.setTrackSelection([]);
+    }
+  }
+
+  private pruneTrackSelection(): void {
+    if (!this.hasTrackSelection()) {
+      return;
+    }
+    const visible = new Set<string>(this.vm.tracks.map((track: Track) => track.uri));
+    this.setTrackSelection(this.selectedTrackUris.filter((uri: string) => visible.has(uri)));
+  }
+
+  private toggleTrackSelection(uri: string): void {
+    if (this.removingTrack || this.vm.tabIndex !== TRACKS_TAB) {
+      return;
+    }
+    this.setTrackSelection(this.selectedTrackUris.includes(uri)
+      ? this.selectedTrackUris.filter((item: string) => item !== uri)
+      : this.selectedTrackUris.concat([uri]));
+  }
+
+  private changeAudioTab(index: number): void {
+    if (index !== TRACKS_TAB) {
+      this.exitTrackSelection();
+    }
+    this.vm.saveTab(index);
+  }
+
+  private activateTrack(track: Track, queue: Track[], scope: string): void {
+    if (this.removingTrack) {
+      return;
+    }
+    if (this.vm.tabIndex === TRACKS_TAB && this.hasTrackSelection()) {
+      this.toggleTrackSelection(track.uri);
+    } else {
+      this.playTrack(track, queue, AudioPlayerRoute.trackPrefix(scope, track.uri));
+    }
+  }
+
+  @Monitor('selectionActionVersion')
+  onSelectionAction(): void {
+    const action = this.selectionActionType;
+    if (action === 'exit') {
+      this.exitTrackSelection();
+      return;
+    }
+    if (this.removingTrack || this.vm.tabIndex !== TRACKS_TAB || !this.hasTrackSelection()) {
+      return;
+    }
+    this.pruneTrackSelection();
+    if (!this.hasTrackSelection()) {
+      return;
+    }
+    if (action === 'all') {
+      this.setTrackSelection(this.selectedTrackUris.length === this.vm.tracks.length
+        ? [] : this.vm.tracks.map((track: Track) => track.uri));
+    } else if (action === 'play') {
+      const selected = new Set<string>(this.selectedTrackUris);
+      const tracks = this.vm.tracks.filter((track: Track) => selected.has(track.uri));
+      this.exitTrackSelection();
+      this.playAll(tracks);
+    } else if (action === 'delete') {
+      const uris = this.selectedTrackUris.slice();
+      void this.confirmRemoveTracks(uris, $r('app.string.audio_remove_batch_confirm', uris.length), true);
+    }
+  }
+
+  private confirmRemoveTrack(track: Track): Promise<void> {
+    return this.confirmRemoveTracks([track.uri], $r('app.string.audio_remove_confirm', track.title), false);
+  }
+
+  private async confirmRemoveTracks(uris: string[], message: Resource, fromSelection: boolean): Promise<void> {
+    if (this.removingTrack || uris.length === 0) {
+      return;
+    }
+    this.removingTrack = true;
+    try {
+      const result = await this.getUIContext().getPromptAction().showDialog({
+        title: $r('app.string.audio_remove_from_library'),
+        message: message,
+        buttons: [
+          { text: $r('app.string.cancel'), color: $r('app.color.list_title') },
+          { text: $r('app.string.audio_remove_action'), color: $r('app.color.colorAccent') }
+        ]
+      }).catch(() => undefined);
+      if (result?.index !== 1) {
+        return;
+      }
+      const removed = await MediaLibrary.removeAudiosFromLibrary(uris);
+      if (removed > 0) {
+        this.vm.syncData(true);
+        this.exitTrackSelection();
+        UiFeedback.showToast({
+          message: fromSelection ? $r('app.string.audio_remove_batch_success', removed) : $r('app.string.audio_remove_success')
+        });
+      } else {
+        UiFeedback.showToast({ message: $r('app.string.audio_remove_failed') });
+      }
+    } catch (_error) {
+      UiFeedback.showToast({ message: $r('app.string.audio_remove_failed') });
+    } finally {
+      this.removingTrack = false;
+    }
+  }
+
+  private artistHeaderId(artistKey: string): string {
+    return `audio-artist-header:${encodeURIComponent(artistKey)}`;
   }
 
   private albumArtistId(card: AlbumCard, mode: string): string {
-    return `audio-album-artist:${encodeURIComponent(mode)}:${encodeURIComponent(card.artist)}:${encodeURIComponent(card.name)}`;
+    return `audio-album-artist:${mode}:${encodeURIComponent(card.key)}`;
   }
 
-  private playAlbum(card: AlbumCard, artistSourceId: string): void {
-    if (card.tracks.length > 0) {
-      this.playTrack(card.tracks[0], card.tracks, '', artistSourceId);
-    }
+  private artistAlbumSourceId(card: AlbumCard): string {
+    return this.artistHeaderId(audioTagKey(card.tracks[0]?.artistName ?? ''));
   }
 
   playAll(tracks: Track[]): void {
@@ -434,11 +583,54 @@ export struct AudioBrowserPage {
     }, 800);
   }
 
-  /** 打开专辑操作半模态,并按当前收藏状态初始化图标/文案。 */
-  openAlbumSheet(card: AlbumCard): void {
-    this.sheetAlbum = card;
-    this.sheetAlbumFav = MediaLibrary.isMediaFav(MediaLibrary.albumFavKey(card.name, card.artist));
+  /** 专辑卡片打开曲目明细；三点仍打开专辑操作。 */
+  openAlbumSheet(card: AlbumCard, showTracks: boolean = false, artistSourceId: string = ''): void {
+    if (this.showSheet || this.pendingAlbumPlayback !== null) {
+      return;
+    }
+    const album = this.vm.albumDetails(card);
+    this.sheetAlbum = album;
+    const seen = new Set<string>();
+    const duplicates = new Set<string>();
+    for (const track of album.tracks) {
+      const title = audioTagKey(track.title);
+      if (seen.has(title)) {
+        duplicates.add(title);
+      }
+      seen.add(title);
+    }
+    this.duplicateAlbumTitles = duplicates;
+    this.sheetAlbumFav = MediaLibrary.getFavoriteAudioAlbumKeys().has(card.key);
+    this.showAlbumTracks = showTracks;
+    this.albumSheetArtistId = artistSourceId;
     this.showSheet = true;
+  }
+
+  private queueAlbumTrack(uri: string): void {
+    const album = this.sheetAlbum;
+    if (album === null || this.pendingAlbumPlayback !== null || this.audioPlayerOpening) {
+      return;
+    }
+    const track = album.tracks.find((item: Track) => item.uri === uri);
+    if (track === undefined) {
+      return;
+    }
+    this.pendingAlbumPlayback = new AlbumPlaybackRequest(track, album.tracks, this.albumSheetArtistId);
+    this.showSheet = false;
+  }
+
+  private onAlbumSheetDisappear(): void {
+    const playback = this.pendingAlbumPlayback;
+    this.pendingAlbumPlayback = null;
+    this.showSheet = false;
+    this.sheetAlbum = null;
+    this.showAlbumTracks = false;
+    this.duplicateAlbumTitles = new Set<string>();
+    this.albumSheetArtistId = '';
+    if (playback !== null) {
+      // Wait until the sheet is gone so it cannot cover the player.
+      this.playTrack(playback.track, playback.tracks, '', playback.artistSourceId);
+    }
   }
 
   build() {
@@ -454,24 +646,6 @@ export struct AudioBrowserPage {
             }
             .width('100%').padding(8)
           }
-          Row() {
-            CapsuleSegmentButtonV2({
-              items: this.segmentItems,
-              selectedIndex: this.vm.tabIndex,
-              buttonBackgroundBlurStyle: BlurStyle.BACKGROUND_THICK,
-              itemSelectedFontColor: this.segmentSelectedFontColor,
-              itemSelectedBackgroundColor: this.segmentSelectedBackgroundColor,
-              onItemClicked: (index: number) => {
-                this.vm.saveTab(index);
-                this.controller.changeIndex(index);
-              }
-            })
-              .width('100%')
-          }
-          .width('100%')
-          .padding({ left: 12, right: 12 })
-          .margin({ top: 6, bottom: 6 })
-
           Tabs({ barPosition: BarPosition.Start, controller: this.controller, index: this.vm.tabIndex }) {
           // 艺术家(纵向分组列表:歌手名 → 曲目)
           TabContent() {
@@ -479,7 +653,7 @@ export struct AudioBrowserPage {
               if (this.searchMode) {
                 this.searchGlobalButton()
               }
-              if (this.vm.artistNames.length === 0) {
+              if (this.vm.artistGroups.length === 0) {
                 EmptyStateView(
                   { state: this.vm.emptyState, filterQuery: this.searchQuery, onPickFile: () => this.pickAudioFiles() })
                   .layoutWeight(1).width('100%')
@@ -510,7 +684,7 @@ export struct AudioBrowserPage {
           // 曲目
           TabContent() {
             Column() {
-              if (this.searchMode) {
+              if (this.searchMode && !this.hasTrackSelection()) {
                 this.searchGlobalButton()
               }
               if (this.vm.tracks.length === 0) {
@@ -544,27 +718,30 @@ export struct AudioBrowserPage {
           }
           }
           .barHeight(0)
-          .onChange((index: number) => this.vm.saveTab(index))
+          .onChange((index: number) => this.changeAudioTab(index))
           .layoutWeight(1)
           .width('100%')
         }
         .width('100%')
         .height('100%')
       }
+      .pullToRefresh(!this.hasTrackSelection())
       .onRefreshing(() => this.doRefresh()).refreshOffset(64)
       .backgroundColor($r('app.color.background_default'))
 
       // FAB：与内容底部避让一致，在 64vp 悬浮播放器上方保留 16vp 间距。
-      Button() {
-        Image($r('app.media.ic_add')).width(22).height(22).fillColor($r('app.color.colorOnPrimary'))
+      if (!this.hasTrackSelection()) {
+        Button() {
+          Image($r('app.media.ic_add')).width(22).height(22).fillColor($r('app.color.colorOnPrimary'))
+        }
+        .width(48)
+        .height(48)
+        .borderRadius(24)
+        .backgroundColor('#FF8800')
+        .shadow({ radius: 8, color: '#44000000', offsetY: 4 })
+        .position({ right: 16, bottom: this.fabBottom })
+        .onClick(() => this.pickAudioFiles())
       }
-      .width(48)
-      .height(48)
-      .borderRadius(24)
-      .backgroundColor('#FF8800')
-      .shadow({ radius: 8, color: '#44000000', offsetY: 4 })
-      .position({ right: 16, bottom: this.fabBottom })
-      .onClick(() => this.pickAudioFiles())
     }
     .width('100%').height('100%')
     .clip(false)
@@ -574,13 +751,11 @@ export struct AudioBrowserPage {
     })
     .backgroundColor($r('app.color.background_default'))
     .bindSheet($$this.showSheet, this.albumSheet(), {
+      radius: NATIVE_BOTTOM_SHEET_RADIUS,
       showClose: false,
       height: SheetSize.FIT_CONTENT,
       backgroundColor: $r('app.color.bottom_sheet_background'),
-      onDisappear: () => {
-        this.showSheet = false;
-        this.sheetAlbum = null;
-      },
+      onDisappear: () => this.onAlbumSheetDisappear(),
     })
   }
 
@@ -613,54 +788,45 @@ export struct AudioBrowserPage {
   @Builder
   artistList() {
     List({ space: 0, scroller: this.artistScroller }) {
-      Repeat(this.vm.artistAlbums).each((albumsRepeatItem: RepeatItem<AlbumCard[]>) => {
-        ListItemGroup({ header: this.artistHeader(albumsRepeatItem.index) }) {
+      Repeat(this.vm.artistGroups).each((group: RepeatItem<ArtistGroup>) => {
+        ListItemGroup({ header: this.artistHeader(group) }) {
           ListItem() {
             if (this.vm.displayAsList) {
               Column() {
-                Repeat(albumsRepeatItem.item).each((cardRepeatItem: RepeatItem<AlbumCard>) => {
-                  this.albumRow(cardRepeatItem.item, true)
-                }).key((card: AlbumCard) =>
-                `artist_list_${this.vm.renderVersion}_${this.vm.artistNames[albumsRepeatItem.index]}_${card.name}`)
+                Repeat(group.item.albums).each((card: RepeatItem<AlbumCard>) => {
+                  this.albumRow(card, true)
+                }).key((card: AlbumCard) => card.key)
               }
               .width('100%')
             } else {
               Grid() {
-                Repeat(albumsRepeatItem.item).each((cardRepeatItem: RepeatItem<AlbumCard>) => {
+                Repeat(group.item.albums).each((card: RepeatItem<AlbumCard>) => {
                   GridItem() {
-                    this.albumCard(cardRepeatItem.item)
+                    this.albumCard(card)
                   }
-                }).key((card: AlbumCard) =>
-                `artist_grid_${this.vm.renderVersion}_${this.vm.artistNames[albumsRepeatItem.index]}_${card.name}`)
+                }).key((card: AlbumCard) => card.key)
               }
               .columnsTemplate('1fr 1fr')
               .columnsGap(10)
               .rowsGap(10)
-              .padding({ left: 12, right: 12, bottom: 12 })
+              .padding({ left: 12, right: 12, top: 8, bottom: 8 })
               .width('100%')
             }
           }
         }
-      }).key((_: AlbumCard[], idx: number) =>
-      `artist_${this.vm.renderVersion}_${this.vm.artistNames[idx]}`).virtualScroll()
+      }).key((group: ArtistGroup) => 'artist:' + group.key).virtualScroll()
     }
-    .divider({
-      strokeWidth: 0.5,
-      color: $r('app.color.divider'),
-      startMargin: 16,
-      endMargin: 8
-    })
     .contentEndOffset(AppDimens.floating_content_bottom_inset)
     .alignListItem(ListItemAlign.Start).width('100%').height('100%')
   }
 
   @Builder
-  artistHeader(aIdx: number) {
+  artistHeader(group: RepeatItem<ArtistGroup>) {
     Row() {
-      Text(this.vm.artistNames[aIdx]).fontSize(16).fontColor($r('app.color.colorAccent')).fontWeight(FontWeight.Medium)
-        .geometryTransition(this.artistHeaderId(this.vm.artistNames[aIdx]), { follow: true })
+      Text(group.item.name).fontSize(16).fontColor($r('app.color.colorAccent')).fontWeight(FontWeight.Medium)
+        .geometryTransition(this.artistHeaderId(group.item.key), { follow: true })
         .transition(TransitionEffect.OPACITY)
-      Text(` · ${this.vm.artistAlbums[aIdx].length} 专辑`).fontSize(12).fontColor($r('app.color.list_subtitle'))
+      Text(` · ${group.item.albums.length} 专辑`).fontSize(12).fontColor($r('app.color.list_subtitle'))
     }
     .width('100%')
     .padding({
@@ -669,39 +835,45 @@ export struct AudioBrowserPage {
       top: 12,
       bottom: 6
     })
-    .backgroundColor($r('app.color.audio_header_background'))
+    .backgroundColor($r('app.color.card_background'))
   }
 
   /** 专辑方块卡片:上图(带三点) + 下文(专辑名/曲目数)。 */
   @Builder
-  albumCard(card: AlbumCard) {
+  albumCard(row: RepeatItem<AlbumCard>) {
     Column() {
       Stack({ alignContent: Alignment.TopEnd }) {
-        Image(card.artwork.length > 0 ? card.artwork : $r('app.media.ic_album_big'))
+        Image(row.item.artwork.length > 0 ? row.item.artwork : $r('app.media.ic_album_big'))
           .width('100%').aspectRatio(1).objectFit(ImageFit.Cover).borderRadius(6)
-        Image($r('app.media.ic_more'))
-          .width(20)
-          .height(20)
-          .fillColor($r('app.color.list_title'))
-          .margin(4)
-          .onClick(() => {
-            this.openAlbumSheet(card);
-          })
+        this.albumCoverActions(row)
       }
       .width('100%')
 
-      Text(card.name)
+      Text(row.item.name)
         .fontSize(14)
         .fontColor($r('app.color.list_title'))
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .margin({ top: 6 })
-      Text(`${card.trackCount} 首`).fontSize(12).fontColor($r('app.color.list_subtitle'))
+      Text(`${row.item.trackCount} 首`).fontSize(12).fontColor($r('app.color.list_subtitle'))
     }
     .width('100%')
     .onClick(() => {
-      this.playAlbum(card, this.artistHeaderId(card.artist));
+      this.openAlbumSheet(row.item, true, this.artistAlbumSourceId(row.item));
     })
+  }
+
+  @Builder
+  albumCoverActions(row: RepeatItem<AlbumCard>) {
+    Button({ type: ButtonType.Circle }) {
+      this.audioMoreIcon(true)
+    }
+    .width(AUDIO_MORE_BUTTON_SIZE)
+    .height(AUDIO_MORE_BUTTON_SIZE)
+    .backgroundColor(Color.Transparent)
+    .margin({ top: AUDIO_COVER_MORE_INSET, right: AUDIO_COVER_MORE_INSET })
+    .accessibilityText($r('app.string.audio_item_actions', row.item.name))
+    .onClick(() => this.openAlbumSheet(row.item))
   }
 
   // ---- 专辑网格 ----
@@ -711,10 +883,9 @@ export struct AudioBrowserPage {
     List({ scroller: this.albumListScroller }) {
       Repeat(this.vm.albums).each((cardRepeatItem: RepeatItem<AlbumCard>) => {
         ListItem() {
-          this.albumRow(cardRepeatItem.item, false)
+          this.albumRow(cardRepeatItem, false)
         }
-      }).key((card: AlbumCard) =>
-      `album_list_${this.vm.renderVersion}_${card.name}|${card.artist}`).virtualScroll()
+      }).key((card: AlbumCard) => card.key).virtualScroll()
     }
     .divider({
       strokeWidth: 0.5,
@@ -729,33 +900,33 @@ export struct AudioBrowserPage {
   }
 
   @Builder
-  albumRow(card: AlbumCard, fromArtist: boolean) {
+  albumRow(row: RepeatItem<AlbumCard>, fromArtist: boolean) {
     Row() {
-      Image(card.artwork.length > 0 ? card.artwork : $r('app.media.ic_album_big'))
+      Image(row.item.artwork.length > 0 ? row.item.artwork : $r('app.media.ic_album_big'))
         .width(52)
         .height(52)
         .objectFit(ImageFit.Cover)
         .borderRadius(6)
         .margin({ right: 12 })
       Column() {
-        Text(card.name)
+        Text(row.item.name)
           .fontSize(16)
           .fontColor($r('app.color.list_title'))
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Row() {
-          Text(`${card.trackCount} 首 · `)
+          Text(`${row.item.trackCount} 首 · `)
             .fontSize(13)
             .fontColor($r('app.color.list_subtitle'))
             .flexShrink(0)
-          Text(card.artist)
+          Text(row.item.artist)
             .fontSize(13)
             .fontColor($r('app.color.list_subtitle'))
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .layoutWeight(1)
             // 艺术家页复用分组标题作为唯一源，不在每张专辑重复注册同一歌手 ID。
-            .geometryTransition(fromArtist ? '' : this.albumArtistId(card, 'list'), { follow: true })
+            .geometryTransition(fromArtist ? '' : this.albumArtistId(row.item, 'list'), { follow: true })
             .transition(TransitionEffect.OPACITY)
         }
         .width('100%')
@@ -768,12 +939,13 @@ export struct AudioBrowserPage {
         .height(22)
         .fillColor($r('app.color.list_title'))
         .margin({ left: 8 })
-        .onClick(() => this.openAlbumSheet(card))
+        .onClick(() => this.openAlbumSheet(row.item))
     }
     .width('100%')
     .padding({ left: 12, right: 16, top: 8, bottom: 8 })
     .alignItems(VerticalAlign.Center)
-    .onClick(() => this.playAlbum(card, fromArtist ? this.artistHeaderId(card.artist) : this.albumArtistId(card, 'list')))
+    .onClick(() => this.openAlbumSheet(row.item, true,
+      fromArtist ? this.artistAlbumSourceId(row.item) : this.albumArtistId(row.item, 'list')))
   }
 
   @Builder
@@ -786,15 +958,7 @@ export struct AudioBrowserPage {
             Stack({ alignContent: Alignment.TopEnd }) {
               Image(cardRepeatItem.item.artwork.length > 0 ? cardRepeatItem.item.artwork : $r('app.media.ic_album_big'))
                 .width('100%').aspectRatio(1).objectFit(ImageFit.Cover).borderRadius(8)
-              // 三点菜单
-              Image($r('app.media.ic_more'))
-                .width(20)
-                .height(20)
-                .fillColor($r('app.color.list_title'))
-                .margin(4)
-                .onClick(() => {
-                  this.openAlbumSheet(cardRepeatItem.item);
-                })
+              this.albumCoverActions(cardRepeatItem)
             }
             .width('100%')
 
@@ -823,10 +987,9 @@ export struct AudioBrowserPage {
             .alignItems(VerticalAlign.Center)
           }
           .width('100%').padding(6)
-          .onClick(() => this.playAlbum(cardRepeatItem.item, this.albumArtistId(cardRepeatItem.item, 'grid')))
+          .onClick(() => this.openAlbumSheet(cardRepeatItem.item, true, this.albumArtistId(cardRepeatItem.item, 'grid')))
         }
-      }).key((card: AlbumCard) =>
-      `album_grid_${this.vm.renderVersion}_${card.name}|${card.artist}`).virtualScroll()
+      }).key((card: AlbumCard) => card.key).virtualScroll()
     }
     .columnsTemplate('1fr 1fr')
     .columnsGap(8)
@@ -878,6 +1041,23 @@ export struct AudioBrowserPage {
 
   @Builder
   trackCard(row: RepeatItem<Track>) {
+    Stack({ alignContent: Alignment.TopEnd }) {
+      this.trackCardContent(row)
+      Row() {
+        if (this.hasTrackSelection()) {
+          this.trackSelectionMark(row, true)
+        } else {
+          this.trackActions(row, true)
+        }
+      }
+      .margin({ top: AUDIO_COVER_MORE_INSET, right: AUDIO_COVER_MORE_INSET })
+    }
+    .width('100%')
+    .padding(6)
+  }
+
+  @Builder
+  trackCardContent(row: RepeatItem<Track>) {
     Column() {
       Image(row.item.artworkPath.length > 0 ? row.item.artworkPath : $r('app.media.ic_song'))
         .width('100%')
@@ -904,9 +1084,64 @@ export struct AudioBrowserPage {
         .transition(TransitionEffect.OPACITY)
     }
     .width('100%')
-    .padding(6)
     .alignItems(HorizontalAlign.Start)
-    .onClick(() => this.playTrack(row.item, this.vm.tracks, AudioPlayerRoute.trackPrefix('grid', row.item.uri)))
+    .onClick(() => this.activateTrack(row.item, this.vm.tracks, 'grid'))
+    .gesture(LongPressGesture().onAction(() => this.toggleTrackSelection(row.item.uri)))
+  }
+
+  @Builder
+  trackSelectionMark(row: RepeatItem<Track>, onCover: boolean) {
+    Button({ type: ButtonType.Circle }) {
+      Image(this.selectedTrackUris.includes(row.item.uri)
+        ? $r('app.media.ic_checkbox_true_normal') : $r('app.media.ic_checkbox_false'))
+        .width(22)
+        .height(22)
+        .fillColor(this.selectedTrackUris.includes(row.item.uri) ? $r('app.color.orange500')
+          : (onCover ? Color.White : $r('app.color.list_subtitle')))
+    }
+    .width(40)
+    .height(40)
+    .backgroundColor(onCover ? '#A6000000' : Color.Transparent)
+    .accessibilityText(this.selectedTrackUris.includes(row.item.uri)
+      ? $r('app.string.audio_unselect_track', row.item.title) : $r('app.string.audio_select_track', row.item.title))
+    .onClick(() => this.toggleTrackSelection(row.item.uri))
+  }
+
+  @Builder
+  audioMoreIcon(onCover: boolean) {
+    Image($r('app.media.ic_more'))
+      .width(20)
+      .height(20)
+      .fillColor(onCover ? Color.White : $r('app.color.list_subtitle'))
+  }
+
+  @Builder
+  trackActions(row: RepeatItem<Track>, onCover: boolean) {
+    Button({ type: ButtonType.Circle }) {
+      this.audioMoreIcon(onCover)
+    }
+    .width(AUDIO_MORE_BUTTON_SIZE)
+    .height(AUDIO_MORE_BUTTON_SIZE)
+    .backgroundColor(Color.Transparent)
+    .accessibilityText($r('app.string.audio_item_actions', row.item.title))
+    .bindMenu(this.trackMenu(row), { placement: Placement.BottomRight })
+  }
+
+  private trackMenu(row: RepeatItem<Track>): MenuElement[] {
+    const items: MenuElement[] = [];
+    if (this.vm.tabIndex === TRACKS_TAB) {
+      items.push({
+        value: $r('app.string.audio_multi_select'),
+        icon: $r('app.media.ic_checkbox_true_normal'),
+        action: () => { this.toggleTrackSelection(row.item.uri); }
+      });
+    }
+    items.push({
+      value: $r('app.string.audio_remove_from_library'),
+      icon: $r('app.media.ic_delete'),
+      action: () => { this.confirmRemoveTrack(row.item); }
+    });
+    return items;
   }
 
   // ---- 流派列表 ----
@@ -1007,6 +1242,23 @@ export struct AudioBrowserPage {
   @Builder
   trackRow(row: RepeatItem<Track>, queue: () => Track[], scope: () => string) {
     Row() {
+      this.trackRowContent(row, queue, scope)
+      if (this.vm.tabIndex === TRACKS_TAB && this.hasTrackSelection()) {
+        this.trackSelectionMark(row, false)
+      } else {
+        this.trackActions(row, false)
+      }
+    }
+    .width('100%')
+    .padding({ left: 16, right: 8, top: 6, bottom: 6 })
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor(this.vm.tabIndex === TRACKS_TAB && this.selectedTrackUris.includes(row.item.uri)
+      ? '#20FF8800' : Color.Transparent)
+  }
+
+  @Builder
+  trackRowContent(row: RepeatItem<Track>, queue: () => Track[], scope: () => string) {
+    Row() {
       Image(row.item.artworkPath.length > 0 ? row.item.artworkPath : $r('app.media.ic_song'))
         .width(36)
         .height(36)
@@ -1041,21 +1293,25 @@ export struct AudioBrowserPage {
         Text(formatDuration(row.item.length)).fontSize(11).fontColor($r('app.color.font_light')).margin({ left: 8 })
       }
     }
-    .width('100%')
-    .padding({
-      left: 16,
-      right: 16,
-      top: 6,
-      bottom: 6
-    })
+    .layoutWeight(1)
     .alignItems(VerticalAlign.Center)
-    .onClick(() => {
-      this.playTrack(row.item, queue(), AudioPlayerRoute.trackPrefix(scope(), row.item.uri));
-    })
+    .onClick(() => this.activateTrack(row.item, queue(), scope()))
+    .gesture(LongPressGesture().onAction(() => this.toggleTrackSelection(row.item.uri)))
   }
 
   @Builder
   albumSheet() {
+    Column() {
+      if (this.sheetAlbum !== null) {
+        this.albumSheetContent()
+      }
+    }
+    .width('100%')
+    .backgroundColor($r('app.color.bottom_sheet_background'))
+  }
+
+  @Builder
+  albumSheetContent() {
     Column() {
       // 头部:封面 + 专辑名 + 歌手
       Row() {
@@ -1081,8 +1337,6 @@ export struct AudioBrowserPage {
       }
       .width('100%').padding(16).alignItems(VerticalAlign.Center)
 
-      Divider().strokeWidth(0.5).color($r('app.color.divider'))
-
       // 播放全部
       Row() {
         Image($r('app.media.ic_play_player'))
@@ -1100,10 +1354,26 @@ export struct AudioBrowserPage {
         bottom: 14
       })
       .onClick(() => {
-        this.playAll(this.sheetAlbum!.tracks);
-        this.showSheet = false;
+        const first = this.sheetAlbum?.tracks[0];
+        if (first !== undefined) {
+          this.queueAlbumTrack(first.uri);
+        }
       })
 
+      if (this.showAlbumTracks) {
+        this.albumTrackList()
+      } else {
+        this.albumActions()
+      }
+
+      Blank().height(24)
+    }
+    .width('100%')
+  }
+
+  @Builder
+  albumActions() {
+    Column() {
       // 收藏 / 取消收藏
       Row() {
         Image(this.sheetAlbumFav ? $r('app.media.ic_fav_remove') : $r('app.media.ic_fav_add'))
@@ -1122,9 +1392,11 @@ export struct AudioBrowserPage {
         bottom: 14
       })
       .onClick(() => {
-        const key = MediaLibrary.albumFavKey(this.sheetAlbum!.name, this.sheetAlbum!.artist);
-        MediaLibrary.toggleMediaFav(key).then((fav: boolean) => {
-          this.sheetAlbumFav = fav;
+        const key = this.sheetAlbum!.key;
+        MediaLibrary.toggleAudioAlbumFavorite(key).then((fav: boolean) => {
+          if (this.sheetAlbum?.key === key) {
+            this.sheetAlbumFav = fav;
+          }
           UiFeedback.showToast({ message: fav ? '已收藏' : '已取消收藏' });
           this.vm.syncData();
         });
@@ -1152,11 +1424,70 @@ export struct AudioBrowserPage {
         });
       })
 
-      Divider().strokeWidth(0.5).color($r('app.color.divider'))
-      Blank().height(24)
     }
-    .width('100%').backgroundColor($r('app.color.bottom_sheet_background'))
-    .borderRadius({ topLeft: 16, topRight: 16 })
+    .width('100%')
+  }
+
+  @Builder
+  albumTrackList() {
+    Column() {
+      Text($r('app.string.audio_album_tracks_count', this.sheetAlbum!.trackCount))
+        .fontSize(13)
+        .fontColor($r('app.color.list_subtitle'))
+        .width('100%')
+        .padding({ left: 16, top: 8, bottom: 4 })
+      List() {
+        Repeat(this.sheetAlbum!.tracks).each((row: RepeatItem<Track>) => {
+          ListItem() {
+            Row({ space: 8 }) {
+              Text(String(row.index + 1))
+                .width(28)
+                .fontSize(13)
+                .fontColor($r('app.color.list_subtitle'))
+              Column({ space: 3 }) {
+                Text(row.item.title)
+                  .fontSize(15)
+                  .fontColor($r('app.color.list_title'))
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                Text(this.albumTrackSubtitle(row.item))
+                  .fontSize(12)
+                  .fontColor($r('app.color.list_subtitle'))
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+              }
+              .alignItems(HorizontalAlign.Start)
+              .layoutWeight(1)
+              if (row.item.length > 0) {
+                Text(formatDuration(row.item.length))
+                  .fontSize(12)
+                  .fontColor($r('app.color.list_subtitle'))
+              }
+            }
+            .width('100%')
+            .height(56)
+            .padding({ left: 16, right: 16 })
+            .onClick(() => this.queueAlbumTrack(row.item.uri))
+          }
+        }).key((track: Track) => track.uri).virtualScroll()
+      }
+      .width('100%')
+      .height(Math.min(280, this.sheetAlbum!.tracks.length * 56))
+    }
+    .width('100%')
+  }
+
+  private albumTrackSubtitle(track: Track): string {
+    const artist = audioTag(track.artistName);
+    if (artist.length > 0 && !this.duplicateAlbumTitles.has(audioTagKey(track.title))) {
+      return artist;
+    }
+    const rawName = this.fileNameFromUri(track.filePath || track.uri).split(/[?#]/)[0];
+    try {
+      return decodeURIComponent(rawName);
+    } catch (_error) {
+      return rawName;
+    }
   }
 
   // ---- 专辑操作半模态 ----

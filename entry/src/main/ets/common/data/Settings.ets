@@ -215,14 +215,19 @@ export class Settings {
 
   /** putSingle —— 类型分发写(对齐安卓 putSingle 扩展)。 */
   static async put(key: string, value: boolean | number | string): Promise<void> {
+    await Settings.tryPut(key, value);
+  }
+
+  /** 用于必须确认已写入磁盘后才能提交界面状态的操作。 */
+  static async tryPut(key: string, value: boolean | number | string): Promise<boolean> {
     if (!Settings.store) {
-      return;
+      return false;
     }
     try {
       await Settings.store.put(key, value);
       await Settings.store.flush();
     } catch (error) {
-      return;
+      return false;
     }
     if (key === Settings.KEY_INCOGNITO && typeof value === 'boolean') {
       Settings.incognitoMode = value;
@@ -231,6 +236,7 @@ export class Settings {
       Settings.showVideoThumbs = value;
     }
     Settings.notifyChanged(key);
+    return true;
   }
 
   /** 订阅已持久化设置的变化；返回值用于页面销毁时解除订阅。 */

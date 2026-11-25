@@ -1,4 +1,5 @@
 import { UiFeedback } from '../common/utils/UiFeedback';
+import { BOTTOM_SHEET_TOP_CORNERS, NATIVE_BOTTOM_SHEET_RADIUS } from '../common/constants/BottomSheetStyle';
 import { PlaybackService, PlaybackState } from '../common/data/PlaybackService';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
 import { AudioPlayerRoute, NavController } from '../common/data/NavController';
@@ -18,6 +19,8 @@ import { BookMark } from '../common/models/BookmarkModels';
 import { AddToPlaylistAction, AddToPlaylistDialog } from './AddToPlaylistDialog';
 import { MediaLibrary } from '../common/data/MediaLibrary';
 import { fileIo as fs } from '@kit.CoreFileKit';
+import { PlayerModeButton } from '../common/components/PlayerModeButton';
+import { PlayerQueuePanel } from '../common/components/PlayerQueuePanel';
 import {
   buildPlayerAdvancedOptions,
   PlayerAdvancedOptionId,
@@ -39,7 +42,7 @@ const AUDIO_DETAIL_TRANSITION: TransitionEffect = TransitionEffect.asymmetric(
 @ObservedV2
 class AudioPlayerViewModel {
   @Trace uri: string = '';
-  waitingForUri: string = '';
+  @Trace waitingForUri: string = '';
   @Trace state: PlayState = PlayState.IDLE;
   @Trace duration: number = 0;
   @Trace position: number = 0;
@@ -61,7 +64,9 @@ class AudioPlayerViewModel {
     this.listenerId = setInterval(() => {
       const currentUri: string = PlaybackService.getCurrent()?.uri ?? '';
       // 队列准备是异步的，不能让上一首的轮询快照覆盖点击时的封面和标题。
-      if (this.waitingForUri.length > 0 && currentUri !== this.waitingForUri) { return; }
+      if (this.waitingForUri.length > 0 && currentUri !== this.waitingForUri) {
+        return;
+      }
       this.waitingForUri = '';
       this.uri = currentUri;
       const s: PlaybackState = PlaybackService.snapshot();
@@ -90,6 +95,7 @@ class AudioPlayerViewModel {
             this.artworkPath,
             cur?.artistName ?? '',
             cur?.albumName ?? '',
+            'audio',
           );
         }
       }
@@ -120,16 +126,12 @@ export struct AudioPlayerPage {
   @Local lyrics: LyricsDocument = new LyricsDocument();
   @Local lyricsLoading: boolean = false;
   @Local lyricIndex: number = -1;
-  private lyricUri: string = '';
-  private lyricVersion: number = 0;
-  private lyricScroller: Scroller = new Scroller();
-  private contentSwiper: SwiperController = new SwiperController();
-  private lastLyricsTouch: number = 0;
   @Local closing: boolean = false;
   @Local dismissOffset: number = 0;
   @Local dismissDragging: boolean = false;
-  private closingLayoutCallback: (() => void) | null = null;
   @Local advancedOptionsOpen: boolean = false;
+  @Local modeMenuOpen: boolean = false;
+  @Local queueOpen: boolean = false;
   @Local bookmarkOpen: boolean = false;
   @Local speedOpen: boolean = false;
   @Local audioEffectsOpen: boolean = false;
@@ -145,6 +147,12 @@ export struct AudioPlayerPage {
   @Local abPointA: number = -1;
   @Local abPointB: number = -1;
   @Local abActive: boolean = false;
+  private lyricUri: string = '';
+  private lyricVersion: number = 0;
+  private lyricScroller: Scroller = new Scroller();
+  private contentSwiper: SwiperController = new SwiperController();
+  private lastLyricsTouch: number = 0;
+  private closingLayoutCallback: (() => void) | null = null;
   private pendingAdvancedAction: PlayerAdvancedOptionId | null = null;
   // 睡眠定时器状态
   private sleepTimer: number = -1;
@@ -204,136 +212,6 @@ export struct AudioPlayerPage {
     this.lyricVersion++;
   }
 
-  private updateLyrics(): void {
-    if (this.vm.waitingForUri.length > 0) { return; }
-    const uri: string = PlaybackService.getCurrent()?.uri ?? '';
-    if (uri !== this.lyricUri) {
-      this.lyricUri = uri;
-      this.lyrics = new LyricsDocument();
-      this.lyricIndex = -1;
-      this.lastLyricsTouch = 0;
-      const version: number = ++this.lyricVersion;
-      this.lyricsLoading = uri.length > 0;
-      void this.loadLyrics(uri, version);
-    }
-    const index: number = EmbeddedLyrics.activeLine(this.lyrics, this.vm.position);
-    const changed: boolean = index !== this.lyricIndex;
-    this.lyricIndex = index;
-    if (this.showLyrics && index >= 0 && (changed || this.lastLyricsTouch > 0)
-      && Date.now() - this.lastLyricsTouch > 4000) {
-      this.lastLyricsTouch = 0;
-      this.lyricScroller.scrollToIndex(index, true, ScrollAlign.CENTER);
-    }
-  }
-
-  private async loadLyrics(uri: string, version: number): Promise<void> {
-    const document: LyricsDocument = await EmbeddedLyrics.load(uri);
-    if (version !== this.lyricVersion) { return; }
-    this.lyrics = document;
-    this.lyricsLoading = false;
-    this.lyricIndex = EmbeddedLyrics.activeLine(document, this.vm.position);
-    // 待 List 完成构建后才定位，避免切歌时使用旧列表的布局。
-    if (this.showLyrics) { this.lastLyricsTouch = 1; }
-  }
-
-  private selectContentPage(index: number): void {
-    if (!this.vm.locked && !this.dismissDragging) {
-      this.contentSwiper.changeIndex(index, true);
-    }
-  }
-
-  private compactLyricIndex(): number {
-    return EmbeddedLyrics.compactLineIndex(this.lyrics, this.vm.position);
-  }
-
-  private currentLyricText(): string {
-    const index: number = this.compactLyricIndex();
-    return index >= 0 ? this.lyrics.lines[index].text.trim() : '';
-  }
-
-  private nextLyricText(): string {
-    const index: number = this.lyrics.timed ? this.lyricIndex : this.compactLyricIndex();
-    return index + 1 < this.lyrics.lines.length ? this.lyrics.lines[index + 1].text.trim() : '';
-  }
-
-  private hasSharedEntry(): boolean {
-    return this.fromMiniPlayer || (this.sourceRoute !== null
-      && (this.sourceRoute.sourcePrefix.length > 0 || this.sourceRoute.artistSourceId.length > 0)
-      && this.vm.uri === this.sourceRoute.uri);
-  }
-
-  private sharedElementId(element: string): string {
-    if (this.fromMiniPlayer) { return `audio-player-${element}`; }
-    if (this.hasSharedEntry() && this.sourceRoute !== null) {
-      if (element === 'artist' && this.sourceRoute.artist.length > 0 && this.sourceRoute.artistSourceId.length > 0) {
-        return this.sourceRoute.artistSourceId;
-      }
-      if (this.sourceRoute.sourcePrefix.length > 0 && (element === 'cover' || element === 'title'
-        || (element === 'artist' && this.sourceRoute.artist.length > 0))) {
-        return `${this.sourceRoute.sourcePrefix}-${element}`;
-      }
-    }
-    return '';
-  }
-
-  private closePlayer(): void {
-    if (this.closing) { return; }
-    this.dismissDragging = false;
-    this.closing = true;
-    if (this.hasSharedEntry() && this.showLyrics) {
-      // Swiper 的封面页此时在屏幕外。先无动画复位并完成布局，避免从错误位置收回。
-      const callback: () => void = () => {
-        this.getUIContext().getUIObserver().off('didLayout', callback);
-        this.closingLayoutCallback = null;
-        NavController.closeAudioPlayer(this.getUIContext(), true);
-      };
-      this.closingLayoutCallback = callback;
-      this.getUIContext().getUIObserver().on('didLayout', callback);
-      this.contentSwiper.changeIndex(0, false);
-      this.showLyrics = false;
-      return;
-    }
-    this.showLyrics = false;
-    NavController.closeAudioPlayer(this.getUIContext(), this.hasSharedEntry());
-  }
-
-  private canDismissDrag(): boolean {
-    return !this.closing && !this.vm.locked && !this.advancedOptionsOpen && !this.bookmarkOpen
-      && !this.speedOpen && !this.audioEffectsOpen && !this.sleepOpen && !this.jumpOpen
-      && !this.savePlaylistOpen && !this.infoOpen;
-  }
-
-  private startDismissDrag(offsetY: number): void {
-    this.dismissDragging = this.canDismissDrag() && offsetY > 0;
-  }
-
-  private updateDismissDrag(offsetY: number): void {
-    if (this.dismissDragging && this.canDismissDrag()) {
-      this.dismissOffset = AudioPlayerDismissDrag.offset(offsetY);
-    }
-  }
-
-  private reboundDismissDrag(): void {
-    if (this.closing) { return; }
-    this.dismissDragging = false;
-    this.getUIContext().animateTo({ curve: curves.interpolatingSpring(0, 1, 342, 38) }, () => {
-      this.dismissOffset = 0;
-    });
-  }
-
-  private endDismissDrag(offsetY: number, velocityY: number): void {
-    if (!this.dismissDragging || this.closing) { return; }
-    if (!this.canDismissDrag()) { this.reboundDismissDrag(); return; }
-    this.dismissOffset = AudioPlayerDismissDrag.offset(offsetY);
-    this.dismissDragging = false;
-    if (AudioPlayerDismissDrag.shouldClose(offsetY, velocityY)) {
-      // 从手指松开时的位置反向共享转场，不先把页面复位，以免收回前跳一下。
-      this.closePlayer();
-    } else {
-      this.reboundDismissDrag();
-    }
-  }
-
   @Builder
   compactLyricsView() {
     Column({ space: 6 }) {
@@ -364,7 +242,12 @@ export struct AudioPlayerPage {
     }
     .width('100%')
     .height(76)
-    .padding({ left: 24, right: 24, top: 12, bottom: 8 })
+    .padding({
+      left: 24,
+      right: 24,
+      top: 12,
+      bottom: 8
+    })
     .justifyContent(FlexAlign.Center)
     .onClick(() => this.selectContentPage(1))
   }
@@ -382,7 +265,12 @@ export struct AudioPlayerPage {
                 .fontColor(item.index === this.lyricIndex ? $r('app.color.orange500') : $r('app.color.list_subtitle'))
                 .textAlign(TextAlign.Center)
                 .width('100%')
-                .padding({ top: 8, bottom: 8, left: 24, right: 24 })
+                .padding({
+                  top: 8,
+                  bottom: 8,
+                  left: 24,
+                  right: 24
+                })
                 .onClick(() => {
                   if (this.lyrics.timed && !this.vm.locked) {
                     PlaybackService.seek(item.item.time);
@@ -457,11 +345,7 @@ export struct AudioPlayerPage {
               })
               .bindMenu(this.advancedOptionsOpen!!, this.advancedOptionsMenu(), {
                 placement: Placement.BottomLeft,
-                showInSubWindow: true,
-                backgroundColor: Color.Transparent,
-                backgroundBlurStyle: BlurStyle.COMPONENT_ULTRA_THICK,
-                outlineColor: Color.Transparent,
-                outlineWidth: 0,
+                showInSubWindow: true
               })
           }
           .width('100%')
@@ -479,7 +363,11 @@ export struct AudioPlayerPage {
               .onActionStart((event: GestureEvent) => this.startDismissDrag(event.offsetY))
               .onActionUpdate((event: GestureEvent) => this.updateDismissDrag(event.offsetY))
               .onActionEnd((event: GestureEvent) => this.endDismissDrag(event.offsetY, event.velocityY))
-              .onActionCancel(() => { if (this.dismissDragging) { this.reboundDismissDrag(); } })
+              .onActionCancel(() => {
+                if (this.dismissDragging) {
+                  this.reboundDismissDrag();
+                }
+              })
           )
 
           // 睡眠定时器指示灯
@@ -504,24 +392,25 @@ export struct AudioPlayerPage {
           Swiper(this.contentSwiper) {
             Column() {
               Stack() {
-              Image(this.vm.artworkPath.length > 0 ? this.vm.artworkPath : $r('app.media.ic_song_big'))
-                .width('70%')
-                .aspectRatio(1)
-                .constraintSize({ maxHeight: '100%' })
-                .objectFit(ImageFit.Cover)
-                .autoResize(false)
-                .syncLoad(true)
-                .fillColor(this.vm.artworkPath.length > 0 ? Color.Transparent : $r('app.color.list_subtitle'))
-                .borderRadius(8)
-                .clip(true)
-                .shadow({ radius: 16, color: '#33000000', offsetY: 4 })
-                .geometryTransition(this.sharedElementId('cover'))
-                .transition(TransitionEffect.OPACITY)
-                .id('audio-detail-cover')
+                Image(this.vm.artworkPath.length > 0 ? this.vm.artworkPath : $r('app.media.ic_song_big'))
+                  .width('70%')
+                  .aspectRatio(1)
+                  .constraintSize({ maxHeight: '100%' })
+                  .objectFit(ImageFit.Cover)
+                  .autoResize(false)
+                  .syncLoad(true)
+                  .fillColor(this.vm.artworkPath.length > 0 ? Color.Transparent : $r('app.color.list_subtitle'))
+                  .borderRadius(8)
+                  .clip(true)
+                  .shadow({ radius: 16, color: '#33000000', offsetY: 4 })
+                  .geometryTransition(this.sharedElementId('cover'))
+                  .transition(TransitionEffect.OPACITY)
+                  .id('audio-detail-cover')
               }
               .width('100%')
               .layoutWeight(1)
               .clip(false)
+
               this.compactLyricsView()
             }
             .width('100%')
@@ -533,8 +422,13 @@ export struct AudioPlayerPage {
                 .onActionStart((event: GestureEvent) => this.startDismissDrag(event.offsetY))
                 .onActionUpdate((event: GestureEvent) => this.updateDismissDrag(event.offsetY))
                 .onActionEnd((event: GestureEvent) => this.endDismissDrag(event.offsetY, event.velocityY))
-                .onActionCancel(() => { if (this.dismissDragging) { this.reboundDismissDrag(); } })
+                .onActionCancel(() => {
+                  if (this.dismissDragging) {
+                    this.reboundDismissDrag();
+                  }
+                })
             )
+
             Stack() {
               this.lyricsView()
             }
@@ -555,7 +449,9 @@ export struct AudioPlayerPage {
           .disableSwipe(this.vm.locked || this.dismissDragging)
           .onChange((index: number) => {
             this.showLyrics = index === 1;
-            if (this.showLyrics) { this.lastLyricsTouch = 1; }
+            if (this.showLyrics) {
+              this.lastLyricsTouch = 1;
+            }
           })
 
           // 曲目标题 + 艺术家
@@ -571,10 +467,13 @@ export struct AudioPlayerPage {
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .margin({ bottom: 4 })
             Text(this.vm.artist.length > 0 ? this.vm.artist : $r('app.string.unknown_artist'))
-              .fontSize(14).fontColor($r('app.color.list_subtitle'))
-              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+              .fontSize(14)
+              .fontColor($r('app.color.list_subtitle'))
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
               .geometryTransition(this.sharedElementId('artist'))
-              .transition(this.sharedElementId('artist').length > 0 ? TransitionEffect.OPACITY : AUDIO_DETAIL_TRANSITION)
+              .transition(
+                this.sharedElementId('artist').length > 0 ? TransitionEffect.OPACITY : AUDIO_DETAIL_TRANSITION)
               .id('audio-detail-artist')
           }
           .width('100%').padding({ left: 24, right: 24, bottom: 12 })
@@ -658,35 +557,55 @@ export struct AudioPlayerPage {
 
           // 控制按钮行
           Row() {
-            Image($r('app.media.ic_shuffle_audio')).width(28).height(28)
-              .fillColor(this.vm.shuffle ? $r('app.color.orange500') : $r('app.color.list_title'))
-              .onClick(() => PlaybackService.toggleShuffle())
+            PlayerModeButton({
+              shuffle: this.vm.shuffle,
+              repeatMode: this.vm.repeatMode,
+              onMenuVisibility: (visible: boolean) => {
+                this.modeMenuOpen = visible;
+              },
+            })
               .transition(AUDIO_DETAIL_TRANSITION)
             Blank()
-            Image($r('app.media.ic_player_previous')).width(40).height(40).fillColor($r('app.color.list_title'))
+            Image($r('app.media.ic_player_previous'))
+              .width(40)
+              .height(40)
+              .fillColor($r('app.color.list_title'))
               .onClick(() => PlaybackService.prev())
               .transition(AUDIO_DETAIL_TRANSITION)
             Blank()
             Image(
               this.vm.state === PlayState.PLAYING ? $r('app.media.ic_pause_player') : $r('app.media.ic_play_player'))
-              .width(64).height(64).fillColor($r('app.color.orange500'))
+              .width(64)
+              .height(64)
+              .fillColor($r('app.color.orange500'))
               .onClick(() => PlaybackService.togglePlay())
               .geometryTransition(this.fromMiniPlayer ? 'audio-player-play' : '')
               .transition(TransitionEffect.OPACITY)
               .id('audio-detail-play')
             Blank()
-            Image($r('app.media.ic_player_next')).width(40).height(40).fillColor($r('app.color.list_title'))
+            Image($r('app.media.ic_player_next'))
+              .width(40)
+              .height(40)
+              .fillColor($r('app.color.list_title'))
               .onClick(() => PlaybackService.next())
               .geometryTransition(this.fromMiniPlayer ? 'audio-player-next' : '')
               .transition(TransitionEffect.OPACITY)
               .id('audio-detail-next')
             Blank()
-            Image(this.vm.repeatMode === 0 ? $r('app.media.ic_repeat_audio') :
-              (this.vm.repeatMode === 2 ? $r('app.media.ic_repeat_one_audio') : $r('app.media.ic_repeat_all_audio')))
-              .width(28).height(28)
-              .fillColor(this.vm.repeatMode > 0 ? $r('app.color.orange500') : $r('app.color.list_title'))
-              .onClick(() => PlaybackService.cycleRepeat())
-              .transition(AUDIO_DETAIL_TRANSITION)
+            Button({ type: ButtonType.Normal }) {
+              Image($r('app.media.ic_player_playqueue')).width(28).height(28)
+                .fillColor($r('app.color.list_title'))
+            }
+            .width(40)
+            .height(40)
+            .padding(0)
+            .backgroundColor(Color.Transparent)
+            .accessibilityText($r('app.string.player_queue'))
+            .enabled(this.vm.waitingForUri.length === 0)
+            .onClick(() => {
+              this.queueOpen = true;
+            })
+            .transition(AUDIO_DETAIL_TRANSITION)
           }
           .width('100%')
           .padding({
@@ -748,6 +667,8 @@ export struct AudioPlayerPage {
             })
               .width('100%')
               .height('66.66%')
+              .borderRadius(BOTTOM_SHEET_TOP_CORNERS)
+              .clip(true)
           }
           .width('100%')
           .height('100%')
@@ -772,6 +693,8 @@ export struct AudioPlayerPage {
               }),
               onConfirm: (action: PlaybackSpeedAction) => this.onSpeedConfirm(action),
             }).width('100%').height('50%')
+              .borderRadius(BOTTOM_SHEET_TOP_CORNERS)
+              .clip(true)
           }
           .width('100%')
           .height('100%')
@@ -785,6 +708,8 @@ export struct AudioPlayerPage {
               .backgroundColor(Color.Transparent)
               .onClick(() => this.animateClose(() => this.audioEffectsOpen = false))
             AudioEffectsDialog({ onClose: () => this.animateClose(() => this.audioEffectsOpen = false) })
+              .borderRadius(BOTTOM_SHEET_TOP_CORNERS)
+              .clip(true)
           }
           .width('100%')
           .height('100%')
@@ -809,6 +734,8 @@ export struct AudioPlayerPage {
                 this.onSleepConfirm(millis, waitForMediaEnd, resetOnInteraction);
               },
             }).width('100%')
+              .borderRadius(BOTTOM_SHEET_TOP_CORNERS)
+              .clip(true)
           }
           .width('100%')
           .height('100%')
@@ -830,6 +757,8 @@ export struct AudioPlayerPage {
               }),
               onConfirm: (timeMs: number) => this.onJumpConfirm(timeMs),
             }).width('100%')
+              .borderRadius(BOTTOM_SHEET_TOP_CORNERS)
+              .clip(true)
           }
           .width('100%')
           .height('100%')
@@ -854,6 +783,8 @@ export struct AudioPlayerPage {
                 void this.onSavePlaylistConfirm(action);
               },
             }).width('100%').height('50%')
+              .borderRadius(BOTTOM_SHEET_TOP_CORNERS)
+              .clip(true)
           }
           .width('100%')
           .height('100%')
@@ -883,6 +814,8 @@ export struct AudioPlayerPage {
                 this.infoOpen = false;
               }),
             }).width('100%').height('60%')
+              .borderRadius(BOTTOM_SHEET_TOP_CORNERS)
+              .clip(true)
           }
           .width('100%')
           .height('100%')
@@ -901,6 +834,10 @@ export struct AudioPlayerPage {
     .backgroundColor(this.hasSharedEntry() ? Color.Transparent : $r('app.color.background_default'))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .onBackPressed(() => {
+      if (this.queueOpen) {
+        this.queueOpen = false;
+        return true;
+      }
       if (this.audioEffectsOpen) {
         this.animateClose(() => this.audioEffectsOpen = false);
         return true;
@@ -911,6 +848,20 @@ export struct AudioPlayerPage {
       this.closePlayer();
       return true;
     })
+    .bindSheet(this.queueOpen, this.queuePanel(), {
+      radius: NATIVE_BOTTOM_SHEET_RADIUS,
+      height: '65%',
+      dragBar: true,
+      showClose: true,
+      onDisappear: () => {
+        this.queueOpen = false;
+      },
+    })
+  }
+
+  @Builder
+  queuePanel() {
+    PlayerQueuePanel()
   }
 
   /** 当前激活选项 id（对齐视频播放器激活态高亮）。 */
@@ -1061,8 +1012,6 @@ export struct AudioPlayerPage {
     });
   }
 
-  // ── 信息展示 ──
-
   /** 标记终点 B(仿视频端 setAbPointB)。B 必须在 A 之后,否则忽略。 */
   setAbPointB(): void {
     if (this.abPointA < 0) {
@@ -1097,8 +1046,6 @@ export struct AudioPlayerPage {
     return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
   }
 
-  // ── A-B 循环 ──
-
   onSleepConfirm(millis: number, _waitForMediaEnd: boolean, _resetOnInteraction: boolean): void {
     this.clearSleepTimer();
     this.sleepMillis = millis;
@@ -1127,16 +1074,12 @@ export struct AudioPlayerPage {
     }
   }
 
-  // ── 格式化 ──
-
   onJumpConfirm(timeMs: number): void {
     PlaybackService.seek(timeMs);
     this.animateClose(() => {
       this.jumpOpen = false;
     });
   }
-
-  // ── 睡眠定时器 ──
 
   addBookmarkAtCurrent(): void {
     const timeMs = Math.max(0, Math.floor(this.vm.position));
@@ -1149,13 +1092,9 @@ export struct AudioPlayerPage {
     this.bookmarks = this.bookmarks.filter((b) => b.id !== id);
   }
 
-  // ── 跳转至时间 ──
-
   renameBookmark(_id: number): void {
     UiFeedback.showToast({ message: $r('app.string.bookmark_rename_dev') });
   }
-
-  // ── 书签 ──
 
   async onSavePlaylistConfirm(action: AddToPlaylistAction): Promise<void> {
     const svc = PlaybackService.getInstance();
@@ -1177,11 +1116,175 @@ export struct AudioPlayerPage {
       }
     }
     const count = action.selectedIds.length;
-    UiFeedback.showToast({ message: count === 1 ? $r('app.string.saved_to_playlist') :
-      $r('app.string.saved_to_playlist_count', count) });
+    UiFeedback.showToast({
+      message: count === 1 ? $r('app.string.saved_to_playlist') :
+        $r('app.string.saved_to_playlist_count', count)
+    });
     this.animateClose(() => {
       this.savePlaylistOpen = false;
     });
+  }
+
+  private updateLyrics(): void {
+    if (this.vm.waitingForUri.length > 0) {
+      return;
+    }
+    const uri: string = PlaybackService.getCurrent()?.uri ?? '';
+    if (uri !== this.lyricUri) {
+      this.abPointA = -1;
+      this.abPointB = -1;
+      this.abActive = false;
+      this.lyricUri = uri;
+      this.lyrics = new LyricsDocument();
+      this.lyricIndex = -1;
+      this.lastLyricsTouch = 0;
+      const version: number = ++this.lyricVersion;
+      this.lyricsLoading = uri.length > 0;
+      void this.loadLyrics(uri, version);
+    }
+    const index: number = EmbeddedLyrics.activeLine(this.lyrics, this.vm.position);
+    const changed: boolean = index !== this.lyricIndex;
+    this.lyricIndex = index;
+    if (this.showLyrics && index >= 0 && (changed || this.lastLyricsTouch > 0)
+      && Date.now() - this.lastLyricsTouch > 4000) {
+      this.lastLyricsTouch = 0;
+      this.lyricScroller.scrollToIndex(index, true, ScrollAlign.CENTER);
+    }
+  }
+
+  private async loadLyrics(uri: string, version: number): Promise<void> {
+    const document: LyricsDocument = await EmbeddedLyrics.load(uri);
+    if (version !== this.lyricVersion) {
+      return;
+    }
+    this.lyrics = document;
+    this.lyricsLoading = false;
+    this.lyricIndex = EmbeddedLyrics.activeLine(document, this.vm.position);
+    // 待 List 完成构建后才定位，避免切歌时使用旧列表的布局。
+    if (this.showLyrics) {
+      this.lastLyricsTouch = 1;
+    }
+  }
+
+  private selectContentPage(index: number): void {
+    if (!this.vm.locked && !this.dismissDragging) {
+      this.contentSwiper.changeIndex(index, true);
+    }
+  }
+
+  private compactLyricIndex(): number {
+    return EmbeddedLyrics.compactLineIndex(this.lyrics, this.vm.position);
+  }
+
+  // ── 信息展示 ──
+
+  private currentLyricText(): string {
+    const index: number = this.compactLyricIndex();
+    return index >= 0 ? this.lyrics.lines[index].text.trim() : '';
+  }
+
+  private nextLyricText(): string {
+    const index: number = this.lyrics.timed ? this.lyricIndex : this.compactLyricIndex();
+    return index + 1 < this.lyrics.lines.length ? this.lyrics.lines[index + 1].text.trim() : '';
+  }
+
+  private hasSharedEntry(): boolean {
+    return this.fromMiniPlayer || (this.sourceRoute !== null
+      && (this.sourceRoute.sourcePrefix.length > 0 || this.sourceRoute.artistSourceId.length > 0)
+      && this.vm.uri === this.sourceRoute.uri);
+  }
+
+  // ── A-B 循环 ──
+
+  private sharedElementId(element: string): string {
+    if (this.fromMiniPlayer) {
+      return `audio-player-${element}`;
+    }
+    if (this.hasSharedEntry() && this.sourceRoute !== null) {
+      if (element === 'artist' && this.sourceRoute.artist.length > 0 && this.sourceRoute.artistSourceId.length > 0) {
+        return this.sourceRoute.artistSourceId;
+      }
+      if (this.sourceRoute.sourcePrefix.length > 0 && (element === 'cover' || element === 'title'
+        || (element === 'artist' && this.sourceRoute.artist.length > 0))) {
+        return `${this.sourceRoute.sourcePrefix}-${element}`;
+      }
+    }
+    return '';
+  }
+
+  private closePlayer(): void {
+    if (this.closing) {
+      return;
+    }
+    this.dismissDragging = false;
+    this.closing = true;
+    if (this.hasSharedEntry() && this.showLyrics) {
+      // Swiper 的封面页此时在屏幕外。先无动画复位并完成布局，避免从错误位置收回。
+      const callback: () => void = () => {
+        this.getUIContext().getUIObserver().off('didLayout', callback);
+        this.closingLayoutCallback = null;
+        NavController.closeAudioPlayer(this.getUIContext(), true);
+      };
+      this.closingLayoutCallback = callback;
+      this.getUIContext().getUIObserver().on('didLayout', callback);
+      this.contentSwiper.changeIndex(0, false);
+      this.showLyrics = false;
+      return;
+    }
+    this.showLyrics = false;
+    NavController.closeAudioPlayer(this.getUIContext(), this.hasSharedEntry());
+  }
+
+  // ── 格式化 ──
+
+  private canDismissDrag(): boolean {
+    return !this.closing && !this.vm.locked && !this.advancedOptionsOpen && !this.bookmarkOpen
+      && !this.speedOpen && !this.audioEffectsOpen && !this.sleepOpen && !this.jumpOpen
+      && !this.savePlaylistOpen && !this.infoOpen && !this.queueOpen && !this.modeMenuOpen;
+  }
+
+  // ── 睡眠定时器 ──
+
+  private startDismissDrag(offsetY: number): void {
+    this.dismissDragging = this.canDismissDrag() && offsetY > 0;
+  }
+
+  private updateDismissDrag(offsetY: number): void {
+    if (this.dismissDragging && this.canDismissDrag()) {
+      this.dismissOffset = AudioPlayerDismissDrag.offset(offsetY);
+    }
+  }
+
+  // ── 跳转至时间 ──
+
+  private reboundDismissDrag(): void {
+    if (this.closing) {
+      return;
+    }
+    this.dismissDragging = false;
+    this.getUIContext().animateTo({ curve: curves.interpolatingSpring(0, 1, 342, 38) }, () => {
+      this.dismissOffset = 0;
+    });
+  }
+
+  // ── 书签 ──
+
+  private endDismissDrag(offsetY: number, velocityY: number): void {
+    if (!this.dismissDragging || this.closing) {
+      return;
+    }
+    if (!this.canDismissDrag()) {
+      this.reboundDismissDrag();
+      return;
+    }
+    this.dismissOffset = AudioPlayerDismissDrag.offset(offsetY);
+    this.dismissDragging = false;
+    if (AudioPlayerDismissDrag.shouldClose(offsetY, velocityY)) {
+      // 从手指松开时的位置反向共享转场，不先把页面复位，以免收回前跳一下。
+      this.closePlayer();
+    } else {
+      this.reboundDismissDrag();
+    }
   }
 
   /** 带动画打开覆盖层。 */

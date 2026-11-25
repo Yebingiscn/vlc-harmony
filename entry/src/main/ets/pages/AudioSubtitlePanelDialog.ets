@@ -209,7 +209,6 @@ export struct AudioSubtitlePanelDialog {
     }
     .width('100%').height('100%')
     .backgroundColor($r('app.color.background_default'))
-    .borderRadius({ topLeft: 20, topRight: 20 })
   }
 
   // ── 主视图 ────────────────────────────────────────────────────────────────
@@ -233,7 +232,7 @@ export struct AudioSubtitlePanelDialog {
             label: '码率',
             value: this.bitrate.length > 0 ? `${this.bitrate} bps` : '—',
           })
-          this.divider()
+          this.sectionGap()
 
           TrackSection({
             title: '音频轨道',
@@ -246,14 +245,14 @@ export struct AudioSubtitlePanelDialog {
               this.onTrackChange(id, 'audio');
             },
           })
-          this.divider()
+          this.sectionGap()
 
           this.sectionHeader('当前字幕', $r('app.media.ic_subtitles'))
           MetaRow({
             label: '字幕轨',
             value: this.subtitleName(this.selectedSubtitle),
           })
-          this.divider()
+          this.sectionGap()
 
           TrackSection({
             title: '字幕轨道',
@@ -266,15 +265,15 @@ export struct AudioSubtitlePanelDialog {
               this.onTrackChange(id, 'spu');
             },
           })
-          this.divider()
+          this.sectionGap()
 
           // 字幕延迟入口行:点击切到 'subtitleDelay' 子视图,显示当前值。
           this.subtitleDelayEntryRow()
-          this.divider()
+          this.sectionGap()
 
           // 音频延迟入口行:点击切到 'audioDelay' 子视图。
           this.audioDelayEntryRow()
-          this.divider()
+          this.sectionGap()
 
           this.actionRow('选择字幕文件', $r('app.media.ic_subtitles_file'), () => this.onPickSubtitle())
         }
@@ -570,9 +569,8 @@ export struct AudioSubtitlePanelDialog {
   // ── 主视图通用 builder ────────────────────────────────────────────────────
 
   @Builder
-  private divider(): void {
-    Divider().color($r('app.color.divider')).strokeWidth(1)
-      .margin({ top: 8, bottom: 8 }).width('100%')
+  private sectionGap(): void {
+    Blank().height(16)
   }
 
   @Builder

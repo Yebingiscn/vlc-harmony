@@ -118,7 +118,6 @@ export struct SelectChapterDialog {
     }
     .width('100%')
     .backgroundColor($r('app.color.background_default'))
-    .borderRadius({ topLeft: 16, topRight: 16 })
     .alignItems(HorizontalAlign.Start)
   }
 }

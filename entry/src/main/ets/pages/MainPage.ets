@@ -1,7 +1,8 @@
+import { NATIVE_BOTTOM_SHEET_RADIUS } from '../common/constants/BottomSheetStyle';
 import { UiFeedback } from '../common/utils/UiFeedback';
 import { MiniPlayer } from '../common/components/MiniPlayer';
 import { VideoGridPage } from './VideoGridPage';
-import { AudioBrowserPage } from './AudioBrowserPage';
+import { AudioBrowserPage, AudioBrowserVM } from './AudioBrowserPage';
 import { MainBrowserPage } from './MainBrowserPage';
 import { PlaylistsPage } from './PlaylistsPage';
 import { MorePage } from './MorePage';
@@ -14,8 +15,8 @@ import { DisplaySettingsDialog } from './DisplaySettingsDialog';
 import { AudioDisplaySettingsDialog } from './AudioDisplaySettingsDialog';
 import { NetworkServerDialog } from './NetworkServerDialog';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
-import { VideoParam, VideoPlayItem } from './VideoPlayerPage';
-import { LengthMetrics } from '@kit.ArkUI';
+import { HistoryPlayback } from '../common/data/HistoryPlayback';
+import { CapsuleSegmentButtonV2, ColorMetrics, LengthMetrics, SegmentButtonV2Items, uiMaterial } from '@kit.ArkUI';
 import {
   DividerMode,
   DividerShowType,
@@ -29,6 +30,8 @@ import {
   ScrollEffectType
 } from '@kit.UIDesignKit';
 
+const SEARCH_ROW_HEIGHT: number = 56;
+const AUDIO_SEGMENT_ROW_HEIGHT: number = 52;
 
 /**
  * MainPage —— MainActivity(透明 5-Tab 宿主)。
@@ -38,6 +41,16 @@ import {
 @ComponentV2
 export struct MainPage {
   private tabsController: HdsTabsController = new HdsTabsController();
+  private audioTabsController: TabsController = new TabsController();
+  @Local audioBrowser: AudioBrowserVM = new AudioBrowserVM();
+  private audioSegmentItems: SegmentButtonV2Items = new SegmentButtonV2Items([
+    { text: $r('app.string.artists') },
+    { text: $r('app.string.albums') },
+    { text: $r('app.string.tracks') },
+    { text: $r('app.string.genres') },
+  ]);
+  @Local audioSegmentSelectedBackground: ColorMetrics | undefined = undefined;
+  @Local audioSegmentSelectedText: ColorMetrics | undefined = undefined;
   @Local miniPlayerExpansionHeight: number = 420;
   private videoScroller: Scroller = new Scroller();
   private audioArtistScroller: Scroller = new Scroller();
@@ -50,6 +63,8 @@ export struct MainPage {
   private browseScroller: Scroller = new Scroller();
   private playlistsScroller: Scroller = new Scroller();
   private moreScroller: Scroller = new Scroller();
+  private resumingPlayback: boolean = false;
+  private refreshingCurrentTab: boolean = false;
   @Local currentTab: string = 'video';
   @Local currentTabIndex: number = 0;
   @Local scanning: boolean = false;
@@ -72,9 +87,18 @@ export struct MainPage {
   @Local selectionCount: number = 0;
   @Local selectionActionVersion: number = 0;
   @Local selectionActionType: string = '';
+  @Local audioSelectionActionVersion: number = 0;
+  @Local audioSelectionActionType: string = '';
+  @Local audioSelectionAll: boolean = false;
 
   async aboutToAppear(): Promise<void> {
     this.incognitoMode = Settings.incognitoMode;
+    try {
+      this.audioSegmentSelectedBackground = ColorMetrics.resourceColor($r('app.color.orange500'));
+      this.audioSegmentSelectedText = ColorMetrics.resourceColor($r('app.color.colorOnPrimary'));
+    } catch (_error) {
+      // Fall back to the system segment colors if theme resources cannot be loaded.
+    }
     this.scanning = MediaLibrary.isScanning() || !MediaLibrary.hasScanned();
     await MediaLibrary.scan();
     this.scanning = false;
@@ -83,15 +107,16 @@ export struct MainPage {
   }
 
   onTabChange(id: string): void {
+    // Exit on the old tab before switching, so its selection is not left behind.
+    if (this.selectionMode) {
+      this.requestSelectionAction('exit');
+      this.updateSelection(this.currentTab, false, 0);
+    }
     this.currentTab = id;
     this.currentTabIndex = this.indexOfTab(id);
     // 切换 Tab 时退出搜索和选择模式
     this.searchMode = false;
     this.searchQuery = '';
-    if (this.selectionMode) {
-      this.selectionActionType = 'exit';
-      this.selectionActionVersion++;
-    }
     Settings.put(Settings.KEY_FRAGMENT_ID, this.indexOfTab(id));
     this.showFab = id === 'video';
   }
@@ -136,19 +161,22 @@ export struct MainPage {
   }
 
   async resumePlayback(): Promise<void> {
-    const entries = await PlaybackHistory.load();
-    if (entries.length === 0) {
-      UiFeedback.showToast({ message: '暂无播放历史' });
+    if (this.resumingPlayback) {
       return;
     }
-    const latest = entries[0];
-    const param: VideoParam = {
-      uri: latest.uri,
-      title: latest.title,
-      list: [{ uri: latest.uri, title: latest.title, artworkUrl: latest.artworkUrl } as VideoPlayItem],
-      index: 0,
-    };
-    NavController.push('VideoPlayer', param);
+    this.resumingPlayback = true;
+    try {
+      const entries = await PlaybackHistory.load();
+      if (entries.length === 0) {
+        UiFeedback.showToast({ message: $r('app.string.playback_history_empty') });
+        return;
+      }
+      await HistoryPlayback.open(entries[0], true);
+    } catch (error) {
+      UiFeedback.showToast({ message: $r('app.string.playback_history_open_failed') });
+    } finally {
+      this.resumingPlayback = false;
+    }
   }
 
   toggleIncognito(): void {
@@ -160,13 +188,31 @@ export struct MainPage {
     });
   }
 
-  async refreshMediaLibrary(): Promise<void> {
-    this.scanning = true;
-    await MediaLibrary.rescan();
-    this.scanning = false;
-    // 通知 VideoGridPage 重建列表(scan 完成后数据已更新,但页面不会自动 rebuild)。
-    this.displaySettingsVersion++;
-    this.audioSettingsVersion++;
+  async refreshCurrentTab(): Promise<void> {
+    if (this.refreshingCurrentTab) {
+      return;
+    }
+    this.refreshingCurrentTab = true;
+    const refreshHistory = this.currentTab === 'more';
+    try {
+      if (refreshHistory) {
+        // PlaybackHistory.refresh 会通知更多页和已打开的历史页。
+        await PlaybackHistory.refresh();
+        UiFeedback.showToast({ message: $r('app.string.playback_history_refreshed') });
+      } else {
+        this.scanning = true;
+        await MediaLibrary.rescan();
+        this.displaySettingsVersion++;
+        this.audioSettingsVersion++;
+      }
+    } catch (error) {
+      UiFeedback.showToast({ message: $r('app.string.menu_refresh_failed') });
+    } finally {
+      if (!refreshHistory) {
+        this.scanning = false;
+      }
+      this.refreshingCurrentTab = false;
+    }
   }
 
   async toggleDisplayAsList(): Promise<void> {
@@ -192,21 +238,43 @@ export struct MainPage {
     };
   }
 
+  private updateSelection(tab: string, active: boolean, count: number, allSelected: boolean = false): void {
+    if (tab !== this.currentTab) {
+      return;
+    }
+    this.selectionMode = active;
+    this.selectionCount = active ? count : 0;
+    this.audioSelectionAll = tab === 'audio' && active && allSelected;
+  }
+
+  private requestSelectionAction(action: string): void {
+    if (this.currentTab === 'audio') {
+      this.audioSelectionActionType = action;
+      this.audioSelectionActionVersion++;
+    } else if (this.currentTab === 'video') {
+      this.selectionActionType = action;
+      this.selectionActionVersion++;
+    }
+  }
+
   private titleMenuItems(): HdsNavigationMenuItemOptions[] {
     const items: HdsNavigationMenuItemOptions[] = [];
     if (this.selectionMode) {
-      items.push(this.createTitleMenuItem($r('app.media.ic_play_player'), '播放', () => {
-        this.selectionActionType = 'play';
-        this.selectionActionVersion++;
-      }));
-      items.push(this.createTitleMenuItem($r('app.media.ic_fav_add'), '收藏', () => {
-        this.selectionActionType = 'fav';
-        this.selectionActionVersion++;
-      }));
-      items.push(this.createTitleMenuItem($r('app.media.ic_delete'), '删除', () => {
-        this.selectionActionType = 'delete';
-        this.selectionActionVersion++;
-      }));
+      items.push(this.createTitleMenuItem($r('app.media.ic_play_player'), $r('app.string.play'),
+        () => this.requestSelectionAction('play')));
+      if (this.currentTab === 'audio') {
+        items.push(this.createTitleMenuItem(
+          this.audioSelectionAll ? $r('app.media.ic_checkbox_false') : $r('app.media.ic_checkbox_true_normal'),
+          this.audioSelectionAll ? $r('app.string.audio_unselect_all') : $r('app.string.audio_select_all'),
+          () => this.requestSelectionAction('all')));
+        items.push(this.createTitleMenuItem($r('app.media.ic_delete'), $r('app.string.audio_remove_from_library'),
+          () => this.requestSelectionAction('delete')));
+      } else {
+        items.push(this.createTitleMenuItem($r('app.media.ic_fav_add'), '收藏',
+          () => this.requestSelectionAction('fav')));
+        items.push(this.createTitleMenuItem($r('app.media.ic_delete'), '删除',
+          () => this.requestSelectionAction('delete')));
+      }
       return items;
     }
     if (this.searchMode) {
@@ -238,9 +306,10 @@ export struct MainPage {
     }
     items.push(this.createTitleMenuItem($r('app.media.ic_incognito'), $r('app.string.incognito_mode'),
       () => this.toggleIncognito()));
-    items.push(this.createTitleMenuItem($r('app.media.ic_refresh'), $r('app.string.menu_refresh'), () => {
-      void this.refreshMediaLibrary();
-    }));
+    items.push(this.createTitleMenuItem($r('app.media.ic_refresh'),
+      this.currentTab === 'more' ? $r('app.string.menu_refresh_history') : $r('app.string.menu_refresh'), () => {
+        void this.refreshCurrentTab();
+      }));
     return items;
   }
 
@@ -262,8 +331,7 @@ export struct MainPage {
 
   private closeTransientMode(): void {
     if (this.selectionMode) {
-      this.selectionActionType = 'exit';
-      this.selectionActionVersion++;
+      this.requestSelectionAction('exit');
       return;
     }
     this.searchMode = false;
@@ -294,9 +362,42 @@ export struct MainPage {
       }
     }
     .width('100%')
-    .height(56)
+    .height(SEARCH_ROW_HEIGHT)
     .padding({ left: 12, right: 12, bottom: 8 })
     .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  titleBottomBuilder() {
+    Column() {
+      if (this.searchMode && !this.selectionMode) {
+        this.titleSearchBuilder()
+      }
+      if (this.currentTab === 'audio') {
+        Row() {
+          CapsuleSegmentButtonV2({
+            items: this.audioSegmentItems,
+            selectedIndex: this.audioBrowser.tabIndex,
+            $selectedIndex: (index: number) => this.audioTabsController.changeIndex(index),
+            itemSelectedBackgroundColor: this.audioSegmentSelectedBackground,
+            itemSelectedFontColor: this.audioSegmentSelectedText,
+            enableStateAnimation: true,
+            backgroundSystemMaterial: new uiMaterial.ImmersiveMaterial({
+              style: uiMaterial.ImmersiveStyle.ULTRA_THIN,
+              colorInvert: true,
+              interactive: true,
+              lightEffect: { color: $r('app.color.orange500') },
+            }),
+          })
+            .width('100%')
+        }
+        .width('100%')
+        .height(AUDIO_SEGMENT_ROW_HEIGHT)
+        .padding({ left: 12, right: 12 })
+        .alignItems(VerticalAlign.Center)
+      }
+    }
+    .width('100%')
   }
 
   /** 显示设置 BottomSheet(自定义组件 builder 必须 .width('100%'))。 */
@@ -352,8 +453,7 @@ export struct MainPage {
                   NavController.push('Search');
                 },
                 onSelectionChange: (active: boolean, count: number) => {
-                  this.selectionMode = active;
-                  this.selectionCount = count;
+                  this.updateSelection('video', active, count);
                 },
               })
             }
@@ -361,6 +461,8 @@ export struct MainPage {
 
             TabContent() {
               AudioBrowserPage({
+                vm: this.audioBrowser,
+                controller: this.audioTabsController,
                 artistScroller: this.audioArtistScroller,
                 albumListScroller: this.audioAlbumListScroller,
                 albumGridScroller: this.audioAlbumGridScroller,
@@ -373,6 +475,11 @@ export struct MainPage {
                 searchQuery: this.searchQuery,
                 goToArtistName: this.goToArtistName,
                 goToArtistVersion: this.goToArtistVersion,
+                selectionActionVersion: this.audioSelectionActionVersion,
+                selectionActionType: this.audioSelectionActionType,
+                onSelectionChange: (active: boolean, count: number, allSelected: boolean) => {
+                  this.updateSelection('audio', active, count, allSelected);
+                },
                 onSearchGlobal: () => {
                   this.searchMode = false;
                   this.searchQuery = '';
@@ -428,6 +535,7 @@ export struct MainPage {
           .cachedMaxCount(VLC_TABS.length, TabsCacheMode.CACHE_BOTH_SIDE)
           .onChange((index: number) => this.onTabIndexChange(index))
           .bindSheet(this.showFavoriteServer, this.favoriteServerSheet(), {
+            radius: NATIVE_BOTTOM_SHEET_RADIUS,
             height: SheetSize.FIT_CONTENT,
             dragBar: true,
 
@@ -450,6 +558,7 @@ export struct MainPage {
       .height('100%')
       .backgroundColor($r('app.color.background_default'))
       .bindSheet(this.showDisplaySettings, this.displaySettingsSheet(), {
+        radius: NATIVE_BOTTOM_SHEET_RADIUS,
         detents: [SheetSize.MEDIUM, SheetSize.LARGE],
         dragBar: false,
         backgroundColor: $r('app.color.bottom_sheet_background'),
@@ -520,7 +629,8 @@ export struct MainPage {
       },
       content: {
         title: {
-          mainTitle: this.selectionMode ? `已选择 ${this.selectionCount} 项` : $r('app.string.app_name')
+          mainTitle: this.selectionMode ? $r('app.string.library_selection_count', this.selectionCount) :
+            $r('app.string.app_name')
         },
         subIcon: {
           content: {
@@ -538,9 +648,10 @@ export struct MainPage {
           value: this.titleMenuItems(),
           maxCount: 3
         },
-        bottomBuilder: this.searchMode ? {
-          builder: (): void => this.titleSearchBuilder(),
-          height: 56
+        bottomBuilder: this.currentTab === 'audio' || (this.searchMode && !this.selectionMode) ? {
+          builder: (): void => this.titleBottomBuilder(),
+          height: (this.currentTab === 'audio' ? AUDIO_SEGMENT_ROW_HEIGHT : 0) +
+            (this.searchMode && !this.selectionMode ? SEARCH_ROW_HEIGHT : 0)
         } : undefined,
         divider: {
           showType: DividerShowType.AUTO
@@ -553,7 +664,7 @@ export struct MainPage {
     .bindToScrollable(this.boundScrollers())
     .dynamicHideTitleBar({
       hideTitleArea: false,
-      hideBottomBuilder: true,
+      hideBottomBuilder: this.currentTab !== 'audio',
       hideStatusBar: false,
       mode: HideMode.SCROLL_UP
     })
@@ -572,8 +683,7 @@ export struct MainPage {
     .onBackPressed(() => {
       // 选择模式优先退出选择,搜索模式其次退出搜索,最后交给系统
       if (this.selectionMode) {
-        this.selectionActionType = 'exit';
-        this.selectionActionVersion++;
+        this.requestSelectionAction('exit');
         return true;
       }
       if (this.searchMode) {
@@ -584,6 +694,7 @@ export struct MainPage {
       return false;
     })
     .bindSheet(this.showAudioDisplaySettings, this.audioDisplaySettingsSheet(), {
+      radius: NATIVE_BOTTOM_SHEET_RADIUS,
       detents: [SheetSize.MEDIUM, SheetSize.LARGE],
       dragBar: false,
       backgroundColor: $r('app.color.bottom_sheet_background'),

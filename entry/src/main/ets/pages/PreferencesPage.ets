@@ -1,3 +1,4 @@
+import { NATIVE_BOTTOM_SHEET_RADIUS } from '../common/constants/BottomSheetStyle';
 import { UiFeedback } from '../common/utils/UiFeedback';
 
 import { PreferenceRow } from '../common/components/PreferenceRow';
@@ -1593,6 +1594,7 @@ export struct PreferencesPage {
         .scrollBar(BarState.Off)
         .align(Alignment.Top)
         .bindSheet(this.sheetOpen, this.preferenceSheet(), {
+          radius: NATIVE_BOTTOM_SHEET_RADIUS,
           height: SheetSize.FIT_CONTENT,
           dragBar: true,
           onDisappear: () => {
@@ -1605,6 +1607,7 @@ export struct PreferencesPage {
       .height('100%')
       .backgroundColor($r('sys.color.background_primary'))
       .bindSheet(this.confirmSheetOpen, this.confirmSheet(), {
+        radius: NATIVE_BOTTOM_SHEET_RADIUS,
         height: SheetSize.FIT_CONTENT,
         dragBar: true,
         onDisappear: () => {
@@ -1689,6 +1692,7 @@ export struct PreferencesPage {
     })
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .bindSheet(this.sleepSheetOpen, this.sleepTimerSheet(), {
+      radius: NATIVE_BOTTOM_SHEET_RADIUS,
       height: SheetSize.FIT_CONTENT,
       dragBar: true,
       backgroundColor: $r('app.color.background_default'),
@@ -2102,7 +2106,6 @@ export struct PreferencesPage {
           }
         }).key((label: ResourceStr, idx: number) => `${idx}`)
       }
-      .divider({ strokeWidth: 0.5, color: $r('app.color.card_background') })
       .width('100%')
       .height(360)
     }

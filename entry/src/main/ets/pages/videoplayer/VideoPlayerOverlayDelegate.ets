@@ -414,7 +414,6 @@ export struct VideoPlayerOverlayHud {
               .bindMenu(this.overlayDelegate.advancedOptionsOpen!!, this.advancedOptionsMenu(), {
                 placement: Placement.TopRight,
                 showInSubWindow: true,
-                backgroundColor: '#FFFFFF',
                 onDisappear: () => this.overlayDelegate.runPendingAdvancedAction(),
               })
           } else {

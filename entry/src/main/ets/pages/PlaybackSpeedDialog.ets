@@ -258,10 +258,6 @@ export struct PlaybackSpeedDialog {
 
       // 底部保存
       Column() {
-        Row()
-          .width('100%')
-          .height(0.5)
-          .backgroundColor(this.cBorder)
         Button('保存')
           .type(ButtonType.Capsule)
           .fontSize(15)

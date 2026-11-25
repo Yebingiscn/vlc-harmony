@@ -243,7 +243,7 @@ export struct AudioEffectsDialog {
                   .height(36)
                   .fontSize(13)
                   .fontColor(this.family === item.index ? $r('app.color.orange500') : $r('app.color.list_title'))
-                  .backgroundColor(this.family === item.index ? '#20FF8800' : $r('app.color.bottom_sheet_background'))
+                  .backgroundColor(this.family === item.index ? '#20FF8800' : Color.Transparent)
                   .onClick(() => this.switchFamily(item.index))
               }
             }).key((f: EffectFamily) => f.first.toString())
@@ -278,6 +278,6 @@ export struct AudioEffectsDialog {
     }
     .width('100%')
     .padding({ left: 16, right: 16, top: 20, bottom: 20 })
-    .backgroundColor($r('app.color.bottom_sheet_background'))
+    .backgroundColor($r('app.color.background_default'))
   }
 }

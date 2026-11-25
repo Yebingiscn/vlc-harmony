@@ -26,7 +26,6 @@ type ToggleField = 'audioBoost' | 'volGesture' | 'brightGesture' | 'swipeSeek' |
 export struct VideoControlsSettingsDialog {
   // 主题感知:浅色=白底深字,深色=深底浅字。资源定义见 base/dark element/color.json。
   readonly cSubtle: Resource = $r('app.color.font_light');
-  readonly cDivider: Resource = $r('app.color.divider');
   // ── 视觉常量 ───────────────────────────────────────────
   readonly cCancelBg: Resource = $r('app.color.background_default_darker');
   // 默认值:与参考图一致 —— 手势类全开,音频增强默认关。
@@ -90,13 +89,6 @@ export struct VideoControlsSettingsDialog {
     }
   }
 
-  /** 0.5px 分隔线 —— 1px 在低 dpi 屏有时会粗,0.5 更细。 */
-  @Builder
-  thinDivider() {
-    Row()
-      .width('100%').height(0.5)
-      .backgroundColor(this.cDivider)
-  }
 
   /** 复选项行 —— 自绘 checkbox,整行可点。builder 内直接读 this.state 保证响应式。 */
   @Builder
@@ -233,11 +225,9 @@ export struct VideoControlsSettingsDialog {
             })
             .textAlign(TextAlign.Start)
 
-          this.thinDivider()
 
           // ── 音频增强 ──────────────────────────────────────
           this.toggleRow($r('app.string.audio_boost_title'), $r('app.string.audio_boost_summary'), 'audioBoost')
-          this.thinDivider()
 
           // ── 手势段标题(橙色) ─────────────────────────────
           Text($r('app.string.gesture_section'))
@@ -253,25 +243,18 @@ export struct VideoControlsSettingsDialog {
             })
 
           this.toggleRow($r('app.string.volume_gesture_title'), $r('app.string.volume_gesture_summary'), 'volGesture')
-          this.thinDivider()
 
           this.toggleRow($r('app.string.brightness_gesture_title'), $r('app.string.brightness_gesture_summary'), 'brightGesture')
-          this.thinDivider()
 
           this.toggleRow($r('app.string.swipe_seek_title'), $r('app.string.swipe_seek_summary'), 'swipeSeek')
-          this.thinDivider()
 
           this.toggleRow($r('app.string.pinch_zoom_title'), $r('app.string.pinch_zoom_summary'), 'pinchZoom')
-          this.thinDivider()
 
           this.doubleTapSeekRow()
-          this.thinDivider()
 
           this.toggleRow($r('app.string.double_tap_play_pause_title'), $r('app.string.double_tap_play_pause_summary'), 'doubleTapPlayPause')
-          this.thinDivider()
 
           this.disabledRow($r('app.string.screenshot_disabled_title'), $r('app.string.screenshot_disabled_summary'))
-          this.thinDivider()
 
         }
         .width('100%')

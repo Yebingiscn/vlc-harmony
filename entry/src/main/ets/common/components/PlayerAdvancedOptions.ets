@@ -5,10 +5,9 @@ export type PlayerAdvancedOptionId =
     | 'sleep'
     | 'speed'
     | 'jumpToTime'
-  | 'audioEffects'
+    | 'audioEffects'
     | 'playAsAudio'
     | 'popupPlayer'
-    | 'repeat'
     | 'videoInfo'
     | 'bookmark'
     | 'abRepeat'
@@ -42,7 +41,7 @@ export function buildPlayerAdvancedOptions(mode: PlayerAdvancedMenuMode): Player
     new PlayerAdvancedOption('sleep', '睡眠定时器', $r('app.media.ic_sleep')),
     new PlayerAdvancedOption('speed', '播放速度', $r('app.media.ic_speed')),
     new PlayerAdvancedOption('jumpToTime', '跳转至时间', $r('app.media.ic_jumpto')),
-    new PlayerAdvancedOption('audioEffects', '音效', $r('app.media.ic_options_equalizer')),
+    new PlayerAdvancedOption('audioEffects', '流心音效', $r('app.media.ic_options_equalizer')),
   ];
 
   if (mode === 'video') {
@@ -51,7 +50,6 @@ export function buildPlayerAdvancedOptions(mode: PlayerAdvancedMenuMode): Player
       ...shared,
       new PlayerAdvancedOption('playAsAudio', '仅播放音频', $r('app.media.ic_playasaudio_on')),
       new PlayerAdvancedOption('popupPlayer', '弹出式播放器', $r('app.media.ic_popup_dim')),
-      new PlayerAdvancedOption('repeat', '循环模式', $r('app.media.ic_repeat')),
       new PlayerAdvancedOption('videoInfo', '视频信息', $r('app.media.ic_video_stats')),
       new PlayerAdvancedOption('bookmark', '书签', $r('app.media.ic_bookmark')),
       new PlayerAdvancedOption('abRepeat', 'A-B 循环', $r('app.media.ic_abrepeat')),
@@ -84,7 +82,7 @@ const OPTION_MAX_HEIGHT = 560;
 @ComponentV2
 export struct PlayerAdvancedOptions {
   @Param items: PlayerAdvancedOption[] = [];
-  /** 当前激活项的 id 列表(如 repeat=激活时图标/文字变橙色)。 */
+  /** 当前激活项的 id 列表，图标和文字用强调色显示。 */
   @Param activeIds: PlayerAdvancedOptionId[] = [];
   @Event onSelect: (id: PlayerAdvancedOptionId) => void = () => {
   };

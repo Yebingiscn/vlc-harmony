@@ -1,8 +1,68 @@
 {
   "string": [
     {
+      "name": "audio_album_tracks_count",
+      "value": "专辑曲目 · %d 首"
+    },
+    {
       "name": "audio_effects_title",
-      "value": "音效"
+      "value": "流心音效"
+    },
+    {
+      "name": "audio_item_actions",
+      "value": "「%s」的更多操作"
+    },
+    {
+      "name": "library_selection_count",
+      "value": "已选择 %d 项"
+    },
+    {
+      "name": "audio_multi_select",
+      "value": "多选"
+    },
+    {
+      "name": "audio_select_all",
+      "value": "全选"
+    },
+    {
+      "name": "audio_unselect_all",
+      "value": "取消全选"
+    },
+    {
+      "name": "audio_select_track",
+      "value": "选择「%s」"
+    },
+    {
+      "name": "audio_unselect_track",
+      "value": "取消选择「%s」"
+    },
+    {
+      "name": "audio_remove_batch_confirm",
+      "value": "将选中的 %d 首曲目从 VLC 媒体库移除？不会删除原文件。"
+    },
+    {
+      "name": "audio_remove_batch_success",
+      "value": "已从媒体库移除 %d 首曲目"
+    },
+    {
+      "name": "audio_remove_from_library",
+      "value": "从媒体库移除"
+    },
+    {
+      "name": "audio_remove_confirm",
+      "value": "将「%s」从 VLC 媒体库移除？不会删除原文件，之后可以重新导入。"
+    },
+    {
+      "name": "audio_remove_action",
+      "value": "移除"
+    },
+    {
+      "name": "audio_remove_success",
+      "value": "已从媒体库移除"
+    },
+    {
+      "name": "audio_remove_failed",
+      "value": "未能移除曲目，请重试"
     },
     {
       "name": "audio_effects_presets",
@@ -821,6 +881,26 @@
     {
       "name": "menu_refresh",
       "value": "刷新"
+    },
+    {
+      "name": "menu_refresh_history",
+      "value": "刷新历史"
+    },
+    {
+      "name": "menu_refresh_failed",
+      "value": "刷新失败，请重试"
+    },
+    {
+      "name": "playback_history_empty",
+      "value": "暂无播放历史"
+    },
+    {
+      "name": "playback_history_refreshed",
+      "value": "播放历史已刷新"
+    },
+    {
+      "name": "playback_history_open_failed",
+      "value": "无法打开此播放记录"
     },
     {
       "name": "more",
@@ -1854,6 +1934,38 @@
 
       "name": "controls_settings_saved",
       "value": "控制设置已保存"
+    },
+    {
+      "name": "player_playback_mode",
+      "value": "播放模式"
+    },
+    {
+      "name": "player_order_sequential",
+      "value": "顺序播放"
+    },
+    {
+      "name": "player_order_shuffle",
+      "value": "随机播放"
+    },
+    {
+      "name": "player_repeat_off",
+      "value": "关闭循环"
+    },
+    {
+      "name": "player_repeat_all",
+      "value": "列表循环"
+    },
+    {
+      "name": "player_repeat_one",
+      "value": "单项循环"
+    },
+    {
+      "name": "player_queue",
+      "value": "播放队列"
+    },
+    {
+      "name": "player_queue_empty",
+      "value": "播放队列为空"
     },
     {
       "name": "repeat_one_enabled",

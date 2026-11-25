@@ -98,13 +98,6 @@ export struct BookmarkDialog {
     .backgroundColor(this.cHeaderBg)
   }
 
-  @Builder
-  thinDivider() {
-    Row()
-      .width('100%').height(0.5)
-      .backgroundColor(this.cDivider)
-  }
-
   /** 底部时间线 + 书签点。高度 36,作为面板最底下一条。 */
   @Builder
   timeline() {
@@ -254,7 +247,6 @@ export struct BookmarkDialog {
     // 现在 sheet 高度 = panel 高度(620),自动贴屏幕底,半透明背景让视频透出。
     Column() {
       this.panelHeader()
-      this.thinDivider()
       // 始终渲染 List(不再 if/else 切换 empty/list),保证 sheet 内容高度稳定,
       // 避免 bindSheet FIT_CONTENT 模式下空态/列表切换触发 onDisappear → closeSheet。
       List({ space: 0 }) {
@@ -277,14 +269,6 @@ export struct BookmarkDialog {
       .width('100%')
       .layoutWeight(1)
       .scrollBar(BarState.Off)
-      .divider({
-        strokeWidth: 0.5,
-        color: this.cDivider,
-        startMargin: 56,
-        endMargin: 12,
-      })
-
-      this.thinDivider()
       this.timeline()
     }
     .width('100%')

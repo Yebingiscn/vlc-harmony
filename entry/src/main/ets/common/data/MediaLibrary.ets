@@ -21,6 +21,7 @@ import { BookMark } from '../models/BookmarkModels';
 import { QueueItem } from './PlaybackService';
 import { Settings } from './Settings';
 import { DocumentPermission } from './DocumentPermission';
+import { audioAlbumArtist, audioAlbumKey, audioTag, audioTagKey } from './AudioLibraryIdentity';
 
 /** 统一日志:tag=VLC,消息带 [VLC] 前缀,便于 `grep VLC run.log` 过滤出应用日志。 */
 const HILog = (msg: string): void => hilog.info(0x0001, 'VLC', '[VLC] %{public}s', msg);
@@ -60,6 +61,7 @@ interface PersistedTrack {
   title: string;
   artistName: string;
   albumName: string;
+  albumArtistName?: string;
   genre: string;
   trackNumber: number;
   year: string;
@@ -125,7 +127,7 @@ export class MediaLibrary {
     return MediaLibrary.scanned;
   }
 
-  /** 串行化 import/scan,避免 async 竞态导致 videos 被清空丢失。 */
+  /** 串行化媒体库导入、移除和扫描，避免并发写入覆盖已有记录。 */
   private static async acquireLock(): Promise<() => void> {
     const prev = MediaLibrary.libLock;
     let release: () => void = () => {};
@@ -166,6 +168,10 @@ export class MediaLibrary {
     return MediaLibrary.audios;
   }
 
+  private static nextAudioTrackId(): number {
+    return MediaLibrary.audios.reduce((max: number, track: Track) => Math.max(max, track.id), -1) + 1;
+  }
+
   static getArtists(): Artist[] {
     return MediaLibrary.artists;
   }
@@ -200,7 +206,7 @@ export class MediaLibrary {
     if (newByUri.length === 0) {
       return;
     }
-    const startIndex = MediaLibrary.audios.length;
+    const startIndex = MediaLibrary.nextAudioTrackId();
     let addedCount = 0;
     for (let i = 0; i < newByUri.length; i++) {
       onProgress?.(i, newByUri.length);
@@ -218,6 +224,7 @@ export class MediaLibrary {
       t.length = meta.duration;
       t.artistName = meta.artist;
       t.albumName = meta.album;
+      t.albumArtistName = meta.albumArtist;
       t.genre = meta.genre;
       t.trackNumber = parseInt(meta.trackNumber) || 0;
       t.year = meta.year;
@@ -233,6 +240,32 @@ export class MediaLibrary {
     onProgress?.(newByUri.length, newByUri.length);
     HILog(`importAudioUris done, added ${addedCount}, total audios: ${MediaLibrary.audios.length}`);
     } finally { release(); }
+  }
+
+  /** 一次移除全部命中的 URI，保留源文件、权限和独立的播放列表/历史记录。 */
+  static async removeAudiosFromLibrary(uris: string[]): Promise<number> {
+    if (uris.length === 0) {
+      return 0;
+    }
+    const targets = new Set<string>(uris);
+    const release = await MediaLibrary.acquireLock();
+    try {
+      const remaining = MediaLibrary.audios.filter((track: Track) => !targets.has(track.uri));
+      const removed = MediaLibrary.audios.length - remaining.length;
+      if (removed === 0) {
+        return 0;
+      }
+      if (!(await MediaLibrary.saveAudioLibrary(remaining))) {
+        // A failed flush can still leave the preferences cache updated.
+        await MediaLibrary.saveAudioLibrary();
+        return 0;
+      }
+      MediaLibrary.audios = remaining;
+      MediaLibrary.deriveFromMeta();
+      return removed;
+    } finally {
+      release();
+    }
   }
 
   /** 将 DocumentViewPicker 选中的视频按 URI 引用加入媒体库，不复制媒体文件。 */
@@ -624,7 +657,7 @@ export class MediaLibrary {
   }
 
   /** 计算专辑收藏键:空专辑名/歌手名归一化为"未知专辑"/"未知艺术家"。 */
-  static albumFavKey(albumName: string, artistName: string): string {
+  private static legacyAlbumFavKey(albumName: string, artistName: string): string {
     const a = albumName.length > 0 ? albumName : '未知专辑';
     const ar = artistName.length > 0 ? artistName : '未知艺术家';
     return `${a}|${ar}`;
@@ -643,20 +676,39 @@ export class MediaLibrary {
     }
   }
 
-  static isMediaFav(key: string): boolean {
-    return MediaLibrary.mediaFavCache.has(key);
+  static getFavoriteAudioAlbumKeys(): Set<string> {
+    const keys = new Set<string>();
+    for (const track of MediaLibrary.audios) {
+      const key = audioAlbumKey(track);
+      if (MediaLibrary.mediaFavCache.has(key) ||
+        MediaLibrary.mediaFavCache.has(audioAlbumKey(track, false)) ||
+        MediaLibrary.mediaFavCache.has(MediaLibrary.legacyAlbumFavKey(track.albumName, track.artistName))) {
+        keys.add(key);
+      }
+    }
+    return keys;
   }
 
   /** 切换收藏状态,返回切换后是否已收藏。 */
-  static async toggleMediaFav(key: string): Promise<boolean> {
-    if (MediaLibrary.mediaFavCache.has(key)) {
-      MediaLibrary.mediaFavCache.delete(key);
+  static async toggleAudioAlbumFavorite(key: string): Promise<boolean> {
+    const aliases = new Set<string>([key]);
+    for (const track of MediaLibrary.audios) {
+      if (audioAlbumKey(track) === key) {
+        aliases.add(audioAlbumKey(track, false));
+        aliases.add(MediaLibrary.legacyAlbumFavKey(track.albumName, track.artistName));
+      }
+    }
+    const wasFavorite = Array.from(aliases).some((alias: string) => MediaLibrary.mediaFavCache.has(alias));
+    if (wasFavorite) {
+      for (const alias of aliases) {
+        MediaLibrary.mediaFavCache.delete(alias);
+      }
     } else {
       MediaLibrary.mediaFavCache.add(key);
     }
     const arr: string[] = Array.from(MediaLibrary.mediaFavCache);
     await Settings.put(MediaLibrary.KEY_MEDIA_FAVS, JSON.stringify(arr));
-    return MediaLibrary.mediaFavCache.has(key);
+    return !wasFavorite;
   }
 
   static async loadVideoFavs(): Promise<void> {
@@ -1166,15 +1218,7 @@ export class MediaLibrary {
   /** 单文件元数据解析:系统 AVMetadataExtractor → libVLC NAPI → 文件名兜底。 */
   private static async parseFileMeta(rawPath: string): Promise<AudioMeta> {
     const titleFromName = MediaLibrary.fileNameTitle(rawPath);
-
-    // 1️⃣ 系统 AVMetadataExtractor(先用原始 URI 试,再用去 file:// 的路径试)。
-    let sysMeta = await MediaLibrary.extractMetaWithSystem(rawPath);
-    if (sysMeta === null) {
-      const fsPath = MediaLibrary.normalizePath(rawPath);
-      if (fsPath !== rawPath) {
-        sysMeta = await MediaLibrary.extractMetaWithSystem(fsPath);
-      }
-    }
+    const sysMeta = await MediaLibrary.readAudioMetadata(rawPath, true);
     if (sysMeta !== null) {
       if (sysMeta.title.length === 0) {
         sysMeta.title = titleFromName;
@@ -1186,6 +1230,15 @@ export class MediaLibrary {
     // 2️⃣ 文件名兜底(系统提取器失败时)。
     HILog(`system extractor failed for ${rawPath}, using filename fallback`);
     return MediaLibrary.fallbackMeta(rawPath);
+  }
+
+  private static async readAudioMetadata(rawPath: string, includeCover: boolean): Promise<AudioMeta | null> {
+    const meta = await MediaLibrary.extractMetaWithSystem(rawPath, includeCover);
+    if (meta !== null) {
+      return meta;
+    }
+    const fsPath = MediaLibrary.normalizePath(rawPath);
+    return fsPath !== rawPath ? await MediaLibrary.extractMetaWithSystem(fsPath, includeCover) : null;
   }
 
   /** 去除 file:// 前缀,用于 fs API。 */
@@ -1272,7 +1325,7 @@ export class MediaLibrary {
   // ---- 视频收藏(按 uri) ----
 
   /** 通过系统 AVMetadataExtractor 提取元数据,每次新建实例(避免复用缓存上一文件的元数据)。 */
-  private static async extractMetaWithSystem(filePath: string): Promise<AudioMeta | null> {
+  private static async extractMetaWithSystem(filePath: string, includeCover: boolean): Promise<AudioMeta | null> {
     let extractor: media.AVMetadataExtractor | null = null;
     let file: fs.File | null = null;
     try {
@@ -1292,12 +1345,17 @@ export class MediaLibrary {
         trackNumber: meta.tracks != null ? String(meta.tracks) : '',
         year: '',
         artworkUrl: '',
-        albumArtist: '',
+        albumArtist: meta.albumArtist ?? '',
         duration: Number(meta.duration ?? 0),
         artworkPath: '',
         videoWidth: Number(meta.videoWidth ?? 0),
         videoHeight: Number(meta.videoHeight ?? 0),
       };
+      if (!includeCover) {
+        fs.closeSync(file.fd);
+        file = null;
+        return result;
+      }
       // 提取专辑封面并缓存到本地(修复:file 保持打开)。
       try {
         HILog(`[art] fetching album cover for ${filePath}...`);
@@ -1418,18 +1476,17 @@ export class MediaLibrary {
 
     for (const t of MediaLibrary.audios) {
       // 艺术家(未知统一归入 "未知艺术家")。
-      const artistKey = t.artistName.length > 0 ? t.artistName : '未知艺术家';
+      const artistKey = audioTagKey(t.artistName);
       if (!artistMap.has(artistKey)) {
-        const a = new Artist(aid++, artistKey);
+        const a = new Artist(aid++, audioTag(t.artistName) || '未知艺术家');
         artistMap.set(artistKey, a);
       }
       artistMap.get(artistKey)!.trackCount += 1;
 
-      // 专辑(联合键:albumName + artistName,避免同名专辑冲突)。
-      const albumName = t.albumName.length > 0 ? t.albumName : '未知专辑';
-      const albumKey = `${albumName}|${t.artistName}`;
+      // 专辑艺术家优先；无此标签时保留同名但不同艺人的专辑。
+      const albumKey = audioAlbumKey(t);
       if (!albumMap.has(albumKey)) {
-        const al = new Album(bid++, albumName, artistKey);
+        const al = new Album(bid++, audioTag(t.albumName) || '未知专辑', audioAlbumArtist(t) || '未知艺术家');
         albumMap.set(albumKey, al);
       }
       albumMap.get(albumKey)!.trackCount += 1;
@@ -1532,14 +1589,15 @@ export class MediaLibrary {
   }
 
   /** 将当前音频列表序列化为 JSON 并持久化到 preferences。 */
-  private static async saveAudioLibrary(): Promise<void> {
+  private static async saveAudioLibrary(tracks: Track[] = MediaLibrary.audios): Promise<boolean> {
     try {
-      const arr: PersistedTrack[] = MediaLibrary.audios.map((t: Track) => {
+      const arr: PersistedTrack[] = tracks.map((t: Track) => {
         const item: PersistedTrack = {
           uri: t.uri,
           title: t.title,
           artistName: t.artistName,
           albumName: t.albumName,
+          albumArtistName: t.albumArtistName,
           genre: t.genre,
           trackNumber: t.trackNumber,
           year: t.year,
@@ -1548,10 +1606,12 @@ export class MediaLibrary {
         };
         return item;
       });
-      await Settings.put(KEY_AUDIO_LIBRARY, JSON.stringify(arr));
-      HILog(`saved ${arr.length} tracks to preferences`);
+      const saved = await Settings.tryPut(KEY_AUDIO_LIBRARY, JSON.stringify(arr));
+      HILog(saved ? `saved ${arr.length} tracks to preferences` : 'saveAudioLibrary: preferences write failed');
+      return saved;
     } catch (e) {
       HILog(`saveAudioLibrary error: ${(e as Error).message ?? String(e)}`);
+      return false;
     }
   }
 
@@ -1567,6 +1627,22 @@ export class MediaLibrary {
         return;
       }
       const existing = new Set(MediaLibrary.audios.map((t: Track) => t.uri));
+      // Only read legacy files that could have been split by the old artist
+      // fallback. An empty (known missing) album artist is persisted as ''.
+      const albumOwners = new Map<string, string>();
+      const splitAlbums = new Set<string>();
+      for (const item of arr) {
+        const album = audioTagKey(item.albumName ?? '');
+        if (album.length === 0) {
+          continue;
+        }
+        const owner = audioTagKey(item.albumArtistName ?? '') || audioTagKey(item.artistName ?? '');
+        if (albumOwners.has(album) && albumOwners.get(album) !== owner) {
+          splitAlbums.add(album);
+        }
+        albumOwners.set(album, owner);
+      }
+      const startIndex = MediaLibrary.nextAudioTrackId();
       let added = 0;
       let persistedDataChanged: boolean = false;
       for (const item of arr) {
@@ -1577,24 +1653,40 @@ export class MediaLibrary {
         const fileNameTitle: string = MediaLibrary.fileNameTitle(item.uri);
         const title: string = storedTitle.length > 0 ? MediaLibrary.decodeUriText(storedTitle) : fileNameTitle;
         if (title !== storedTitle) {
+          item.title = title;
           persistedDataChanged = true;
         }
-        const t = new Track(MediaLibrary.audios.length, title, item.uri);
-        t.artistName = item.artistName;
-        t.albumName = item.albumName;
+        const t = new Track(startIndex + added, title, item.uri);
+        t.artistName = item.artistName ?? '';
+        t.albumName = item.albumName ?? '';
+        t.albumArtistName = item.albumArtistName;
         t.genre = item.genre;
         t.trackNumber = item.trackNumber;
         t.year = item.year;
         t.length = item.length;
         t.artworkPath = item.artworkPath ?? '';
+        const needsOwner = t.albumArtistName === undefined && splitAlbums.has(audioTagKey(t.albumName));
         if (!MediaLibrary.artworkExists(t.artworkPath)) {
           // 与视频库一致：缓存被清理后重新提取内嵌封面，不保留失效路径。
           const meta: AudioMeta = await MediaLibrary.parseFileMeta(item.uri);
           const restoredArtwork: string = MediaLibrary.artworkExists(meta.artworkPath) ? meta.artworkPath : '';
           if (t.artworkPath !== restoredArtwork) {
+            item.artworkPath = restoredArtwork;
             persistedDataChanged = true;
           }
           t.artworkPath = restoredArtwork;
+          if (needsOwner && meta.albumArtist.length > 0) {
+            t.albumArtistName = meta.albumArtist;
+            item.albumArtistName = meta.albumArtist;
+            persistedDataChanged = true;
+          }
+        } else if (needsOwner) {
+          const meta = await MediaLibrary.readAudioMetadata(item.uri, false);
+          if (meta !== null) {
+            t.albumArtistName = meta.albumArtist;
+            item.albumArtistName = meta.albumArtist;
+            persistedDataChanged = true;
+          }
         }
         t.displayName = title;
         t.filePath = item.uri;
@@ -1606,7 +1698,8 @@ export class MediaLibrary {
         HILog(`loaded ${added} persisted tracks`);
       }
       if (persistedDataChanged) {
-        await MediaLibrary.saveAudioLibrary();
+        // Keep records whose files are temporarily unavailable.
+        await Settings.tryPut(KEY_AUDIO_LIBRARY, JSON.stringify(arr));
       }
     } catch (e) {
       HILog(`loadAudioLibrary error: ${(e as Error).message ?? String(e)}`);

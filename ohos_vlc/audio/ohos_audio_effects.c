@@ -19,8 +19,12 @@
 #define STALL_MS 120u
 #define SEPARATION_LOOKAHEAD_MS 100u
 #define SEPARATION_STALL_MS 160u
-#define PCM_CAPACITY 65536u
-#define OUTPUT_CAPACITY (48000u * 8u * RENDER_MS / 1000u)
+#define MAX_SAMPLE_RATE 96000u
+#define MAX_FRAME_BYTES 8u /* Stereo S32 or float. */
+#define OUTPUT_CAPACITY (MAX_SAMPLE_RATE * MAX_FRAME_BYTES * RENDER_MS / 1000u)
+/* Keep enough original PCM to reach the longest render timeout and feed another quantum. */
+#define PCM_CAPACITY (MAX_SAMPLE_RATE * MAX_FRAME_BYTES * \
+                      (SEPARATION_STALL_MS + RENDER_MS) / 1000u)
 
 struct ohos_audio_effects {
     void *library;
@@ -237,7 +241,8 @@ void ohos_effects_close(ohos_audio_effects *s)
 
 ohos_audio_effects *ohos_effects_open(int preset, unsigned rate, ohos_pcm_type pcm)
 {
-    if (preset < 1 || preset > VLC_OHOS_EFFECT_MAX || (rate != 44100 && rate != 48000))
+    if (preset < 1 || preset > VLC_OHOS_EFFECT_MAX ||
+        (rate != 44100 && rate != 48000 && rate != MAX_SAMPLE_RATE))
         return NULL;
     OH_Audio_SampleFormat sample;
     switch (pcm) {
@@ -246,6 +251,8 @@ ohos_audio_effects *ohos_effects_open(int preset, unsigned rate, ohos_pcm_type p
         case OHOS_PCM_FLOAT: sample = AUDIO_SAMPLE_F32LE; break;
         default: return NULL;
     }
+    /* Match the VLC renderer at both ends. AudioSuite handles any conversion
+     * required by the selected effect node. */
     OH_AudioFormat format = {
         .samplingRate = (OH_Audio_SampleRate)rate,
         .channelLayout = CH_LAYOUT_STEREO, .channelCount = 2,

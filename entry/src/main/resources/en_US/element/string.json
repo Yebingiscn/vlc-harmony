@@ -1,8 +1,68 @@
 {
   "string": [
     {
+      "name": "audio_album_tracks_count",
+      "value": "Tracks · %d"
+    },
+    {
       "name": "audio_effects_title",
       "value": "Audio effects"
+    },
+    {
+      "name": "audio_item_actions",
+      "value": "More actions for “%s”"
+    },
+    {
+      "name": "library_selection_count",
+      "value": "%d selected"
+    },
+    {
+      "name": "audio_multi_select",
+      "value": "Select multiple"
+    },
+    {
+      "name": "audio_select_all",
+      "value": "Select all"
+    },
+    {
+      "name": "audio_unselect_all",
+      "value": "Deselect all"
+    },
+    {
+      "name": "audio_select_track",
+      "value": "Select “%s”"
+    },
+    {
+      "name": "audio_unselect_track",
+      "value": "Deselect “%s”"
+    },
+    {
+      "name": "audio_remove_batch_confirm",
+      "value": "Remove the %d selected tracks from the VLC library? The original files will be kept."
+    },
+    {
+      "name": "audio_remove_batch_success",
+      "value": "Removed %d tracks from the library"
+    },
+    {
+      "name": "audio_remove_from_library",
+      "value": "Remove from library"
+    },
+    {
+      "name": "audio_remove_confirm",
+      "value": "Remove “%s” from the VLC library? The original file will be kept and can be imported again."
+    },
+    {
+      "name": "audio_remove_action",
+      "value": "Remove"
+    },
+    {
+      "name": "audio_remove_success",
+      "value": "Removed from library"
+    },
+    {
+      "name": "audio_remove_failed",
+      "value": "Couldn't remove track. Try again."
     },
     {
       "name": "audio_effects_presets",
@@ -769,6 +829,26 @@
     {
       "name": "menu_refresh",
       "value": "Refresh"
+    },
+    {
+      "name": "menu_refresh_history",
+      "value": "Refresh history"
+    },
+    {
+      "name": "menu_refresh_failed",
+      "value": "Couldn’t refresh. Please try again."
+    },
+    {
+      "name": "playback_history_empty",
+      "value": "No playback history"
+    },
+    {
+      "name": "playback_history_refreshed",
+      "value": "Playback history refreshed"
+    },
+    {
+      "name": "playback_history_open_failed",
+      "value": "Couldn’t open this history item"
     },
     {
       "name": "more",
@@ -1797,6 +1877,38 @@
     {
       "name": "controls_settings_saved",
       "value": "Controls settings saved"
+    },
+    {
+      "name": "player_playback_mode",
+      "value": "Playback mode"
+    },
+    {
+      "name": "player_order_sequential",
+      "value": "Play in order"
+    },
+    {
+      "name": "player_order_shuffle",
+      "value": "Shuffle"
+    },
+    {
+      "name": "player_repeat_off",
+      "value": "Repeat off"
+    },
+    {
+      "name": "player_repeat_all",
+      "value": "Repeat queue"
+    },
+    {
+      "name": "player_repeat_one",
+      "value": "Repeat one"
+    },
+    {
+      "name": "player_queue",
+      "value": "Playback queue"
+    },
+    {
+      "name": "player_queue_empty",
+      "value": "The playback queue is empty"
     },
     {
       "name": "repeat_one_enabled",

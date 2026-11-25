@@ -954,6 +954,27 @@ export class PlaybackService {
     await this.loadCurrent();
   }
 
+  async playQueueIndex(index: number, uri: string): Promise<void> {
+    // A queue update may have replaced the row between rendering and tapping it.
+    if (!Number.isInteger(index) || this.queue[index]?.uri !== uri) {
+      return;
+    }
+    if (this.currentIndex === index) {
+      if (this.state !== PlayState.PLAYING) {
+        await this.play();
+      }
+      return;
+    }
+    if (this.shuffle && this.getCurrent() !== null) {
+      this.shuffleHistory = this.shuffleHistory.filter((visited: number) => visited !== index);
+      this.shuffleHistory.push(this.currentIndex);
+    }
+    this.currentIndex = index;
+    this.emitQueue();
+    this.saveQueueHistory();
+    await this.loadCurrent();
+  }
+
   async prev(): Promise<void> {
     if (this.queue.length === 0) {
       return;
@@ -1044,8 +1065,15 @@ export class PlaybackService {
   }
 
   cycleRepeat(): void {
-    this.repeatMode = (this.repeatMode + 1) % 3;
-    hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] cycleRepeat -> %{public}d (0=none 1=all 2=one)',
+    this.setRepeatMode((this.repeatMode + 1) % 3);
+  }
+
+  setRepeatMode(mode: number): void {
+    if (!Number.isInteger(mode) || mode < 0 || mode > 2 || this.repeatMode === mode) {
+      return;
+    }
+    this.repeatMode = mode;
+    hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] setRepeatMode -> %{public}d (0=none 1=all 2=one)',
       this.repeatMode);
     void Settings.put(Settings.KEY_PLAYBACK_REPEAT_MODE, this.repeatMode);
     this.emitQueue();
