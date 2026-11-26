@@ -9,6 +9,7 @@ import { common } from '@kit.AbilityKit';
 import { NavController } from '../common/data/NavController';
 import { AppColors, AppDimens, RouteName } from '../common/constants/AppConstants';
 import { EmptyStateView } from '../common/components/EmptyStateView';
+import { FloatingAddButton } from '../common/components/FloatingAddButton';
 import { MediaGridCard } from '../common/components/MediaGridCard';
 import { MediaListCard } from '../common/components/MediaListCard';
 import {
@@ -494,21 +495,9 @@ export struct VideoGridPage {
       .width('100%')
       .height('100%')
 
-      // 与音频页保持一致：已有视频后也能继续通过系统文件选择器添加。
       if (!this.searchMode && !this.inSelection) {
-        Button() {
-          Image($r('app.media.ic_add'))
-            .width(22)
-            .height(22)
-            .fillColor($r('app.color.colorOnPrimary'))
-        }
-        .width(48)
-        .height(48)
-        .borderRadius(24)
-        .backgroundColor(AppColors.orange500)
-        .shadow({ radius: 8, color: '#44000000', offsetY: 4 })
-        .position({ right: 16, bottom: this.fabBottom })
-        .onClick(() => this.onAddVideo())
+        FloatingAddButton({ onPress: () => this.onAddVideo() })
+          .position({ right: 16, bottom: this.fabBottom })
       }
     }
     .width('100%')
@@ -1186,6 +1175,9 @@ export struct VideoGridPage {
 
   /** 通过系统文件选择器导入视频，仅保存持久 URI 引用。 */
   private async onAddVideo(): Promise<void> {
+    if (this.importActive) {
+      return;
+    }
     try {
       const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
       const options = new picker.DocumentSelectOptions();
@@ -1199,16 +1191,23 @@ export struct VideoGridPage {
         this.importActive = true;
         this.importCurrent = 0;
         this.importTotal = uris.length;
-        await MediaLibrary.importVideoUris(uris, (current: number, total: number): void => {
+        const result = await MediaLibrary.importVideoUris(uris, (current: number, total: number): void => {
           this.importCurrent = current;
           this.importTotal = total;
         });
         this.importActive = false;
+        UiFeedback.showToast({
+          message: $r('app.string.media_import_result', result.succeeded, result.failed, result.duplicates),
+        });
         await this.vm.rebuild();
       }
     } catch (e) {
-      this.importActive = false;
+      if (this.importActive) {
+        UiFeedback.showToast({ message: $r('app.string.media_import_error') });
+      }
       hilog.warn(0x0001, 'VLC', '[VLC] onAddVideo: %{public}s', (e as Error).message ?? String(e));
+    } finally {
+      this.importActive = false;
     }
   }
 }

@@ -78,7 +78,7 @@ export class DocumentPermission {
     return false;
   }
 
-  private static canOpen(uri: string): boolean {
+  static canOpen(uri: string): boolean {
     let file: fs.File | null = null;
     try {
       file = fs.openSync(uri, fs.OpenMode.READ_ONLY);

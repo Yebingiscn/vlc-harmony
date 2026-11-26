@@ -76,6 +76,13 @@ export class QueueItem {
   }
 }
 
+export enum PlaybackMode {
+  Sequence,
+  RepeatAll,
+  RepeatOne,
+  Shuffle,
+}
+
 /** 播放器可观察快照(兼容 MiniPlayer / AudioPlayer onChange)。 */
 export interface PlaybackState {
   state: PlayState;
@@ -88,6 +95,7 @@ export interface PlaybackState {
   speed: number;
   shuffle: boolean;
   repeatMode: number;
+  mode: PlaybackMode;
 
   /** 全局音频播放速度是否开启(速度弹窗默认作用域:开→所有曲目,关→此曲目)。 */
   globalSpeedEnabled: boolean;
@@ -130,6 +138,7 @@ export class PlaybackService {
   private trackSpeeds: Map<string, number> = new Map();
   private shuffle: boolean = false;
   private repeatMode: number = 0;
+  private playbackModeWrite: Promise<void> = Promise.resolve();
   private playAsAudio: boolean = false;
   /** AUDIO_PLAYBACK 长时任务激活标记(播放中申请,暂停/停止时取消)。 */
   private continuousTaskActive: boolean = false;
@@ -436,6 +445,16 @@ export class PlaybackService {
     return this.repeatMode;
   }
 
+  getPlaybackMode(): PlaybackMode {
+    if (this.repeatMode === 2) {
+      return PlaybackMode.RepeatOne;
+    }
+    if (this.shuffle) {
+      return PlaybackMode.Shuffle;
+    }
+    return this.repeatMode === 1 ? PlaybackMode.RepeatAll : PlaybackMode.Sequence;
+  }
+
   getPlayAsAudio(): boolean {
     return this.playAsAudio;
   }
@@ -737,6 +756,7 @@ export class PlaybackService {
       speed: this.speed,
       shuffle: this.shuffle,
       repeatMode: this.repeatMode,
+      mode: this.getPlaybackMode(),
       globalSpeedEnabled: this.globalSpeedEnabled,
       queueSize: this.queue.length,
       currentIndex: this.currentIndex,
@@ -1045,23 +1065,15 @@ export class PlaybackService {
   }
 
   toggleShuffle(): void {
-    this.shuffle = !this.shuffle;
-    // 对齐 Android shuffle():切换后清空历史,随机从当前曲目重新开始
-    this.shuffleHistory = [];
-    hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] toggleShuffle -> %{public}s',
-      this.shuffle ? 'on' : 'off');
-    void Settings.put(Settings.AUDIO_SHUFFLING, this.shuffle);
-    this.emitQueue();
+    this.setShuffle(!this.shuffle);
   }
 
   setShuffle(value: boolean): void {
-    if (this.shuffle === value) {
-      return;
+    if (value) {
+      this.updatePlaybackMode(true, 1);
+    } else {
+      this.updatePlaybackMode(false, this.repeatMode);
     }
-    this.shuffle = value;
-    this.shuffleHistory = [];
-    void Settings.put(Settings.AUDIO_SHUFFLING, this.shuffle);
-    this.emitQueue();
   }
 
   cycleRepeat(): void {
@@ -1069,13 +1081,45 @@ export class PlaybackService {
   }
 
   setRepeatMode(mode: number): void {
-    if (!Number.isInteger(mode) || mode < 0 || mode > 2 || this.repeatMode === mode) {
+    if (!Number.isInteger(mode) || mode < 0 || mode > 2) {
       return;
     }
-    this.repeatMode = mode;
-    hilog.info(LOG_DOMAIN, LOG_TAG, '[VLC] setRepeatMode -> %{public}d (0=none 1=all 2=one)',
-      this.repeatMode);
-    void Settings.put(Settings.KEY_PLAYBACK_REPEAT_MODE, this.repeatMode);
+    this.updatePlaybackMode(false, mode);
+  }
+
+  cyclePlaybackMode(): PlaybackMode {
+    switch (this.getPlaybackMode()) {
+      case PlaybackMode.RepeatAll:
+        this.updatePlaybackMode(false, 2);
+        return PlaybackMode.RepeatOne;
+      case PlaybackMode.RepeatOne:
+        this.updatePlaybackMode(true, 1);
+        return PlaybackMode.Shuffle;
+      case PlaybackMode.Shuffle:
+        this.updatePlaybackMode(false, 0);
+        return PlaybackMode.Sequence;
+      default:
+        this.updatePlaybackMode(false, 1);
+        return PlaybackMode.RepeatAll;
+    }
+  }
+
+  private updatePlaybackMode(shuffle: boolean, repeat: number): void {
+    if (shuffle === this.shuffle && repeat === this.repeatMode) {
+      return;
+    }
+    if (shuffle !== this.shuffle) {
+      this.shuffleHistory = [];
+    }
+    this.shuffle = shuffle;
+    this.repeatMode = repeat;
+    // Serialize repeated taps so the final choice is also the last one saved.
+    this.playbackModeWrite = this.playbackModeWrite.then(async () => {
+      await Settings.put(Settings.AUDIO_SHUFFLING, shuffle);
+      await Settings.put(Settings.KEY_PLAYBACK_REPEAT_MODE, repeat);
+    }).catch((error: Error) => {
+      hilog.warn(LOG_DOMAIN, LOG_TAG, '[VLC] Save playback mode failed: %{public}s', error.message);
+    });
     this.emitQueue();
   }
 
@@ -1152,9 +1196,11 @@ export class PlaybackService {
       this.inited = true;
       // 订阅音频环境事件(耳机/通知闪避/通话),各回调内动态读设置,开关即时生效
       this.setupAudioEnvironment();
-      // 恢复上次会话持久化的随机/循环状态(对齐 Android setRepeatTypeFromSettings)
-      this.shuffle = await Settings.getBoolean(Settings.AUDIO_SHUFFLING, false);
-      this.repeatMode = await Settings.getInt(Settings.KEY_PLAYBACK_REPEAT_MODE, 0);
+      // Older preferences could store shuffle together with single-item repeat.
+      const savedShuffle = await Settings.getBoolean(Settings.AUDIO_SHUFFLING, false);
+      const savedRepeat = await Settings.getInt(Settings.KEY_PLAYBACK_REPEAT_MODE, 0);
+      this.shuffle = savedShuffle && savedRepeat !== 2;
+      this.repeatMode = savedRepeat === 2 ? 2 : (this.shuffle || savedRepeat === 1 ? 1 : 0);
       // 恢复全局音频播放速度(对齐 Android 设置项 Use the global playback speed)
       this.globalSpeedEnabled = await Settings.getBoolean(Settings.KEY_PLAYBACK_SPEED_AUDIO_GLOBAL, false);
       this.globalSpeedValue = await Settings.getFloat(Settings.KEY_PLAYBACK_SPEED_AUDIO_GLOBAL_VALUE, 1.0);

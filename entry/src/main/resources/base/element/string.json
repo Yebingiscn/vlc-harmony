@@ -41,6 +41,14 @@
       "value": "将选中的 %d 首曲目从 VLC 媒体库移除？不会删除原文件。"
     },
     {
+      "name": "media_import_result",
+      "value": "导入完成：成功 %d 个，失败 %d 个，重复 %d 个"
+    },
+    {
+      "name": "media_import_error",
+      "value": "导入未能完成"
+    },
+    {
       "name": "audio_remove_batch_success",
       "value": "已从媒体库移除 %d 首曲目"
     },
@@ -1948,20 +1956,20 @@
       "value": "随机播放"
     },
     {
-      "name": "player_repeat_off",
-      "value": "关闭循环"
-    },
-    {
       "name": "player_repeat_all",
       "value": "列表循环"
     },
     {
       "name": "player_repeat_one",
-      "value": "单项循环"
+      "value": "单曲循环"
     },
     {
       "name": "player_queue",
       "value": "播放队列"
+    },
+    {
+      "name": "player_queue_hint",
+      "value": "查看队列并切换播放条目"
     },
     {
       "name": "player_queue_empty",

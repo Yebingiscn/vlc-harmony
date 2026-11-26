@@ -10,6 +10,10 @@ export class LyricLine {
     this.time = time;
     this.text = text;
   }
+
+  get displayText(): string {
+    return this.text.trim() || '♪';
+  }
 }
 
 export class LyricsDocument {
@@ -160,7 +164,7 @@ export class EmbeddedLyrics {
     return result;
   }
 
-  /** 悬浮栏和封面页共用同一句：时间轴空白不提前显示，无时间戳取首个非空行。 */
+  /** 悬浮栏在时间轴空白时隐藏歌词，无时间戳时取首个非空行。 */
   static compactLineIndex(document: LyricsDocument, position: number): number {
     if (document.timed) {
       const index: number = EmbeddedLyrics.activeLine(document, position);

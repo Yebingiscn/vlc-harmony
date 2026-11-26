@@ -5,11 +5,13 @@ import { audioAlbumArtist, audioAlbumKey, audioTag, audioTagKey } from '../commo
 import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
 import { AudioPlayerRoute, NavController } from '../common/data/NavController';
 import { EmptyStateView } from '../common/components/EmptyStateView';
+import { FloatingAddButton } from '../common/components/FloatingAddButton';
 import { EmptyLoadingState, formatDuration, Track } from '../common/models/MediaModels';
 import { Settings } from '../common/data/Settings';
 import { picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { pinyin4js } from '@ohos/pinyin4js';
 import { AppColors, AppDimens } from '../common/constants/AppConstants';
 
@@ -392,6 +394,9 @@ export struct AudioBrowserPage {
   }
 
   async pickAudioFiles(): Promise<void> {
+    if (this.importActive) {
+      return;
+    }
     try {
       const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
       const opts = new picker.DocumentSelectOptions();
@@ -404,15 +409,23 @@ export struct AudioBrowserPage {
         this.importActive = true;
         this.importCurrent = 0;
         this.importTotal = uris.length;
-        await MediaLibrary.importAudioUris(uris, (current: number, total: number): void => {
+        const result = await MediaLibrary.importAudioUris(uris, (current: number, total: number): void => {
           this.importCurrent = current;
           this.importTotal = total;
         });
         this.importActive = false;
+        UiFeedback.showToast({
+          message: $r('app.string.media_import_result', result.succeeded, result.failed, result.duplicates),
+        });
         this.vm.syncData(true);
         this.pruneTrackSelection();
       }
     } catch (e) {
+      if (this.importActive) {
+        UiFeedback.showToast({ message: $r('app.string.media_import_error') });
+      }
+      hilog.warn(0x0001, 'VLC', '[VLC] pickAudioFiles: %{public}s', (e as Error).message ?? String(e));
+    } finally {
       this.importActive = false;
     }
   }
@@ -729,18 +742,9 @@ export struct AudioBrowserPage {
       .onRefreshing(() => this.doRefresh()).refreshOffset(64)
       .backgroundColor($r('app.color.background_default'))
 
-      // FAB：与内容底部避让一致，在 64vp 悬浮播放器上方保留 16vp 间距。
       if (!this.hasTrackSelection()) {
-        Button() {
-          Image($r('app.media.ic_add')).width(22).height(22).fillColor($r('app.color.colorOnPrimary'))
-        }
-        .width(48)
-        .height(48)
-        .borderRadius(24)
-        .backgroundColor('#FF8800')
-        .shadow({ radius: 8, color: '#44000000', offsetY: 4 })
-        .position({ right: 16, bottom: this.fabBottom })
-        .onClick(() => this.pickAudioFiles())
+        FloatingAddButton({ onPress: () => this.pickAudioFiles() })
+          .position({ right: 16, bottom: this.fabBottom })
       }
     }
     .width('100%').height('100%')
@@ -1091,17 +1095,18 @@ export struct AudioBrowserPage {
 
   @Builder
   trackSelectionMark(row: RepeatItem<Track>, onCover: boolean) {
-    Button({ type: ButtonType.Circle }) {
-      Image(this.selectedTrackUris.includes(row.item.uri)
-        ? $r('app.media.ic_checkbox_true_normal') : $r('app.media.ic_checkbox_false'))
-        .width(22)
-        .height(22)
-        .fillColor(this.selectedTrackUris.includes(row.item.uri) ? $r('app.color.orange500')
-          : (onCover ? Color.White : $r('app.color.list_subtitle')))
+    Button({ type: ButtonType.Normal }) {
+      if (this.selectedTrackUris.includes(row.item.uri)) {
+        Image($r('app.media.ic_video_grid_check'))
+          .width(onCover ? 16 : 24)
+          .height(onCover ? 16 : 24)
+          .fillColor($r('app.color.orange500'))
+      }
     }
-    .width(40)
-    .height(40)
-    .backgroundColor(onCover ? '#A6000000' : Color.Transparent)
+    .width(AUDIO_MORE_BUTTON_SIZE)
+    .height(AUDIO_MORE_BUTTON_SIZE)
+    .padding(0)
+    .backgroundColor(Color.Transparent)
     .accessibilityText(this.selectedTrackUris.includes(row.item.uri)
       ? $r('app.string.audio_unselect_track', row.item.title) : $r('app.string.audio_select_track', row.item.title))
     .onClick(() => this.toggleTrackSelection(row.item.uri))
@@ -1130,15 +1135,19 @@ export struct AudioBrowserPage {
   private trackMenu(row: RepeatItem<Track>): MenuElement[] {
     const items: MenuElement[] = [];
     if (this.vm.tabIndex === TRACKS_TAB) {
+      const selectIcon = new SymbolGlyphModifier($r('sys.symbol.checkmark_square_fill'));
+      selectIcon.fontColor([$r('sys.color.icon_primary')]);
       items.push({
         value: $r('app.string.audio_multi_select'),
-        icon: $r('app.media.ic_checkbox_true_normal'),
+        symbolIcon: selectIcon,
         action: () => { this.toggleTrackSelection(row.item.uri); }
       });
     }
+    const removeIcon = new SymbolGlyphModifier($r('sys.symbol.trash'));
+    removeIcon.fontColor([$r('sys.color.icon_primary')]);
     items.push({
       value: $r('app.string.audio_remove_from_library'),
-      icon: $r('app.media.ic_delete'),
+      symbolIcon: removeIcon,
       action: () => { this.confirmRemoveTrack(row.item); }
     });
     return items;

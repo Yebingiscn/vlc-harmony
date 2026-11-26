@@ -5,13 +5,14 @@ import { MediaLibrary } from '../common/data/MediaLibrary';
 import { Settings } from '../common/data/Settings';
 import { EmptyLoadingState, MediaWrapper, Track } from '../common/models/MediaModels';
 import { EmptyStateView } from '../common/components/EmptyStateView';
+import { FloatingAddButton } from '../common/components/FloatingAddButton';
 import { PlaylistDialog } from './PlaylistDialog';
 import { RenameDialog } from './RenameDialog';
 import { emitter } from '@kit.BasicServicesKit';
 import { PlaybackService, QueueItem } from '../common/data/PlaybackService';
 import { VideoParam, VideoPlayItem } from './VideoPlayerPage';
 import { HeaderMediaListParam } from './HeaderMediaListActivityPage';
-import { RouteName } from '../common/constants/AppConstants';
+import { AppDimens, RouteName } from '../common/constants/AppConstants';
 
 // ---- 数据模型 ----
 
@@ -120,7 +121,7 @@ export struct PlaylistsPage {
   /** 统一半模态状态:一个组件只能有一个 bindSheet。 */
   @Local sheetMode: SheetMode = 'none';
   @Local showSheet: boolean = false;
-  @Local fabBottom: number = 152;
+  @Local fabBottom: number = AppDimens.floating_content_bottom_inset;
   @Local ctxCard: PlaylistCard | null = null;
   @Param searchMode: boolean = false;
   @Param searchQuery: string = '';
@@ -332,25 +333,17 @@ export struct PlaylistsPage {
       }
       .width('100%').height('100%')
 
-      // FAB
-      Button() {
-        Image($r('app.media.ic_add')).width(22).height(22).fillColor($r('app.color.colorOnPrimary'))
-      }
-      .width(48)
-      .height(48)
-      .borderRadius(24)
-      .backgroundColor('#FF8800')
-      .shadow({ radius: 8, color: '#44000000', offsetY: 4 })
-      .position({ right: 16, bottom: this.fabBottom })
-      .onClick(() => {
-        this.openCreate();
+      FloatingAddButton({
+        label: $r('app.string.create_new_playlist'),
+        onPress: () => this.openCreate(),
       })
+        .position({ right: 16, bottom: this.fabBottom })
     }
     .width('100%').height('100%')
     .clip(false)
     .onAreaChange((_oldArea: Area, newArea: Area) => {
       const h: number = Number(newArea.height);
-      this.fabBottom = Math.max(16, Math.min(152, h - 64));
+      this.fabBottom = Math.max(16, Math.min(AppDimens.floating_content_bottom_inset, h - 64));
     })
     .backgroundColor($r('app.color.background_default'))
     // 唯一的 bindSheet,内部按 sheetMode 切换内容

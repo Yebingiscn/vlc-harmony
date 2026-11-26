@@ -92,6 +92,12 @@ const AUDIO_EXTS: string[] = ['mp3', 'aac', 'flac', 'ogg', 'wav', 'm4a', 'wma', 
 const VIDEO_EXTS: string[] =
   ['mp4', 'mkv', 'avi', 'mov', 'webm', 'ts', 'iso', '3gp', 'wmv', 'flv', 'm4v', 'mpg', 'mpeg', 'm2ts', 'vob'];
 
+export class MediaImportResult {
+  succeeded: number = 0;
+  failed: number = 0;
+  duplicates: number = 0;
+}
+
 export class MediaLibrary {
   /** 播放列表变更事件 ID（emitter 全局广播，订阅方应 reload 自身 UI）。 */
   public static readonly EVENT_PLAYLISTS_CHANGED: string = 'vlc_playlists_changed';
@@ -192,54 +198,40 @@ export class MediaLibrary {
   }
 
   /** 将 DocumentViewPicker 选中的音频按 URI 引用加入媒体库，不复制媒体文件。 */
-  static async importAudioUris(uris: string[], onProgress?: (current: number, total: number) => void): Promise<void> {
+  static async importAudioUris(uris: string[],
+    onProgress?: (current: number, total: number) => void): Promise<MediaImportResult> {
     const release = await MediaLibrary.acquireLock();
     try {
-    if (uris.length === 0) {
-      return;
+      const existingUris = new Set(MediaLibrary.audios.map((track: Track) => track.uri));
+      const firstId = MediaLibrary.nextAudioTrackId();
+      return await MediaLibrary.importUris<Track>(uris, existingUris, async (uri: string, offset: number) => {
+        const meta = await MediaLibrary.parseFileMeta(uri);
+        const track = new Track(firstId + offset, meta.title, uri);
+        track.displayName = meta.title;
+        track.filePath = uri;
+        track.length = meta.duration;
+        track.artistName = meta.artist;
+        track.albumName = meta.album;
+        track.albumArtistName = meta.albumArtist;
+        track.genre = meta.genre;
+        track.trackNumber = parseInt(meta.trackNumber) || 0;
+        track.year = meta.year;
+        track.artworkPath = meta.artworkPath;
+        return track;
+      }, async (added: Track[]) => {
+        const tracks = MediaLibrary.audios.concat(added);
+        if (!(await MediaLibrary.saveAudioLibrary(tracks))) {
+          // A failed flush can leave the preferences cache updated.
+          await MediaLibrary.saveAudioLibrary();
+          return false;
+        }
+        MediaLibrary.audios = tracks;
+        MediaLibrary.deriveFromMeta();
+        return true;
+      }, onProgress);
+    } finally {
+      release();
     }
-    HILog(`importAudioUris: received ${uris.length} URI(s)`);
-    const uniqueUris = Array.from(new Set(uris));
-    const existingUris = new Set(MediaLibrary.audios.map((t: Track) => t.uri));
-    const newByUri = uniqueUris.filter((u: string) => !existingUris.has(u));
-    HILog(`importAudioUris: after uri dedup: ${newByUri.length} new`);
-    if (newByUri.length === 0) {
-      return;
-    }
-    const startIndex = MediaLibrary.nextAudioTrackId();
-    let addedCount = 0;
-    for (let i = 0; i < newByUri.length; i++) {
-      onProgress?.(i, newByUri.length);
-      const pickerUri = newByUri[i];
-      HILog(`importAudioUris[${i}]: ${pickerUri}`);
-      if (!(await DocumentPermission.persist(pickerUri))) {
-        HILog(`importAudioUris[${i}]: persistent permission failed`);
-        continue;
-      }
-      const meta = await MediaLibrary.parseFileMeta(pickerUri);
-      HILog(`importAudioUris[${i}]: meta title="${meta.title}" artist="${meta.artist}" album="${meta.album}"`);
-      const t = new Track(startIndex + addedCount, meta.title, pickerUri);
-      t.displayName = meta.title;
-      t.filePath = pickerUri;
-      t.length = meta.duration;
-      t.artistName = meta.artist;
-      t.albumName = meta.album;
-      t.albumArtistName = meta.albumArtist;
-      t.genre = meta.genre;
-      t.trackNumber = parseInt(meta.trackNumber) || 0;
-      t.year = meta.year;
-      t.artworkPath = meta.artworkPath;
-      MediaLibrary.audios.push(t);
-      existingUris.add(pickerUri);
-      addedCount++;
-    }
-    if (addedCount > 0) {
-      MediaLibrary.deriveFromMeta();
-      await MediaLibrary.saveAudioLibrary();
-    }
-    onProgress?.(newByUri.length, newByUri.length);
-    HILog(`importAudioUris done, added ${addedCount}, total audios: ${MediaLibrary.audios.length}`);
-    } finally { release(); }
   }
 
   /** 一次移除全部命中的 URI，保留源文件、权限和独立的播放列表/历史记录。 */
@@ -269,58 +261,93 @@ export class MediaLibrary {
   }
 
   /** 将 DocumentViewPicker 选中的视频按 URI 引用加入媒体库，不复制媒体文件。 */
-  static async importVideoUris(uris: string[], onProgress?: (current: number, total: number) => void): Promise<void> {
+  static async importVideoUris(uris: string[],
+    onProgress?: (current: number, total: number) => void): Promise<MediaImportResult> {
     const release = await MediaLibrary.acquireLock();
     try {
-    const uniqueUris = Array.from(new Set(uris));
-    const existingUris = new Set(MediaLibrary.videos.map((v: MediaWrapper) => v.uri));
-    const loadThumbnails: boolean = await Settings.getBoolean(Settings.SHOW_VIDEO_THUMBNAILS, true);
-    let addedCount = 0;
-    for (let i = 0; i < uniqueUris.length; i++) {
-      onProgress?.(i, uniqueUris.length);
-      const uri = uniqueUris[i];
-      if (uri.length === 0 || existingUris.has(uri)) {
-        continue;
-      }
-      if (!(await DocumentPermission.persist(uri))) {
-        HILog(`importVideoUris[${i}]: persistent permission failed`);
-        continue;
-      }
-      const meta = await MediaLibrary.parseFileMeta(uri);
-      const title = meta.title.length > 0 ? meta.title : MediaLibrary.fileNameTitle(uri);
-      const video = new MediaWrapper(MediaLibrary.videos.length, title, uri, 0);
-      video.displayName = MediaLibrary.fileNameTitle(uri);
-      video.filePath = uri;
-      video.length = meta.duration;
-      video.width = meta.videoWidth;
-      video.height = meta.videoHeight;
-      video.resolution = video.width > 0 && video.height > 0 ? `${video.width}x${video.height}` : '';
-      video.artworkUrl = meta.artworkPath;
-      // 视频文件带有内嵌封面时优先保留；没有封面才截取视频帧。
-      if (loadThumbnails && !MediaLibrary.artworkExists(video.artworkUrl)) {
-        const thumbnail: string = await MediaLibrary.createVideoThumbnail(uri);
-        if (thumbnail.length > 0) {
-          video.artworkUrl = thumbnail;
+      const existingUris = new Set(MediaLibrary.videos.map((video: MediaWrapper) => video.uri));
+      const loadThumbnails = await Settings.getBoolean(Settings.SHOW_VIDEO_THUMBNAILS, true);
+      const firstId = MediaLibrary.videos.length;
+      return await MediaLibrary.importUris<MediaWrapper>(uris, existingUris, (uri: string, offset: number) =>
+        MediaLibrary.createImportedVideo(uri, firstId + offset, loadThumbnails), async (added: MediaWrapper[]) => {
+        const videos = MediaLibrary.videos.concat(added);
+        if (!(await MediaLibrary.saveVideoLibrary(videos))) {
+          await MediaLibrary.saveVideoLibrary();
+          return false;
+        }
+        MediaLibrary.videos = videos;
+        return true;
+      }, onProgress);
+    } finally {
+      release();
+    }
+  }
+
+  private static async importUris<T>(uris: string[], seenUris: Set<string>,
+    prepare: (uri: string, offset: number) => Promise<T>, commit: (items: T[]) => Promise<boolean>,
+    onProgress?: (current: number, total: number) => void): Promise<MediaImportResult> {
+    const result = new MediaImportResult();
+    const pending: T[] = [];
+    for (let i = 0; i < uris.length; i++) {
+      onProgress?.(i, uris.length);
+      const uri = uris[i];
+      if (uri.trim().length === 0) {
+        result.failed++;
+      } else if (seenUris.has(uri)) {
+        result.duplicates++;
+      } else {
+        seenUris.add(uri);
+        try {
+          if (await DocumentPermission.persist(uri) && DocumentPermission.canOpen(uri)) {
+            pending.push(await prepare(uri, pending.length));
+          } else {
+            result.failed++;
+          }
+        } catch (e) {
+          result.failed++;
+          HILog(`importUris[${i}]: ${(e as Error).message ?? String(e)}`);
         }
       }
-      try {
-        const stat = fs.statSync(uri);
-        video.size = stat.size;
-        video.dateAdded = stat.ctime;
-        video.dateModified = stat.mtime;
-      } catch (e) {
-        // URI 仍可播放；文件提供方不支持 stat 时保留默认值。
+    }
+    if (pending.length > 0) {
+      if (await commit(pending)) {
+        result.succeeded = pending.length;
+      } else {
+        result.failed += pending.length;
       }
-      MediaLibrary.videos.push(video);
-      existingUris.add(uri);
-      addedCount++;
     }
-    if (addedCount > 0) {
-      await MediaLibrary.saveVideoLibrary();
+    onProgress?.(uris.length, uris.length);
+    HILog(`importUris done: ${result.succeeded} added, ${result.failed} failed, ${result.duplicates} duplicates`);
+    return result;
+  }
+
+  private static async createImportedVideo(uri: string, id: number, loadThumbnails: boolean): Promise<MediaWrapper> {
+    const meta = await MediaLibrary.parseFileMeta(uri);
+    const fileName = MediaLibrary.fileNameTitle(uri);
+    const video = new MediaWrapper(id, meta.title || fileName, uri, 0);
+    video.displayName = fileName;
+    video.filePath = uri;
+    video.length = meta.duration;
+    video.width = meta.videoWidth;
+    video.height = meta.videoHeight;
+    video.resolution = video.width > 0 && video.height > 0 ? `${video.width}x${video.height}` : '';
+    video.artworkUrl = meta.artworkPath;
+    // 视频文件带有内嵌封面时优先保留；没有封面才截取视频帧。
+    if (loadThumbnails && !MediaLibrary.artworkExists(video.artworkUrl)) {
+      const thumbnail = await MediaLibrary.createVideoThumbnail(uri);
+      if (thumbnail.length > 0) {
+        video.artworkUrl = thumbnail;
+      }
     }
-    onProgress?.(uniqueUris.length, uniqueUris.length);
-    HILog(`importVideoUris done, added ${addedCount}, total videos: ${MediaLibrary.videos.length}`);
-    } finally { release(); }
+    try {
+      const stat = fs.statSync(uri);
+      video.size = stat.size;
+      video.dateAdded = stat.ctime;
+      video.dateModified = stat.mtime;
+    } catch (e) {
+      // 文件提供方不支持 stat 时保留默认值。
+    }
+    return video;
   }
 
   /** 从给定的视频列表派生文件夹分组(供 VideoGridPage 按文件夹分组展示)。 */
@@ -1508,9 +1535,9 @@ export class MediaLibrary {
 
   // ---- 文件夹收藏(按 folder path) ----
 
-  private static async saveVideoLibrary(): Promise<void> {
+  private static async saveVideoLibrary(videos: MediaWrapper[] = MediaLibrary.videos): Promise<boolean> {
     try {
-      const items: PersistedVideo[] = MediaLibrary.videos.map((video: MediaWrapper) => ({
+      const items: PersistedVideo[] = videos.map((video: MediaWrapper) => ({
         uri: video.uri,
         title: video.title,
         displayName: video.displayName,
@@ -1523,9 +1550,10 @@ export class MediaLibrary {
         dateAdded: video.dateAdded,
         dateModified: video.dateModified,
       } as PersistedVideo));
-      await Settings.put(KEY_VIDEO_LIBRARY, JSON.stringify(items));
+      return await Settings.tryPut(KEY_VIDEO_LIBRARY, JSON.stringify(items));
     } catch (e) {
       HILog(`saveVideoLibrary error: ${(e as Error).message ?? String(e)}`);
+      return false;
     }
   }
 

@@ -192,11 +192,11 @@ export struct MiniPlayer {
               .fontSize(11 + 2 * this.expansion)
               .fontColor($r('app.color.orange500'))
               .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .textOverflow({ overflow: TextOverflow.MARQUEE })
+              .marqueeOptions({ start: !this.opening && this.expansion === 0, fadeout: true })
               .width(this.textWidth())
               .position({ x: 60 - 40 * this.expansion, y: 43 * (1 - this.expansion) + (this.coverSize() + 74) * this.expansion })
               .opacity(this.expansionHeight < 240 ? 1 - this.expansion : 1)
-              .geometryTransition('audio-player-lyric', { follow: true })
               .transition(TransitionEffect.OPACITY)
               .id('audio-mini-lyric')
           }

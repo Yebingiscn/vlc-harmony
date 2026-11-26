@@ -41,6 +41,14 @@
       "value": "Remove the %d selected tracks from the VLC library? The original files will be kept."
     },
     {
+      "name": "media_import_result",
+      "value": "Import complete: %d added, %d failed, %d duplicates"
+    },
+    {
+      "name": "media_import_error",
+      "value": "Could not complete the import"
+    },
+    {
       "name": "audio_remove_batch_success",
       "value": "Removed %d tracks from the library"
     },
@@ -1891,12 +1899,8 @@
       "value": "Shuffle"
     },
     {
-      "name": "player_repeat_off",
-      "value": "Repeat off"
-    },
-    {
       "name": "player_repeat_all",
-      "value": "Repeat queue"
+      "value": "Repeat all"
     },
     {
       "name": "player_repeat_one",
@@ -1905,6 +1909,10 @@
     {
       "name": "player_queue",
       "value": "Playback queue"
+    },
+    {
+      "name": "player_queue_hint",
+      "value": "View the queue and choose an item to play"
     },
     {
       "name": "player_queue_empty",

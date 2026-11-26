@@ -9,7 +9,7 @@ import PiPWindow from '@ohos.PiPWindow';
 import { NavController } from '../common/data/NavController';
 import { AppContext } from '../common/data/AppContext';
 import { PlaybackHistory } from '../common/data/PlaybackHistory';
-import { PlaybackListener, PlaybackService, QueueItem } from '../common/data/PlaybackService';
+import { PlaybackListener, PlaybackMode, PlaybackService, QueueItem } from '../common/data/PlaybackService';
 import { VideoRefreshPolicy } from '../common/data/VideoRefreshPolicy';
 import { VlcChapterInfo } from 'libvlcnapi.so';
 import { MediaLibrary } from '../common/data/MediaLibrary';
@@ -32,6 +32,7 @@ import { SubtitleDownloaderDialog } from './SubtitleDownloaderDialog';
 import { BookmarkDialog } from './BookmarkDialog';
 import { AddToPlaylistAction, AddToPlaylistDialog } from './AddToPlaylistDialog';
 import { PlayerModeButton } from '../common/components/PlayerModeButton';
+import { PlayerControlButton } from '../common/components/PlayerControlButton';
 import { PlayerQueuePanel } from '../common/components/PlayerQueuePanel';
 import {
   SCREEN_ORIENTATION_DEFAULT,
@@ -203,9 +204,7 @@ class VideoPlayerViewModel implements PlaybackListener {
   @Trace videoRatioMode: string = VIDEO_RATIO_BEST_FIT;
   /** 播放器锁定状态:锁定后点击画面不显 HUD,需手动解锁。 */
   @Trace locked: boolean = false;
-  /** 当前循环模式:0=关闭,1=列表循环,2=单曲循环。 */
-  @Trace repeatMode: number = 0;
-  @Trace shuffle: boolean = false;
+  @Trace playbackMode: PlaybackMode = PlaybackMode.Sequence;
   @Trace queueReady: boolean = false;
   /** A-B 循环状态。-1 表示未设。 */
   @Trace abPointA: number = -1;
@@ -277,8 +276,7 @@ class VideoPlayerViewModel implements PlaybackListener {
     this.isoChapterIdx = 0;
 
     const svc = PlaybackService.getInstance();
-    this.repeatMode = svc.getRepeatMode();
-    this.shuffle = svc.getShuffle();
+    this.playbackMode = svc.getPlaybackMode();
     if (!this.listening) {
       svc.addListener(this);
       this.listening = true;
@@ -395,8 +393,7 @@ class VideoPlayerViewModel implements PlaybackListener {
     }
     this.index = svc.getCurrentIndex();
     this.listLen = Math.max(this.list.length, svc.getQueue().length);
-    this.repeatMode = svc.getRepeatMode();
-    this.shuffle = svc.getShuffle();
+    this.playbackMode = svc.getPlaybackMode();
   }
 
   onVideoSize(width: number, height: number): void {
@@ -701,7 +698,6 @@ export struct VideoPlayerPage {
   /** 当前视频的书签列表（每次变更自动持久化）。 */
   @Local bookmarks: BookMark[] = [];
   @Local advancedOptionsOpen: boolean = false;
-  @Local modeMenuOpen: boolean = false;
   /** VideoInfo 用的轨道元数据(由 refreshVideoInfoTracks 刷新)。 */
   @Local videoCodecName: string = '';
   @Local audioCodecName: string = '';
@@ -1351,7 +1347,7 @@ export struct VideoPlayerPage {
       // A-B 循环等待设 B 时也保持可见:用户需要看到「设置 B」按钮。
       const waitingAbB: boolean = this.vm.abPointA >= 0 && !this.vm.abActive;
       if (this.vm.state === PlayState.PLAYING && !this.seeking && !this.sheetOpen &&
-        !this.advancedOptionsOpen && !this.modeMenuOpen && !waitingAbB) {
+        !this.advancedOptionsOpen && !waitingAbB) {
         this.vm.hudVisible = false;
       }
     }, 4000);
@@ -1860,14 +1856,8 @@ export struct VideoPlayerPage {
 
       Row() {
         PlayerModeButton({
-          shuffle: this.vm.shuffle,
-          repeatMode: this.vm.repeatMode,
-          iconSize: 32,
-          iconColor: Color.White,
-          onMenuVisibility: (visible: boolean) => {
-            this.modeMenuOpen = visible;
-            this.resetHudTimer();
-          },
+          mode: this.vm.playbackMode,
+          onModeChange: () => this.resetHudTimer(),
         })
         Repeat(buildVideoPlayerBottomActions()).each((actionRepeatItem: RepeatItem<VideoPlayerBottomAction>) => {
           Image(this.bottomActionIcon(actionRepeatItem.item))
@@ -1876,18 +1866,16 @@ export struct VideoPlayerPage {
             .fillColor('#FFFFFF')
             .onClick(() => this.onBottomAction(actionRepeatItem.item.id))
         }).key((action: VideoPlayerBottomAction): string => action.id)
-        Button({ type: ButtonType.Normal }) {
-          Image($r('app.media.ic_player_playqueue')).width(32).height(32).fillColor(Color.White)
-        }
-          .width(40).height(40)
-          .padding(0)
-          .backgroundColor(Color.Transparent)
-          .accessibilityText($r('app.string.player_queue'))
-          .enabled(this.vm.queueReady)
-          .onClick(() => {
+        PlayerControlButton({
+          icon: $r('sys.symbol.list_badge_play'),
+          iconColor: Color.White,
+          label: $r('app.string.player_queue'),
+          isEnabled: this.vm.queueReady,
+          onPress: () => {
             this.openSub('queue');
             this.resetHudTimer();
-          })
+          },
+        })
       }
       .width('100%')
       .padding({
